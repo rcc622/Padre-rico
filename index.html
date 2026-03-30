@@ -415,7 +415,7 @@ function rDash(){
       return`<div class="ql-item">
         <div class="ql-dot" style="background:${col}"></div>
         <div style="flex:1">
-          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span><span style="color:${col};font-weight:bold">${fx(d.bal)}</span></div>
+          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}<span style="color:${col};font-weight:bold">${fx(d.bal)}</span></div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtDate(d.liqDate)} · <span style="color:${col}">${d.daysLeft===0?'HOY':d.daysLeft<0?'VENCIDA':d.daysLeft+' días'}</span>${d.pay?` · Pago: ${fx(d.pay)}/mes`:''}</div>
         </div>
       </div>`;
@@ -728,10 +728,15 @@ function rFlujo(){
       <div><label>Saldo total ($)</label><input type="number" id="db" placeholder="0"></div>
       <div><label>Pago mensual fijo ($)</label><input type="number" id="dm" placeholder="0"></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Tasa anual % <span style="text-transform:none;font-style:italic">(opcional)</span></label><input type="number" id="dr" placeholder="36"></div>
       <div><label>Fecha de liquidación</label><input type="date" id="dliq"></div>
       <div><label>Nota <span style="text-transform:none;font-style:italic">(opcional)</span></label><input type="text" id="dnote" placeholder="Vence quincena, etc."></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:10px;margin-bottom:12px">
+      <div><label>Mensualidad actual</label><input type="number" id="dcur" placeholder="5" min="1"></div>
+      <div><label>Total de meses</label><input type="number" id="dtot" placeholder="12" min="1"></div>
+      <div style="display:flex;align-items:flex-end"><div style="font-size:11px;color:var(--muted);padding-bottom:11px;line-height:1.5">Para compras a meses (MSI) o financiamientos. Ej: <strong>5 de 12</strong></div></div>
     </div>
     <button class="btn btn-sage" onclick="addDebt()">+ Agregar deuda</button>
   </div>
@@ -754,7 +759,7 @@ function rFlujo(){
       return`<div class="ql-item">
         <div class="ql-dot" style="background:${col}"></div>
         <div style="flex:1">
-          <div class="row-b"><div class="row"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.note?`<span class="badge bdg-amber">${d.note}</span>`:''}</div><div class="row"><span style="color:${col};font-weight:bold">${fx(d.bal)}</span><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div></div>
+          <div class="row-b"><div class="row"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}${d.note?`<span class="badge bdg-amber">${d.note}</span>`:''}</div><div class="row"><span style="color:${col};font-weight:bold">${fx(d.bal)}</span><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div></div>
           <div style="font-size:11px;color:var(--muted);margin-top:3px">Liquida: ${fmtDate(d.liqDate)} · <span style="color:${col};font-weight:bold">${label}</span>${d.pay?` · Pago: ${fx(d.pay)}/mes`:''}</div>
         </div>
       </div>`;
@@ -780,7 +785,7 @@ function rFlujo(){
       const liqEst=d.pay>0?new Date(new Date().getFullYear(),new Date().getMonth()+mos,1).toLocaleDateString('es-MX',{month:'short',year:'numeric'}):'';
       return`<div style="padding:13px 0;border-bottom:1px solid var(--border)">
         <div class="row-b" style="margin-bottom:6px">
-          <div class="row"><span class="badge ${i===0?'bdg-sage':'bdg-sky'}">${i===0?'🎯 AHORA':'#'+(i+1)}</span><span style="font-weight:bold;color:var(--txt)">${d.name}</span></div>
+          <div class="row"><span class="badge ${i===0?'bdg-sage':'bdg-sky'}">${i===0?'🎯 AHORA':'#'+(i+1)}</span><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
           <div class="row">${d.rate?`<span class="badge bdg-red">${d.rate}%</span>`:''}
             <span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span>
             <button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div>
@@ -803,7 +808,7 @@ function rFlujo(){
 function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
 function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;if(!n||!a)return;pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c}]});toast('✓ Gasto registrado');rFlujo();}
 function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});toast('Gasto eliminado');rFlujo();}
-function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);if(!n||!b)return;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,rate:+(document.getElementById('dr')?.value)||0,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||''}]});toast('⛓️ Deuda registrada');rFlujo();}
+function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);if(!n||!b)return;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,rate:+(document.getElementById('dr')?.value)||0,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0}]});toast('⛓️ Deuda registrada');rFlujo();}
 function rmDebt(id){pt({debts:S.debts.filter(d=>d.id!==id)});toast('Deuda eliminada');rFlujo();}
 
 // ══ MIS HÁBITOS (Fase 1: estructura + sala de espera 48h) ═══

@@ -168,7 +168,8 @@ button:active{transform:scale(.97)}
   <nav class="nav">
     <button class="nb act" onclick="go('dash')">🏛️ Inicio</button>
     <button class="nb" onclick="go('quincena')">📊 Mi Quincena</button>
-    <button class="nb" onclick="go('flujo')">💰 Deudas & Flujo</button>
+    <button class="nb" onclick="go('flujo')">💰 Ingresos y Gastos</button>
+    <button class="nb" onclick="go('plan')">🎯 Plan de Acción</button>
     <button class="nb" onclick="go('habitos')">🧠 Mis Hábitos</button>
     <button class="nb" onclick="go('historia')">📖 Mi Historia</button>
   </nav>
@@ -176,6 +177,7 @@ button:active{transform:scale(.97)}
     <div id="tab-dash" class="panel act"></div>
     <div id="tab-quincena" class="panel"></div>
     <div id="tab-flujo" class="panel"></div>
+    <div id="tab-plan" class="panel"></div>
     <div id="tab-habitos" class="panel"></div>
     <div id="tab-historia" class="panel"></div>
   </div>
@@ -235,8 +237,6 @@ function toast(msg){
 const mInc=()=>(+S.inc.sal)+(+S.inc.bf);
 const mBonus=()=>(+S.inc.bv)/6;
 const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;if(freq==='bimestral')return amt/2;return amt;};
-const toPeriod=(monthlyAmt)=>viewPeriod==='quincenal'?monthlyAmt/2:monthlyAmt;
-const perLbl=()=>viewPeriod==='quincenal'?'/qna':'/mes';
 const freqShort=(f)=>f==='semanal'?'sem':f==='quincenal'?'qna':f==='bimestral'?'bim':'mes';
 const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bimestral'?'Bimestral':'';
 const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
@@ -329,7 +329,7 @@ function go(tab){
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('act'));
   document.getElementById('tab-'+tab).classList.add('act');
   document.querySelectorAll('.nb').forEach(b=>{if(b.getAttribute('onclick')?.includes("'"+tab+"'"))b.classList.add('act')});
-  ({dash:rDash,quincena:rQuincena,flujo:rFlujo,habitos:rHabitos,historia:rHistoria})[tab]?.();
+  ({dash:rDash,quincena:rQuincena,flujo:rFlujo,plan:rPlan,habitos:rHabitos,historia:rHistoria})[tab]?.();
   hdrUp();
 }
 function hdrUp(){
@@ -369,14 +369,19 @@ function lastHormiga(){
 
 // ══ DASHBOARD ═══════════════════════════════════════
 function rDash(){
-  const s=score(),sc=scCol(s),ff=flow(),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
+  const s=score(),sc=scCol(s),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
   const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
-  const up=upcoming();
+  const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
   const r=getRank(s);
   const streak=qStreak();
   const lastSnap=lastHormiga();
   const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
-  const nextLiq=upcoming().find(d=>d.daysLeft>=0);
+  // Quincenal calculations
+  const qInc=mInc()/2;
+  const qExp=tExp()/2;
+  const qDebtPay=tDebtPay()/2;
+  const qSav=savAmt()/2;
+  const qFlow=qInc-qExp-qSav-qDebtPay;
 
   document.getElementById('tab-dash').innerHTML=`
   <!-- META -->
@@ -395,36 +400,41 @@ function rDash(){
     <div style="color:${sc};margin:8px 0 4px;font-size:16px;font-weight:bold">${r.emoji} ${r.name}</div>
     ${streak>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:12px">🔥 Racha: ${streak} quincena${streak>1?'s':''} consecutiva${streak>1?'s':''}</div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Sube tu primer CSV para iniciar tu racha</div>`}
     <div class="pw" style="max-width:220px;margin:0 auto 6px;height:7px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
-    <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'} (${s<100?RANKS.find(rk=>rk.min>s)?.min||'—':'100'})</div>
+    <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'}</div>
   </div>
 
-  <!-- KPIs -->
-  <div class="g3" style="margin-bottom:13px">
-    ${kpi('💰 Ingreso mensual',fx(mInc()),'var(--sage)',`+ ${fx(mBonus())}/mes bono prorr.`)}
-    ${kpi('💾 Ahorro reservado',fx(savAmt()),'var(--sage)',S.savPct+'% — págate primero')}
-    ${kpi('📋 Gastos fijos',fx(tExp()),'var(--terra)',S.exp.length+' conceptos')}
+  <!-- KPIs QUINCENALES -->
+  <div class="g2" style="margin-bottom:13px">
+    ${kpi('💰 Ingreso/qna',fx(Math.round(qInc)),'var(--sage)',`${fx(mInc())}/mes`)}
+    ${kpi('💾 Ahorro/qna',fx(Math.round(qSav)),'var(--sage)',S.savPct+'% — págate primero')}
   </div>
-  <div class="g3" style="margin-bottom:13px">
-    ${kpi('🌊 Flujo libre',fx(ff),ff>=0?'var(--sage)':'var(--terra)',ff>=0?'Después de todo':'⚠ Déficit')}
-    ${kpi('🐜 Gastos hormiga',hormigaTotal?fx(hormigaTotal):'—',hormigaTotal?'var(--amber)':'var(--muted)',lastSnap?'Último análisis':'Sube CSV en Mi Quincena')}
-    ${kpi('📅 Próx. liquidación',nextLiq?nextLiq.daysLeft+'d':'—',nextLiq&&nextLiq.daysLeft<=15?'var(--terra)':'var(--sky)',nextLiq?nextLiq.name:'Sin liquidaciones')}
+  <div class="g2" style="margin-bottom:13px">
+    ${kpi('📋 Gastos fijos/qna',fx(Math.round(qExp)),'var(--terra)',S.exp.length+' conceptos')}
+    ${kpi('⛓️ Pagos deuda/qna',fx(Math.round(qDebtPay)),'var(--sky)',S.debts.length+' créditos')}
+  </div>
+  <div class="g2" style="margin-bottom:13px">
+    ${kpi('🐜 Gastos hormiga',hormigaTotal?fx(hormigaTotal):'—',hormigaTotal?'var(--amber)':'var(--muted)',lastSnap?'Último análisis':'Sube CSV')}
+    ${kpi('🌊 Disponible/qna',fx(Math.round(qFlow)),qFlow>=0?'var(--sage)':'var(--terra)',qFlow>=0?'Después de todo':'⚠ Déficit')}
   </div>
 
-  <!-- PROYECCIÓN QUINCENA -->
-  ${up.length>0?`
-  <div class="card card-amber">
-    <div class="ct">📅 Próximas Liquidaciones</div>
-    ${up.map(d=>{
-      const urgent=d.daysLeft<=5,soon=d.daysLeft<=15;
-      const col=urgent?'var(--terra)':soon?'var(--amber)':'var(--sky)';
+  <!-- LIQUIDACIONES URGENTES (esta quincena) -->
+  ${urgentLiqs.length>0?`
+  <div class="card card-red">
+    <div class="ct">🚨 Se vencen esta quincena</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Deudas que debes cubrir en los próximos 15 días:</div>
+    ${urgentLiqs.map(d=>{
+      const col=d.daysLeft<=3?'var(--terra)':'var(--amber)';
       return`<div class="ql-item">
         <div class="ql-dot" style="background:${col}"></div>
         <div style="flex:1">
           <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}<span style="color:${col};font-weight:bold">${fx(d.bal)}</span></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtDate(d.liqDate)} · <span style="color:${col}">${d.daysLeft===0?'HOY':d.daysLeft<0?'VENCIDA':d.daysLeft+' días'}</span>${d.pay?` · ${fx(d.pay)}/${freqShort(d.freq||'mensual')}${(d.freq&&d.freq!=='mensual')?' = '+fx(Math.round(toMonthly(d.pay,d.freq)))+'/mes':''}`:''}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtDate(d.liqDate)} · <span style="color:${col};font-weight:bold">${d.daysLeft===0?'HOY':d.daysLeft<0?'VENCIDA':d.daysLeft+' días'}</span>${d.pay?` · Pago: ${fx(d.pay)}/${freqShort(d.freq||'mensual')}`:''}</div>
         </div>
       </div>`;
     }).join('')}
+    <div style="border-top:1px solid rgba(184,92,74,.2);margin-top:10px;padding-top:10px">
+      <div class="row-b"><span style="font-size:12px;color:var(--terra);font-weight:bold">Total a cubrir esta quincena:</span><span style="font-size:16px;color:var(--terra);font-weight:bold">${fx(urgentLiqs.reduce((a,d)=>a+d.bal,0))}</span></div>
+    </div>
   </div>`:''}
 
   <!-- PATRIMONIO -->
@@ -440,10 +450,10 @@ function rDash(){
   <div class="card">
     <div class="ct">🪙 Págate Primero — Regla de Babilonia</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto.</div>
-    <div class="row-b" style="margin-bottom:9px"><span style="font-size:13px">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span><span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(savAmt())}/mes</span></div>
+    <div class="row-b" style="margin-bottom:9px"><span style="font-size:13px">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span><span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(Math.round(savAmt()/2))}/qna</span></div>
     <input type="range" min="1" max="30" value="${S.savPct}" style="width:100%;margin-bottom:5px"
-      oninput="pt({savPct:+this.value});document.getElementById('spct').textContent=this.value+'% = '+fx(mInc()*this.value/100)+'/mes';hdrUp()">
-    <div id="spct" style="font-size:11px;color:var(--sage);text-align:right">${S.savPct}% = ${fx(savAmt())}/mes</div>
+      oninput="pt({savPct:+this.value});rDash();">
+    <div style="font-size:11px;color:var(--sage);text-align:right">${S.savPct}% = ${fx(Math.round(savAmt()/2))}/qna (${fx(savAmt())}/mes)</div>
   </div>
 
   <!-- PRINCIPIO -->
@@ -456,7 +466,7 @@ function rDash(){
   <div class="card">
     <div class="ct">📊 Resumen de actividad</div>
     <div class="row-b" style="font-size:12px;color:var(--txt2)">
-      <span>${S.snapshots.length} capítulo${S.snapshots.length!==1?'s':''} escrito${S.snapshots.length!==1?'s':''}</span>
+      <span>${S.snapshots.length} capítulo${S.snapshots.length!==1?'s':''}</span>
       <span>${S.waitList.filter(w=>!w.bought&&w.resolved).length} compras impulsivas evitadas</span>
     </div>
   </div>
@@ -674,13 +684,10 @@ const QUICK_EXP=[
 ];
 let dStrat='snowball';
 let editDebtId=null;
-let viewPeriod='quincenal'; // 'quincenal' or 'mensual'
 
 function rFlujo(){
   const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});
   const maxC=Math.max(...Object.values(bc),1);
-  const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
-  const avgR=S.debts.length&&S.debts.some(d=>d.rate)?(S.debts.reduce((a,d)=>a+(+d.rate||0),0)/S.debts.filter(d=>d.rate).length).toFixed(1):null;
   const up=upcoming();
 
   document.getElementById('tab-flujo').innerHTML=`
@@ -694,8 +701,8 @@ function rFlujo(){
     </div>
     <div class="card card-grn" style="margin-bottom:0">
       <div class="row-b">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso mensual efectivo</div><div class="stat" style="color:var(--sage)">${fx(mInc())}</div></div>
-        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Bono prorrateado</div><div style="font-size:16px;font-weight:bold;color:var(--sky)">+ ${fx(mBonus())}/mes</div></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso quincenal</div><div class="stat" style="color:var(--sage)">${fx(Math.round(mInc()/2))}</div></div>
+        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Mensual</div><div style="font-size:16px;font-weight:bold;color:var(--sky)">${fx(mInc())}</div></div>
       </div>
     </div>
   </div>
@@ -719,31 +726,17 @@ function rFlujo(){
     `;})()}
   </div>
 
-  <!-- PERIODO TOGGLE -->
-  <div class="card" style="padding:10px 18px">
-    <div class="row-b">
-      <span style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Ver cifras en:</span>
-      <div class="row" style="gap:4px">
-        <button class="btn btn-sm ${viewPeriod==='quincenal'?'btn-sage':'btn-ghost'}" onclick="viewPeriod='quincenal';rFlujo()">Quincenal</button>
-        <button class="btn btn-sm ${viewPeriod==='mensual'?'btn-sage':'btn-ghost'}" onclick="viewPeriod='mensual';rFlujo()">Mensual</button>
-      </div>
-    </div>
+  <!-- RESUMEN GASTOS -->
+  <div class="g2" style="margin-bottom:13px">
+    ${kpi('📋 Gastos fijos',fx(tExp())+'/mes','var(--terra)',fx(Math.round(tExp()/2))+'/qna · '+S.exp.length+' conceptos')}
+    ${kpi('⛓️ Pagos deudas',fx(tDebtPay())+'/mes','var(--sky)',fx(Math.round(tDebtPay()/2))+'/qna · '+S.debts.length+' créditos')}
   </div>
-
-  <!-- RESUMEN FLUJO -->
-  <div class="g3" style="margin-bottom:13px">
-    ${kpi('📋 Gastos fijos',fx(Math.round(toPeriod(tExp()))),'var(--terra)',S.exp.length+' conceptos')}
-    ${kpi('⛓️ Pagos deudas',fx(Math.round(toPeriod(tDebtPay()))),'var(--sky)',S.debts.length+' créditos')}
-    ${kpi('🌊 Flujo libre',fx(Math.round(toPeriod(flow()))),flow()>=0?'var(--sage)':'var(--terra)',flow()>=0?'Disponible'+perLbl():'⚠ Déficit')}}
-  </div>
-
-  ${flow()<0?`<div class="card card-red"><div style="color:var(--terra);font-weight:bold;margin-bottom:6px">⚠ Déficit de ${fx(Math.round(Math.abs(toPeriod(flow()))))}${perLbl()}</div><div style="font-size:12px;color:var(--txt2)">Tus gastos + pagos de deuda + ahorro superan tu ingreso.</div></div>`:''}
 
   <!-- LISTA GASTOS -->
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const shown=toPeriod(mo);const fBdg=freqName(f);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--terra);font-weight:bold">${fx(Math.round(shown))}${perLbl()}</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--terra);font-weight:bold">${fx(Math.round(mo))}/mes</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   <!-- DISTRIBUCIÓN -->
-  ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría${perLbl()}</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([c,t])=>{const shown=toPeriod(t);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(shown))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`;}).join('')}</div>`:''}
+  ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
 
   <!-- ═══ DEUDAS ═══ -->
   <div class="card">
@@ -759,30 +752,29 @@ function rFlujo(){
       <div style="display:flex;align-items:flex-end"><div id="debtMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">${ed?freqLabel(ed.pay,df):''}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
-      <div><label>Tasa anual % <span style="text-transform:none;font-style:italic">(opcional)</span></label><input type="number" id="dr" placeholder="36" value="${ed&&ed.rate?ed.rate:''}"></div>
+      <div><label>Tasa anual %</label><input type="number" id="dr" placeholder="36" value="${ed&&ed.rate?ed.rate:''}"></div>
       <div><label>Fecha de liquidación</label><input type="date" id="dliq" value="${ed?ed.liqDate||'':''}"></div>
-      <div><label>Nota <span style="text-transform:none;font-style:italic">(opcional)</span></label><input type="text" id="dnote" placeholder="Vence quincena, etc." value="${ed?ed.note||'':''}"></div>
+      <div><label>Nota</label><input type="text" id="dnote" placeholder="Vence quincena..." value="${ed?ed.note||'':''}"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:10px;margin-bottom:12px">
       <div><label>Mensualidad actual</label><input type="number" id="dcur" placeholder="5" min="1" value="${ed&&ed.curPay?ed.curPay:''}"></div>
       <div><label>Total de meses</label><input type="number" id="dtot" placeholder="12" min="1" value="${ed&&ed.totalPays?ed.totalPays:''}"></div>
-      <div style="display:flex;align-items:flex-end"><div style="font-size:11px;color:var(--muted);padding-bottom:11px;line-height:1.5">Para compras a meses (MSI) o financiamientos. Ej: <strong>5 de 12</strong></div></div>
+      <div style="display:flex;align-items:flex-end"><div style="font-size:11px;color:var(--muted);padding-bottom:11px">Ej: <strong>5 de 12</strong></div></div>
     </div>
     ${editDebtId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="saveDebt()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="cancelEdit()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addDebt()">+ Agregar deuda</button>`}
     `;})()}
   </div>
 
   <!-- DEUDA KPIs -->
-  <div class="g3" style="margin-bottom:13px">
+  <div class="g2" style="margin-bottom:13px">
     ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?S.debts.length+' créditos':'¡Sin deudas!')}
-    ${kpi('📅 Pagos mensuales',fx(tDebtPay()),'var(--sky)','Comprometido/mes')}
-    ${kpi('📈 Tasa prom.',avgR?avgR+'%':'—',avgR?'var(--terra)':'var(--muted)',avgR?'Interés anual':'Sin interés reg.')}
+    ${kpi('📈 Tasa prom.',up.length>0?(S.debts.reduce((a,d)=>a+(+d.rate||0),0)/S.debts.filter(d=>d.rate).length||0).toFixed(1)+'%':'—',up.length?'var(--terra)':'var(--muted)','Interés anual')}
   </div>
 
-  <!-- LIQUIDACIONES -->
+  <!-- TODAS LAS DEUDAS CON EDIT/DELETE -->
   ${up.length>0?`
-  <div class="card card-amber">
-    <div class="ct">📅 Liquidaciones Programadas</div>
+  <div class="card">
+    <div class="ct">📅 Todas las deudas con fecha de liquidación</div>
     ${up.map(d=>{
       const urgent=d.daysLeft<=5,soon=d.daysLeft<=15;
       const col=urgent?'var(--terra)':soon?'var(--amber)':'var(--sky)';
@@ -791,56 +783,128 @@ function rFlujo(){
         <div class="ql-dot" style="background:${col}"></div>
         <div style="flex:1">
           <div class="row-b"><div class="row"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}${d.note?`<span class="badge bdg-amber">${d.note}</span>`:''}</div><div class="row"><span style="color:${col};font-weight:bold">${fx(d.bal)}</span><button class="btn btn-ghost btn-sm" onclick="editDebt(${d.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:3px">Liquida: ${fmtDate(d.liqDate)} · <span style="color:${col};font-weight:bold">${label}</span>${d.pay?` · Pago: ${fx(d.pay)}/${freqShort(d.freq||'mensual')}${(d.freq&&d.freq!=='mensual')?' = '+fx(Math.round(toMonthly(d.pay,d.freq)))+'/mes':''}`:''}${freqName(d.freq||'mensual')?` · <span class="badge bdg-sky" style="font-size:9px">${freqName(d.freq)}</span>`:''}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">Liquida: ${fmtDate(d.liqDate)} · <span style="color:${col};font-weight:bold">${label}</span>${d.pay?` · Pago: ${fx(d.pay)}/${freqShort(d.freq||'mensual')}${(d.freq&&d.freq!=='mensual')?' = '+fx(Math.round(toMonthly(d.pay,d.freq)))+'/mes':''}`:''}</div>
         </div>
       </div>`;
     }).join('')}
   </div>`:''}
 
-  ${S.debts.length>0?`
-  <!-- ESTRATEGIA -->
+  <!-- DEUDAS SIN FECHA -->
+  ${S.debts.filter(d=>!d.liqDate).length>0?`
   <div class="card">
-    <div class="ct">Plan de ataque mensual</div>
-    <div class="g2" style="margin-bottom:13px">
-      <div onclick="dStrat='snowball';rFlujo()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'}">
-        <div style="font-weight:bold;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Liquida la más pequeña primero.</div>
+    <div class="ct">Deudas sin fecha de liquidación</div>
+    ${S.debts.filter(d=>!d.liqDate).map(d=>`<div class="row-b" style="padding:10px 0;border-bottom:1px solid var(--border)">
+      <div class="row"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
+      <div class="row"><span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span>${d.pay?`<span style="font-size:11px;color:var(--muted)">${fx(d.pay)}/${freqShort(d.freq||'mensual')}</span>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="editDebt(${d.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div>
+    </div>`).join('')}
+  </div>`:''}
+  `;
+}
+
+// ══ PLAN DE ACCIÓN ═════════════════════════════════
+function rPlan(){
+  const qInc=mInc()/2;
+  const qExp=tExp()/2;
+  const qSav=savAmt()/2;
+  const qDebtPay=tDebtPay()/2;
+  const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
+  const urgentTotal=urgentLiqs.reduce((a,d)=>a+d.bal,0);
+  const nextLiqs=upcoming().filter(d=>d.daysLeft>15&&d.daysLeft<=30);
+  const nextTotal=nextLiqs.reduce((a,d)=>a+d.bal,0);
+  const qDisponible=qInc-qExp-qSav-qDebtPay;
+  const qConLiqs=qDisponible-urgentTotal;
+  const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
+  const lastSnap=lastHormiga();
+  const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
+
+  document.getElementById('tab-plan').innerHTML=`
+  <div class="card card-sage">
+    <div class="ct">🎯 Plan de Acción — Esta Quincena</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Basado en tu ingreso, gastos y deudas registradas. Aquí ves exactamente cómo se distribuye tu quincena.</div>
+  </div>
+
+  <!-- WATERFALL QUINCENAL -->
+  <div class="card">
+    <div class="ct">💰 Flujo de tu quincena</div>
+    <div style="font-size:13px;line-height:2.4">
+      <div class="row-b"><span style="color:var(--sage)">💰 Ingreso quincenal</span><strong style="color:var(--sage)">${fx(Math.round(qInc))}</strong></div>
+      <div class="row-b"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(qExp))}</strong></div>
+      <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(qSav))}</strong></div>
+      <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(qDebtPay))}</strong></div>
+      <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
+        <span style="font-weight:bold;color:var(--txt)">= Disponible</span>
+        <strong style="font-size:18px;color:${qDisponible>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(qDisponible))}</strong>
       </div>
-      <div onclick="dStrat='avalanche';rFlujo()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='avalanche'?'var(--sage)':'var(--border)'};background:${dStrat==='avalanche'?'var(--sagedim2)':'var(--bg)'}">
+      ${urgentTotal>0?`
+      <div class="row-b" style="margin-top:4px"><span style="color:var(--terra)">🚨 − Liquidaciones esta qna</span><strong style="color:var(--terra)">−${fx(urgentTotal)}</strong></div>
+      <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
+        <span style="font-weight:bold;color:var(--txt)">= Realmente te queda</span>
+        <strong style="font-size:18px;color:${qConLiqs>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(qConLiqs))}</strong>
+      </div>`:''}
+    </div>
+    ${qConLiqs<0||qDisponible<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(qConLiqs<0?qConLiqs:qDisponible))}</strong> esta quincena. Revisa si puedes diferir algún pago, reducir gastos hormiga (${hormigaTotal?fx(hormigaTotal)+' último periodo':'sube tu CSV'}), o usar parte del bono semestral.</div>`:''}
+    ${qConLiqs>0&&qDisponible>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te sobran <strong>${fx(Math.round(qConLiqs>0?qConLiqs:qDisponible))}</strong> esta quincena. Sugerencia: abona a la deuda más pequeña para avanzar en tu bola de nieve.</div>`:''}
+  </div>
+
+  <!-- LIQUIDACIONES ESTA QUINCENA -->
+  ${urgentLiqs.length>0?`
+  <div class="card card-red">
+    <div class="ct">🚨 Debes cubrir esta quincena</div>
+    ${urgentLiqs.map(d=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(184,92,74,.15)">
+      <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
+      <div class="row"><span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span><span style="font-size:10px;color:var(--muted)">${d.daysLeft}d</span></div>
+    </div>`).join('')}
+    <div class="row-b" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(184,92,74,.2)"><strong style="color:var(--terra)">Total:</strong><strong style="color:var(--terra);font-size:16px">${fx(urgentTotal)}</strong></div>
+  </div>`:''}
+
+  <!-- PRÓXIMA QUINCENA -->
+  ${nextLiqs.length>0?`
+  <div class="card card-amber">
+    <div class="ct">📅 Siguiente quincena (15-30 días)</div>
+    ${nextLiqs.map(d=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid rgba(160,112,48,.15);font-size:12px">
+      <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
+      <span style="color:var(--amber);font-weight:bold">${fx(d.bal)} · ${d.daysLeft}d</span>
+    </div>`).join('')}
+    <div class="row-b" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(160,112,48,.2)"><strong style="color:var(--amber)">Total:</strong><strong style="color:var(--amber)">${fx(nextTotal)}</strong></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px">Ve preparando este monto para la quincena que sigue.</div>
+  </div>`:''}
+
+  <!-- ESTRATEGIA BOLA DE NIEVE -->
+  ${S.debts.length>0?`
+  <div class="card">
+    <div class="ct">Plan de ataque — Orden de prioridad</div>
+    <div class="g2" style="margin-bottom:13px">
+      <div onclick="dStrat='snowball';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'}">
+        <div style="font-weight:bold;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Primero la más pequeña.</div>
+      </div>
+      <div onclick="dStrat='avalanche';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='avalanche'?'var(--sage)':'var(--border)'};background:${dStrat==='avalanche'?'var(--sagedim2)':'var(--bg)'}">
         <div style="font-weight:bold;color:${dStrat==='avalanche'?'var(--sage2)':'var(--txt)'}">🏔️ Avalancha</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Liquida la de mayor tasa.</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Primero la de mayor tasa.</div>
       </div>
     </div>
     ${sorted.map((d,i)=>{
-      const moPayment=toMonthly(d.pay||0,d.freq||'mensual');
-      const mos=moPayment>0?Math.ceil(d.bal/moPayment):'?';
-      const liqEst=moPayment>0?new Date(new Date().getFullYear(),new Date().getMonth()+mos,1).toLocaleDateString('es-MX',{month:'short',year:'numeric'}):'';
-      const df=d.freq||'mensual';
-      return`<div style="padding:13px 0;border-bottom:1px solid var(--border)">
-        <div class="row-b" style="margin-bottom:6px">
+      const moP=toMonthly(d.pay||0,d.freq||'mensual');
+      return`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div class="row-b">
           <div class="row"><span class="badge ${i===0?'bdg-sage':'bdg-sky'}">${i===0?'🎯 AHORA':'#'+(i+1)}</span><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
-          <div class="row">${d.rate?`<span class="badge bdg-red">${d.rate}%</span>`:''}
-            <span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span></div>
+          <div class="row">${d.rate?`<span class="badge bdg-red">${d.rate}%</span>`:''}<span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span></div>
         </div>
-        <div class="row" style="gap:16px;font-size:11px;color:var(--muted)">
-          ${d.pay?`<span>Pago: <strong style="color:var(--sky)">${fx(d.pay)}/${freqShort(df)}</strong>${df!=='mensual'?' = '+fx(Math.round(moPayment))+'/mes':''}</span>`:''}
-          ${d.liqDate?`<span>Liquida: <strong style="color:var(--amber)">${fmtDate(d.liqDate)}</strong></span>`:''}
-          ${mos!=='?'&&!d.liqDate?`<span>Est: <strong style="color:var(--sage)">~${mos} meses (${liqEst})</strong></span>`:''}
-        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">${d.pay?'Pago: '+fx(d.pay)+'/'+freqShort(d.freq||'mensual'):''} ${d.liqDate?'· Liquida: '+fmtDate(d.liqDate):''}</div>
       </div>`;
     }).join('')}
-    <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px"><div style="font-size:12px;color:var(--sage)">🔄 Al liquidar la #1, suma ese pago a la #2. Efecto bola de nieve.</div></div>
+    <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">🔄 <strong>Cuando termines de pagar la #1</strong>, toma el dinero que le destinabas cada mes y súmalo al pago de la #2. Así el pago crece como bola de nieve y cada deuda se liquida más rápido que la anterior.</div>
   </div>
 
   ${S.inc.bv>0?`<div class="card card-sky"><div class="ct">💰 Plan para tu Bono Semestral de ${fx(S.inc.bv)}</div>
-    <div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Cuando recibas tu bono, esta es la distribución recomendada para maximizar el impacto en tu libertad financiera:</div>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Cuando recibas tu bono:</div>
     <div style="font-size:13px;line-height:2.3">
-      <div>• <strong style="color:var(--terra)">70%</strong> → <strong>${fx(S.inc.bv*.7)}</strong> — Abono directo a la deuda con mayor tasa de interés. Esto reduce los intereses que pagas cada mes y acelera tu fecha de liquidación.</div>
-      <div>• <strong style="color:var(--sage)">20%</strong> → <strong>${fx(S.inc.bv*.2)}</strong> — Fondo de emergencia. Guárdalo en una cuenta separada (ej: cajón Nu, CETES, Hey Banco) para no tocarlo. Meta: acumular 3 meses de gastos fijos.</div>
-      <div>• <strong style="color:var(--sky)">10%</strong> → <strong>${fx(S.inc.bv*.1)}</strong> — Para celebrar tu avance. Un gusto planeado no es impulso — te lo ganaste.</div>
+      <div>• <strong style="color:var(--terra)">70%</strong> → <strong>${fx(S.inc.bv*.7)}</strong> — Abono directo a deuda con mayor tasa</div>
+      <div>• <strong style="color:var(--sage)">20%</strong> → <strong>${fx(S.inc.bv*.2)}</strong> — Fondo de emergencia (cajón Nu, CETES, Hey Banco)</div>
+      <div>• <strong style="color:var(--sky)">10%</strong> → <strong>${fx(S.inc.bv*.1)}</strong> — Para celebrar tu avance</div>
     </div>
-    ${tDebt()>0?`<div style="background:rgba(74,110,140,.08);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--txt2);line-height:1.7">💡 Si aplicas el 70% (${fx(S.inc.bv*.7)}) a tu deuda de mayor tasa, reduces tu deuda total de ${fx(tDebt())} a ${fx(Math.max(0,tDebt()-S.inc.bv*.7))} — un golpe de ${((S.inc.bv*.7/tDebt())*100).toFixed(0)}% de tu deuda.</div>`:''}</div>`:''}
-  `:`<div class="card" style="text-align:center;padding:40px"><div style="font-size:40px;margin-bottom:12px">🏆</div><div style="color:var(--sage);font-size:18px;font-weight:bold">Sin deudas registradas</div><div style="color:var(--muted);margin-top:8px;font-size:13px">Agrega tus créditos arriba para crear tu plan de ataque.</div></div>`}
+    ${tDebt()>0?`<div style="background:rgba(74,110,140,.08);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--txt2);line-height:1.7">💡 El 70% (${fx(S.inc.bv*.7)}) reduce tu deuda de ${fx(tDebt())} a ${fx(Math.max(0,tDebt()-S.inc.bv*.7))} — un golpe de ${((S.inc.bv*.7/tDebt())*100).toFixed(0)}%.</div>`:''}</div>`:''}`:''}
   `;
 }
 

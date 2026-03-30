@@ -234,7 +234,8 @@ function toast(msg){
 // ══ COMPUTED ════════════════════════════════════════
 const mInc=()=>(+S.inc.sal)+(+S.inc.bf);
 const mBonus=()=>(+S.inc.bv)/6;
-const tExp=()=>S.exp.reduce((a,e)=>a+(+e.amt||0),0);
+const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;return amt;};
+const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
 const savAmt=()=>mInc()*S.savPct/100;
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+(+d.pay||0),0);
 const flow=()=>mInc()-tExp()-savAmt()-tDebtPay();
@@ -670,7 +671,7 @@ let dStrat='snowball';
 let editDebtId=null; // null = adding, number = editing that debt id
 
 function rFlujo(){
-  const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+(+e.amt||0)});
+  const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});
   const maxC=Math.max(...Object.values(bc),1);
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
   const avgR=S.debts.length&&S.debts.some(d=>d.rate)?(S.debts.reduce((a,d)=>a+(+d.rate||0),0)/S.debts.filter(d=>d.rate).length).toFixed(1):null;
@@ -698,11 +699,15 @@ function rFlujo(){
     <div class="ct">${editExpId?'✏️ Editando gasto':'📋 Agregar gasto fijo'}</div>
     ${!editExpId?`<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Acceso rápido:</div>
     <div class="chips">${QUICK_EXP.map(q=>`<button class="chip" onclick="preExp('${q.n.replace(/'/g,"\\'")}','${q.c}')">${q.n}</button>`).join('')}</div>`:''}
-    ${(()=>{const ee=editExpId?S.exp.find(e=>e.id===editExpId):null;return`
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px">
+    ${(()=>{const ee=editExpId?S.exp.find(e=>e.id===editExpId):null;const freq=ee?.freq||'mensual';return`
+    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Concepto</label><input type="text" id="en" placeholder="Nombre del gasto..." value="${ee?ee.name:''}"></div>
-      <div><label>Monto $</label><input type="number" id="ea" placeholder="0" value="${ee?ee.amt:''}"></div>
       <div><label>Categoría</label><select id="ec">${EXP_CATS.map(c=>`<option${ee&&ee.cat===c?' selected':''}>${c}</option>`).join('')}</select></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><label>Monto $</label><input type="number" id="ea" placeholder="0" value="${ee?ee.amt:''}" oninput="prevExpMo()"></div>
+      <div><label>Periodicidad</label><select id="ef" onchange="prevExpMo()"><option value="semanal"${freq==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${freq==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${freq==='mensual'?' selected':''}>Mensual</option></select></div>
+      <div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">${ee?freqLabel(ee.amt,freq):''}</div></div>
     </div>
     ${editExpId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="addExp()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editExpId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addExp()">+ Agregar gasto</button>`}
     `;})()}
@@ -718,7 +723,7 @@ function rFlujo(){
   ${flow()<0?`<div class="card card-red"><div style="color:var(--terra);font-weight:bold;margin-bottom:6px">⚠ Déficit de ${fx(Math.abs(flow()))}/mes</div><div style="font-size:12px;color:var(--txt2)">Tus gastos + pagos de deuda + ahorro superan tu ingreso.</div></div>`:''}
 
   <!-- LISTA GASTOS -->
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span></div><div class="row"><span style="color:var(--terra);font-weight:bold">${fx(e.amt)}</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`).join('')}</div>`:''}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBadge=f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':'';return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBadge?`<span class="badge bdg-sky">${fBadge}</span>`:''}</div><div class="row" style="gap:6px">${f!=='mensual'?`<span style="font-size:10px;color:var(--muted)">${fx(e.amt)}/${f==='semanal'?'sem':'qna'} =</span>`:''}<span style="color:var(--terra);font-weight:bold">${fx(Math.round(mo))}/mes</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   <!-- DISTRIBUCIÓN -->
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([c,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(t)}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
@@ -812,10 +817,12 @@ function rFlujo(){
 }
 
 let editExpId=null;
+function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
+function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
-function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;if(!n||!a)return;
-  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c}:e)});editExpId=null;toast('✓ Gasto actualizado');}
-  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c}]});toast('✓ Gasto registrado');}
+function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';if(!n||!a)return;
+  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f}:e)});editExpId=null;toast('✓ Gasto actualizado');}
+  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f}]});toast('✓ Gasto registrado');}
   rFlujo();}
 function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
 function editExp(id){editExpId=id;rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}

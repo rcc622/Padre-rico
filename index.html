@@ -1207,7 +1207,21 @@ let editExpId=null;
 function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
 function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
-function updExpFields(){rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function updExpFields(){
+  const f=document.getElementById('ef')?.value||'mensual';
+  const wrap=document.getElementById('expExtraFields');
+  if(!wrap)return;
+  if(f==='mensual'){
+    wrap.innerHTML=`<div class="g2" style="margin-bottom:10px"><div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31"></div><div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px"></div></div></div>`;
+  }else if(f==='bimestral'){
+    wrap.innerHTML=`<div class="g2" style="margin-bottom:10px"><div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31"></div><div><label>¿Meses pares o nones?</label><select id="ebm"><option value="par">Pares (feb, abr, jun...)</option><option value="non">Nones (ene, mar, may...)</option></select></div></div>`;
+  }else if(f==='semanal'){
+    wrap.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Se paga cada semana — no necesita día específico. ≈4.33 pagos/mes.</div>`;
+  }else{
+    wrap.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Se paga cada quincena — aplica en ambos ciclos.</div>`;
+  }
+  prevExpMo();
+}
 function nextPayDate(e){
   const f=e.freq||'mensual';const today=new Date();today.setHours(0,0,0,0);
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();

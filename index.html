@@ -190,8 +190,8 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0},savPct:10,exp:[],debts:[],assets:[],
-  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[]};
+let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
+  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal'};
 
 function migrate(){
   // Try loading v4 data first
@@ -242,11 +242,12 @@ const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bim
 const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
 const savAmt=()=>mInc()*S.savPct/100;
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+toMonthly(+d.pay||0,d.freq||'mensual'),0);
-const flow=()=>mInc()-tExp()-savAmt()-tDebtPay();
+const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
 const tDebt=()=>S.debts.reduce((a,d)=>a+(+d.bal||0),0);
 const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
 const nw=()=>tAss()-tDebt();
 const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+(+x.inc||0),0);
+const tExtras=()=>S.extras.reduce((a,x)=>a+toMonthly(+x.amt||0,x.freq||'mensual'),0);
 const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline)-new Date())/864e5))};
 const score=()=>{
   let s=0;if(flow()>0)s+=25;
@@ -376,12 +377,16 @@ function rDash(){
   const streak=qStreak();
   const lastSnap=lastHormiga();
   const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
-  // Quincenal calculations
-  const qInc=mInc()/2;
-  const qExp=tExp()/2;
-  const qDebtPay=tDebtPay()/2;
-  const qSav=savAmt()/2;
-  const qFlow=qInc-qExp-qSav-qDebtPay;
+  // Period calculations
+  const isQ=S.dashPeriod==='quincenal';
+  const div=isQ?2:1;
+  const pLbl=isQ?'/qna':'/mes';
+  const pInc=mInc()/div;
+  const pExp=tExp()/div;
+  const pDebtPay=tDebtPay()/div;
+  const pSav=savAmt()/div;
+  const pExtras=tExtras()/div;
+  const pFlow=pInc+pExtras-pExp-pSav-pDebtPay;
 
   document.getElementById('tab-dash').innerHTML=`
   <!-- META -->
@@ -403,18 +408,30 @@ function rDash(){
     <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'}</div>
   </div>
 
-  <!-- KPIs QUINCENALES -->
+  <!-- PERIODO TOGGLE -->
+  <div class="card" style="padding:10px 18px">
+    <div class="row-b">
+      <span style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Ver cifras:</span>
+      <div class="row" style="gap:4px">
+        <button class="btn btn-sm ${isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'quincenal'});rDash()">Quincenal</button>
+        <button class="btn btn-sm ${!isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'mensual'});rDash()">Mensual</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
   <div class="g2" style="margin-bottom:13px">
-    ${kpi('💰 Ingreso/qna',fx(Math.round(qInc)),'var(--sage)',`${fx(mInc())}/mes`)}
-    ${kpi('💾 Ahorro/qna',fx(Math.round(qSav)),'var(--sage)',S.savPct+'% — págate primero')}
+    ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna')}
+    ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero')}
   </div>
   <div class="g2" style="margin-bottom:13px">
-    ${kpi('📋 Gastos fijos/qna',fx(Math.round(qExp)),'var(--terra)',S.exp.length+' conceptos')}
-    ${kpi('⛓️ Pagos deuda/qna',fx(Math.round(qDebtPay)),'var(--sky)',S.debts.length+' créditos')}
+    ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos')}
+    ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.length+' créditos')}
   </div>
-  <div class="g2" style="margin-bottom:13px">
+  <div class="${tExtras()>0?'g3':'g2'}" style="margin-bottom:13px">
     ${kpi('🐜 Gastos hormiga',hormigaTotal?fx(hormigaTotal):'—',hormigaTotal?'var(--amber)':'var(--muted)',lastSnap?'Último análisis':'Sube CSV')}
-    ${kpi('🌊 Disponible/qna',fx(Math.round(qFlow)),qFlow>=0?'var(--sage)':'var(--terra)',qFlow>=0?'Después de todo':'⚠ Déficit')}
+    ${tExtras()>0?kpi('📈 Extras'+pLbl,'+'+fx(Math.round(pExtras)),'var(--sage)',S.extras.length+' fuentes'):''}
+    ${kpi('🌊 Disponible'+pLbl,fx(Math.round(pFlow)),pFlow>=0?'var(--sage)':'var(--terra)',pFlow>=0?'Después de todo':'⚠ Déficit')}
   </div>
 
   <!-- LIQUIDACIONES URGENTES (esta quincena) -->
@@ -450,7 +467,7 @@ function rDash(){
   <div class="card">
     <div class="ct">🪙 Págate Primero — Regla de Babilonia</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto.</div>
-    <div class="row-b" style="margin-bottom:9px"><span style="font-size:13px">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span><span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(Math.round(savAmt()/2))}/qna</span></div>
+    <div class="row-b" style="margin-bottom:9px"><span style="font-size:13px">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span><span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(Math.round(savAmt()/div))}${pLbl}</span></div>
     <input type="range" min="1" max="30" value="${S.savPct}" style="width:100%;margin-bottom:5px"
       oninput="pt({savPct:+this.value});rDash();">
     <div style="font-size:11px;color:var(--sage);text-align:right">${S.savPct}% = ${fx(Math.round(savAmt()/2))}/qna (${fx(savAmt())}/mes)</div>
@@ -693,18 +710,37 @@ function rFlujo(){
   document.getElementById('tab-flujo').innerHTML=`
   <!-- INGRESOS -->
   <div class="card">
-    <div class="ct">💰 Ingresos mensuales</div>
-    <div class="g3" style="margin-bottom:13px">
-      <div><label>Salario fijo (neto)</label><input type="number" value="${S.inc.sal||''}" placeholder="0" oninput="pt({inc:{...S.inc,sal:+this.value}});rFlujo();hdrUp()"></div>
-      <div><label>Bono fijo mensual</label><input type="number" value="${S.inc.bf||''}" placeholder="0" oninput="pt({inc:{...S.inc,bf:+this.value}});rFlujo();hdrUp()"></div>
-      <div><label>Bono semestral</label><input type="number" value="${S.inc.bv||''}" placeholder="0" oninput="pt({inc:{...S.inc,bv:+this.value}});rFlujo();hdrUp()"></div>
+    <div class="ct">💰 Ingresos</div>
+    <div class="g2" style="margin-bottom:10px">
+      <div><label>Salario fijo mensual (neto)</label><input type="number" value="${S.inc.sal||''}" placeholder="0" oninput="pt({inc:{...S.inc,sal:+this.value}});rFlujo();hdrUp()"></div>
+      <div><label>Bono semestral (estimado)</label><input type="number" value="${S.inc.bv||''}" placeholder="0" oninput="pt({inc:{...S.inc,bv:+this.value}});rFlujo();hdrUp()"></div>
     </div>
+    <div class="g2" style="margin-bottom:10px">
+      <div><label>Bono/Compensación mensual</label><input type="number" value="${S.inc.bf||''}" placeholder="0" oninput="pt({inc:{...S.inc,bf:+this.value}});rFlujo();hdrUp()"></div>
+      <div><label>Día aprox. de pago del bono</label><input type="number" value="${S.inc.bfDate||''}" placeholder="15" min="1" max="31" oninput="pt({inc:{...S.inc,bfDate:+this.value}});rFlujo()"></div>
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-bottom:10px">El bono mensual se suma al ingreso del mes pero se paga una sola vez. Pon el día aproximado para saber en qué quincena cae.</div>
     <div class="card card-grn" style="margin-bottom:0">
       <div class="row-b">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso quincenal</div><div class="stat" style="color:var(--sage)">${fx(Math.round(mInc()/2))}</div></div>
-        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Mensual</div><div style="font-size:16px;font-weight:bold;color:var(--sky)">${fx(mInc())}</div></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso mensual total</div><div class="stat" style="color:var(--sage)">${fx(mInc())}</div></div>
+        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">1ra qna / 2da qna</div><div style="font-size:14px;font-weight:bold;color:var(--sky)">${fx(Math.round(S.inc.sal/2))} / ${fx(Math.round(S.inc.sal/2+(+S.inc.bf||0)))}</div></div>
       </div>
+      ${S.inc.bfDate?`<div style="font-size:10px;color:var(--sage);margin-top:6px">💡 Bono mensual (${fx(S.inc.bf)}) cae ${S.inc.bfDate<=15?'en la 1ra quincena (día '+S.inc.bfDate+')':'en la 2da quincena (día '+S.inc.bfDate+')'}</div>`:''}
     </div>
+  </div>
+
+  <!-- INGRESOS EXTRAS / ACTIVOS -->
+  <div class="card">
+    <div class="ct">📈 Ingresos extras y activos</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Horas extra, freelance, inversiones, rentas, o cualquier ingreso adicional.</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><label>Concepto</label><input type="text" id="xn" placeholder="Horas extra, CETES, freelance..."></div>
+      <div><label>Monto $</label><input type="number" id="xa" placeholder="0"></div>
+      <div><label>Periodicidad</label><select id="xf"><option value="semanal">Semanal</option><option value="quincenal">Quincenal</option><option value="mensual" selected>Mensual</option><option value="bimestral">Bimestral</option></select></div>
+    </div>
+    <button class="btn btn-sage btn-sm" onclick="addExtra()">+ Agregar ingreso extra</button>
+    ${S.extras.length>0?`<div style="margin-top:12px">${S.extras.map(x=>{const mo=toMonthly(x.amt,x.freq||'mensual');return`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span>${freqName(x.freq||'mensual')?`<span class="badge bdg-sky">${freqName(x.freq)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(Math.round(mo))}/mes</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`;}).join('')}
+    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total extras:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">+${fx(Math.round(tExtras()))}/mes</span></div></div>`:''}
   </div>
 
   <!-- GASTOS FIJOS -->
@@ -717,9 +753,10 @@ function rFlujo(){
       <div><label>Concepto</label><input type="text" id="en" placeholder="Nombre del gasto..." value="${ee?ee.name:''}"></div>
       <div><label>Categoría</label><select id="ec">${EXP_CATS.map(c=>`<option${ee&&ee.cat===c?' selected':''}>${c}</option>`).join('')}</select></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Monto $</label><input type="number" id="ea" placeholder="0" value="${ee?ee.amt:''}" oninput="prevExpMo()"></div>
       <div><label>Periodicidad</label><select id="ef" onchange="prevExpMo()"><option value="semanal"${freq==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${freq==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${freq==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${freq==='bimestral'?' selected':''}>Bimestral</option></select></div>
+      <div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="1" min="1" max="31" value="${ee&&ee.payDay?ee.payDay:''}"></div>
       <div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">${ee?freqLabel(ee.amt,freq):''}</div></div>
     </div>
     ${editExpId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="addExp()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editExpId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addExp()">+ Agregar gasto</button>`}
@@ -733,7 +770,7 @@ function rFlujo(){
   </div>
 
   <!-- LISTA GASTOS -->
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--terra);font-weight:bold">${fx(Math.round(mo))}/mes</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.payDay?`<span style="font-size:10px;color:var(--muted)">día ${e.payDay}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--terra);font-weight:bold">${fx(Math.round(mo))}/mes</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   <!-- DISTRIBUCIÓN -->
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
@@ -805,6 +842,7 @@ function rFlujo(){
 // ══ PLAN DE ACCIÓN ═════════════════════════════════
 function rPlan(){
   const qInc=mInc()/2;
+  const qExtras=tExtras()/2;
   const qExp=tExp()/2;
   const qSav=savAmt()/2;
   const qDebtPay=tDebtPay()/2;
@@ -812,7 +850,7 @@ function rPlan(){
   const urgentTotal=urgentLiqs.reduce((a,d)=>a+d.bal,0);
   const nextLiqs=upcoming().filter(d=>d.daysLeft>15&&d.daysLeft<=30);
   const nextTotal=nextLiqs.reduce((a,d)=>a+d.bal,0);
-  const qDisponible=qInc-qExp-qSav-qDebtPay;
+  const qDisponible=qInc+qExtras-qExp-qSav-qDebtPay;
   const qConLiqs=qDisponible-urgentTotal;
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
   const lastSnap=lastHormiga();
@@ -821,7 +859,7 @@ function rPlan(){
   document.getElementById('tab-plan').innerHTML=`
   <div class="card card-sage">
     <div class="ct">🎯 Plan de Acción — Esta Quincena</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Basado en tu ingreso, gastos y deudas registradas. Aquí ves exactamente cómo se distribuye tu quincena.</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Basado en tu ingreso, gastos y deudas registradas.</div>
   </div>
 
   <!-- WATERFALL QUINCENAL -->
@@ -829,6 +867,7 @@ function rPlan(){
     <div class="ct">💰 Flujo de tu quincena</div>
     <div style="font-size:13px;line-height:2.4">
       <div class="row-b"><span style="color:var(--sage)">💰 Ingreso quincenal</span><strong style="color:var(--sage)">${fx(Math.round(qInc))}</strong></div>
+      ${qExtras>0?`<div class="row-b"><span style="color:var(--sage)">📈 + Ingresos extras</span><strong style="color:var(--sage)">+${fx(Math.round(qExtras))}</strong></div>`:''}
       <div class="row-b"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(qExp))}</strong></div>
       <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(qSav))}</strong></div>
       <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(qDebtPay))}</strong></div>
@@ -913,12 +952,14 @@ function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(fr
 function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
-function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';if(!n||!a)return;
-  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f}:e)});editExpId=null;toast('✓ Gasto actualizado');}
-  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f}]});toast('✓ Gasto registrado');}
+function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';const pd=+(document.getElementById('epd')?.value)||0;if(!n||!a)return;
+  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd}:e)});editExpId=null;toast('✓ Gasto actualizado');}
+  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd}]});toast('✓ Gasto registrado');}
   rFlujo();}
 function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
 function editExp(id){editExpId=id;rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const f=document.getElementById('xf')?.value||'mensual';if(!n||!a)return;pt({extras:[...S.extras,{id:Date.now(),name:n,amt:a,freq:f}]});toast('✓ Ingreso extra registrado');rFlujo();}
+function rmExtra(id){pt({extras:S.extras.filter(x=>x.id!==id)});toast('Ingreso extra eliminado');rFlujo();}
 function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,rate:+(document.getElementById('dr')?.value)||0,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0}]});toast('⛓️ Deuda registrada');rFlujo();}
 function rmDebt(id){pt({debts:S.debts.filter(d=>d.id!==id)});editDebtId=null;toast('Deuda eliminada');rFlujo();}
 function editDebt(id){editDebtId=id;rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}

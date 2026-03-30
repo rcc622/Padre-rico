@@ -778,11 +778,15 @@ function rFlujo(){
       <div><label>Concepto</label><input type="text" id="en" placeholder="Nombre del gasto..." value="${ee?ee.name:''}"></div>
       <div><label>Categoría</label><select id="ec">${EXP_CATS.map(c=>`<option${ee&&ee.cat===c?' selected':''}>${c}</option>`).join('')}</select></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Monto $</label><input type="number" id="ea" placeholder="0" value="${ee?ee.amt:''}" oninput="prevExpMo()"></div>
-      <div><label>Periodicidad</label><select id="ef" onchange="prevExpMo()"><option value="semanal"${freq==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${freq==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${freq==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${freq==='bimestral'?' selected':''}>Bimestral</option></select></div>
-      <div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="1" min="1" max="31" value="${ee&&ee.payDay?ee.payDay:''}"></div>
-      <div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">${ee?freqLabel(ee.amt,freq):''}</div></div>
+      <div><label>Periodicidad</label><select id="ef" onchange="prevExpMo();updExpFields()"><option value="semanal"${freq==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${freq==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${freq==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${freq==='bimestral'?' selected':''}>Bimestral</option></select></div>
+    </div>
+    <div id="expExtraFields">
+      ${freq==='mensual'||freq==='bimestral'?`<div class="g2" style="margin-bottom:10px">
+        <div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31" value="${ee&&ee.payDay?ee.payDay:''}"></div>
+        ${freq==='bimestral'?`<div><label>¿Meses pares o nones?</label><select id="ebm"><option value="par"${ee&&ee.bimMeses==='par'?' selected':''}>Pares (feb, abr, jun...)</option><option value="non"${ee&&ee.bimMeses==='non'?' selected':''}>Nones (ene, mar, may...)</option></select></div>`:`<div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">${ee?freqLabel(ee.amt,freq):''}</div></div>`}
+      </div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">${freq==='semanal'?'Se paga cada semana — no necesita día específico. ≈4.33 pagos/mes.':'Se paga cada quincena — aplica en ambos ciclos.'}</div>`}
     </div>
     ${editExpId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="addExp()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editExpId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addExp()">+ Agregar gasto</button>`}
     `;})()}
@@ -795,7 +799,7 @@ function rFlujo(){
   </div>
 
   <!-- LISTA GASTOS -->
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.payDay?`<span style="font-size:10px;color:var(--muted)">día ${e.payDay}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--terra);font-weight:bold">${fx(Math.round(mo))}/mes</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=daysUntil<=3;return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Meses pares':'Meses nones'}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   <!-- DISTRIBUCIÓN -->
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
@@ -954,13 +958,34 @@ function rPlan(){
   let expQ=0;
   const expDetail=[];
   S.exp.forEach(e=>{
-    const mo=toMonthly(+e.amt||0,e.freq||'mensual');
+    const f=e.freq||'mensual';
+    const mo=toMonthly(+e.amt||0,f);
     const pd=+(e.payDay)||0;
-    if(pd>0){
-      if(dayInCycle(pd)){expQ+=mo;expDetail.push({name:e.name,amt:mo,day:pd});}
-    }else{
+
+    if(f==='semanal'||f==='quincenal'){
+      // Always split evenly — these happen every period
       expQ+=mo/2;
-      expDetail.push({name:e.name,amt:mo/2,day:0});
+      expDetail.push({name:e.name,amt:mo/2,day:0,freq:f});
+    }else if(f==='bimestral'){
+      // Check if this cycle's month matches par/non
+      const bm=e.bimMeses||'par';
+      // The cycle might span two months (e.g. 30 mar → 14 apr). Check the month where payDay falls.
+      const isPar=m2=>(m2+1)%2===0;
+      const isTarget=bm==='par'?isPar:(m2)=>!isPar(m2);
+      if(pd>0&&dayInCycle(pd)){
+        // payDay is in this cycle — check if month matches
+        const testM=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();
+        if(isTarget(testM)){expQ+=e.amt;expDetail.push({name:e.name,amt:e.amt,day:pd,freq:f,note:bm==='par'?'mes par':'mes non'});}
+      }else if(!pd){
+        expQ+=mo/2;expDetail.push({name:e.name,amt:mo/2,day:0,freq:f});
+      }
+    }else{
+      // Mensual — use dayInCycle
+      if(pd>0){
+        if(dayInCycle(pd)){expQ+=mo;expDetail.push({name:e.name,amt:mo,day:pd,freq:f});}
+      }else{
+        expQ+=mo/2;expDetail.push({name:e.name,amt:mo/2,day:0,freq:f});
+      }
     }
   });
 
@@ -1078,7 +1103,7 @@ function rPlan(){
   ${expDetail.length>0?`<div class="card">
     <div class="ct">📋 Gastos del ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
     ${expDetail.map(e=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-      <div class="row"><span style="color:var(--txt)">${e.name}</span>${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}</div>
+      <div class="row"><span style="color:var(--txt)">${e.name}</span>${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}${e.freq&&(e.freq==='semanal'||e.freq==='quincenal')?`<span style="font-size:10px;color:var(--sky)">${freqName(e.freq)}</span>`:''}${e.note?`<span style="font-size:10px;color:var(--amber)">${e.note}</span>`:''}</div>
       <span style="color:var(--terra);font-weight:bold">${fx(Math.round(e.amt))}</span>
     </div>`).join('')}
     <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--terra)"><strong style="color:var(--terra)">Total:</strong><strong style="color:var(--terra)">${fx(Math.round(expQ))}</strong></div>
@@ -1182,10 +1207,28 @@ let editExpId=null;
 function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
 function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
+function updExpFields(){rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function nextPayDate(e){
+  const f=e.freq||'mensual';const today=new Date();today.setHours(0,0,0,0);
+  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+  if(f==='semanal'){const next=new Date(today);next.setDate(d+(7-today.getDay())%7||7);return next;}
+  if(f==='quincenal'){if(d<=15)return new Date(y,m,15);return new Date(y,m+1,1);}
+  if(f==='mensual'){const pd=+(e.payDay)||1;if(pd>=d)return new Date(y,m,pd);return new Date(y,m+1,pd);}
+  if(f==='bimestral'){
+    const pd=+(e.payDay)||1;const bm=e.bimMeses||'par';
+    const isPar=m2=>(m2+1)%2===0;const isTarget=bm==='par'?isPar:m2=>!isPar(m2);
+    if(isTarget(m)&&pd>=d)return new Date(y,m,pd);
+    for(let i=1;i<=3;i++){const nm=m+i;if(isTarget(nm))return new Date(y,nm,pd);}
+    return new Date(y,m+2,pd);
+  }
+  return today;
+}
 function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
-function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';const pd=+(document.getElementById('epd')?.value)||0;if(!n||!a)return;
-  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd}:e)});editExpId=null;toast('✓ Gasto actualizado');}
-  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd}]});toast('✓ Gasto registrado');}
+function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';if(!n||!a)return;
+  const pd=(f==='mensual'||f==='bimestral')?(+(document.getElementById('epd')?.value)||0):0;
+  const bm=f==='bimestral'?(document.getElementById('ebm')?.value||'par'):'';
+  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}:e)});editExpId=null;toast('✓ Gasto actualizado');}
+  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}]});toast('✓ Gasto registrado');}
   rFlujo();}
 function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
 function editExp(id){editExpId=id;rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}

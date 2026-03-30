@@ -250,9 +250,14 @@ const nw=()=>tAss()-tDebt();
 const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+(+x.inc||0),0);
 const tExtras=()=>{
   let total=0;
+  const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
   S.extras.forEach(x=>{
     if(x.tipo==='recurrente')total+=toMonthly(+x.amt||0,x.freq||'mensual');
-    else total+=(+x.amt||0); // unique: count once as-is
+    else{
+      // Unique: only count if date is in current month (approx)
+      if(x.date){const d=new Date(x.date+'T12:00');if(d.getMonth()===cm&&d.getFullYear()===cy)total+=(+x.amt||0);}
+      else total+=(+x.amt||0);
+    }
   });
   return total;
 };
@@ -745,19 +750,21 @@ function rFlujo(){
   <div class="card">
     <div class="ct">📈 Ingresos extras y activos</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Horas extra, freelance, inversiones, rentas, o cualquier ingreso adicional.</div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Concepto</label><input type="text" id="xn" placeholder="Horas extra, CETES..."></div>
       <div><label>Monto $</label><input type="number" id="xa" placeholder="0"></div>
-      <div><label>Tipo</label><select id="xt"><option value="unico">Único</option><option value="recurrente">Recurrente</option></select></div>
-      <div><label>Periodicidad</label><select id="xf"><option value="quincenal">Quincenal</option><option value="mensual" selected>Mensual</option></select></div>
+      <div><label>Tipo</label><select id="xt" onchange="document.getElementById('xfwrap').style.display=this.value==='recurrente'?'block':'none';document.getElementById('xdwrap').style.display=this.value==='unico'?'block':'none';"><option value="unico">Único</option><option value="recurrente">Recurrente</option></select></div>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:10px"><strong>Único:</strong> ingreso que solo recibes una vez (horas extra de este mes, venta). <strong>Recurrente:</strong> ingreso constante (renta, CETES, freelance fijo).</div>
+    <div class="g2" style="margin-bottom:10px">
+      <div id="xdwrap"><label>Fecha del ingreso</label><input type="date" id="xd" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div id="xfwrap" style="display:none"><label>Periodicidad</label><select id="xf"><option value="quincenal">Quincenal</option><option value="mensual" selected>Mensual</option><option value="bimestral">Bimestral</option></select></div>
+    </div>
     <button class="btn btn-sage btn-sm" onclick="addExtra()">+ Agregar ingreso extra</button>
     ${S.extras.length>0?`<div style="margin-top:12px">
     ${S.extras.filter(x=>x.tipo==='recurrente').length>0?`<div style="font-size:10px;color:var(--sage);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Recurrentes</div>
     ${S.extras.filter(x=>x.tipo==='recurrente').map(x=>{const mo=toMonthly(x.amt,x.freq||'mensual');return`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-sage">Recurrente</span>${freqName(x.freq||'mensual')?`<span class="badge bdg-sky">${freqName(x.freq)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(Math.round(mo))}/mes</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`;}).join('')}`:''} 
-    ${S.extras.filter(x=>x.tipo!=='recurrente').length>0?`<div style="font-size:10px;color:var(--amber);margin:10px 0 6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Únicos (este periodo)</div>
-    ${S.extras.filter(x=>x.tipo!=='recurrente').map(x=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-amber">Único</span></div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(x.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`).join('')}`:''}
+    ${S.extras.filter(x=>x.tipo!=='recurrente').length>0?`<div style="font-size:10px;color:var(--amber);margin:10px 0 6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Únicos</div>
+    ${S.extras.filter(x=>x.tipo!=='recurrente').map(x=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-amber">Único</span>${x.date?`<span style="font-size:10px;color:var(--muted)">${fmtDate(x.date)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(x.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`).join('')}`:''}
     <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total extras/mes:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">+${fx(Math.round(tExtras()))}</span></div></div>`:''}
   </div>
 
@@ -932,7 +939,15 @@ function rPlan(){
   const bfDay=+(S.inc.bfDate)||0;
   const bfThisQ=dayInCycle(bfDay)?(+S.inc.bf||0):0;
   const bfOtherQ=dayInCycle(bfDay)?0:(+S.inc.bf||0);
-  const extrasQ=tExtras()/2;
+  // Extras: recurrent split /2, unique only if date falls in this cycle
+  let extrasQ=0;
+  S.extras.forEach(x=>{
+    if(x.tipo==='recurrente'){extrasQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;}
+    else if(x.date){
+      const xd=new Date(x.date+'T12:00');
+      if(xd>=cStart&&xd<=cEnd)extrasQ+=(+x.amt||0);
+    }
+  });
   const incQ=salQ+bfThisQ+extrasQ;
 
   // ── EXPENSES ──
@@ -1174,7 +1189,11 @@ function addExp(){const n=document.getElementById('en')?.value.trim();const a=+d
   rFlujo();}
 function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
 function editExp(id){editExpId=id;rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
-function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const f=document.getElementById('xf')?.value||'mensual';const t=document.getElementById('xt')?.value||'unico';if(!n||!a)return;pt({extras:[...S.extras,{id:Date.now(),name:n,amt:a,freq:f,tipo:t}]});toast('✓ Ingreso extra registrado');rFlujo();}
+function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const t=document.getElementById('xt')?.value||'unico';if(!n||!a)return;
+  const extra={id:Date.now(),name:n,amt:a,tipo:t};
+  if(t==='recurrente'){extra.freq=document.getElementById('xf')?.value||'mensual';}
+  else{extra.date=document.getElementById('xd')?.value||new Date().toISOString().split('T')[0];}
+  pt({extras:[...S.extras,extra]});toast('✓ Ingreso extra registrado');rFlujo();}
 function rmExtra(id){pt({extras:S.extras.filter(x=>x.id!==id)});toast('Ingreso extra eliminado');rFlujo();}
 function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,rate:+(document.getElementById('dr')?.value)||0,payDay:+(document.getElementById('dpd')?.value)||0,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0}]});toast('⛓️ Deuda registrada');rFlujo();}
 function rmDebt(id){pt({debts:S.debts.filter(d=>d.id!==id)});editDebtId=null;toast('Deuda eliminada');rFlujo();}

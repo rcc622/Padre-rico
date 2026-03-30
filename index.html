@@ -338,9 +338,9 @@ function hdrUp(){
   const s=score(),r=getRank(s),el=document.getElementById('hdr-score');
   el.textContent=`${r.emoji} ${r.name}`;
   el.style.color=scCol(s);
-  const today=new Date();const d=today.getDate();const isQ1=d<=15;
+  const today=new Date();
   const dtEl=document.getElementById('hdr-date');
-  if(dtEl)dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+(isQ1?'1ra':'2da')+' quincena';
+  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+cyc;}
 }
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go('dash');}
 
@@ -846,23 +846,78 @@ function rFlujo(){
 
 // ══ PLAN DE ACCIÓN ═════════════════════════════════
 function rPlan(){
-  const today=new Date();
-  const dayOfMonth=today.getDate();
-  const realQ1=dayOfMonth<=15;
-  // Toggle: show current or next quincena
-  const showNext=planQ==='next';
-  const isQ1=showNext?!realQ1:realQ1; // flip if showing next
-  const lastDay=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
-  const qLabel=isQ1?'1ra quincena (días 1-15)':'2da quincena (días 16-'+lastDay+')';
-  const qRange=isQ1?[1,15]:[16,lastDay];
-  const whenLabel=showNext?'Próxima quincena':'Quincena actual';
+  const today=new Date();today.setHours(0,0,0,0);
+  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
 
-  // ── INCOME THIS QUINCENA ──
+  // ── PAYROLL CYCLE LOGIC ──
+  // 1ra qna: payday 30/31, covers 30/31 current month → 14 next month
+  // 2da qna: payday 15, covers 15 → 29 of same month
+  // Determine which cycle today falls in:
+  let cycleType,cycleStart,cycleEnd,cyclePayday;
+  if(d>=15&&d<=29){
+    // 2da quincena: 15 → 29 del mismo mes
+    cycleType='2da';
+    cycleStart=new Date(y,m,15);
+    cycleEnd=new Date(y,m,29);
+    cyclePayday=new Date(y,m,15);
+  }else{
+    // 1ra quincena: 30/31 del mes anterior (o actual) → 14 del mes actual (o siguiente)
+    cycleType='1ra';
+    if(d>=30){
+      cycleStart=new Date(y,m,30);
+      cycleEnd=new Date(y,m+1,14);
+      cyclePayday=new Date(y,m,new Date(y,m+1,0).getDate()); // last day of month
+    }else{
+      // d is 1-14
+      const prevLastDay=new Date(y,m,0).getDate();
+      cycleStart=new Date(y,m-1,Math.min(30,prevLastDay));
+      cycleEnd=new Date(y,m,14);
+      cyclePayday=new Date(y,m-1,prevLastDay);
+    }
+  }
+
+  // Next cycle
+  let nextType,nextStart,nextEnd,nextPayday;
+  if(cycleType==='2da'){
+    nextType='1ra';
+    const lastDay=new Date(y,m+1,0).getDate();
+    nextStart=new Date(y,m,30);
+    nextEnd=new Date(y,m+1,14);
+    nextPayday=new Date(y,m,lastDay);
+  }else{
+    nextType='2da';
+    if(d>=30){nextStart=new Date(y,m+1,15);nextEnd=new Date(y,m+1,29);nextPayday=new Date(y,m+1,15);}
+    else{nextStart=new Date(y,m,15);nextEnd=new Date(y,m,29);nextPayday=new Date(y,m,15);}
+  }
+
+  // Toggle
+  const showNext=planQ==='next';
+  const ct=showNext?nextType:cycleType; // '1ra' or '2da'
+  const cStart=showNext?nextStart:cycleStart;
+  const cEnd=showNext?nextEnd:cycleEnd;
+  const cPayday=showNext?nextPayday:cyclePayday;
+  const whenLabel=showNext?'Próxima quincena':'Quincena actual';
+  const fmtD=d2=>d2.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+  const qLabel=`${ct} quincena · ${fmtD(cStart)} → ${fmtD(cEnd)}`;
+  const paydayLabel=`Día de pago: ${fmtD(cPayday)}`;
+
+  // Helper: does a payDay (1-31) fall within this cycle's date range?
+  function dayInCycle(pd){
+    if(!pd)return false;
+    // Check across months — create test dates for current and next month
+    const testDates=[];
+    for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){
+      const maxD=new Date(cStart.getFullYear(),tm+1,0).getDate();
+      if(pd<=maxD)testDates.push(new Date(cStart.getFullYear(),tm,pd));
+    }
+    return testDates.some(td=>td>=cStart&&td<=cEnd);
+  }
+
+  // ── INCOME ──
   const salQ=S.inc.sal/2;
   const bfDay=+(S.inc.bfDate)||0;
-  const bfInQ1=bfDay>=1&&bfDay<=15;
-  const bfThisQ=(isQ1&&bfInQ1)||(!isQ1&&!bfInQ1)?(+S.inc.bf||0):0;
-  const bfOtherQ=(isQ1&&bfInQ1)||(!isQ1&&!bfInQ1)?0:(+S.inc.bf||0);
+  const bfThisQ=dayInCycle(bfDay)?(+S.inc.bf||0):0;
+  const bfOtherQ=dayInCycle(bfDay)?0:(+S.inc.bf||0);
   const extrasQ=tExtras()/2;
   const incQ=salQ+bfThisQ+extrasQ;
 
@@ -873,8 +928,7 @@ function rPlan(){
     const mo=toMonthly(+e.amt||0,e.freq||'mensual');
     const pd=+(e.payDay)||0;
     if(pd>0){
-      const inQ1=pd<=15;
-      if((isQ1&&inQ1)||(!isQ1&&!inQ1)){expQ+=mo;expDetail.push({name:e.name,amt:mo,day:pd});}
+      if(dayInCycle(pd)){expQ+=mo;expDetail.push({name:e.name,amt:mo,day:pd});}
     }else{
       expQ+=mo/2;
       expDetail.push({name:e.name,amt:mo/2,day:0});
@@ -891,12 +945,23 @@ function rPlan(){
   });
 
   const savQ=savAmt()/2;
-  // Liquidation windows shift by ~15 days for "next" view
-  const liqShift=showNext?15:0;
-  const urgentLiqs=upcoming().filter(d=>d.daysLeft>=liqShift&&d.daysLeft<=(15+liqShift));
-  const urgentTotal=urgentLiqs.reduce((a,d)=>a+d.bal,0);
-  const afterLiqs=upcoming().filter(d=>d.daysLeft>(15+liqShift)&&d.daysLeft<=(30+liqShift));
-  const afterTotal=afterLiqs.reduce((a,d)=>a+d.bal,0);
+
+  // ── LIQUIDACIONES within cycle date range ──
+  const urgentLiqs=upcoming().filter(dd2=>{
+    const ld=new Date(dd2.liqDate+'T12:00');
+    return ld>=cStart&&ld<=cEnd;
+  });
+  const urgentTotal=urgentLiqs.reduce((a,dd2)=>a+dd2.bal,0);
+
+  // After this cycle (next cycle's liquidations)
+  const nStart=showNext?cEnd:nextStart;
+  const nEnd=showNext?new Date(nextEnd.getTime()+15*864e5):nextEnd;
+  const afterLiqs=upcoming().filter(dd2=>{
+    const ld=new Date(dd2.liqDate+'T12:00');
+    return ld>cEnd&&ld<=nEnd;
+  });
+  const afterTotal=afterLiqs.reduce((a,dd2)=>a+dd2.bal,0);
+
   const disponible=incQ-expQ-savQ-debtPayQ;
   const realQueda=disponible-urgentTotal;
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
@@ -917,13 +982,14 @@ function rPlan(){
 
   <div class="card card-sage">
     <div class="ct">🎯 ${whenLabel}</div>
-    <div style="font-size:14px;color:var(--sage2);font-weight:bold;margin-bottom:6px">${qLabel}</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">${bfThisQ>0?`Tu bono mensual de ${fx(S.inc.bf)} <strong>cae en esta quincena</strong> (día ${bfDay}).`:`Tu bono mensual (${fx(S.inc.bf||0)}) cae el día ${bfDay||'—'} — ${bfInQ1?'1ra':'2da'} quincena.${bfThisQ===0?' No se suma aquí.':''}`}</div>
+    <div style="font-size:14px;color:var(--sage2);font-weight:bold;margin-bottom:4px">${qLabel}</div>
+    <div style="font-size:12px;color:var(--sage);margin-bottom:6px">${paydayLabel}</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">${bfThisQ>0?`Tu bono mensual de ${fx(S.inc.bf)} <strong>cae en este ciclo</strong> (día ${bfDay}).`:`Tu bono mensual (${fx(S.inc.bf||0)}) cae el día ${bfDay||'—'} — no cae en este ciclo.`}</div>
   </div>
 
   <!-- WATERFALL -->
   <div class="card">
-    <div class="ct">💰 Flujo — ${qLabel}</div>
+    <div class="ct">💰 Flujo — ${fmtD(cStart)} → ${fmtD(cEnd)}</div>
     <div style="font-size:13px;line-height:2.4">
       <div class="row-b"><span style="color:var(--sage)">💰 Salario quincenal</span><strong style="color:var(--sage)">${fx(Math.round(salQ))}</strong></div>
       ${bfThisQ>0?`<div class="row-b"><span style="color:var(--sage)">🎁 + Bono mensual (día ${bfDay})</span><strong style="color:var(--sage)">+${fx(bfThisQ)}</strong></div>`:''}
@@ -951,7 +1017,7 @@ function rPlan(){
 
   <!-- DETALLE GASTOS ESTA QUINCENA -->
   ${expDetail.length>0?`<div class="card">
-    <div class="ct">📋 Gastos que caen esta quincena</div>
+    <div class="ct">📋 Gastos del ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
     ${expDetail.map(e=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
       <div class="row"><span style="color:var(--txt)">${e.name}</span>${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}</div>
       <span style="color:var(--terra);font-weight:bold">${fx(Math.round(e.amt))}</span>
@@ -962,7 +1028,7 @@ function rPlan(){
   <!-- LIQUIDACIONES ESTA QUINCENA -->
   ${urgentLiqs.length>0?`
   <div class="card card-red">
-    <div class="ct">🚨 Debes cubrir esta quincena</div>
+    <div class="ct">🚨 Liquidaciones del ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
     ${urgentLiqs.map(d=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(184,92,74,.15)">
       <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
       <div class="row"><span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span><span style="font-size:10px;color:var(--muted)">${d.daysLeft}d</span></div>
@@ -972,8 +1038,8 @@ function rPlan(){
 
   <!-- VISTA PREVIA QUINCENA DESPUÉS -->
   <div class="card card-amber">
-    <div class="ct">📅 Quincena siguiente a esta</div>
-    <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">Bono mensual ${bfOtherQ>0?`(${fx(bfOtherQ)}) <strong style="color:var(--sage)">cae en esa quincena</strong>`:`no cae en esa quincena`}</div>
+    <div class="ct">📅 Siguiente ciclo</div>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">Bono mensual ${bfOtherQ>0?`(${fx(bfOtherQ)}) <strong style="color:var(--sage)">cae en ese ciclo</strong>`:'no cae en ese ciclo'}</div>
     ${afterLiqs.length>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:6px">Liquidaciones pendientes:</div>
     ${afterLiqs.map(d=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(160,112,48,.15);font-size:12px">
       <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>

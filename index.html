@@ -838,33 +838,53 @@ function rFlujo(){
     ${kpi('📈 Tasa prom.',up.length>0?(S.debts.reduce((a,d)=>a+(+d.rate||0),0)/S.debts.filter(d=>d.rate).length||0).toFixed(1)+'%':'—',up.length?'var(--terra)':'var(--muted)','Interés anual')}
   </div>
 
-  <!-- TODAS LAS DEUDAS CON EDIT/DELETE -->
-  ${up.length>0?`
+  <!-- TODAS LAS DEUDAS -->
+  ${S.debts.length>0?`
   <div class="card">
-    <div class="ct">📅 Todas las deudas con fecha de liquidación</div>
-    ${up.map(d=>{
-      const urgent=d.daysLeft<=5,soon=d.daysLeft<=15;
-      const col=urgent?'var(--terra)':soon?'var(--amber)':'var(--sky)';
-      const label=d.daysLeft===0?'HOY':d.daysLeft<0?'VENCIDA hace '+Math.abs(d.daysLeft)+'d':d.daysLeft<=1?'Mañana':d.daysLeft+' días';
-      return`<div class="ql-item">
-        <div class="ql-dot" style="background:${col}"></div>
-        <div style="flex:1">
-          <div class="row-b"><div class="row"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}${d.note?`<span class="badge bdg-amber">${d.note}</span>`:''}</div><div class="row"><span style="color:${col};font-weight:bold">${fx(d.bal)}</span><button class="btn btn-ghost btn-sm" onclick="editDebt(${d.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:3px">Liquida: ${fmtDate(d.liqDate)} · <span style="color:${col};font-weight:bold">${label}</span>${d.pay?` · Pago: ${fx(d.pay)}/${freqShort(d.freq||'mensual')}${(d.freq&&d.freq!=='mensual')?' = '+fx(Math.round(toMonthly(d.pay,d.freq)))+'/mes':''}`:''} ${d.payDay?`· <span style="color:var(--sky)">día ${d.payDay} de cada mes</span>`:''}</div>
+    <div class="ct">📅 Mis deudas</div>
+    ${S.debts.sort((a,b)=>(a.liqDate||'9999')>(b.liqDate||'9999')?1:-1).map(d=>{
+      const moP=toMonthly(d.pay||0,d.freq||'mensual');
+      const hasMSI=d.curPay&&d.totalPays;
+      const paidCount=hasMSI?d.curPay-1:0;
+      const pctPaid=hasMSI?(paidCount/d.totalPays*100):0;
+      const paidAmt=hasMSI?Math.round(moP*paidCount):0;
+      const totalEst=hasMSI?Math.round(moP*d.totalPays):d.bal;
+      // Next payment date
+      const pd=+(d.payDay)||0;
+      let nextPay='—';let nextDays=999;
+      if(pd>0){
+        const today2=new Date();today2.setHours(0,0,0,0);const td=today2.getDate(),tm=today2.getMonth(),ty=today2.getFullYear();
+        let np=pd>=td?new Date(ty,tm,pd):new Date(ty,tm+1,pd);
+        nextPay=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+        nextDays=Math.ceil((np-today2)/864e5);
+      }
+      const urgent=nextDays<=3;
+      const col=urgent?'var(--terra)':nextDays<=15?'var(--amber)':'var(--sky)';
+      return`<div style="padding:14px 0;border-bottom:1px solid var(--border)">
+        <div class="row-b" style="margin-bottom:6px">
+          <div class="row"><span style="font-weight:bold;color:var(--txt);font-size:14px">${d.name}</span>${hasMSI?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}${d.note?`<span class="badge bdg-amber">${d.note}</span>`:''}</div>
+          <div class="row" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt(${d.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div>
         </div>
+        <div class="row-b" style="margin-bottom:8px">
+          <div>
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Pago mensualidad</div>
+            <div style="font-size:22px;font-weight:bold;color:var(--sky)">${fx(moP)}${(d.freq&&d.freq!=='mensual')?`<span style="font-size:11px;color:var(--muted);font-weight:normal"> (${fx(d.pay)}/${freqShort(d.freq)})</span>`:''}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Próx. pago</div>
+            <div style="font-size:14px;font-weight:bold;color:${col}">${pd?nextPay:'sin día'}</div>
+            ${pd&&nextDays<=3?`<div style="font-size:10px;color:var(--terra)">${nextDays===0?'¡HOY!':nextDays===1?'Mañana':'En '+nextDays+' días'} ⚠️</div>`:''}
+          </div>
+        </div>
+        <div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px">
+          <span>Saldo: <strong style="color:var(--terra)">${fx(d.bal)}</strong></span>
+          ${hasMSI?`<span>Pagado: <strong style="color:var(--sage)">${fx(paidAmt)}</strong> (${paidCount}/${d.totalPays})</span>`:''}
+        </div>
+        ${hasMSI?`<div class="pw" style="height:5px"><div class="pb" style="width:${pctPaid}%;background:var(--sage)"></div></div>
+        <div class="row-b" style="font-size:10px;color:var(--muted);margin-top:3px"><span>${Math.round(pctPaid)}% completado</span>${d.liqDate?`<span>Liquida: ${fmtDate(d.liqDate)}</span>`:''}</div>`
+        :`${d.liqDate?`<div style="font-size:10px;color:var(--muted)">Liquida: ${fmtDate(d.liqDate)}</div>`:''}`}
       </div>`;
     }).join('')}
-  </div>`:''}
-
-  <!-- DEUDAS SIN FECHA -->
-  ${S.debts.filter(d=>!d.liqDate).length>0?`
-  <div class="card">
-    <div class="ct">Deudas sin fecha de liquidación</div>
-    ${S.debts.filter(d=>!d.liqDate).map(d=>`<div class="row-b" style="padding:10px 0;border-bottom:1px solid var(--border)">
-      <div class="row"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
-      <div class="row"><span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span>${d.pay?`<span style="font-size:11px;color:var(--muted)">${fx(d.pay)}/${freqShort(d.freq||'mensual')}</span>`:''}
-      <button class="btn btn-ghost btn-sm" onclick="editDebt(${d.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div>
-    </div>`).join('')}
   </div>`:''}
   `;
 }

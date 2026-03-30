@@ -235,6 +235,8 @@ function toast(msg){
 const mInc=()=>(+S.inc.sal)+(+S.inc.bf);
 const mBonus=()=>(+S.inc.bv)/6;
 const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;if(freq==='bimestral')return amt/2;return amt;};
+const toPeriod=(monthlyAmt)=>viewPeriod==='quincenal'?monthlyAmt/2:monthlyAmt;
+const perLbl=()=>viewPeriod==='quincenal'?'/qna':'/mes';
 const freqShort=(f)=>f==='semanal'?'sem':f==='quincenal'?'qna':f==='bimestral'?'bim':'mes';
 const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bimestral'?'Bimestral':'';
 const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
@@ -369,7 +371,7 @@ function lastHormiga(){
 function rDash(){
   const s=score(),sc=scCol(s),ff=flow(),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
   const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
-  const up=upcoming().slice(0,4);
+  const up=upcoming();
   const r=getRank(s);
   const streak=qStreak();
   const lastSnap=lastHormiga();
@@ -671,7 +673,8 @@ const QUICK_EXP=[
   {n:'💊 Farmacia',a:0,c:'Salud / Medicamentos'},
 ];
 let dStrat='snowball';
-let editDebtId=null; // null = adding, number = editing that debt id
+let editDebtId=null;
+let viewPeriod='quincenal'; // 'quincenal' or 'mensual'
 
 function rFlujo(){
   const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});
@@ -716,20 +719,31 @@ function rFlujo(){
     `;})()}
   </div>
 
-  <!-- RESUMEN FLUJO -->
-  <div class="g3" style="margin-bottom:13px">
-    ${kpi('📋 Gastos fijos',fx(tExp()),'var(--terra)',S.exp.length+' conceptos')}
-    ${kpi('⛓️ Pagos deudas',fx(tDebtPay()),'var(--sky)',S.debts.length+' créditos')}
-    ${kpi('🌊 Flujo libre',fx(flow()),flow()>=0?'var(--sage)':'var(--terra)',flow()>=0?'Disponible':'⚠ Déficit')}
+  <!-- PERIODO TOGGLE -->
+  <div class="card" style="padding:10px 18px">
+    <div class="row-b">
+      <span style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Ver cifras en:</span>
+      <div class="row" style="gap:4px">
+        <button class="btn btn-sm ${viewPeriod==='quincenal'?'btn-sage':'btn-ghost'}" onclick="viewPeriod='quincenal';rFlujo()">Quincenal</button>
+        <button class="btn btn-sm ${viewPeriod==='mensual'?'btn-sage':'btn-ghost'}" onclick="viewPeriod='mensual';rFlujo()">Mensual</button>
+      </div>
+    </div>
   </div>
 
-  ${flow()<0?`<div class="card card-red"><div style="color:var(--terra);font-weight:bold;margin-bottom:6px">⚠ Déficit de ${fx(Math.abs(flow()))}/mes</div><div style="font-size:12px;color:var(--txt2)">Tus gastos + pagos de deuda + ahorro superan tu ingreso.</div></div>`:''}
+  <!-- RESUMEN FLUJO -->
+  <div class="g3" style="margin-bottom:13px">
+    ${kpi('📋 Gastos fijos',fx(Math.round(toPeriod(tExp()))),'var(--terra)',S.exp.length+' conceptos')}
+    ${kpi('⛓️ Pagos deudas',fx(Math.round(toPeriod(tDebtPay()))),'var(--sky)',S.debts.length+' créditos')}
+    ${kpi('🌊 Flujo libre',fx(Math.round(toPeriod(flow()))),flow()>=0?'var(--sage)':'var(--terra)',flow()>=0?'Disponible'+perLbl():'⚠ Déficit')}}
+  </div>
+
+  ${flow()<0?`<div class="card card-red"><div style="color:var(--terra);font-weight:bold;margin-bottom:6px">⚠ Déficit de ${fx(Math.round(Math.abs(toPeriod(flow()))))}${perLbl()}</div><div style="font-size:12px;color:var(--txt2)">Tus gastos + pagos de deuda + ahorro superan tu ingreso.</div></div>`:''}
 
   <!-- LISTA GASTOS -->
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}</div><div class="row" style="gap:6px">${f!=='mensual'?`<span style="font-size:10px;color:var(--muted)">${fx(e.amt)}/${freqShort(f)} =</span>`:''}<span style="color:var(--terra);font-weight:bold">${fx(Math.round(mo))}/mes</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const shown=toPeriod(mo);const fBdg=freqName(f);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--terra);font-weight:bold">${fx(Math.round(shown))}${perLbl()}</span><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   <!-- DISTRIBUCIÓN -->
-  ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([c,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(t)}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
+  ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría${perLbl()}</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([c,t])=>{const shown=toPeriod(t);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(shown))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`;}).join('')}</div>`:''}
 
   <!-- ═══ DEUDAS ═══ -->
   <div class="card">
@@ -806,9 +820,7 @@ function rFlujo(){
         <div class="row-b" style="margin-bottom:6px">
           <div class="row"><span class="badge ${i===0?'bdg-sage':'bdg-sky'}">${i===0?'🎯 AHORA':'#'+(i+1)}</span><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
           <div class="row">${d.rate?`<span class="badge bdg-red">${d.rate}%</span>`:''}
-            <span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span>
-            <button class="btn btn-ghost btn-sm" onclick="editDebt(${d.id})" style="padding:4px 8px">✏️</button>
-            <button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div>
+            <span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span></div>
         </div>
         <div class="row" style="gap:16px;font-size:11px;color:var(--muted)">
           ${d.pay?`<span>Pago: <strong style="color:var(--sky)">${fx(d.pay)}/${freqShort(df)}</strong>${df!=='mensual'?' = '+fx(Math.round(moPayment))+'/mes':''}</span>`:''}
@@ -820,7 +832,14 @@ function rFlujo(){
     <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px"><div style="font-size:12px;color:var(--sage)">🔄 Al liquidar la #1, suma ese pago a la #2. Efecto bola de nieve.</div></div>
   </div>
 
-  ${S.inc.bv>0?`<div class="card card-sky"><div class="ct">💰 Plan para tu Bono Semestral de ${fx(S.inc.bv)}</div><div style="font-size:13px;line-height:2.3"><div>• <strong style="color:var(--terra)">70%</strong> → <strong>${fx(S.inc.bv*.7)}</strong> a deuda con mayor tasa</div><div>• <strong style="color:var(--sage)">20%</strong> → <strong>${fx(S.inc.bv*.2)}</strong> a fondo de emergencia</div><div>• <strong style="color:var(--sky)">10%</strong> → <strong>${fx(S.inc.bv*.1)}</strong> para celebrar</div></div></div>`:''}
+  ${S.inc.bv>0?`<div class="card card-sky"><div class="ct">💰 Plan para tu Bono Semestral de ${fx(S.inc.bv)}</div>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Cuando recibas tu bono, esta es la distribución recomendada para maximizar el impacto en tu libertad financiera:</div>
+    <div style="font-size:13px;line-height:2.3">
+      <div>• <strong style="color:var(--terra)">70%</strong> → <strong>${fx(S.inc.bv*.7)}</strong> — Abono directo a la deuda con mayor tasa de interés. Esto reduce los intereses que pagas cada mes y acelera tu fecha de liquidación.</div>
+      <div>• <strong style="color:var(--sage)">20%</strong> → <strong>${fx(S.inc.bv*.2)}</strong> — Fondo de emergencia. Guárdalo en una cuenta separada (ej: cajón Nu, CETES, Hey Banco) para no tocarlo. Meta: acumular 3 meses de gastos fijos.</div>
+      <div>• <strong style="color:var(--sky)">10%</strong> → <strong>${fx(S.inc.bv*.1)}</strong> — Para celebrar tu avance. Un gusto planeado no es impulso — te lo ganaste.</div>
+    </div>
+    ${tDebt()>0?`<div style="background:rgba(74,110,140,.08);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--txt2);line-height:1.7">💡 Si aplicas el 70% (${fx(S.inc.bv*.7)}) a tu deuda de mayor tasa, reduces tu deuda total de ${fx(tDebt())} a ${fx(Math.max(0,tDebt()-S.inc.bv*.7))} — un golpe de ${((S.inc.bv*.7/tDebt())*100).toFixed(0)}% de tu deuda.</div>`:''}</div>`:''}
   `:`<div class="card" style="text-align:center;padding:40px"><div style="font-size:40px;margin-bottom:12px">🏆</div><div style="color:var(--sage);font-size:18px;font-weight:bold">Sin deudas registradas</div><div style="color:var(--muted);margin-top:8px;font-size:13px">Agrega tus créditos arriba para crear tu plan de ataque.</div></div>`}
   `;
 }

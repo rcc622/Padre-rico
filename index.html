@@ -14,23 +14,23 @@
   --card:#FFFFFF;--border:#DDD8CE;--border2:#C8C2B4;
   --sage:#4E7C6A;--sage2:#3A6354;--sagedim:rgba(78,124,106,.1);--sagedim2:rgba(78,124,106,.06);
   --terra:#B85C4A;--terradim:rgba(184,92,74,.09);
-  --grn:#4E7C6A;--grdim:rgba(78,124,106,.09);
   --sky:#4A6E8C;--skydim:rgba(74,110,140,.09);
+  --amber:#A07030;--amberdim:rgba(160,112,48,.09);
   --txt:#2C2925;--txt2:#5C5650;--muted:#9A9590;--r:10px;
   --shadow:0 1px 4px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.04);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:var(--bg);color:var(--txt);font-family:Georgia,'Times New Roman',serif;-webkit-font-smoothing:antialiased}
+html,body{height:100%;min-height:100dvh;background:var(--bg);color:var(--txt);font-family:Georgia,'Times New Roman',serif;-webkit-font-smoothing:antialiased}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
 input,select{background:var(--bg);border:1px solid var(--border);color:var(--txt);padding:9px 12px;border-radius:7px;font-size:13px;font-family:Georgia,serif;width:100%;outline:none;transition:border-color .2s,box-shadow .2s}
 input:focus,select:focus{border-color:var(--sage);box-shadow:0 0 0 3px rgba(78,124,106,.12)}
 input::placeholder{color:var(--muted)}
 input[type=range]{background:none;border:none;padding:0;accent-color:var(--sage)}
 label{font-size:11px;color:var(--muted);display:block;margin-bottom:5px;letter-spacing:.5px;text-transform:uppercase}
-button{font-family:Georgia,serif;cursor:pointer;transition:opacity .18s,transform .1s,box-shadow .18s;border:none}
+button{font-family:Georgia,serif;cursor:pointer;transition:opacity .18s,transform .1s;border:none}
 button:active{transform:scale(.97)}
 .btn{padding:9px 20px;border-radius:7px;font-size:13px;font-weight:bold}
-.btn-sage{background:var(--sage);color:#fff;box-shadow:0 2px 8px rgba(78,124,106,.28)}
+.btn-sage{background:var(--sage);color:#fff;box-shadow:0 2px 8px rgba(78,124,106,.25)}
 .btn-sage:hover{background:var(--sage2)}
 .btn-ghost{background:transparent;border:1px solid rgba(78,124,106,.4);color:var(--sage)}
 .btn-red{background:var(--terradim);border:1px solid rgba(184,92,74,.25);color:var(--terra)}
@@ -39,14 +39,15 @@ button:active{transform:scale(.97)}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:13px;box-shadow:var(--shadow)}
 .card-sage{border-color:rgba(78,124,106,.3);background:linear-gradient(135deg,#fff 0%,rgba(78,124,106,.05) 100%)}
 .card-grn{border-color:rgba(78,124,106,.3);background:rgba(78,124,106,.05)}
-.card-red{border-color:rgba(184,92,74,.25);background:var(--terradim)}
-.card-sky{border-color:rgba(74,110,140,.25);background:var(--skydim)}
+.card-red{border-color:rgba(184,92,74,.28);background:var(--terradim)}
+.card-sky{border-color:rgba(74,110,140,.28);background:var(--skydim)}
+.card-amber{border-color:rgba(160,112,48,.3);background:var(--amberdim)}
 .ct{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--sage);margin-bottom:13px}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .row-b{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px}
-.stat{font-size:26px;font-weight:bold;line-height:1;font-family:Georgia,serif}
+.stat{font-size:26px;font-weight:bold;line-height:1}
 .stat-sm{font-size:18px;font-weight:bold;line-height:1}
 .lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
 .pw{background:var(--bg2);border-radius:4px;height:6px;overflow:hidden;margin-top:7px}
@@ -55,38 +56,51 @@ button:active{transform:scale(.97)}
 .bdg-sage{background:var(--sagedim);color:var(--sage);border:1px solid rgba(78,124,106,.2)}
 .bdg-red{background:var(--terradim);color:var(--terra);border:1px solid rgba(184,92,74,.2)}
 .bdg-sky{background:var(--skydim);color:var(--sky);border:1px solid rgba(74,110,140,.2)}
-.sep{border:none;border-top:1px solid var(--border);margin:10px 0}
+.bdg-amber{background:var(--amberdim);color:var(--amber);border:1px solid rgba(160,112,48,.2)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:13px}
+.chip{padding:5px 11px;border-radius:20px;font-size:11px;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);cursor:pointer;font-family:Georgia,serif;transition:all .15s}
+.chip:hover{background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage)}
 /* Onboarding */
-#onboarding{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse at 50% 0%,rgba(78,124,106,.08) 0%,transparent 65%)}
+#onboarding{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse at 50% 0%,rgba(78,124,106,.08) 0%,transparent 65%)}
 .onb{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:36px;max-width:500px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.1)}
 .onb-step{display:none}.onb-step.act{display:block}
 .dots{display:flex;gap:7px;margin-bottom:24px}
 .dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:background .3s}
 .dot.cur{background:var(--sage)}.dot.ok{background:rgba(78,124,106,.5)}
 /* App */
-#app{display:none;flex-direction:column;min-height:100vh}
+#app{display:none;flex-direction:column;min-height:100vh;min-height:100dvh}
 .hdr{background:var(--card);border-bottom:1px solid var(--border);padding:0 18px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 8px rgba(0,0,0,.06)}
 .logo{color:var(--sage2);font-size:15px;letter-spacing:1.5px;font-weight:bold}
-.score-chip{background:var(--sagedim);border:1px solid rgba(78,124,106,.2);color:var(--sage2);padding:4px 12px;border-radius:20px;font-size:12px}
+.score-chip{background:var(--sagedim);border:1px solid rgba(78,124,106,.2);color:var(--sage2);padding:4px 12px;border-radius:20px;font-size:11px;font-weight:bold}
 .nav{background:var(--card);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
 .nav::-webkit-scrollbar{display:none}
-.nb{flex-shrink:0;padding:11px 16px;font-size:12px;font-family:Georgia,serif;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .2s;white-space:nowrap}
+.nb{flex-shrink:0;padding:12px 14px;font-size:11px;font-family:Georgia,serif;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .2s;white-space:nowrap;min-height:44px}
 .nb.act{color:var(--sage2);border-bottom-color:var(--sage)}
 .content{flex:1;padding:18px;max-width:860px;margin:0 auto;width:100%}
 .panel{display:none}.panel.act{display:block;animation:fi .22s ease}
 @keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
-/* Chat */
-.chat-wrap{max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0}
-.msg{padding:10px 14px;border-radius:10px;font-size:13px;line-height:1.65;max-width:88%}
-.msg.u{align-self:flex-end;background:var(--sagedim);border:1px solid rgba(78,124,106,.2)}
-.msg.ai{align-self:flex-start;background:var(--bg);border:1px solid var(--border)}
-.msender{font-size:10px;color:var(--muted);margin-bottom:3px;letter-spacing:.5px}
-/* Drop */
 .drop{border:2px dashed var(--border);border-radius:var(--r);padding:36px;text-align:center;cursor:pointer;transition:all .2s}
 .drop:hover,.drop.over{border-color:var(--sage);background:var(--sagedim2)}
-/* Hormiga */
 .hi{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
 .hi:last-child{border-bottom:none}
+.ql-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.ql-item:last-child{border-bottom:none}
+.ql-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
+/* Toast */
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--sage2);color:#fff;padding:10px 22px;border-radius:10px;font-size:12px;font-family:Georgia,serif;font-weight:bold;opacity:0;transition:all .3s ease;pointer-events:none;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.2);white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* Timeline */
+.tl-item{display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--border)}
+.tl-item:last-child{border-bottom:none}
+.tl-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:3px;border:3px solid var(--border)}
+.tl-dot.active{border-color:var(--sage);background:var(--sage)}
+.tl-dot.empty{border-color:var(--border);background:var(--bg2)}
+.tl-line{position:relative}
+.tl-line::before{content:'';position:absolute;left:6px;top:18px;bottom:-16px;width:2px;background:var(--border)}
+.tl-item:last-child .tl-line::before{display:none}
+/* Countdown badge */
+.countdown{display:inline-flex;align-items:center;gap:4px;background:var(--amberdim);border:1px solid rgba(160,112,48,.25);color:var(--amber);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:bold}
+.countdown.ready{background:var(--sagedim);border-color:rgba(78,124,106,.25);color:var(--sage)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .loading{animation:pulse 1.2s infinite}
 @media(max-width:600px){.g3{grid-template-columns:1fr 1fr}.content{padding:12px}}
@@ -100,7 +114,6 @@ button:active{transform:scale(.97)}
 <div id="onboarding">
   <div class="onb">
     <div class="dots" id="dots"></div>
-    <!-- S1 -->
     <div class="onb-step act" id="s1">
       <div style="font-size:44px;margin-bottom:14px">🎯</div>
       <div style="font-size:20px;color:var(--sage2);margin-bottom:8px;font-weight:bold">Tu meta en 6 meses</div>
@@ -111,11 +124,10 @@ button:active{transform:scale(.97)}
       <input type="text" id="ob-dl" readonly style="margin-bottom:22px;color:var(--muted)">
       <button class="btn btn-sage" style="width:100%" onclick="obNext()">Siguiente →</button>
     </div>
-    <!-- S2 -->
     <div class="onb-step" id="s2">
       <div style="font-size:44px;margin-bottom:14px">💰</div>
       <div style="font-size:20px;color:var(--sage2);margin-bottom:8px;font-weight:bold">Tus ingresos</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.7">Ingresa montos netos (lo que cae a tu Nu). El bono semestral se prorratea en tus proyecciones.</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.7">Montos netos (lo que cae a tu cuenta). El bono semestral se prorratea en proyecciones.</div>
       <label>Salario fijo mensual (neto)</label>
       <input type="number" id="ob-sal" placeholder="0" style="margin-bottom:11px">
       <label>Bono fijo mensual (neto)</label>
@@ -127,19 +139,18 @@ button:active{transform:scale(.97)}
         <button class="btn btn-sage" style="flex:1" onclick="obNext()">Siguiente →</button>
       </div>
     </div>
-    <!-- S3 -->
     <div class="onb-step" id="s3">
       <div style="font-size:44px;margin-bottom:14px">⛓️</div>
       <div style="font-size:20px;color:var(--sage2);margin-bottom:8px;font-weight:bold">Tu primera deuda</div>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.7">Mencionaste 3-4 créditos activos. Registra el que más te pesa. Agregarás los demás adentro.</div>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.7">Registra el crédito que más te pesa. Agregarás los demás adentro — incluida la fecha en que se liquida.</div>
       <label>Nombre</label>
       <input type="text" id="ob-dn" placeholder='"Tarjeta Nu", "Crédito nómina"...' style="margin-bottom:11px">
       <label>Saldo pendiente ($MXN)</label>
       <input type="number" id="ob-db" placeholder="0" style="margin-bottom:11px">
-      <label>Tasa de interés anual (%)</label>
-      <input type="number" id="ob-dr" placeholder="Ej: 36" style="margin-bottom:11px">
-      <label>Pago mínimo mensual ($)</label>
-      <input type="number" id="ob-dm" placeholder="0" style="margin-bottom:22px">
+      <label>Pago mensual fijo ($)</label>
+      <input type="number" id="ob-dm" placeholder="0" style="margin-bottom:11px">
+      <label>Fecha de liquidación programada (opcional)</label>
+      <input type="date" id="ob-dliq" style="margin-bottom:22px">
       <div class="row" style="gap:9px">
         <button class="btn btn-ghost" onclick="obPrev()">← Atrás</button>
         <button class="btn btn-sage" style="flex:1" onclick="obDone()">Entrar a la app 🏛️</button>
@@ -156,45 +167,138 @@ button:active{transform:scale(.97)}
   </header>
   <nav class="nav">
     <button class="nb act" onclick="go('dash')">🏛️ Inicio</button>
-    <button class="nb" onclick="go('flujo')">💰 Flujo</button>
-    <button class="nb" onclick="go('deudas')">⛓️ Deudas</button>
-    <button class="nb" onclick="go('nu')">🔍 Análisis Nu</button>
-    <button class="nb" onclick="go('ia')">🤖 Asesor IA</button>
+    <button class="nb" onclick="go('quincena')">📊 Mi Quincena</button>
+    <button class="nb" onclick="go('flujo')">💰 Deudas & Flujo</button>
+    <button class="nb" onclick="go('habitos')">🧠 Mis Hábitos</button>
+    <button class="nb" onclick="go('historia')">📖 Mi Historia</button>
   </nav>
   <div class="content">
     <div id="tab-dash" class="panel act"></div>
+    <div id="tab-quincena" class="panel"></div>
     <div id="tab-flujo" class="panel"></div>
-    <div id="tab-deudas" class="panel"></div>
-    <div id="tab-nu" class="panel"></div>
-    <div id="tab-ia" class="panel"></div>
+    <div id="tab-habitos" class="panel"></div>
+    <div id="tab-historia" class="panel"></div>
   </div>
 </div>
 
+<!-- TOAST -->
+<div id="toast"></div>
+
+</div>
 <script>
-// ══ STATE ══
-const SK='prv3';
-let S={goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0},savPct:10,exp:[],debts:[],assets:[],chat:[]};
-const ld=()=>{try{const d=localStorage.getItem(SK);if(d)S={...S,...JSON.parse(d)}}catch{}};
+// ══ STATE v5 ════════════════════════════════════════
+const SK='prv5';
+let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0},savPct:10,exp:[],debts:[],assets:[],
+  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[]};
+
+function migrate(){
+  // Try loading v4 data first
+  try{
+    const v4=localStorage.getItem('prv4');
+    if(v4){
+      const old=JSON.parse(v4);
+      // Carry over all v4 fields
+      S.goal=old.goal||'';S.deadline=old.deadline||'';S.done=!!old.done;
+      S.inc=old.inc||{sal:0,bf:0,bv:0};S.savPct=old.savPct||10;
+      S.exp=old.exp||[];S.debts=old.debts||[];S.assets=old.assets||[];
+      // Don't carry over chat (removed feature)
+      S.version=5;
+      sv();
+      // Don't delete v4 yet — safety net
+      return true;
+    }
+  }catch{}
+  return false;
+}
+
+function ld(){
+  try{
+    const d=localStorage.getItem(SK);
+    if(d){S={...S,...JSON.parse(d)};return;}
+    // No v5 found — try migrate from v4
+    migrate();
+  }catch{}
+}
 const sv=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch{}};
 const pt=(o)=>{S={...S,...o};sv()};
 
-// ══ COMPUTED ══
+// ══ TOAST ════════════════════════════════════════════
+let toastTimer=null;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg;el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>el.classList.remove('show'),2500);
+}
+
+// ══ COMPUTED ════════════════════════════════════════
 const mInc=()=>(+S.inc.sal)+(+S.inc.bf);
 const mBonus=()=>(+S.inc.bv)/6;
 const tExp=()=>S.exp.reduce((a,e)=>a+(+e.amt||0),0);
 const savAmt=()=>mInc()*S.savPct/100;
-const flow=()=>mInc()-tExp()-savAmt();
+const tDebtPay=()=>S.debts.reduce((a,d)=>a+(+d.pay||0),0);
+const flow=()=>mInc()-tExp()-savAmt()-tDebtPay();
 const tDebt=()=>S.debts.reduce((a,d)=>a+(+d.bal||0),0);
 const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
 const nw=()=>tAss()-tDebt();
-const tMin=()=>S.debts.reduce((a,d)=>a+(+d.min||0),0);
 const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+(+x.inc||0),0);
 const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline)-new Date())/864e5))};
-const score=()=>{let s=0;if(flow()>0)s+=25;const dr=tDebt()/Math.max(mInc()*12,1);s+=dr===0?25:Math.max(0,25-dr*20);if(S.savPct>=10)s+=20;if(tAss()>0)s+=15;if(passInc()>0)s+=15;return Math.min(100,Math.max(0,Math.round(s)));};
+const score=()=>{
+  let s=0;if(flow()>0)s+=25;
+  const dr=tDebt()/Math.max(mInc()*12,1);s+=dr===0?25:Math.max(0,25-dr*20);
+  if(S.savPct>=10)s+=20;if(tAss()>0)s+=15;if(passInc()>0)s+=15;
+  // Bonus por constancia quincenal (max 5 pts)
+  const streak=qStreak();
+  s+=Math.min(5,streak);
+  return Math.min(100,Math.max(0,Math.round(s)));
+};
 const fx=(n)=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0}).format(n||0);
 const scCol=(s)=>s>=70?'var(--sage)':s>=40?'var(--sky)':'var(--terra)';
 
-// ══ ONBOARDING ══
+// Racha quincenal: cuántas quincenas consecutivas has subido CSV (contando hacia atrás)
+function qStreak(){
+  if(!S.snapshots.length)return 0;
+  const sorted=[...S.snapshots].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  let streak=1;
+  for(let i=1;i<sorted.length;i++){
+    const prev=new Date(sorted[i-1].date),cur=new Date(sorted[i].date);
+    const diffDays=Math.round((prev-cur)/864e5);
+    if(diffDays<=20)streak++;else break; // ~quincena con margen
+  }
+  return streak;
+}
+
+// ══ RANGOS ══════════════════════════════════════════
+const RANKS=[
+  {min:0, emoji:'🐣',name:'Aprendiz de Babilonia'},
+  {min:20,emoji:'🧱',name:'Constructor'},
+  {min:35,emoji:'⚖️',name:'Guardián del Flujo'},
+  {min:50,emoji:'📈',name:'Inversor en Formación'},
+  {min:65,emoji:'🏛️',name:'Arquitecto Financiero'},
+  {min:80,emoji:'👑',name:'Padre Rico'},
+  {min:90,emoji:'🌟',name:'Libre Financieramente'},
+];
+function getRank(s){
+  let r=RANKS[0];
+  for(const rank of RANKS){if(s>=rank.min)r=rank;}
+  return r;
+}
+
+// Deudas próximas
+const upcoming=()=>{
+  const today=new Date();today.setHours(0,0,0,0);
+  return S.debts.filter(d=>d.liqDate)
+    .map(d=>({...d,daysLeft:Math.ceil((new Date(d.liqDate+'T12:00')-today)/864e5)}))
+    .sort((a,b)=>a.daysLeft-b.daysLeft);
+};
+const qProj=(days=15)=>{
+  const hits=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=days);
+  const totalPago=hits.reduce((a,d)=>a+(+d.bal||0),0);
+  const libre=mInc()-tExp()-savAmt()-totalPago;
+  return{hits,totalPago,libre};
+};
+
+// ══ ONBOARDING ══════════════════════════════════════
 let obS=1;
 const setDL=()=>{const d=new Date();d.setMonth(d.getMonth()+6);document.getElementById('ob-dl').value=d.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});return d.toISOString().split('T')[0]};
 const drawDots=()=>{document.getElementById('dots').innerHTML=[1,2,3].map(i=>`<div class="dot ${i<obS?'ok':i===obS?'cur':''}"></div>`).join('')};
@@ -205,12 +309,14 @@ function obNext(){
 }
 function obPrev(){obS--;document.querySelectorAll('.onb-step').forEach(x=>x.classList.remove('act'));document.getElementById('s'+obS)?.classList.add('act');drawDots();}
 function obDone(){
-  const n=document.getElementById('ob-dn').value.trim();const b=+(document.getElementById('ob-db').value)||0;
-  if(n&&b>0)pt({debts:[{id:Date.now(),name:n,bal:b,rate:+(document.getElementById('ob-dr').value)||0,min:+(document.getElementById('ob-dm').value)||0}]});
+  const n=document.getElementById('ob-dn').value.trim();
+  const b=+(document.getElementById('ob-db').value)||0;
+  const liq=document.getElementById('ob-dliq').value;
+  if(n&&b>0)pt({debts:[{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('ob-dm').value)||0,rate:0,liqDate:liq||'',note:''}]});
   pt({done:true});launchApp();
 }
 
-// ══ ROUTING ══
+// ══ ROUTING ═════════════════════════════════════════
 let cur='dash';
 function go(tab){
   cur=tab;
@@ -218,50 +324,103 @@ function go(tab){
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('act'));
   document.getElementById('tab-'+tab).classList.add('act');
   document.querySelectorAll('.nb').forEach(b=>{if(b.getAttribute('onclick')?.includes("'"+tab+"'"))b.classList.add('act')});
-  ({dash:rDash,flujo:rFlujo,deudas:rDeudas,nu:rNu,ia:rIa})[tab]?.();
+  ({dash:rDash,quincena:rQuincena,flujo:rFlujo,habitos:rHabitos,historia:rHistoria})[tab]?.();
   hdrUp();
 }
-function hdrUp(){const s=score(),el=document.getElementById('hdr-score');el.textContent=`Score ${s}/100`;el.style.color=scCol(s);}
+function hdrUp(){
+  const s=score(),r=getRank(s),el=document.getElementById('hdr-score');
+  el.textContent=`${r.emoji} ${r.name}`;
+  el.style.color=scCol(s);
+}
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go('dash');}
 
-// ══ HELPERS ══
+// ══ HELPERS ═════════════════════════════════════════
 const kpi=(title,val,color,sub)=>`<div class="card" style="margin-bottom:0;text-align:center"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}</div></div>`;
-const PRINCIPS=['"Una parte de todo lo que ganas debe ser tuya para siempre." — Arkad','"Los ricos compran activos. La clase media compra pasivos creyendo que son activos." — Kiyosaki','"Haz un presupuesto. Es tu mapa hacia la prosperidad, no una cadena." — Arkad','"El dinero se multiplica para quienes entienden sus leyes y las respetan."','"La deuda mala te roba tiempo y libertad. Atácala con urgencia." — Kiyosaki','"Cuida los pequeños gastos: un pequeño agujero hunde un barco grande." — Franklin','"Un activo pone dinero en tu bolsillo mientras duermes. Ese es el objetivo." — Padre Rico'];
-const principle=()=>PRINCIPS[new Date().getDay()%PRINCIPS.length];
+const fmtDate=(s)=>{if(!s)return'';try{return new Date(s+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}};
+const PRINCIPS=[
+  '"Una parte de todo lo que ganas debe ser tuya para siempre." — Arkad',
+  '"Los ricos compran activos. La clase media compra pasivos creyendo que son activos." — Kiyosaki',
+  '"Haz un presupuesto: es tu mapa hacia la prosperidad, no una cadena." — Arkad',
+  '"El dinero se multiplica para quienes entienden sus leyes y las respetan."',
+  '"La deuda mala te roba tiempo y libertad. Atácala con urgencia." — Kiyosaki',
+  '"Cuida los pequeños gastos: un pequeño agujero hunde un barco grande." — Franklin',
+  '"Un activo pone dinero en tu bolsillo mientras duermes. Ese es el objetivo." — Padre Rico',
+  '"No importa cuánto ganes, sino cuánto conserves." — Kiyosaki',
+  '"El hombre que desea oro debe empezar ganando poco y aprendiendo a guardarlo." — Arkad',
+  '"Tu mayor activo es tu mente financiera. Invierte en ella primero." — Kiyosaki',
+  '"El dinero es abundante para quienes entienden las reglas simples de su adquisición."',
+  '"No trabajes por dinero; haz que el dinero trabaje por ti." — Kiyosaki',
+  '"La suerte favorece al hombre que actúa. La acción atrae la fortuna." — Arkad',
+  '"La riqueza que viene rápido se va igual de rápido. La que se construye, perdura."',
+];
+const principle=()=>{const w=Math.floor((new Date()-new Date(new Date().getFullYear(),0,1))/864e5/15);return PRINCIPS[w%PRINCIPS.length]};
 
-// ══ DASHBOARD ══
+// Último snapshot de gastos hormiga
+function lastHormiga(){
+  if(!S.snapshots.length)return null;
+  const last=[...S.snapshots].sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+  return last;
+}
+
+// ══ DASHBOARD ═══════════════════════════════════════
 function rDash(){
   const s=score(),sc=scCol(s),ff=flow(),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
   const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
+  const up=upcoming().slice(0,4);
+  const r=getRank(s);
+  const streak=qStreak();
+  const lastSnap=lastHormiga();
+  const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
+  const nextLiq=upcoming().find(d=>d.daysLeft>=0);
+
   document.getElementById('tab-dash').innerHTML=`
   <!-- META -->
   <div class="card card-sage">
     <div class="ct">🎯 Tu Meta — 6 Meses</div>
     <div style="font-size:15px;line-height:1.7;margin-bottom:14px;color:var(--txt2);font-style:italic">"${S.goal||'Sin meta definida'}"</div>
-    <div class="row-b" style="margin-bottom:6px">
-      <span style="font-size:11px;color:var(--muted)">Progreso del plazo</span>
-      <span style="font-size:11px;color:var(--sage);font-weight:bold">${pctT}% transcurrido</span>
-    </div>
+    <div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted)">Progreso del plazo</span><span style="font-size:11px;color:var(--sage);font-weight:bold">${pctT}% transcurrido</span></div>
     <div class="pw"><div class="pb" style="width:${pctT}%;background:var(--sage)"></div></div>
     <div style="font-size:11px;color:var(--muted);margin-top:7px">${dl} días restantes · Límite: ${dlFmt}</div>
   </div>
 
-  <!-- SCORE -->
+  <!-- SCORE + RANGO -->
   <div class="card" style="text-align:center;padding:28px 18px">
     <div style="font-size:10px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">SALUD FINANCIERA</div>
     <div style="font-size:72px;font-weight:bold;color:${sc};line-height:1">${s}</div>
-    <div style="color:${sc};margin:8px 0 16px;font-size:15px">${s>=70?'✦ Camino al Padre Rico':s>=40?'⟳ En construcción':'△ Zona de alerta'}</div>
+    <div style="color:${sc};margin:8px 0 4px;font-size:16px;font-weight:bold">${r.emoji} ${r.name}</div>
+    ${streak>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:12px">🔥 Racha: ${streak} quincena${streak>1?'s':''} consecutiva${streak>1?'s':''}</div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Sube tu primer CSV para iniciar tu racha</div>`}
     <div class="pw" style="max-width:220px;margin:0 auto 6px;height:7px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
-    <div style="font-size:11px;color:var(--muted)">Deudas · Ahorro · Flujo · Activos</div>
+    <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'} (${s<100?RANKS.find(rk=>rk.min>s)?.min||'—':'100'})</div>
   </div>
 
   <!-- KPIs -->
-  <div class="g2" style="margin-bottom:13px">
+  <div class="g3" style="margin-bottom:13px">
     ${kpi('💰 Ingreso mensual',fx(mInc()),'var(--sage)',`+ ${fx(mBonus())}/mes bono prorr.`)}
     ${kpi('💾 Ahorro reservado',fx(savAmt()),'var(--sage)',S.savPct+'% — págate primero')}
-    ${kpi('📋 Gastos fijos',fx(tExp()),'var(--terra)',S.exp.length+' conceptos registrados')}
-    ${kpi('🌊 Flujo libre',fx(ff),ff>=0?'var(--sage)':'var(--terra)',ff>=0?'Para atacar deudas':'⚠ Ajusta gastos')}
+    ${kpi('📋 Gastos fijos',fx(tExp()),'var(--terra)',S.exp.length+' conceptos')}
   </div>
+  <div class="g3" style="margin-bottom:13px">
+    ${kpi('🌊 Flujo libre',fx(ff),ff>=0?'var(--sage)':'var(--terra)',ff>=0?'Después de todo':'⚠ Déficit')}
+    ${kpi('🐜 Gastos hormiga',hormigaTotal?fx(hormigaTotal):'—',hormigaTotal?'var(--amber)':'var(--muted)',lastSnap?'Último análisis':'Sube CSV en Mi Quincena')}
+    ${kpi('📅 Próx. liquidación',nextLiq?nextLiq.daysLeft+'d':'—',nextLiq&&nextLiq.daysLeft<=15?'var(--terra)':'var(--sky)',nextLiq?nextLiq.name:'Sin liquidaciones')}
+  </div>
+
+  <!-- PROYECCIÓN QUINCENA -->
+  ${up.length>0?`
+  <div class="card card-amber">
+    <div class="ct">📅 Próximas Liquidaciones</div>
+    ${up.map(d=>{
+      const urgent=d.daysLeft<=5,soon=d.daysLeft<=15;
+      const col=urgent?'var(--terra)':soon?'var(--amber)':'var(--sky)';
+      return`<div class="ql-item">
+        <div class="ql-dot" style="background:${col}"></div>
+        <div style="flex:1">
+          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span><span style="color:${col};font-weight:bold">${fx(d.bal)}</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtDate(d.liqDate)} · <span style="color:${col}">${d.daysLeft===0?'HOY':d.daysLeft<0?'VENCIDA':d.daysLeft+' días'}</span>${d.pay?` · Pago: ${fx(d.pay)}/mes`:''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`:''}
 
   <!-- PATRIMONIO -->
   <div class="card">
@@ -272,132 +431,46 @@ function rDash(){
     </div>
   </div>
 
-  <!-- SLIDER -->
+  <!-- SLIDER AHORRO -->
   <div class="card">
     <div class="ct">🪙 Págate Primero — Regla de Babilonia</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto. Empieza en 10%, sube cuando puedas.</div>
-    <div class="row-b" style="margin-bottom:9px">
-      <span style="font-size:13px;color:var(--txt)">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span>
-      <span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(savAmt())}/mes</span>
-    </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto.</div>
+    <div class="row-b" style="margin-bottom:9px"><span style="font-size:13px">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span><span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(savAmt())}/mes</span></div>
     <input type="range" min="1" max="30" value="${S.savPct}" style="width:100%;margin-bottom:5px"
-      oninput="pt({savPct:+this.value});document.getElementById('spct').textContent=this.value+'% = '+new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0}).format(mInc()*this.value/100)+'/mes';hdrUp()">
+      oninput="pt({savPct:+this.value});document.getElementById('spct').textContent=this.value+'% = '+fx(mInc()*this.value/100)+'/mes';hdrUp()">
     <div id="spct" style="font-size:11px;color:var(--sage);text-align:right">${S.savPct}% = ${fx(savAmt())}/mes</div>
   </div>
 
   <!-- PRINCIPIO -->
-  <div class="card" style="background:linear-gradient(135deg,rgba(78,124,106,.07) 0%,rgba(74,110,140,.05) 100%);border-color:rgba(78,124,106,.2)">
-    <div class="ct">📖 Principio del día</div>
+  <div class="card" style="background:linear-gradient(135deg,rgba(78,124,106,.06) 0%,rgba(74,110,140,.04) 100%);border-color:rgba(78,124,106,.2)">
+    <div class="ct">📖 Principio de la quincena</div>
     <div style="font-size:13px;font-style:italic;line-height:1.85;color:var(--txt2)">${principle()}</div>
   </div>
+
+  <!-- CAPÍTULOS -->
+  <div class="card">
+    <div class="ct">📊 Resumen de actividad</div>
+    <div class="row-b" style="font-size:12px;color:var(--txt2)">
+      <span>${S.snapshots.length} capítulo${S.snapshots.length!==1?'s':''} escrito${S.snapshots.length!==1?'s':''}</span>
+      <span>${S.waitList.filter(w=>!w.bought&&w.resolved).length} compras impulsivas evitadas</span>
+    </div>
+  </div>
   `;
 }
 
-// ══ FLUJO ══
-function rFlujo(){
-  const cats=['Hogar','Alimentación','Transporte','Salud','Educación','Entretenimiento','Servicios','Deuda','Otro'];
-  const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+(+e.amt||0)});
-  const maxC=Math.max(...Object.values(bc),1);
-  document.getElementById('tab-flujo').innerHTML=`
-  <div class="card">
-    <div class="ct">Ingresos mensuales</div>
-    <div class="g3" style="margin-bottom:13px">
-      <div><label>Salario fijo (neto)</label><input type="number" value="${S.inc.sal||''}" placeholder="0" oninput="pt({inc:{...S.inc,sal:+this.value}});rFlujo();hdrUp()"></div>
-      <div><label>Bono fijo mensual</label><input type="number" value="${S.inc.bf||''}" placeholder="0" oninput="pt({inc:{...S.inc,bf:+this.value}});rFlujo();hdrUp()"></div>
-      <div><label>Bono semestral</label><input type="number" value="${S.inc.bv||''}" placeholder="0" oninput="pt({inc:{...S.inc,bv:+this.value}});rFlujo();hdrUp()"></div>
-    </div>
-    <div class="card card-grn" style="margin-bottom:0">
-      <div class="row-b">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso mensual efectivo</div><div class="stat" style="color:var(--sage)">${fx(mInc())}</div></div>
-        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Bono prorrateado</div><div style="font-size:16px;font-weight:bold;color:var(--sky)">+ ${fx(mBonus())}/mes</div></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <div class="ct">Registrar gasto fijo</div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px">
-      <div><label>Concepto</label><input type="text" id="en" placeholder="Renta, Netflix, gasolina..."></div>
-      <div><label>Monto $</label><input type="number" id="ea" placeholder="0"></div>
-      <div><label>Categoría</label><select id="ec">${cats.map(c=>`<option>${c}</option>`).join('')}</select></div>
-    </div>
-    <button class="btn btn-sage" onclick="addExp()">+ Agregar</button>
-  </div>
-
-  <div class="g3" style="margin-bottom:13px">
-    ${kpi('Gastos fijos',fx(tExp()),'var(--terra)',S.exp.length+' conceptos')}
-    ${kpi('Ahorro reservado',fx(savAmt()),'var(--sage)',S.savPct+'% primero')}
-    ${kpi('Flujo libre',fx(flow()),flow()>=0?'var(--sage)':'var(--terra)',flow()>=0?'Para deudas / inversión':'⚠ Déficit')}
-  </div>
-
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span></div><div class="row"><span style="color:var(--terra);font-weight:bold">${fx(e.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`).join('')}</div>`:''}
-
-  ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([c,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(t)}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.5)"></div></div></div>`).join('')}</div>`:''}
-
-  ${flow()<0?`<div class="card card-red"><div style="color:var(--terra);font-weight:bold;margin-bottom:6px">⚠ Déficit de ${fx(Math.abs(flow()))}/mes</div><div style="font-size:12px;color:var(--txt2)">Tus gastos + ahorro superan tu ingreso mensual. El bono semestral (${fx(S.inc.bv)}) puede cubrir temporalmente, pero necesitas reducir gastos o aumentar ingresos para avanzar de forma sostenida.</div></div>`:''}
-  `;
-}
-function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;if(!n||!a)return;pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c}]});rFlujo();}
-function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});rFlujo();}
-
-// ══ DEUDAS ══
-let dStrat='snowball';
-function rDeudas(){
-  const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
-  const ff=flow(),extra=ff>0?ff*0.8:0;
-  const avgR=S.debts.length?(S.debts.reduce((a,d)=>a+(+d.rate||0),0)/S.debts.length).toFixed(1):0;
-  document.getElementById('tab-deudas').innerHTML=`
-  <div class="g3" style="margin-bottom:13px">
-    ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?S.debts.length+' créditos activos':'¡Sin deudas!')}
-    ${kpi('📋 Pago mínimo',fx(tMin()),'var(--sky)','Compromisos mensuales')}
-    ${kpi('📈 Tasa promedio',avgR+'%','var(--terra)','Interés anual promedio')}
-  </div>
-
-  <div class="card">
-    <div class="ct">Registrar deuda</div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;margin-bottom:10px">
-      <div><label>Nombre</label><input type="text" id="dn" placeholder="Tarjeta Nu, Nómina..."></div>
-      <div><label>Saldo $</label><input type="number" id="db" placeholder="0"></div>
-      <div><label>Tasa anual %</label><input type="number" id="dr" placeholder="36"></div>
-      <div><label>Pago mínimo</label><input type="number" id="dm" placeholder="0"></div>
-    </div>
-    <button class="btn btn-sage" onclick="addDebt()">+ Agregar deuda</button>
-  </div>
-
-  ${S.debts.length>0?`
-  <div class="card">
-    <div class="ct">Estrategia de pago</div>
-    <div class="g2" style="margin-bottom:13px">
-      <div onclick="dStrat='snowball';rDeudas()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'}">
-        <div style="font-weight:bold;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Liquida la más pequeña primero. Genera motivación real.</div>
-      </div>
-      <div onclick="dStrat='avalanche';rDeudas()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='avalanche'?'var(--sage)':'var(--border)'};background:${dStrat==='avalanche'?'var(--sagedim2)':'var(--bg)'}">
-        <div style="font-weight:bold;color:${dStrat==='avalanche'?'var(--sage2)':'var(--txt)'}">🏔️ Avalancha</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Liquida la de mayor tasa primero. Ahorra más intereses.</div>
-      </div>
-    </div>
-    ${extra>0?`<div class="card card-grn" style="margin-bottom:13px"><div style="font-size:12px;color:var(--sage)">💡 Tienes <strong>${fx(extra)}/mes</strong> de flujo libre — aplícalo como pago extra a la deuda #1 para acelerar.</div></div>`:''}
-    <div class="ct">Plan de ataque — ${dStrat==='snowball'?'Bola de Nieve':'Avalancha'}</div>
-    ${sorted.map((d,i)=>{const tot=(+d.min)+(i===0?extra:0);const mos=tot>0?Math.ceil(d.bal/tot):'?';return`<div style="padding:12px 0;border-bottom:1px solid var(--border)"><div class="row-b" style="margin-bottom:7px"><div class="row"><span class="badge ${i===0?'bdg-sage':'bdg-sky'}">${i===0?'🎯 AHORA':'#'+(i+1)}</span><span style="font-weight:bold;color:var(--txt)">${d.name}</span></div><div class="row">${d.rate?`<span class="badge bdg-red">${d.rate}%</span>`:''}<span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div></div><div class="row" style="gap:14px;font-size:11px;color:var(--muted)">${d.min?`<span>Mín: ${fx(d.min)}/mes</span>`:''} ${i===0&&extra>0?`<span style="color:var(--sage)">+ ${fx(extra)} extra = ${fx(tot)}/mes</span>`:''} ${mos!=='?'?`<span style="color:var(--sky)">~${mos} meses para liquidar</span>`:''}</div></div>`;}).join('')}
-    <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px"><div style="font-size:12px;color:var(--sage)">🔄 Al liquidar la #1, suma ese pago a la #2. El efecto bola de nieve destruye las deudas restantes exponencialmente.</div></div>
-  </div>
-  ${S.inc.bv>0?`<div class="card card-sky"><div class="ct">💰 Plan para tu Bono Semestral de ${fx(S.inc.bv)}</div><div style="font-size:12px;color:var(--txt2);margin-bottom:12px">Esta es tu mayor palanca agresiva. El bono debe atacar deuda, no gastos de lujo.</div><div style="font-size:13px;line-height:2.3"><div>• <strong style="color:var(--terra)">70%</strong> → <strong>${fx(S.inc.bv*.7)}</strong> a la deuda con mayor tasa</div><div>• <strong style="color:var(--sage)">20%</strong> → <strong>${fx(S.inc.bv*.2)}</strong> a fondo de emergencia</div><div>• <strong style="color:var(--sky)">10%</strong> → <strong>${fx(S.inc.bv*.1)}</strong> para celebrar el avance</div></div></div>`:''}
-  `:`<div class="card" style="text-align:center;padding:40px"><div style="font-size:40px;margin-bottom:12px">🏆</div><div style="color:var(--sage);font-size:18px;font-weight:bold">Sin deudas registradas</div><div style="color:var(--muted);margin-top:8px;font-size:13px">Agrega tus deudas para crear tu plan de ataque.</div></div>`}
-  `;
-}
-function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);if(!n||!b)return;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,rate:+(document.getElementById('dr')?.value)||0,min:+(document.getElementById('dm')?.value)||0}]});rDeudas();}
-function rmDebt(id){pt({debts:S.debts.filter(d=>d.id!==id)});rDeudas();}
-
-// ══ ANÁLISIS NU ══
+// ══ MI QUINCENA (análisis Nu + snapshots) ════════════
 let nuTxns=[];
 const HK={
-  '🛒 Minisuper / OXXO':['OXXO','7-ELEVEN','7ELEVEN','EXTRA SUPER','BUEN PRECIO','MODELORAMA','DUNOSUSA','BARA '],
-  '🚗 Delivery (Uber/Rappi)':['UBER EATS','UBEREATS','RAPPI','DIDI FOOD','DIDIFOOD','CORNERSHOP','JUSTO'],
-  '📦 Compras online':['AMAZON','MERCADO LIBRE','MERCADOLIBRE','SHEIN','TEMU','WISH','ALIEXPRESS','LINIO'],
-  '📺 Suscripciones':['NETFLIX','SPOTIFY','DISNEY','HBO','APPLE.COM','YOUTUBE PREMIUM','AMAZON PRIME','PARAMOUNT'],
-  '💊 Farmacias':['FARMACIA','FARMACIAS','BENAVIDES','SIMILARES','FARMAHORRO'],
+  '🛒 Minisuper / OXXO':['OXXO','7-ELEVEN','7ELEVEN','EXTRA SUPER','BUEN PRECIO','MODELORAMA','DUNOSUSA','BARA ','CADENA COMERCIAL'],
+  '🚗 Delivery':['UBER EATS','UBEREATS','RAPPI','DIDI FOOD','DIDIFOOD','CORNERSHOP','JUSTO'],
+  '📦 Compras online':['AMAZON','MERCADO LIBRE','MERCADOLIBRE','SHEIN','TEMU','WISH','ALIEXPRESS','LINIO','ML '],
+  '📺 Suscripciones':['NETFLIX','SPOTIFY','DISNEY','HBO','APPLE.COM','YOUTUBE PREMIUM','AMAZON PRIME','PARAMOUNT','CRUNCHYROLL'],
+  '💊 Farmacias':['FARMACIA','FARMACIAS','BENAVIDES','SIMILARES','FARMAHORRO','GUADALAJARA'],
+  '🍔 Restaurantes':['RESTAURANTE','RESTAURANT','TACOS','POLLO','PIZZA','SUSHI','BURGER','WINGS','CARL','LITTLE CAESARS','DOMINOS','SUBWAY','MCDONALDS'],
+  '☕ Cafeterías':['STARBUCKS','ITALIAN COFFEE','CIELITO','CAFE','COFFEE','ANDATTI'],
+  '🎮 Entretenimiento':['STEAM','PLAYSTATION','XBOX','NINTENDO','CINEPOLIS','CINEMEX','GOOGLE PLAY','APPLE STORE'],
 };
+
 function parseNu(txt){
   const lines=txt.trim().split(/\r?\n/);if(lines.length<2)return[];
   const sep=lines[0].includes(';')?';':',';
@@ -416,16 +489,66 @@ function parseNu(txt){
   }
   return res.filter(t=>t.isCharge);
 }
+
 function detectH(txns){
-  const r={};txns.forEach(t=>{const d=t.desc.toUpperCase();for(const[cat,keys]of Object.entries(HK)){if(keys.some(k=>d.includes(k))){if(!r[cat])r[cat]={total:0,count:0};r[cat].total+=t.amt;r[cat].count++;break;}}});
+  const r={};
+  txns.forEach(t=>{const d=t.desc.toUpperCase();for(const[cat,keys]of Object.entries(HK)){if(keys.some(k=>d.includes(k))){if(!r[cat])r[cat]={total:0,count:0};r[cat].total+=t.amt;r[cat].count++;break;}}});
   return Object.entries(r).sort((a,b)=>b[1].total-a[1].total);
 }
-function rNu(){
+
+function saveSnapshot(txns){
+  const hd=detectH(txns);
+  const hormiga={};hd.forEach(([cat,data])=>hormiga[cat]=data);
+  const dates=txns.map(t=>t.date).filter(Boolean).sort();
+  const topC={};txns.forEach(t=>{const k=t.desc.slice(0,28);topC[k]=(topC[k]||0)+1;});
+  const topCommerces=Object.entries(topC).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,count])=>({name,count}));
+
+  const snap={
+    id:Date.now(),
+    date:new Date().toISOString().split('T')[0],
+    periodStart:dates[0]||'',
+    periodEnd:dates[dates.length-1]||'',
+    totalGasto:txns.reduce((a,t)=>a+t.amt,0),
+    totalTxns:txns.length,
+    hormiga,
+    topCommerces,
+    score:score(),
+    patrimonio:nw(),
+    deudaTotal:tDebt(),
+  };
+  pt({snapshots:[...S.snapshots,snap]});
+  toast('📊 Capítulo quincenal guardado');
+  return snap;
+}
+
+// Comparativa contra promedios históricos
+function compareSnap(current){
+  if(S.snapshots.length<2)return null;
+  const prev=[...S.snapshots].filter(s=>s.id!==current.id).sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const last3=prev.slice(0,3);
+  const last6=prev.slice(0,6);
+  const avg=(snaps,cat)=>{const vals=snaps.map(s=>(s.hormiga[cat]||{}).total||0);return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0;};
+
+  const cats=Object.keys(current.hormiga);
+  const comp=cats.map(cat=>{
+    const curVal=current.hormiga[cat].total;
+    const avg3=avg(last3,cat);
+    const avg6=avg(last6,cat);
+    const pctVs3=avg3>0?((curVal-avg3)/avg3*100):0;
+    return{cat,curVal,avg3,avg6,pctVs3,count:current.hormiga[cat].count};
+  });
+  return comp.sort((a,b)=>b.curVal-a.curVal);
+}
+
+function rQuincena(){
   const hd=detectH(nuTxns),totH=hd.reduce((a,[,v])=>a+v.total,0),totAll=nuTxns.reduce((a,t)=>a+t.amt,0);
-  document.getElementById('tab-nu').innerHTML=`
+  const lastSnap=S.snapshots.length?[...S.snapshots].sort((a,b)=>new Date(b.date)-new Date(a.date))[0]:null;
+
+  document.getElementById('tab-quincena').innerHTML=`
   <div class="card card-sage">
-    <div class="ct">🔍 Análisis de Estado de Cuenta — Nu</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Descarga tu CSV desde Nu: <strong style="color:var(--sage2)">Perfil → Exportar transacciones</strong>. Súbelo aquí para ver exactamente dónde se van los minisupers y compras impulsivas.</div>
+    <div class="ct">📊 Análisis de Estado de Cuenta</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Descarga tu CSV desde Nu: <strong style="color:var(--sage2)">Perfil → Exportar transacciones</strong>. Cada CSV que subes se convierte en un capítulo de tu historia financiera.</div>
+    ${S.snapshots.length>0?`<div style="margin-top:10px;font-size:11px;color:var(--sage)">📖 ${S.snapshots.length} capítulo${S.snapshots.length>1?'s':''} guardado${S.snapshots.length>1?'s':''} · Último: ${lastSnap?fmtDate(lastSnap.date):''}</div>`:''}
   </div>
 
   ${nuTxns.length===0?`
@@ -439,87 +562,472 @@ function rNu(){
   </div>
   <div class="card"><div class="ct">¿Cómo descargo el CSV de Nu?</div><div style="font-size:13px;line-height:2.1;color:var(--txt2)"><div>1. Abre la app de Nu en tu celular</div><div>2. Toca tu foto de perfil (esquina superior)</div><div>3. Busca "Exportar transacciones" o "Historial"</div><div>4. Descarga el CSV y súbelo aquí</div></div></div>
   `:`
+  <!-- SAVE SNAPSHOT BUTTON -->
+  ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
+    <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo quincenal?</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">Esto guarda las métricas de este periodo para comparar con futuras quincenas.</div>
+    <button class="btn btn-sage" onclick="saveSnapshot(nuTxns);nuTxns._saved=true;rQuincena()">Guardar capítulo</button>
+  </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo guardado</div></div>`}
+
   <div class="g3" style="margin-bottom:13px">
     ${kpi('📋 Transacciones',nuTxns.length,'var(--sky)','analizadas')}
     ${kpi('💸 Total gastado',fx(totAll),'var(--terra)','en el periodo')}
-    ${kpi('🐜 Gastos hormiga',fx(totH),'var(--sage)',(totAll>0?(totH/totAll*100).toFixed(1):0)+'% del total')}
+    ${kpi('🐜 Gastos hormiga',fx(totH),'var(--amber)',(totAll>0?(totH/totAll*100).toFixed(1):0)+'% del total')}
   </div>
 
-  ${hd.length>0?`<div class="card"><div class="ct">🐜 Gastos Hormiga Detectados</div><div style="font-size:11px;color:var(--muted);margin-bottom:13px">Compras pequeñas y frecuentes que en conjunto destruyen tu flujo libre:</div>${hd.map(([cat,data])=>`<div class="hi"><div><div style="font-weight:bold;margin-bottom:2px;color:var(--txt)">${cat}</div><div style="font-size:11px;color:var(--muted)">${data.count} transacciones · Promedio ${fx(data.total/data.count)}/compra</div></div><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:16px">${fx(data.total)}</div><div style="font-size:10px;color:var(--muted)">${fx(data.total*12)}/año</div></div></div>`).join('')}<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px"><strong style="color:var(--sage2)">💡 Controlando solo estos hábitos liberarías ${fx(totH)}/mes = ${fx(totH*12)}/año</strong></div></div>`:''}
+  <!-- GASTOS HORMIGA -->
+  ${hd.length>0?`<div class="card"><div class="ct">🐜 Gastos Hormiga Detectados</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:13px">Compras frecuentes que en conjunto destruyen tu flujo:</div>
+  ${hd.map(([cat,data])=>{
+    const annual=data.total*12;
+    return`<div class="hi"><div><div style="font-weight:bold;margin-bottom:2px;color:var(--txt)">${cat}</div><div style="font-size:11px;color:var(--muted)">${data.count} transacciones · Prom. ${fx(data.total/data.count)}/compra</div></div><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:16px">${fx(data.total)}</div><div style="font-size:10px;color:var(--muted)">${fx(annual)}/año</div></div></div>`;
+  }).join('')}
+  <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px">
+    <strong style="color:var(--sage2)">💡 Controlando estos hábitos liberarías ${fx(totH)}/mes = ${fx(totH*12)}/año</strong>
+    ${tDebt()>0?`<div style="font-size:11px;color:var(--txt2);margin-top:6px">Eso equivale a liquidar ${fx(totH*12)} en deudas en un año — ${tDebt()>0?((totH*12/tDebt())*100).toFixed(0)+'% de tu deuda total':''}</div>`:''}
+  </div></div>`:''}
 
-  <div class="card"><div class="ct">Top 10 gastos del periodo</div>${nuTxns.sort((a,b)=>b.amt-a.amt).slice(0,10).map((t,i)=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row"><span style="color:var(--muted);min-width:20px">${i+1}</span><span style="color:var(--txt)">${t.desc.slice(0,36)}</span></div><span style="color:var(--terra);font-weight:bold">${fx(t.amt)}</span></div>`).join('')}</div>
+  <!-- COMPARATIVA QUINCENAL -->
+  ${(()=>{
+    if(!nuTxns._saved||S.snapshots.length<2)return'';
+    const currentSnap=S.snapshots[S.snapshots.length-1];
+    const comp=compareSnap(currentSnap);
+    if(!comp||!comp.length)return'';
+    return`<div class="card"><div class="ct">📈 Comparativa Quincenal</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:13px">Esta quincena vs promedio de las últimas 3:</div>
+    ${comp.map(c=>{
+      const arrow=c.pctVs3>5?'↑':c.pctVs3<-5?'↓':'→';
+      const arrowCol=c.pctVs3>5?'var(--terra)':c.pctVs3<-5?'var(--sage)':'var(--muted)';
+      const alert20=c.pctVs3>20;
+      return`<div style="padding:8px 0;border-bottom:1px solid var(--border);${alert20?'background:var(--terradim);margin:0 -18px;padding:8px 18px;':''}">
+        <div class="row-b">
+          <span style="font-size:12px;color:var(--txt)">${c.cat}</span>
+          <div class="row">
+            <span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(c.curVal)}</span>
+            <span style="font-size:16px;color:${arrowCol};font-weight:bold">${arrow}</span>
+            <span style="font-size:11px;color:${arrowCol};font-weight:bold">${c.pctVs3>0?'+':''}${c.pctVs3.toFixed(0)}%</span>
+          </div>
+        </div>
+        ${alert20?`<div style="font-size:10px;color:var(--terra);margin-top:3px">⚠️ Subió ${c.pctVs3.toFixed(0)}% vs tu promedio</div>`:''}
+      </div>`;
+    }).join('')}
+    </div>`;
+  })()}
 
+  <!-- RADIOGRAFÍA MINISUPER -->
+  ${(()=>{
+    const mini=hd.find(([cat])=>cat.includes('Minisuper'));
+    if(!mini)return'';
+    const [,data]=mini;
+    const dates=nuTxns.filter(t=>HK['🛒 Minisuper / OXXO'].some(k=>t.desc.toUpperCase().includes(k))).map(t=>t.date).filter(Boolean);
+    const uniqueDays=new Set(dates).size;
+    const periodDays=Math.max(1,(() => {
+      const ds=nuTxns.map(t=>t.date).filter(Boolean).sort();
+      if(ds.length<2)return 15;
+      return Math.max(1,Math.ceil((new Date(ds[ds.length-1])-new Date(ds[0]))/864e5));
+    })());
+    const freq=(data.count/periodDays).toFixed(1);
+    return`<div class="card card-amber">
+      <div class="ct">🛒 Radiografía del Minisuper</div>
+      <div class="g2" style="margin-bottom:12px">
+        ${kpi('Visitas',data.count,'var(--amber)','en el periodo')}
+        ${kpi('Frecuencia',freq+'×/día','var(--terra)','promedio diario')}
+      </div>
+      <div class="g2">
+        ${kpi('Promedio',fx(data.total/data.count),'var(--amber)','por visita')}
+        ${kpi('Total',fx(data.total),'var(--terra)',fx(data.total*12)+'/año')}
+      </div>
+      <div style="background:rgba(160,112,48,.08);border:1px solid rgba(160,112,48,.2);border-radius:8px;padding:12px;margin-top:13px;font-size:12px;color:var(--txt2);line-height:1.7">
+        💡 Si reduces a 1 visita cada 2 días ahorrarías ~${fx(data.total*0.5)}/periodo
+      </div>
+    </div>`;
+  })()}
+
+  <!-- TOP GASTOS -->
+  <div class="card"><div class="ct">Top 10 gastos</div>${nuTxns.sort((a,b)=>b.amt-a.amt).slice(0,10).map((t,i)=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row"><span style="color:var(--muted);min-width:20px">${i+1}</span><span style="color:var(--txt)">${t.desc.slice(0,36)}</span></div><span style="color:var(--terra);font-weight:bold">${fx(t.amt)}</span></div>`).join('')}</div>
+
+  <!-- COMERCIOS FRECUENTES -->
   <div class="card"><div class="ct">Comercios más frecuentes</div>${(()=>{const fc={};nuTxns.forEach(t=>fc[t.desc.slice(0,28)]=(fc[t.desc.slice(0,28)]||0)+1);return Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([d,c])=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="color:var(--txt)">${d}</span><span class="badge bdg-sage">${c}× veces</span></div>`).join('');})()}</div>
 
-  <button class="btn btn-ghost" onclick="nuTxns=[];rNu()">↺ Cargar otro archivo</button>
+  <button class="btn btn-ghost" onclick="nuTxns=[];rQuincena()">↺ Cargar otro archivo</button>
+  `}`;
+}
+
+function onFile(f){if(!f)return;const r=new FileReader();r.onload=e=>{nuTxns=parseNu(e.target.result);nuTxns._saved=false;if(!nuTxns.length){alert('No se pudieron leer transacciones. Verifica que sea el CSV correcto.');return;}toast('✓ '+nuTxns.length+' transacciones leídas');rQuincena();};r.readAsText(f,'UTF-8');}
+function onDrop(e){e.preventDefault();document.getElementById('dz')?.classList.remove('over');const f=e.dataTransfer.files[0];if(f)onFile(f);}
+
+// ══ DEUDAS & FLUJO (merged tab) ═════════════════════
+const EXP_CATS=['Hogar / Renta','Educación / Escuelas','Seguro auto','Seguro gastos médicos','Súper / Despensa','Gasolina','Servicios (luz, agua, gas)','Internet / Telefonía','Entretenimiento','Salud / Medicamentos','Transporte','Otro'];
+const QUICK_EXP=[
+  {n:'🏠 Renta',a:0,c:'Hogar / Renta'},{n:'🏫 Colegio / Escuela',a:0,c:'Educación / Escuelas'},
+  {n:'🚗 Seguro Auto',a:0,c:'Seguro auto'},{n:'🏥 Seguro GM',a:0,c:'Seguro gastos médicos'},
+  {n:'🛒 Súper semanal',a:0,c:'Súper / Despensa'},{n:'⛽ Gasolina',a:0,c:'Gasolina'},
+  {n:'💡 Luz / CFE',a:0,c:'Servicios (luz, agua, gas)'},{n:'📶 Internet',a:0,c:'Internet / Telefonía'},
+  {n:'📱 Celular',a:0,c:'Internet / Telefonía'},{n:'🎮 Netflix',a:0,c:'Entretenimiento'},
+  {n:'💊 Farmacia',a:0,c:'Salud / Medicamentos'},
+];
+let dStrat='snowball';
+
+function rFlujo(){
+  const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+(+e.amt||0)});
+  const maxC=Math.max(...Object.values(bc),1);
+  const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
+  const avgR=S.debts.length&&S.debts.some(d=>d.rate)?(S.debts.reduce((a,d)=>a+(+d.rate||0),0)/S.debts.filter(d=>d.rate).length).toFixed(1):null;
+  const up=upcoming();
+
+  document.getElementById('tab-flujo').innerHTML=`
+  <!-- INGRESOS -->
+  <div class="card">
+    <div class="ct">💰 Ingresos mensuales</div>
+    <div class="g3" style="margin-bottom:13px">
+      <div><label>Salario fijo (neto)</label><input type="number" value="${S.inc.sal||''}" placeholder="0" oninput="pt({inc:{...S.inc,sal:+this.value}});rFlujo();hdrUp()"></div>
+      <div><label>Bono fijo mensual</label><input type="number" value="${S.inc.bf||''}" placeholder="0" oninput="pt({inc:{...S.inc,bf:+this.value}});rFlujo();hdrUp()"></div>
+      <div><label>Bono semestral</label><input type="number" value="${S.inc.bv||''}" placeholder="0" oninput="pt({inc:{...S.inc,bv:+this.value}});rFlujo();hdrUp()"></div>
+    </div>
+    <div class="card card-grn" style="margin-bottom:0">
+      <div class="row-b">
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso mensual efectivo</div><div class="stat" style="color:var(--sage)">${fx(mInc())}</div></div>
+        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Bono prorrateado</div><div style="font-size:16px;font-weight:bold;color:var(--sky)">+ ${fx(mBonus())}/mes</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- GASTOS FIJOS -->
+  <div class="card">
+    <div class="ct">📋 Agregar gasto fijo</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Acceso rápido:</div>
+    <div class="chips">${QUICK_EXP.map(q=>`<button class="chip" onclick="preExp('${q.n.replace(/'/g,"\\'")}','${q.c}')">${q.n}</button>`).join('')}</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><label>Concepto</label><input type="text" id="en" placeholder="Nombre del gasto..."></div>
+      <div><label>Monto $</label><input type="number" id="ea" placeholder="0"></div>
+      <div><label>Categoría</label><select id="ec">${EXP_CATS.map(c=>`<option>${c}</option>`).join('')}</select></div>
+    </div>
+    <button class="btn btn-sage" onclick="addExp()">+ Agregar gasto</button>
+  </div>
+
+  <!-- RESUMEN FLUJO -->
+  <div class="g3" style="margin-bottom:13px">
+    ${kpi('📋 Gastos fijos',fx(tExp()),'var(--terra)',S.exp.length+' conceptos')}
+    ${kpi('⛓️ Pagos deudas',fx(tDebtPay()),'var(--sky)',S.debts.length+' créditos')}
+    ${kpi('🌊 Flujo libre',fx(flow()),flow()>=0?'var(--sage)':'var(--terra)',flow()>=0?'Disponible':'⚠ Déficit')}
+  </div>
+
+  ${flow()<0?`<div class="card card-red"><div style="color:var(--terra);font-weight:bold;margin-bottom:6px">⚠ Déficit de ${fx(Math.abs(flow()))}/mes</div><div style="font-size:12px;color:var(--txt2)">Tus gastos + pagos de deuda + ahorro superan tu ingreso.</div></div>`:''}
+
+  <!-- LISTA GASTOS -->
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span></div><div class="row"><span style="color:var(--terra);font-weight:bold">${fx(e.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`).join('')}</div>`:''}
+
+  <!-- DISTRIBUCIÓN -->
+  ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([c,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(t)}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
+
+  <!-- ═══ DEUDAS ═══ -->
+  <div class="card">
+    <div class="ct">⛓️ Registrar deuda</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:10px">
+      <div><label>Nombre</label><input type="text" id="dn" placeholder="Tarjeta Nu, Nómina, Auto..."></div>
+      <div><label>Saldo total ($)</label><input type="number" id="db" placeholder="0"></div>
+      <div><label>Pago mensual fijo ($)</label><input type="number" id="dm" placeholder="0"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+      <div><label>Tasa anual % <span style="text-transform:none;font-style:italic">(opcional)</span></label><input type="number" id="dr" placeholder="36"></div>
+      <div><label>Fecha de liquidación</label><input type="date" id="dliq"></div>
+      <div><label>Nota <span style="text-transform:none;font-style:italic">(opcional)</span></label><input type="text" id="dnote" placeholder="Vence quincena, etc."></div>
+    </div>
+    <button class="btn btn-sage" onclick="addDebt()">+ Agregar deuda</button>
+  </div>
+
+  <!-- DEUDA KPIs -->
+  <div class="g3" style="margin-bottom:13px">
+    ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?S.debts.length+' créditos':'¡Sin deudas!')}
+    ${kpi('📅 Pagos mensuales',fx(tDebtPay()),'var(--sky)','Comprometido/mes')}
+    ${kpi('📈 Tasa prom.',avgR?avgR+'%':'—',avgR?'var(--terra)':'var(--muted)',avgR?'Interés anual':'Sin interés reg.')}
+  </div>
+
+  <!-- LIQUIDACIONES -->
+  ${up.length>0?`
+  <div class="card card-amber">
+    <div class="ct">📅 Liquidaciones Programadas</div>
+    ${up.map(d=>{
+      const urgent=d.daysLeft<=5,soon=d.daysLeft<=15;
+      const col=urgent?'var(--terra)':soon?'var(--amber)':'var(--sky)';
+      const label=d.daysLeft===0?'HOY':d.daysLeft<0?'VENCIDA hace '+Math.abs(d.daysLeft)+'d':d.daysLeft<=1?'Mañana':d.daysLeft+' días';
+      return`<div class="ql-item">
+        <div class="ql-dot" style="background:${col}"></div>
+        <div style="flex:1">
+          <div class="row-b"><div class="row"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.note?`<span class="badge bdg-amber">${d.note}</span>`:''}</div><div class="row"><span style="color:${col};font-weight:bold">${fx(d.bal)}</span><button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:3px">Liquida: ${fmtDate(d.liqDate)} · <span style="color:${col};font-weight:bold">${label}</span>${d.pay?` · Pago: ${fx(d.pay)}/mes`:''}</div>
+        </div>
+      </div>`;
+    }).join('')}
+  </div>`:''}
+
+  ${S.debts.length>0?`
+  <!-- ESTRATEGIA -->
+  <div class="card">
+    <div class="ct">Plan de ataque mensual</div>
+    <div class="g2" style="margin-bottom:13px">
+      <div onclick="dStrat='snowball';rFlujo()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'}">
+        <div style="font-weight:bold;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Liquida la más pequeña primero.</div>
+      </div>
+      <div onclick="dStrat='avalanche';rFlujo()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='avalanche'?'var(--sage)':'var(--border)'};background:${dStrat==='avalanche'?'var(--sagedim2)':'var(--bg)'}">
+        <div style="font-weight:bold;color:${dStrat==='avalanche'?'var(--sage2)':'var(--txt)'}">🏔️ Avalancha</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Liquida la de mayor tasa.</div>
+      </div>
+    </div>
+    ${sorted.map((d,i)=>{
+      const mos=d.pay>0?Math.ceil(d.bal/d.pay):'?';
+      const liqEst=d.pay>0?new Date(new Date().getFullYear(),new Date().getMonth()+mos,1).toLocaleDateString('es-MX',{month:'short',year:'numeric'}):'';
+      return`<div style="padding:13px 0;border-bottom:1px solid var(--border)">
+        <div class="row-b" style="margin-bottom:6px">
+          <div class="row"><span class="badge ${i===0?'bdg-sage':'bdg-sky'}">${i===0?'🎯 AHORA':'#'+(i+1)}</span><span style="font-weight:bold;color:var(--txt)">${d.name}</span></div>
+          <div class="row">${d.rate?`<span class="badge bdg-red">${d.rate}%</span>`:''}
+            <span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span>
+            <button class="btn btn-red btn-sm" onclick="rmDebt(${d.id})">✕</button></div>
+        </div>
+        <div class="row" style="gap:16px;font-size:11px;color:var(--muted)">
+          ${d.pay?`<span>Pago: <strong style="color:var(--sky)">${fx(d.pay)}/mes</strong></span>`:''}
+          ${d.liqDate?`<span>Liquida: <strong style="color:var(--amber)">${fmtDate(d.liqDate)}</strong></span>`:''}
+          ${mos!=='?'&&!d.liqDate?`<span>Est: <strong style="color:var(--sage)">~${mos} meses (${liqEst})</strong></span>`:''}
+        </div>
+      </div>`;
+    }).join('')}
+    <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px"><div style="font-size:12px;color:var(--sage)">🔄 Al liquidar la #1, suma ese pago a la #2. Efecto bola de nieve.</div></div>
+  </div>
+
+  ${S.inc.bv>0?`<div class="card card-sky"><div class="ct">💰 Plan para tu Bono Semestral de ${fx(S.inc.bv)}</div><div style="font-size:13px;line-height:2.3"><div>• <strong style="color:var(--terra)">70%</strong> → <strong>${fx(S.inc.bv*.7)}</strong> a deuda con mayor tasa</div><div>• <strong style="color:var(--sage)">20%</strong> → <strong>${fx(S.inc.bv*.2)}</strong> a fondo de emergencia</div><div>• <strong style="color:var(--sky)">10%</strong> → <strong>${fx(S.inc.bv*.1)}</strong> para celebrar</div></div></div>`:''}
+  `:`<div class="card" style="text-align:center;padding:40px"><div style="font-size:40px;margin-bottom:12px">🏆</div><div style="color:var(--sage);font-size:18px;font-weight:bold">Sin deudas registradas</div><div style="color:var(--muted);margin-top:8px;font-size:13px">Agrega tus créditos arriba para crear tu plan de ataque.</div></div>`}
+  `;
+}
+
+function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
+function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;if(!n||!a)return;pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c}]});toast('✓ Gasto registrado');rFlujo();}
+function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});toast('Gasto eliminado');rFlujo();}
+function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);if(!n||!b)return;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,rate:+(document.getElementById('dr')?.value)||0,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||''}]});toast('⛓️ Deuda registrada');rFlujo();}
+function rmDebt(id){pt({debts:S.debts.filter(d=>d.id!==id)});toast('Deuda eliminada');rFlujo();}
+
+// ══ MIS HÁBITOS (Fase 1: estructura + sala de espera 48h) ═══
+function rHabitos(){
+  const now=Date.now();
+  const pending=S.waitList.filter(w=>!w.resolved);
+  const ready=pending.filter(w=>(now-w.createdAt)>=48*60*60*1000);
+  const waiting=pending.filter(w=>(now-w.createdAt)<48*60*60*1000);
+  const resolved=S.waitList.filter(w=>w.resolved);
+  const avoided=resolved.filter(w=>!w.bought);
+  const totalSaved=avoided.reduce((a,w)=>a+(+w.price||0),0);
+
+  document.getElementById('tab-habitos').innerHTML=`
+  <div class="card card-sage">
+    <div class="ct">🧠 Intervención de Hábitos</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Herramientas para cambiar patrones de gasto impulsivo. Registra tus impulsos de compra antes de ejecutarlos.</div>
+  </div>
+
+  <!-- SALA DE ESPERA 48H -->
+  <div class="card">
+    <div class="ct">⏳ Sala de Espera — Regla de las 48 Horas</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.7">¿Quieres comprar algo? Regístralo aquí. Si después de 48h todavía lo necesitas, cómpralo. El 60-70% de impulsos se cancelan con esta pausa.</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:12px">
+      <div><label>¿Qué quieres comprar?</label><input type="text" id="wn" placeholder="Audífonos, gadget, ropa..."></div>
+      <div><label>Precio estimado ($)</label><input type="number" id="wp" placeholder="0"></div>
+      <div><label>Tienda</label><select id="ws"><option>Amazon</option><option>MercadoLibre</option><option>Tienda física</option><option>Otro</option></select></div>
+    </div>
+    <button class="btn btn-sage" onclick="addWait()">⏳ Poner en espera 48h</button>
+  </div>
+
+  ${totalSaved>0?`<div class="card card-grn" style="text-align:center">
+    <div style="font-size:10px;letter-spacing:2px;color:var(--sage);margin-bottom:6px;text-transform:uppercase">DINERO SALVADO</div>
+    <div class="stat" style="color:var(--sage)">${fx(totalSaved)}</div>
+    <div class="lbl" style="margin-top:4px">${avoided.length} compra${avoided.length>1?'s':''} impulsiva${avoided.length>1?'s':''} evitada${avoided.length>1?'s':''}</div>
+  </div>`:''}
+
+  <!-- LISTAS PARA RESOLVER -->
+  ${ready.length>0?`<div class="card card-amber">
+    <div class="ct">🔔 Listas para decidir (48h cumplidas)</div>
+    ${ready.map(w=>`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div class="row-b" style="margin-bottom:8px">
+        <div><div style="font-weight:bold;color:var(--txt)">${w.name}</div><div style="font-size:11px;color:var(--muted)">${w.store} · ${fmtDate(new Date(w.createdAt).toISOString().split('T')[0])}</div></div>
+        <span style="color:var(--terra);font-weight:bold;font-size:16px">${fx(w.price)}</span>
+      </div>
+      <div style="font-size:13px;color:var(--txt2);margin-bottom:10px">¿Todavía lo necesitas?</div>
+      <div class="row" style="gap:8px">
+        <button class="btn btn-red btn-sm" onclick="resolveWait(${w.id},true)">Sí, lo compré</button>
+        <button class="btn btn-sage btn-sm" onclick="resolveWait(${w.id},false)">🎉 Ya no lo quiero</button>
+      </div>
+    </div>`).join('')}
+  </div>`:''}
+
+  <!-- EN ESPERA -->
+  ${waiting.length>0?`<div class="card">
+    <div class="ct">⏳ En espera</div>
+    ${waiting.map(w=>{
+      const elapsed=now-w.createdAt;
+      const hoursLeft=Math.max(0,48-elapsed/3600000);
+      const h=Math.floor(hoursLeft);const m=Math.floor((hoursLeft-h)*60);
+      return`<div class="row-b" style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-weight:bold;color:var(--txt)">${w.name}</div>
+          <div style="font-size:11px;color:var(--muted)">${w.store} · ${fx(w.price)}</div>
+        </div>
+        <div class="countdown">${h}h ${m}m restantes</div>
+      </div>`;
+    }).join('')}
+  </div>`:''}
+
+  <!-- PRESUPUESTO DE IMPULSOS -->
+  <div class="card">
+    <div class="ct">🎯 Presupuesto de Impulsos Quincenal</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.7">Define cuánto es OK gastar en compras no esenciales cada quincena.</div>
+    <div class="row-b" style="margin-bottom:9px">
+      <span style="font-size:13px">Presupuesto: <strong style="color:var(--sage)">${fx(S.impulsesBudget)}</strong>/quincena</span>
+    </div>
+    <input type="range" min="500" max="5000" step="100" value="${S.impulsesBudget}" style="width:100%;margin-bottom:5px"
+      oninput="pt({impulsesBudget:+this.value});document.getElementById('impBdg').textContent=fx(+this.value)+'/quincena'">
+    <div id="impBdg" style="font-size:11px;color:var(--sage);text-align:right">${fx(S.impulsesBudget)}/quincena</div>
+    ${(()=>{
+      const lastSnap=lastHormiga();
+      if(!lastSnap)return'<div style="font-size:11px;color:var(--muted);margin-top:8px">Sube un CSV en Mi Quincena para ver cuánto gastas vs tu presupuesto.</div>';
+      const impulseTotal=(lastSnap.hormiga['📦 Compras online']?.total||0)+(lastSnap.hormiga['🛒 Minisuper / OXXO']?.total||0)+(lastSnap.hormiga['🚗 Delivery']?.total||0);
+      const pct=S.impulsesBudget>0?(impulseTotal/S.impulsesBudget*100):0;
+      const col=pct<60?'var(--sage)':pct<80?'var(--amber)':'var(--terra)';
+      return`<div style="margin-top:12px">
+        <div class="row-b" style="margin-bottom:4px"><span style="font-size:11px;color:var(--muted)">Último periodo: impulsos detectados</span><span style="font-size:12px;font-weight:bold;color:${col}">${fx(impulseTotal)} (${pct.toFixed(0)}%)</span></div>
+        <div class="pw"><div class="pb" style="width:${Math.min(100,pct)}%;background:${col}"></div></div>
+        ${pct>100?`<div style="font-size:11px;color:var(--terra);margin-top:6px">⚠️ Te pasaste ${fx(impulseTotal-S.impulsesBudget)} del presupuesto</div>`:''}
+      </div>`;
+    })()}
+  </div>
+
+  <!-- HISTORIAL RESUELTOS -->
+  ${resolved.length>0?`<div class="card"><div class="ct">Historial de impulsos</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${avoided.length} evitados · ${resolved.length-avoided.length} comprados</div>
+  ${resolved.slice(-10).reverse().map(w=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
+    <div class="row"><span>${w.bought?'🔴':'🟢'}</span><span style="color:var(--txt)">${w.name}</span></div>
+    <span style="color:${w.bought?'var(--terra)':'var(--sage)'};font-weight:bold">${fx(w.price)}</span>
+  </div>`).join('')}</div>`:''}
+  `;
+}
+
+function addWait(){
+  const n=document.getElementById('wn')?.value.trim();
+  const p=+(document.getElementById('wp')?.value);
+  const s=document.getElementById('ws')?.value;
+  if(!n||!p)return;
+  pt({waitList:[...S.waitList,{id:Date.now(),name:n,price:p,store:s||'Otro',createdAt:Date.now(),resolved:false,bought:false}]});
+  toast('⏳ En espera 48h — resiste el impulso');
+  rHabitos();
+}
+function resolveWait(id,bought){
+  pt({waitList:S.waitList.map(w=>w.id===id?{...w,resolved:true,bought}:w)});
+  toast(bought?'Compra registrada':'🎉 ¡Impulso evitado!');
+  rHabitos();
+}
+
+// ══ MI HISTORIA (Fase 1: timeline de capítulos) ══════
+function rHistoria(){
+  const snaps=[...S.snapshots].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const streak=qStreak();
+
+  document.getElementById('tab-historia').innerHTML=`
+  <div class="card card-sage">
+    <div class="ct">📖 Tu Historia Financiera</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Cada quincena que analizas tu estado de cuenta es un capítulo. Tu historia se escribe con constancia.</div>
+    ${streak>0?`<div style="margin-top:8px;font-size:13px;color:var(--sage2);font-weight:bold">🔥 Racha: ${streak} capítulo${streak>1?'s':''} consecutivo${streak>1?'s':''}</div>`:''}
+  </div>
+
+  ${snaps.length===0?`
+  <div class="card" style="text-align:center;padding:40px">
+    <div style="font-size:48px;margin-bottom:14px">📖</div>
+    <div style="font-size:18px;color:var(--sage2);font-weight:bold;margin-bottom:8px">Tu historia está en blanco</div>
+    <div style="font-size:13px;color:var(--muted);line-height:1.7;max-width:320px;margin:0 auto 20px">Ve a <strong>Mi Quincena</strong>, sube tu CSV de Nu, y escribe tu primer capítulo.</div>
+    <button class="btn btn-sage" onclick="go('quincena')">📊 Ir a Mi Quincena</button>
+  </div>
+  `:`
+  <!-- RESUMEN -->
+  <div class="g2" style="margin-bottom:13px">
+    ${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}
+    ${kpi('📈 Score actual',score()+'/100','var(--sage)',getRank(score()).name)}
+  </div>
+  ${snaps.length>=2?`<div class="g2" style="margin-bottom:13px">
+    ${kpi('📊 Patrimonio',fx(nw()),nw()>=0?'var(--sage)':'var(--terra)','actual')}
+    ${(()=>{
+      const first=snaps[snaps.length-1],last=snaps[0];
+      const diff=last.patrimonio-first.patrimonio;
+      return kpi('📈 Evolución',fx(diff),diff>=0?'var(--sage)':'var(--terra)','desde cap. 1');
+    })()}
+  </div>`:''}
+
+  <!-- TIMELINE -->
+  <div class="card">
+    <div class="ct">Timeline de Capítulos</div>
+    ${snaps.map((snap,i)=>{
+      const isFirst=i===0;
+      const hormigaTotal=Object.values(snap.hormiga||{}).reduce((a,v)=>a+v.total,0);
+      const topCat=Object.entries(snap.hormiga||{}).sort((a,b)=>b[1].total-a[1].total)[0];
+      return`<div class="tl-item">
+        <div class="tl-line"><div class="tl-dot ${isFirst?'active':''}"></div></div>
+        <div style="flex:1">
+          <div class="row-b" style="margin-bottom:6px">
+            <div>
+              <div style="font-weight:bold;color:${isFirst?'var(--sage2)':'var(--txt)'};font-size:13px">Capítulo ${snaps.length-i}</div>
+              <div style="font-size:11px;color:var(--muted)">${fmtDate(snap.date)} · ${snap.periodStart?fmtDate(snap.periodStart)+' → '+fmtDate(snap.periodEnd):''}</div>
+            </div>
+            <span class="badge ${snap.score>=50?'bdg-sage':snap.score>=30?'bdg-amber':'bdg-red'}">Score ${snap.score}</span>
+          </div>
+          <div class="g2" style="gap:8px;font-size:11px">
+            <div style="color:var(--txt2)">💸 Gasto total: <strong style="color:var(--terra)">${fx(snap.totalGasto)}</strong></div>
+            <div style="color:var(--txt2)">🐜 Hormiga: <strong style="color:var(--amber)">${fx(hormigaTotal)}</strong></div>
+            <div style="color:var(--txt2)">⛓️ Deuda: <strong>${fx(snap.deudaTotal)}</strong></div>
+            <div style="color:var(--txt2)">📊 Patrimonio: <strong style="color:${snap.patrimonio>=0?'var(--sage)':'var(--terra)'}">${fx(snap.patrimonio)}</strong></div>
+          </div>
+          ${topCat?`<div style="font-size:10px;color:var(--muted);margin-top:6px">Mayor fuga: ${topCat[0]} (${fx(topCat[1].total)})</div>`:''}
+        </div>
+      </div>`;
+    }).join('')}
+  </div>
+
+  <!-- EXPORT -->
+  <div class="card">
+    <div class="ct">💾 Respaldo de datos</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px">Exporta todos tus datos como backup. Si cambias de dispositivo, podrás importarlos.</div>
+    <div class="row" style="gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar JSON</button>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar backup</button>
+      <input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])">
+    </div>
+  </div>
   `}
   `;
 }
-function onFile(f){if(!f)return;const r=new FileReader();r.onload=e=>{nuTxns=parseNu(e.target.result);if(!nuTxns.length){alert('No se pudieron leer transacciones. Verifica que sea el CSV de Nu.');return;}rNu();};r.readAsText(f,'UTF-8');}
-function onDrop(e){e.preventDefault();document.getElementById('dz')?.classList.remove('over');const f=e.dataTransfer.files[0];if(f)onFile(f);}
 
-// ══ ASESOR IA ══
-let iaLoading=false;
-function rIa(){
-  const qs=['¿Por dónde empiezo con mi situación actual?','¿Cómo ataco mis deudas más rápido en 6 meses?','¿Qué hago con mi bono semestral?','¿Cuándo puedo empezar a invertir?'];
-  document.getElementById('tab-ia').innerHTML=`
-  <div class="card card-sage">
-    <div class="ct">🤖 Asesor Financiero Personal</div>
-    <div style="font-size:12px;color:var(--txt2)">Conoce tu situación: <strong style="color:var(--sage2)">${fx(tDebt())}</strong> en deudas · flujo libre <strong style="color:var(--sage2)">${fx(flow())}</strong> · bono semestral <strong style="color:var(--sage2)">${fx(S.inc.bv)}</strong>.</div>
-  </div>
-
-  ${S.chat.length===0?`<div class="card"><div class="ct">Preguntas rápidas</div>${qs.map(q=>`<button class="btn btn-ghost" style="width:100%;text-align:left;margin-bottom:8px;padding:10px 14px" onclick="document.getElementById('ci').value='${q}'">${q}</button>`).join('')}</div>`:''}
-
-  ${S.chat.length>0?`<div class="card chat-wrap" id="cb">
-    ${S.chat.map(m=>`<div class="msg ${m.role==='user'?'u':'ai'}"><div class="msender">${m.role==='user'?'TÚ':'🤖 ASESOR IA'}</div><div style="white-space:pre-wrap;color:var(--txt)">${m.content}</div></div>`).join('')}
-    ${iaLoading?`<div class="msg ai"><div class="loading" style="color:var(--sage)">✦ Analizando tu situación...</div></div>`:''}
-  </div>`:''}
-
-  <div class="card" style="margin-bottom:0">
-    <div class="row" style="gap:8px">
-      <input type="text" id="ci" placeholder="Pregunta sobre tus finanzas..." onkeydown="if(event.key==='Enter')sendIA()">
-      <button class="btn btn-sage" onclick="sendIA()" ${iaLoading?'disabled':''}>${iaLoading?'...':'Enviar'}</button>
-    </div>
-    ${S.chat.length>0?`<button class="btn btn-ghost btn-sm" style="margin-top:9px" onclick="pt({chat:[]});rIa()">↺ Limpiar conversación</button>`:''}
-  </div>
-  `;
-  setTimeout(()=>{const b=document.getElementById('cb');if(b)b.scrollTop=b.scrollHeight;},50);
+function exportData(){
+  const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='padre-rico-backup-'+new Date().toISOString().split('T')[0]+'.json';a.click();
+  toast('📤 Backup exportado');
 }
-async function sendIA(){
-  const inp=document.getElementById('ci');const msg=inp?.value.trim();if(!msg||iaLoading)return;inp.value='';
-  const hInfo=detectH(nuTxns).map(([c,v])=>`${c}:${fx(v.total)}`).join(', ');
-  const ctx=`Eres un asesor financiero mexicano experto, directo y motivador. Hablas en español mexicano casual.
-Conoces profundamente "El Hombre Más Rico de Babilonia" y "Padre Rico Padre Pobre".
-SIEMPRE da pasos de acción concretos usando los números reales del usuario. Máx 180 palabras.
-
-DATOS DEL USUARIO:
-- Meta 6 meses: "${S.goal}"
-- Ingreso mensual neto: ${fx(mInc())} (salario ${fx(S.inc.sal)} + bono fijo ${fx(S.inc.bf)})
-- Bono semestral: ${fx(S.inc.bv)}
-- Gastos fijos: ${fx(tExp())} | ${S.exp.map(e=>e.name+' $'+e.amt).join(', ')||'ninguno'}
-- Deudas: ${S.debts.map(d=>`${d.name} $${d.bal} al ${d.rate}%`).join(', ')||'ninguna'}
-- Ahorro: ${S.savPct}% = ${fx(savAmt())}/mes
-- Flujo libre: ${fx(flow())}
-- Gastos hormiga Nu: ${hInfo||'no analizados aún'}
-
-Pregunta: ${msg}`;
-  const um={role:'user',content:msg};pt({chat:[...S.chat,um]});iaLoading=true;rIa();
-  try{
-    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1000,messages:[{role:'user',content:ctx}]})});
-    const d=await res.json();
-    pt({chat:[...S.chat,{role:'assistant',content:d.content?.[0]?.text||'No pude generar respuesta.'}]});
-  }catch{pt({chat:[...S.chat,{role:'assistant',content:'Error de conexión. Intenta de nuevo.'}]});}
-  iaLoading=false;rIa();
+function importData(f){
+  if(!f)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      if(data.goal!==undefined){
+        S={...S,...data};sv();
+        toast('📥 Datos importados correctamente');
+        go('historia');
+      }else{alert('Archivo no válido.');}
+    }catch{alert('Error al leer el archivo.');}
+  };
+  r.readAsText(f);
 }
 
-// ══ PWA ══
+// ══ PWA ══════════════════════════════════════════════
 function initPWA(){
-  const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',description:'Tu camino para saldar deudas y construir riqueza',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
+  const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv3';self.addEventListener('install',e=>e.waitUntil(caches.open(C).then(c=>c.add('/'))));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
-// ══ INIT ══
+// ══ INIT ════════════════════════════════════════════
 ld();initPWA();
 if(S.done){launchApp();}else{setDL();drawDots();document.getElementById('onboarding').style.display='flex';}
 </script>

@@ -1381,6 +1381,20 @@ function rPlan(){
   });
 
   const disponible=incQ-expQ-savQ-debtPayQ;
+
+  // Compute PENDING amounts for waterfall (subtract checked/paid items)
+  let expPending=0,debtPending=0;
+  if(!showNext){
+    expDetail.forEach(e=>{
+      const pt2=e.paidType||'exp';
+      if(!isPaid(pt2,e.id))expPending+=e.amt;
+    });
+    debtDetail.forEach(e=>{
+      if(!isPaid('debt',e.id))debtPending+=e.amt;
+    });
+  }else{expPending=expQ;debtPending=debtPayQ;}
+  const disponiblePending=incQ-expPending-savQ-debtPending;
+
   // No double-counting: liquidaciones are already in debtPayQ
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
   const lastSnap=lastHormiga();
@@ -1434,17 +1448,17 @@ function rPlan(){
       ${extrasQ>0?`<div class="row-b"><span style="color:var(--sage)">📈 + Extras</span><strong style="color:var(--sage)">+${fx(Math.round(extrasQ))}</strong></div>`:''}
       <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b"><span style="color:var(--sage);font-weight:bold">= Ingreso esta quincena</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
 
-      <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expQ))}</strong></div>
+      <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expPending))}</strong></div>
       <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(savQ))}</strong></div>
-      <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPayQ))}</strong></div>
+      <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPending))}</strong></div>
 
       <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
         <span style="font-weight:bold;color:var(--txt)">= Disponible</span>
-        <strong style="font-size:18px;color:${disponible>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(disponible))}</strong>
+        <strong style="font-size:18px;color:${disponiblePending>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(disponiblePending))}</strong>
       </div>
     </div>
-    ${disponible<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(disponible))}</strong>. ${bfThisQ===0&&S.inc.bf>0?'Tu bono ('+fx(S.inc.bf)+') cae en la otra quincena.':''} ${hormigaTotal?'Hormiga último periodo: '+fx(hormigaTotal)+'.':''}<div style="margin-top:6px;color:var(--amber);font-weight:bold">👇 Activa retos de supervivencia abajo para cubrir este déficit.</div></div>`:''}
-    ${disponible>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te sobran <strong>${fx(Math.round(disponible))}</strong>. Sugerencia: abona a la deuda #1 de tu bola de nieve.</div>`:''}
+    ${disponiblePending<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(disponiblePending))}</strong>. ${bfThisQ===0&&S.inc.bf>0?'Tu bono ('+fx(S.inc.bf)+') cae en la otra quincena.':''} ${hormigaTotal?'Hormiga último periodo: '+fx(hormigaTotal)+'.':''}<div style="margin-top:6px;color:var(--amber);font-weight:bold">👇 Activa retos de supervivencia abajo para cubrir este déficit.</div></div>`:''}
+    ${disponiblePending>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te sobran <strong>${fx(Math.round(disponiblePending))}</strong>. Sugerencia: abona a la deuda #1 de tu bola de nieve.</div>`:''}
   </div>
 
   <!-- PAID PROGRESS -->
@@ -1495,7 +1509,7 @@ function rPlan(){
     <div class="row-b" style="padding-top:4px;margin-top:2px;border-top:1px dashed var(--border)"><span style="font-size:11px;color:var(--muted)">Subtotal Sem 2</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(expWeek2.reduce((a,e)=>a+e.amt,0)))}</span></div>
     `:``}
 
-    <div class="row-b" style="padding-top:8px;margin-top:8px;border-top:2px solid var(--terra)"><strong style="color:var(--terra)">Total pendiente:</strong><strong style="color:var(--terra)">${fx(Math.round(expQ))}</strong></div>
+    <div class="row-b" style="padding-top:8px;margin-top:8px;border-top:2px solid var(--terra)"><strong style="color:var(--terra)">Total pendiente:</strong><strong style="color:var(--terra)">${fx(Math.round(expPending))}</strong></div>
   </div>`:''}
 
   <!-- PLAN DE APARTADO — Gastos mensuales que caen en la otra quincena -->
@@ -1522,7 +1536,7 @@ function rPlan(){
       </div>
       <span style="color:${paid?'var(--sage)':'var(--sky)'};font-weight:bold">${fx(Math.round(e.amt))}</span>
     </div>`;}).join('')}
-    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sky)"><strong style="color:var(--sky)">Total pendiente:</strong><strong style="color:var(--sky)">${fx(Math.round(debtPayQ))}</strong></div>
+    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sky)"><strong style="color:var(--sky)">Total pendiente:</strong><strong style="color:var(--sky)">${fx(Math.round(debtPending))}</strong></div>
   </div>`:''}
   <!-- CALENDARIO DE PAGOS DEL CICLO -->
   ${(()=>{
@@ -1553,8 +1567,8 @@ function rPlan(){
   })()}
 
   <!-- SURVIVAL RETOS (when deficit) -->
-  ${disponible<0&&!showNext?(()=>{try{
-    const deficit=Math.abs(disponible);
+  ${disponiblePending<0&&!showNext?(()=>{try{
+    const deficit=Math.abs(disponiblePending);
     const retos=genSurvivalRetos(deficit);
     const ck=cycleKey();
     const activeRetos=S.survivalRetos.filter(r=>r.cycle===ck);

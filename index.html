@@ -338,13 +338,31 @@ function isPaid(type,id){
   const items=S.paidItems[ck]||{};
   return !!items[type+'_'+id];
 }
+function isApplied(type,id){
+  const ck=cycleKey();
+  const items=S.paidItems[ck]||{};
+  return items[type+'_'+id]==='applied';
+}
 function togglePaid(type,id){
   const ck=cycleKey();
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
-  if(S.paidItems[ck][key]){delete S.paidItems[ck][key];toast('Marcado como pendiente');}
+  const cur=S.paidItems[ck][key];
+  if(cur==='applied'){toast('Este pago ya fue aplicado');return;}
+  if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');}
   else{S.paidItems[ck][key]=Date.now();toast('✓ Marcado como pagado');}
   sv();rPlan();
+}
+function pendingCount(){
+  // Count items checked but NOT yet applied
+  const ck=cycleKey();
+  const items=S.paidItems[ck]||{};
+  return Object.values(items).filter(v=>v!=='applied').length;
+}
+function appliedCount(){
+  const ck=cycleKey();
+  const items=S.paidItems[ck]||{};
+  return Object.values(items).filter(v=>v==='applied').length;
 }
 function paidCount(){
   const ck=cycleKey();
@@ -672,19 +690,19 @@ function rDash(){
 
   <!-- PAID PROGRESS THIS CYCLE -->
   ${(()=>{try{
-    const pc=paidCount(),pt2=paidTotal();
+    const ac=appliedCount(),pc=pendingCount(),pt2=paidTotal();
     const totalItems=S.exp.length+S.debts.length;
-    if(!totalItems)return'';
+    if(!totalItems&&!ac)return'';
     const ck=cycleKey();
     const activeS=S.survivalRetos.filter(r=>r.cycle===ck&&(r.active||r.completed));
     const completedS=activeS.filter(r=>r.completed).length;
     return`<div class="card" style="border-left:3px solid var(--sage)">
       <div class="ct">✅ Progreso de pagos — esta quincena</div>
       <div class="row-b" style="margin-bottom:6px">
-        <span style="font-size:13px;color:var(--txt)">${pc} pagos realizados</span>
+        <span style="font-size:13px;color:var(--txt)">${ac} aplicado${ac!==1?'s':''}${pc>0?' · '+pc+' por aplicar':''}</span>
         <span style="font-size:13px;color:var(--sage);font-weight:bold">${fx(Math.round(pt2))}</span>
       </div>
-      <div class="pw"><div class="pb" style="width:${totalItems>0?(pc/totalItems*100).toFixed(0):0}%;background:var(--sage)"></div></div>
+      <div class="pw"><div class="pb" style="width:${totalItems>0?((ac+pc)/totalItems*100).toFixed(0):0}%;background:var(--sage)"></div></div>
       ${activeS.length>0?`<div style="font-size:11px;color:var(--amber);margin-top:8px">🛟 ${activeS.length} reto${activeS.length>1?'s':''} de supervivencia activo${activeS.length>1?'s':''} · ${completedS} completado${completedS>1?'s':''}</div>`:''}
     </div>`;
   }catch{return'';}})()}
@@ -1219,30 +1237,25 @@ function rPlan(){
     const f=e.freq||'mensual';
     const mo=toMonthly(+e.amt||0,f);
     const pd=+(e.payDay)||0;
+    const applied=!showNext&&isApplied('exp',e.id);
 
     if(f==='semanal'||f==='quincenal'){
-      // Always split evenly — these happen every period
-      expQ+=mo/2;
-      expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
+      if(!applied){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}
     }else if(f==='bimestral'){
-      // Check if this cycle's month matches par/non
       const bm=e.bimMeses||'par';
-      // The cycle might span two months (e.g. 30 mar → 14 apr). Check the month where payDay falls.
       const isPar=m2=>(m2+1)%2===0;
       const isTarget=bm==='par'?isPar:(m2)=>!isPar(m2);
       if(pd>0&&dayInCycle(pd)){
-        // payDay is in this cycle — check if month matches
         const testM=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();
-        if(isTarget(testM)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f,note:bm==='par'?'mes par':'mes non'});}
+        if(isTarget(testM)){if(!applied){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f,note:bm==='par'?'mes par':'mes non'});}}
       }else if(!pd){
-        expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
+        if(!applied){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}
       }
     }else{
-      // Mensual — use dayInCycle
       if(pd>0){
-        if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}
+        if(dayInCycle(pd)){if(!applied){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}
       }else{
-        expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
+        if(!applied){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}
       }
     }
   });
@@ -1256,15 +1269,35 @@ function rPlan(){
     const mo=toMonthly(+d.pay||0,f);
     const pd=+(d.payDay)||0;
     const isLast=_urgLiqIds.has(d.id);
+    const applied=!showNext&&isApplied('debt',d.id);
+
+    // If debt has nextPay date, use it to determine cycle membership
+    if(d.nextPay){
+      const npd=new Date(d.nextPay+'T12:00');
+      if(npd>=cStart&&npd<=cEnd){
+        if(!applied){
+          debtPayQ+=(+d.pay||0);
+          debtDetail.push({id:d.id,name:d.name,amt:+d.pay||0,day:npd.getDate(),curPay:d.curPay,totalPays:d.totalPays,isLast,applied:false});
+        }
+      }
+      return;
+    }
+    // Legacy: no nextPay — use payDay + freq
     if(f==='quincenal'){
-      debtPayQ+=d.pay||0;
-      debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast});
+      if(pd>0){
+        // Quincenal with a specific day — check if it falls in this cycle
+        if(dayInCycle(pd)){
+          if(!applied){debtPayQ+=d.pay||0;debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast,applied:false});}
+        }
+      }else{
+        // Quincenal without day — always shows (every cycle)
+        if(!applied){debtPayQ+=d.pay||0;debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast,applied:false});}
+      }
     }else if(pd>0&&dayInCycle(pd)){
-      debtPayQ+=mo;
-      debtDetail.push({id:d.id,name:d.name,amt:mo,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});
+      if(!applied){debtPayQ+=mo;debtDetail.push({id:d.id,name:d.name,amt:mo,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast,applied:false});}
     }else if(!pd){
-      debtPayQ+=mo/2;
-      debtDetail.push({id:d.id,name:d.name,amt:mo/2,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast});
+      // No payDay — include at half in waterfall but flag as needing date
+      if(!applied){debtPayQ+=mo/2;debtDetail.push({id:d.id,name:d.name,amt:mo/2,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast,applied:false,noDate:true});}
     }
   });
 
@@ -1330,7 +1363,8 @@ function rPlan(){
 
   <!-- WATERFALL -->
   <div class="card">
-    <div class="ct">💰 Flujo — ${fmtD(cStart)} → ${fmtD(cEnd)}</div>
+    <div class="ct">💰 Flujo pendiente — ${fmtD(cStart)} → ${fmtD(cEnd)}</div>
+    ${appliedCount()>0&&!showNext?`<div style="font-size:10px;color:var(--sage);margin-bottom:8px;padding:6px 10px;background:var(--sagedim2);border-radius:6px">✅ ${appliedCount()} pago${appliedCount()>1?'s':''} ya aplicado${appliedCount()>1?'s':''} — los montos abajo reflejan solo lo pendiente.</div>`:''}
     <div style="font-size:13px;line-height:2.4">
       <div class="row-b"><span style="color:var(--sage)">💰 Salario quincenal</span><strong style="color:var(--sage)">${fx(Math.round(salQ))}</strong></div>
       ${bfThisQ>0?`<div class="row-b"><span style="color:var(--sage)">🎁 + Bono mensual (día ${bfDay})</span><strong style="color:var(--sage)">+${fx(bfThisQ)}</strong></div>`:''}
@@ -1351,14 +1385,14 @@ function rPlan(){
   </div>
 
   <!-- PAID PROGRESS -->
-  ${!showNext&&(expDetail.length>0||debtDetail.length>0)?`
+  ${!showNext&&(expDetail.length>0||debtDetail.length>0||appliedCount()>0)?`
   <div class="card card-grn" style="padding:12px 18px">
-    <div class="row-b">
-      <div class="row" style="gap:6px"><span style="font-size:13px">✅</span><span style="font-size:12px;color:var(--sage2);font-weight:bold">Pagos realizados: ${paidCount()} de ${expDetail.length+debtDetail.length}</span></div>
-      <span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(paidTotal()))}</span>
-    </div>
-    <div class="pw" style="margin-top:6px"><div class="pb" style="width:${(expDetail.length+debtDetail.length)>0?(paidCount()/(expDetail.length+debtDetail.length)*100).toFixed(0):0}%;background:var(--sage)"></div></div>
-    ${paidCount()>0?`<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar ${paidCount()} pago${paidCount()>1?'s':''} al historial</button>`:''}
+    ${(()=>{
+      const ac=appliedCount(),pc=pendingCount(),totalItems=expDetail.length+debtDetail.length+ac;
+      const allDone=expDetail.length===0&&debtDetail.length===0&&ac>0;
+      if(allDone)return'<div style="text-align:center;padding:12px 0"><div style="font-size:28px;margin-bottom:8px">✅</div><div style="font-size:15px;font-weight:bold;color:var(--sage2);margin-bottom:4px">¡Estás al corriente!</div><div style="font-size:12px;color:var(--sage)">Todos los pagos de este ciclo han sido aplicados. '+ac+' pago'+(ac>1?'s':'')+' registrado'+(ac>1?'s':'')+'.</div></div>';
+      return'<div class="row-b"><div class="row" style="gap:6px"><span style="font-size:13px">✅</span><span style="font-size:12px;color:var(--sage2);font-weight:bold">'+(ac>0?ac+' aplicado'+(ac>1?'s':'')+' · ':'')+expDetail.length+debtDetail.length+' pendiente'+(expDetail.length+debtDetail.length!==1?'s':'')+'</span></div><span style="font-size:12px;color:var(--sage);font-weight:bold">'+fx(Math.round(paidTotal()))+'</span></div><div class="pw" style="margin-top:6px"><div class="pb" style="width:'+(totalItems>0?(ac/totalItems*100).toFixed(0):0)+'%;background:var(--sage)"></div></div>'+(pc>0?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar '+pc+' pago'+(pc>1?'s':'')+' al historial</button>':'');
+    })()}
   </div>`:''}
 
   <!-- DETALLE GASTOS ESTA QUINCENA -->
@@ -1371,7 +1405,7 @@ function rPlan(){
       </div>
       <span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(Math.round(e.amt))}</span>
     </div>`;}).join('')}
-    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--terra)"><strong style="color:var(--terra)">Total:</strong><strong style="color:var(--terra)">${fx(Math.round(expQ))}</strong></div>
+    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--terra)"><strong style="color:var(--terra)">Total pendiente:</strong><strong style="color:var(--terra)">${fx(Math.round(expQ))}</strong></div>
   </div>`:''}
 
   <!-- DETALLE PAGOS DE DEUDA ESTE CICLO -->
@@ -1380,13 +1414,12 @@ function rPlan(){
     ${debtDetail.map(e=>{const paid=!showNext&&isPaid('debt',e.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
       <div class="row" style="gap:8px">
         ${!showNext?`<button class="check-btn ${paid?'checked':''}" onclick="togglePaid('debt',${e.id})">${paid?'✓':''}</button>`:''}
-        <span style="color:var(--txt)">${e.name}</span>${e.curPay&&e.totalPays?`<span class="badge bdg-sky">${e.curPay} de ${e.totalPays}</span>`:''}${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}${e.isLast?`<span style="font-size:10px;color:var(--sage);font-weight:bold">✓ último</span>`:''}
+        <span style="color:var(--txt)">${e.name}</span>${e.curPay&&e.totalPays?`<span class="badge bdg-sky">${e.curPay} de ${e.totalPays}</span>`:''}${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}${e.isLast?`<span style="font-size:10px;color:var(--sage);font-weight:bold">✓ último</span>`:''}${e.noDate?`<span style="font-size:9px;color:var(--amber)">⚠ sin fecha</span>`:''}
       </div>
       <span style="color:${paid?'var(--sage)':'var(--sky)'};font-weight:bold">${fx(Math.round(e.amt))}</span>
     </div>`;}).join('')}
-    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sky)"><strong style="color:var(--sky)">Total:</strong><strong style="color:var(--sky)">${fx(Math.round(debtPayQ))}</strong></div>
+    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sky)"><strong style="color:var(--sky)">Total pendiente:</strong><strong style="color:var(--sky)">${fx(Math.round(debtPayQ))}</strong></div>
   </div>`:''}
-
   <!-- CALENDARIO DE PAGOS DEL CICLO -->
   ${(()=>{
     const allPays=[];
@@ -1541,32 +1574,47 @@ function applyPayments(){
   const items=S.paidItems[ck]||{};
   let appliedExp=0,appliedDebt=0;
   for(const key in items){
+    if(items[key]==='applied')continue; // skip already applied
     const [type,idStr]=key.split('_');
     const id=+idStr;
     if(type==='debt'){
       const d=S.debts.find(x=>x.id===id);
-      if(d&&d.curPay&&d.totalPays&&d.curPay<d.totalPays){
-        d.curPay=Math.min(d.curPay+1,d.totalPays);
-        // Update balance
-        const monthlyPay=toMonthly(+d.pay||0,d.freq||'mensual');
-        d.bal=Math.max(0,d.bal-monthlyPay);
+      if(d){
+        if(d.curPay&&d.totalPays&&d.curPay<=d.totalPays){
+          d.curPay=Math.min(d.curPay+1,d.totalPays+1);
+        }
+        // Reduce balance by actual payment (not monthly)
+        d.bal=Math.max(0,(+d.bal||0)-(+d.pay||0));
+        // Advance nextPay date by frequency
+        if(d.nextPay){
+          const np=new Date(d.nextPay+'T12:00');
+          const f=d.freq||'mensual';
+          if(f==='semanal')np.setDate(np.getDate()+7);
+          else if(f==='quincenal')np.setDate(np.getDate()+15);
+          else if(f==='bimestral')np.setMonth(np.getMonth()+2);
+          else np.setMonth(np.getMonth()+1);
+          d.nextPay=np.toISOString().split('T')[0];
+          d.payDay=np.getDate();
+        }
         appliedDebt++;
       }
     }else if(type==='exp'){appliedExp++;}
+    // Mark as applied (keep in paidItems)
+    items[key]='applied';
   }
-  // Clear paid items for this cycle
-  delete S.paidItems[ck];
+  S.paidItems[ck]=items;
   sv();
   const total=appliedExp+appliedDebt;
   if(total>0){
     toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':''));
     rPlan();rFlujo();hdrUp();
-  }else{toast('No hay pagos marcados para aplicar');}
+  }else{toast('No hay pagos pendientes de aplicar');}
 }
 function confirmApply(){
-  const pc=paidCount();
+  const pc=pendingCount();
+  if(pc===0){toast('No hay pagos pendientes de aplicar');return;}
   showConfirm('¿Aplicar pagos al historial?',
-    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se avanzará la mensualidad (+1) de las deudas marcadas como pagadas y se reducirá su saldo.<br><br>Los <strong>'+pc+'</strong> pagos marcados se limpiarán de este ciclo.<br><br><strong style="color:var(--terra)">Esta acción no se puede deshacer.</strong></div>',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se avanzará la mensualidad (+1) de las <strong>'+pc+'</strong> deuda'+(pc>1?'s':'')+' marcada'+(pc>1?'s':'')+' como pagada'+(pc>1?'s':'')+' y se reducirá su saldo.<br><br><strong style="color:var(--terra)">Esta acción no se puede deshacer.</strong></div>',
     applyPayments);
 }
 function updExpFields(){

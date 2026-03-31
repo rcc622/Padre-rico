@@ -1,4 +1,114 @@
-5262  .stat-sm{font-size:16px}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#F5F2EC">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" id="pwa-manifest">
+<title>Padre Rico 🪙</title>
+<style>
+:root{
+  --bg:#F5F2EC;--bg2:#EDE9E0;--bg3:#E5E0D5;
+  --card:#FFFFFF;--border:#DDD8CE;--border2:#C8C2B4;
+  --sage:#4E7C6A;--sage2:#3A6354;--sagedim:rgba(78,124,106,.1);--sagedim2:rgba(78,124,106,.06);
+  --terra:#B85C4A;--terradim:rgba(184,92,74,.09);
+  --sky:#4A6E8C;--skydim:rgba(74,110,140,.09);
+  --amber:#A07030;--amberdim:rgba(160,112,48,.09);
+  --txt:#2C2925;--txt2:#5C5650;--muted:#9A9590;--r:10px;
+  --shadow:0 1px 4px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.04);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;min-height:100dvh;background:var(--bg);color:var(--txt);font-family:Georgia,'Times New Roman',serif;-webkit-font-smoothing:antialiased;overflow-wrap:break-word;word-break:break-word}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+input,select{background:var(--bg);border:1px solid var(--border);color:var(--txt);padding:9px 12px;border-radius:7px;font-size:13px;font-family:Georgia,serif;width:100%;outline:none;transition:border-color .2s,box-shadow .2s}
+input:focus,select:focus{border-color:var(--sage);box-shadow:0 0 0 3px rgba(78,124,106,.12)}
+input::placeholder{color:var(--muted)}
+input[type=range]{background:none;border:none;padding:0;accent-color:var(--sage)}
+label{font-size:11px;color:var(--muted);display:block;margin-bottom:5px;letter-spacing:.5px;text-transform:uppercase}
+button{font-family:Georgia,serif;cursor:pointer;transition:opacity .18s,transform .1s;border:none}
+button:active{transform:scale(.97)}
+.btn{padding:9px 20px;border-radius:7px;font-size:13px;font-weight:bold}
+.btn-sage{background:var(--sage);color:#fff;box-shadow:0 2px 8px rgba(78,124,106,.25)}
+.btn-sage:hover{background:var(--sage2)}
+.btn-ghost{background:transparent;border:1px solid rgba(78,124,106,.4);color:var(--sage)}
+.btn-red{background:var(--terradim);border:1px solid rgba(184,92,74,.25);color:var(--terra)}
+.btn-sm{padding:5px 11px;font-size:11px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:13px;box-shadow:var(--shadow)}
+.card-sage{border-color:rgba(78,124,106,.3);background:linear-gradient(135deg,#fff 0%,rgba(78,124,106,.05) 100%)}
+.card-grn{border-color:rgba(78,124,106,.3);background:rgba(78,124,106,.05)}
+.card-red{border-color:rgba(184,92,74,.28);background:var(--terradim)}
+.card-sky{border-color:rgba(74,110,140,.28);background:var(--skydim)}
+.card-amber{border-color:rgba(160,112,48,.3);background:var(--amberdim)}
+.ct{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--sage);margin-bottom:13px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
+.row-b{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;min-width:0}
+.stat{font-size:26px;font-weight:bold;line-height:1}
+.stat-sm{font-size:18px;font-weight:bold;line-height:1}
+.lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
+.pw{background:var(--bg2);border-radius:4px;height:6px;overflow:hidden;margin-top:7px}
+.pb{height:100%;border-radius:4px;transition:width .7s ease}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
+.bdg-sage{background:var(--sagedim);color:var(--sage);border:1px solid rgba(78,124,106,.2)}
+.bdg-red{background:var(--terradim);color:var(--terra);border:1px solid rgba(184,92,74,.2)}
+.bdg-sky{background:var(--skydim);color:var(--sky);border:1px solid rgba(74,110,140,.2)}
+.bdg-amber{background:var(--amberdim);color:var(--amber);border:1px solid rgba(160,112,48,.2)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:13px}
+.chip{padding:5px 11px;border-radius:20px;font-size:11px;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);cursor:pointer;font-family:Georgia,serif;transition:all .15s}
+.chip:hover{background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage)}
+/* Onboarding */
+#onboarding{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse at 50% 0%,rgba(78,124,106,.08) 0%,transparent 65%)}
+.onb{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:36px;max-width:500px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.1)}
+.onb-step{display:none}.onb-step.act{display:block}
+.dots{display:flex;gap:7px;margin-bottom:24px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--border);transition:background .3s}
+.dot.cur{background:var(--sage)}.dot.ok{background:rgba(78,124,106,.5)}
+/* App */
+#app{display:none;flex-direction:column;min-height:100vh;min-height:100dvh}
+.hdr{background:var(--card);border-bottom:1px solid var(--border);padding:0 18px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 1px 8px rgba(0,0,0,.06)}
+.logo{color:var(--sage2);font-size:15px;letter-spacing:1.5px;font-weight:bold}
+.score-chip{background:var(--sagedim);border:1px solid rgba(78,124,106,.2);color:var(--sage2);padding:4px 12px;border-radius:20px;font-size:11px;font-weight:bold}
+.nav{background:var(--card);border-bottom:1px solid var(--border);display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nb{flex-shrink:0;padding:12px 14px;font-size:11px;font-family:Georgia,serif;color:var(--muted);background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .2s;white-space:nowrap;min-height:44px}
+.nb.act{color:var(--sage2);border-bottom-color:var(--sage)}
+.content{flex:1;padding:18px;max-width:860px;margin:0 auto;width:100%}
+.panel{display:none}.panel.act{display:block;animation:fi .22s ease}
+@keyframes fi{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.drop{border:2px dashed var(--border);border-radius:var(--r);padding:36px;text-align:center;cursor:pointer;transition:all .2s}
+.drop:hover,.drop.over{border-color:var(--sage);background:var(--sagedim2)}
+.hi{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.hi:last-child{border-bottom:none}
+.ql-item{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)}
+.ql-item:last-child{border-bottom:none}
+.ql-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
+/* Toast */
+#toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--sage2);color:#fff;padding:10px 22px;border-radius:10px;font-size:12px;font-family:Georgia,serif;font-weight:bold;opacity:0;transition:all .3s ease;pointer-events:none;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.2);white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+/* Timeline */
+.tl-item{display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--border)}
+.tl-item:last-child{border-bottom:none}
+.tl-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;margin-top:3px;border:3px solid var(--border)}
+.tl-dot.active{border-color:var(--sage);background:var(--sage)}
+.tl-dot.empty{border-color:var(--border);background:var(--bg2)}
+.tl-line{position:relative}
+.tl-line::before{content:'';position:absolute;left:6px;top:18px;bottom:-16px;width:2px;background:var(--border)}
+.tl-item:last-child .tl-line::before{display:none}
+/* Countdown badge */
+.countdown{display:inline-flex;align-items:center;gap:4px;background:var(--amberdim);border:1px solid rgba(160,112,48,.25);color:var(--amber);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:bold}
+.countdown.ready{background:var(--sagedim);border-color:rgba(78,124,106,.25);color:var(--sage)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.loading{animation:pulse 1.2s infinite}
+@media(max-width:600px){
+  .g3{grid-template-columns:1fr 1fr}
+  .content{padding:10px}
+  .card{padding:14px;margin-bottom:10px}
+  .stat{font-size:22px}
+  .stat-sm{font-size:16px}
   .row-b{gap:4px}
   .row{gap:5px}
   .hdr{padding:0 12px;height:48px}
@@ -323,9 +433,9 @@ function survivalSaved(){
 // ══ COMPUTED ════════════════════════════════════════
 const mInc=()=>(+S.inc.sal)+(+S.inc.bf);
 const mBonus=()=>(+S.inc.bv)/6;
-const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;if(freq==='bimestral')return amt/2;return amt;};
-const freqShort=(f)=>f==='semanal'?'sem':f==='quincenal'?'qna':f==='bimestral'?'bim':'mes';
-const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bimestral'?'Bimestral':'';
+const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;if(freq==='bimestral')return amt/2;if(freq==='unico')return amt;return amt;};
+const freqShort=(f)=>f==='semanal'?'sem':f==='quincenal'?'qna':f==='bimestral'?'bim':f==='unico'?'único':'mes';
+const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bimestral'?'Bimestral':f==='unico'?'Pago único':'';
 const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
 const savAmt=()=>mInc()*S.savPct/100;
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+toMonthly(+d.pay||0,d.freq||'mensual'),0);
@@ -954,7 +1064,7 @@ function rFlujo(){
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Pago fijo ($)</label><input type="number" id="dm" placeholder="0" value="${ed?ed.pay:''}" oninput="prevDebtMo()"></div>
-      <div><label>Periodicidad del pago</label><select id="dpf" onchange="prevDebtMo()"><option value="semanal"${df==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${df==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${df==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${df==='bimestral'?' selected':''}>Bimestral</option></select></div>
+      <div><label>Periodicidad del pago</label><select id="dpf" onchange="prevDebtMo();updDebtUnico()"><option value="unico"${df==='unico'?' selected':''}>Único (1 exhibición)</option><option value="semanal"${df==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${df==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${df==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${df==='bimestral'?' selected':''}>Bimestral</option></select></div>
     </div>
     <div id="debtMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;margin-bottom:10px">${ed?freqLabel(ed.pay,df):''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
@@ -1362,47 +1472,7 @@ function rPlan(){
     })()}
   </div>`:''}
 
-  <!-- DETALLE GASTOS ESTA QUINCENA -->
-  ${expDetail.length>0?`<div class="card">
-    <div class="ct">📋 Gastos del ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
-
-    ${expFixed.length>0?`<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Gastos fijos del ciclo</div>
-    ${expFixed.map(e=>{const paid=!showNext&&isPaid('exp',e.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-      <div class="row" style="gap:8px">
-        ${!showNext?`<button class="check-btn ${paid?'checked':''}" onclick="togglePaid('exp',${e.id})">${paid?'✓':''}</button>`:''}
-        <span style="color:var(--txt)">${e.name}</span>${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}${e.freq==='quincenal'?`<span style="font-size:10px;color:var(--sky)">Quincenal</span>`:''}${e.note?`<span style="font-size:10px;color:var(--amber)">${e.note}</span>`:''}
-      </div>
-      <span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(Math.round(e.amt))}</span>
-    </div>`;}).join('')}
-    <div class="row-b" style="padding-top:6px;margin-top:4px;border-top:1px dashed var(--border)"><span style="font-size:11px;color:var(--muted)">Subtotal fijos</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(expFixed.reduce((a,e)=>a+e.amt,0)))}</span></div>
-    `:``}
-
-    ${expWeek1.length>0?`<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:${expFixed.length?'12px':'0'} 0 6px">📅 Semana 1 · ${fmtD(cStart)} → ${fmtD(new Date(cStart.getTime()+6*864e5))}</div>
-    ${expWeek1.map(e=>{const paid=!showNext&&isPaid('exp',e.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-      <div class="row" style="gap:8px">
-        ${!showNext?`<button class="check-btn ${paid?'checked':''}" onclick="togglePaid('exp',${e.id})">${paid?'✓':''}</button>`:''}
-        <span style="color:var(--txt)">${e.name}</span><span style="font-size:10px;color:var(--sky)">Sem 1</span>
-      </div>
-      <span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(Math.round(e.amt))}</span>
-    </div>`;}).join('')}
-    <div class="row-b" style="padding-top:4px;margin-top:2px;border-top:1px dashed var(--border)"><span style="font-size:11px;color:var(--muted)">Subtotal Sem 1</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(expWeek1.reduce((a,e)=>a+e.amt,0)))}</span></div>
-    `:``}
-
-    ${expWeek2.length>0?`<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:12px 0 6px">📅 Semana 2 · ${fmtD(new Date(cStart.getTime()+7*864e5))} → ${fmtD(cEnd)}</div>
-    ${expWeek2.map(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-      <div class="row" style="gap:8px">
-        ${!showNext?`<button class="check-btn ${paid?'checked':''}" onclick="togglePaid('${pt2}',${e.id})">${paid?'✓':''}</button>`:''}
-        <span style="color:var(--txt)">${e.name}</span><span style="font-size:10px;color:var(--sky)">Sem 2</span>
-      </div>
-      <span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(Math.round(e.amt))}</span>
-    </div>`;}).join('')}
-    <div class="row-b" style="padding-top:4px;margin-top:2px;border-top:1px dashed var(--border)"><span style="font-size:11px;color:var(--muted)">Subtotal Sem 2</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(expWeek2.reduce((a,e)=>a+e.amt,0)))}</span></div>
-    `:``}
-
-    <div class="row-b" style="padding-top:8px;margin-top:8px;border-top:2px solid var(--terra)"><strong style="color:var(--terra)">Total pendiente:</strong><strong style="color:var(--terra)">${fx(Math.round(expPending))}</strong></div>
-  </div>`:''}
-
-  <!-- PLAN DE APARTADO — Gastos mensuales que caen en la otra quincena -->
+  <!-- PLAN DE APARTADO -->
   ${expSavePlan.length>0?`<div class="card card-sky">
     <div class="ct">💰 Plan de apartado — Ahorra para la otra quincena</div>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:10px;line-height:1.6">Estos gastos fijos caen en la otra quincena. Aparta la mitad ahora para no quedarte corto.</div>
@@ -1410,50 +1480,40 @@ function rPlan(){
       <div><div style="font-size:13px;color:var(--txt);font-weight:bold">${e.name}</div><div style="font-size:10px;color:var(--muted)">${e.cat||''} · se paga día ${e.day} · Total: ${fx(e.amt)}</div></div>
       <div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--sky)">${fx(e.half)}</div><div style="font-size:9px;color:var(--muted)">apartar esta qna</div></div>
     </div>`).join('')}
-    <div class="row-b" style="padding-top:10px;margin-top:6px;border-top:2px solid rgba(74,110,140,.3)">
-      <strong style="color:var(--sky)">Total a apartar:</strong>
-      <strong style="color:var(--sky);font-size:16px">${fx(expSavePlan.reduce((a,e)=>a+e.half,0))}</strong>
-    </div>
-    <div style="font-size:10px;color:var(--sky);margin-top:8px;line-height:1.6">💡 Transfiere este monto a una cuenta de ahorro o sepáralo en un sobre. Así cuando toque pagar no te descuadra.</div>
+    <div class="row-b" style="padding-top:10px;margin-top:6px;border-top:2px solid rgba(74,110,140,.3)"><strong style="color:var(--sky)">Total a apartar:</strong><strong style="color:var(--sky);font-size:16px">${fx(expSavePlan.reduce((a,e)=>a+e.half,0))}</strong></div>
+    <div style="font-size:10px;color:var(--sky);margin-top:8px;line-height:1.6">💡 Transfiere este monto a una cuenta de ahorro o sepáralo en un sobre.</div>
   </div>`:``}
-  <!-- DETALLE PAGOS DE DEUDA ESTE CICLO -->
-  ${debtDetail.length>0?`<div class="card">
-    <div class="ct">⛓️ Pagos de deuda del ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
-    ${debtDetail.map(e=>{const paid=!showNext&&isPaid('debt',e.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-      <div class="row" style="gap:8px">
-        ${!showNext?`<button class="check-btn ${paid?'checked':''}" onclick="togglePaid('debt',${e.id})">${paid?'✓':''}</button>`:''}
-        <span style="color:var(--txt)">${e.name}</span>${e.curPay&&e.totalPays?`<span class="badge bdg-sky">${e.curPay} de ${e.totalPays}</span>`:''}${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}${e.isLast?`<span style="font-size:10px;color:var(--sage);font-weight:bold">✓ último</span>`:''}${e.noDate?`<span style="font-size:9px;color:var(--amber)">⚠ sin fecha</span>`:''}
-      </div>
-      <span style="color:${paid?'var(--sage)':'var(--sky)'};font-weight:bold">${fx(Math.round(e.amt))}</span>
-    </div>`;}).join('')}
-    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sky)"><strong style="color:var(--sky)">Total pendiente:</strong><strong style="color:var(--sky)">${fx(Math.round(debtPending))}</strong></div>
-  </div>`:''}
-  <!-- CALENDARIO DE PAGOS DEL CICLO -->
+
+  <!-- UNIFIED PAYMENT TRACKER -->
   ${(()=>{
     const allPays=[];
-    expDetail.filter(e=>e.day>0).forEach(e=>allPays.push({day:e.day,name:'📋 '+e.name,amt:e.amt,type:'gasto',id:e.id,ptype:'exp'}));
-    debtDetail.filter(e=>e.day>0).forEach(e=>allPays.push({day:e.day,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt'}));
+    expDetail.forEach(e=>{
+      const pt2=e.paidType||'exp';
+      const paid=!showNext&&isPaid(pt2,e.id);
+      const label=e.week?e.name+' (Sem '+e.week+')':e.name;
+      allPays.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid,freq:e.freq});
+    });
+    debtDetail.forEach(e=>{
+      const paid=!showNext&&isPaid('debt',e.id);
+      const isUnico=S.debts.find(d=>d.id===e.id)?.freq==='unico';
+      allPays.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isUnico?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid,noDate:e.noDate});
+    });
     const debtDetailIds=new Set(debtDetail.map(e=>e.id));
-    urgentLiqs.filter(d=>!debtDetailIds.has(d.id)).forEach(d=>{const ld=new Date(d.liqDate+'T12:00');allPays.push({day:ld.getDate(),name:'🏁 '+d.name+' (último pago)',amt:liqMensualidad(d),type:'liq',id:d.id,ptype:'debt'});});
-    allPays.sort((a,b)=>a.day-b.day);
+    urgentLiqs.filter(d=>!debtDetailIds.has(d.id)).forEach(d=>{const ld=new Date(d.liqDate+'T12:00');const paid=!showNext&&isPaid('debt',d.id);allPays.push({day:ld.getDate(),name:'🏁 '+d.name+' (último pago)',amt:liqMensualidad(d),type:'liq',id:d.id,ptype:'debt',paid});});
+    allPays.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
     if(!allPays.length)return'';
     const passedDay=today.getDate();
-    return`<div class="card"><div class="ct">📅 Calendario de pagos — ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
-    ${allPays.map(p=>{
-      const isPast=!showNext&&p.day<passedDay;
-      const isToday=!showNext&&p.day===passedDay;
-      const paid=!showNext&&isPaid(p.ptype,p.id);
-      const col=paid?'var(--sage)':p.type==='liq'?'var(--terra)':p.type==='deuda'?'var(--sky)':'var(--terra)';
-      return`<div class="row-b ${paid?'paid-row':''}" style="padding:7px 0;border-bottom:1px solid var(--border);${isPast&&!paid?'opacity:.5;':''}${isToday&&!paid?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}">
-        <div class="row" style="gap:8px">
-          ${!showNext?`<button class="check-btn ${paid?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px">${paid?'✓':''}</button>`:''}
-          <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${isToday?'→ HOY':'día '+p.day}</span><span style="font-size:12px;color:var(--txt)">${p.name}</span>
-        </div>
-        <span style="font-size:12px;color:${col};font-weight:bold">${fx(Math.round(p.amt))}</span>
-      </div>`;
-    }).join('')}
-    <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:2px solid var(--border)"><strong style="color:var(--txt)">Total pagos del ciclo:</strong><strong style="color:var(--terra)">${fx(Math.round(allPays.reduce((a,p)=>a+p.amt,0)))}</strong></div>
-    </div>`;
+    const unpaid=allPays.filter(p=>!p.paid);
+    const paidL=allPays.filter(p=>p.paid);
+    const unpaidExpT=unpaid.filter(p=>p.type==='gasto').reduce((a,p)=>a+p.amt,0);
+    const unpaidDebtT=unpaid.filter(p=>p.type!=='gasto').reduce((a,p)=>a+p.amt,0);
+    const paidT=paidL.reduce((a,p)=>a+p.amt,0);
+    const ri=(p,ip)=>{const isT=!showNext&&p.day===passedDay;const col=ip?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';return'<div class="row-b '+(ip?'paid-row':'')+'" style="padding:7px 0;border-bottom:1px solid var(--border);'+(isT&&!ip?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':'')+'"><div class="row" style="gap:8px">'+(!showNext?'<button class="check-btn '+(ip?'checked':'')+'" onclick="togglePaid(\''+p.ptype+'\','+p.id+')" style="width:22px;height:22px;font-size:11px">'+(ip?'✓':'')+'</button>':'')+'<span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">'+dl+'</span><span style="font-size:12px;color:var(--txt)">'+p.name+'</span></div><span style="font-size:12px;color:'+col+';font-weight:bold">'+fx(Math.round(p.amt))+'</span></div>';};
+    return'<div class="card"><div class="ct">📅 Pagos del ciclo — '+fmtD(cStart)+' al '+fmtD(cEnd)+'</div>'
+    +(unpaid.length>0?'<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes ('+unpaid.length+')</div>'+unpaid.map(p=>ri(p,false)).join('')+'<div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--border)"><span style="color:var(--terra);font-weight:bold">Gastos: '+fx(Math.round(unpaidExpT))+'</span><span style="color:var(--sky);font-weight:bold">Deudas: '+fx(Math.round(unpaidDebtT))+'</span></div>'
+    :'<div style="text-align:center;padding:14px 0"><span style="font-size:24px">✅</span><div style="font-size:14px;color:var(--sage);font-weight:bold;margin-top:6px">¡Todo pagado este ciclo!</div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+paidL.length+' pagos por '+fx(Math.round(paidT))+'</div></div>')
+    +(paidL.length>0?'<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">Pagados ('+paidL.length+')</div>'+paidL.map(p=>ri(p,true)).join('')+'<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--sage)"><span style="font-size:11px;color:var(--sage)">Pagado:</span><span style="font-size:11px;color:var(--sage);font-weight:bold">'+fx(Math.round(paidT))+'</span></div>':'')
+    +'</div>';
   })()}
 
   <!-- SURVIVAL RETOS (when deficit) -->
@@ -1559,6 +1619,22 @@ let editExpId=null;
 function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
 function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
+function updDebtUnico(){
+  const f=document.getElementById('dpf')?.value||'mensual';
+  if(f==='unico'){
+    // Auto-fill: pay = balance, 1 de 1
+    const bal=document.getElementById('db')?.value||0;
+    const dm=document.getElementById('dm');if(dm&&!dm.value)dm.value=bal;
+    const dc=document.getElementById('dcur');if(dc)dc.value='1';
+    const dt=document.getElementById('dtot');if(dt)dt.value='1';
+  }
+}
+function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;
+  const isUnico=f==='unico';
+  const pay=isUnico?b:(+(document.getElementById('dm')?.value)||0);
+  const cur=isUnico?1:(+(document.getElementById('dcur')?.value)||0);
+  const tot=isUnico?1:(+(document.getElementById('dtot')?.value)||0);
+  pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:pay,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:isUnico?npDate:(document.getElementById('dliq')?.value||''),note:document.getElementById('dnote')?.value.trim()||'',curPay:cur,totalPays:tot,group:document.getElementById('dgrp')?.value.trim()||''}]});toast('⛓️ Deuda registrada');rFlujo();}
 function calcNextPayISO(dayNum){
   if(!dayNum)return'';
   const t=new Date();t.setHours(0,0,0,0);
@@ -1659,7 +1735,6 @@ function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=
   else{extra.date=document.getElementById('xd')?.value||new Date().toISOString().split('T')[0];}
   pt({extras:[...S.extras,extra]});toast('✓ Ingreso extra registrado');rFlujo();}
 function rmExtra(id){pt({extras:S.extras.filter(x=>x.id!==id)});toast('Ingreso extra eliminado');rFlujo();}
-function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||''}]});toast('⛓️ Deuda registrada');rFlujo();}
 function rmDebt(id){
   const d=S.debts.find(x=>x.id===id);
   if(!d){pt({debts:S.debts.filter(x=>x.id!==id)});return;}

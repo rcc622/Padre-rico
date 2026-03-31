@@ -452,22 +452,20 @@ function rDash(){
 
   <!-- LIQUIDACIONES URGENTES (esta quincena) -->
   ${urgentLiqs.length>0?`
-  <div class="card card-red">
-    <div class="ct">🚨 Se vencen esta quincena</div>
-    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Deudas que debes cubrir en los próximos 15 días:</div>
+  <div class="card" style="border-left:3px solid var(--sage)">
+    <div class="ct">🏁 Últimos pagos este ciclo</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Estas deudas terminan en los próximos 15 días. El monto es la mensualidad (ya incluida en tus pagos de deuda).</div>
     ${urgentLiqs.map(d=>{
-      const col=d.daysLeft<=3?'var(--terra)':'var(--amber)';
+      const mo=toMonthly(d.pay||0,d.freq||'mensual');
+      const col=d.daysLeft<=3?'var(--terra)':'var(--sage)';
       return`<div class="ql-item">
         <div class="ql-dot" style="background:${col}"></div>
         <div style="flex:1">
-          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}<span style="color:${col};font-weight:bold">${fx(d.bal)}</span></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtDate(d.liqDate)} · <span style="color:${col};font-weight:bold">${d.daysLeft===0?'HOY':d.daysLeft<0?'VENCIDA':d.daysLeft+' días'}</span>${d.pay?` · Pago: ${fx(d.pay)}/${freqShort(d.freq||'mensual')}`:''} ${d.payDay?`· día ${d.payDay}`:''}</div>
+          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}<span style="color:var(--sky);font-weight:bold">${fx(Math.round(mo))}</span></div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Último pago: ${fmtDate(d.liqDate)} · <span style="color:var(--sage)">✓ Terminas esta deuda</span></div>
         </div>
       </div>`;
     }).join('')}
-    <div style="border-top:1px solid rgba(184,92,74,.2);margin-top:10px;padding-top:10px">
-      <div class="row-b"><span style="font-size:12px;color:var(--terra);font-weight:bold">Total a cubrir esta quincena:</span><span style="font-size:16px;color:var(--terra);font-weight:bold">${fx(urgentLiqs.reduce((a,d)=>a+d.bal,0))}</span></div>
-    </div>
   </div>`:''}
 
   <!-- PATRIMONIO -->
@@ -1012,24 +1010,22 @@ function rPlan(){
   // ── DEBT PAYMENTS ──
   let debtPayQ=0;
   const debtDetail=[];
+  const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
   S.debts.forEach(d=>{
     const f=d.freq||'mensual';
     const mo=toMonthly(+d.pay||0,f);
     const pd=+(d.payDay)||0;
+    const isLast=_urgLiqIds.has(d.id);
     if(f==='quincenal'){
-      // Quincenal debts pay every quincena
       debtPayQ+=d.pay||0;
-      debtDetail.push({name:d.name,amt:d.pay||0,day:0,curPay:d.curPay,totalPays:d.totalPays});
+      debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast});
     }else if(pd>0&&dayInCycle(pd)){
-      // Monthly debt with specific payDay that falls in this cycle
       debtPayQ+=mo;
-      debtDetail.push({name:d.name,amt:mo,day:pd,curPay:d.curPay,totalPays:d.totalPays});
+      debtDetail.push({id:d.id,name:d.name,amt:mo,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});
     }else if(!pd){
-      // No payDay — split evenly
       debtPayQ+=mo/2;
-      debtDetail.push({name:d.name,amt:mo/2,day:0,curPay:d.curPay,totalPays:d.totalPays});
+      debtDetail.push({id:d.id,name:d.name,amt:mo/2,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast});
     }
-    // If pd > 0 but NOT in cycle → doesn't count here
   });
 
   const savQ=savAmt()/2;
@@ -1039,7 +1035,9 @@ function rPlan(){
     const ld=new Date(dd2.liqDate+'T12:00');
     return ld>=cStart&&ld<=cEnd;
   });
-  const urgentTotal=urgentLiqs.reduce((a,dd2)=>a+dd2.bal,0);
+  // Liquidaciones are INFORMATIONAL — the payment is already counted in debtPayQ
+  // Show mensualidad, not total balance
+  const liqMensualidad=(d)=>toMonthly(d.pay||0,d.freq||'mensual');
 
   // After this cycle (next cycle's liquidations)
   const nStart=showNext?cEnd:nextStart;
@@ -1048,10 +1046,9 @@ function rPlan(){
     const ld=new Date(dd2.liqDate+'T12:00');
     return ld>cEnd&&ld<=nEnd;
   });
-  const afterTotal=afterLiqs.reduce((a,dd2)=>a+dd2.bal,0);
 
   const disponible=incQ-expQ-savQ-debtPayQ;
-  const realQueda=disponible-urgentTotal;
+  // No double-counting: liquidaciones are already in debtPayQ
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
   const lastSnap=lastHormiga();
   const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
@@ -1081,7 +1078,7 @@ function rPlan(){
     <div class="ct">📌 Hoy toca pagar (día ${todayDay})</div>
     ${todayPayExp.map(e=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(184,92,74,.15);font-size:12px"><span style="color:var(--txt)">📋 ${e.name}</span><span style="color:var(--terra);font-weight:bold">${fx(toMonthly(e.amt,e.freq||'mensual'))}</span></div>`).join('')}
     ${todayPayDebt.map(d=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(184,92,74,.15);font-size:12px"><span style="color:var(--txt)">⛓️ ${d.name}${d.curPay&&d.totalPays?' ('+d.curPay+' de '+d.totalPays+')':''}</span><span style="color:var(--terra);font-weight:bold">${fx(d.pay)}</span></div>`).join('')}
-    ${todayLiqs.map(d=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(184,92,74,.15);font-size:12px"><span style="color:var(--txt)">🚨 ${d.name} <strong>(LIQUIDACIÓN)</strong></span><span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span></div>`).join('')}
+    ${todayLiqs.map(d=>{const mo=toMonthly(d.pay||0,d.freq||'mensual');return`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(184,92,74,.15);font-size:12px"><span style="color:var(--txt)">🏁 ${d.name} <strong>(último pago)</strong></span><span style="color:var(--sky);font-weight:bold">${fx(Math.round(mo))}</span></div>`;}).join('')}
   </div>`:''}
 
   <div class="card card-sage">
@@ -1108,15 +1105,9 @@ function rPlan(){
         <span style="font-weight:bold;color:var(--txt)">= Disponible</span>
         <strong style="font-size:18px;color:${disponible>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(disponible))}</strong>
       </div>
-      ${urgentTotal>0?`
-      <div class="row-b" style="margin-top:4px"><span style="color:var(--terra)">🚨 − Liquidaciones</span><strong style="color:var(--terra)">−${fx(urgentTotal)}</strong></div>
-      <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
-        <span style="font-weight:bold;color:var(--txt)">= Realmente te queda</span>
-        <strong style="font-size:18px;color:${realQueda>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(realQueda))}</strong>
-      </div>`:''}
     </div>
-    ${realQueda<0||disponible<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(realQueda<0?realQueda:disponible))}</strong>. ${bfThisQ===0&&S.inc.bf>0?'Tu bono ('+fx(S.inc.bf)+') cae en la otra quincena.':''} ${hormigaTotal?'Hormiga último periodo: '+fx(hormigaTotal)+'.':''}</div>`:''}
-    ${realQueda>0&&disponible>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te sobran <strong>${fx(Math.round(realQueda>0?realQueda:disponible))}</strong>. Sugerencia: abona a la deuda #1 de tu bola de nieve.</div>`:''}
+    ${disponible<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(disponible))}</strong>. ${bfThisQ===0&&S.inc.bf>0?'Tu bono ('+fx(S.inc.bf)+') cae en la otra quincena.':''} ${hormigaTotal?'Hormiga último periodo: '+fx(hormigaTotal)+'.':''}</div>`:''}
+    ${disponible>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te sobran <strong>${fx(Math.round(disponible))}</strong>. Sugerencia: abona a la deuda #1 de tu bola de nieve.</div>`:''}
   </div>
 
   <!-- DETALLE GASTOS ESTA QUINCENA -->
@@ -1133,7 +1124,7 @@ function rPlan(){
   ${debtDetail.length>0?`<div class="card">
     <div class="ct">⛓️ Pagos de deuda del ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
     ${debtDetail.map(e=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
-      <div class="row"><span style="color:var(--txt)">${e.name}</span>${e.curPay&&e.totalPays?`<span class="badge bdg-sky">${e.curPay} de ${e.totalPays}</span>`:''}${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}</div>
+      <div class="row"><span style="color:var(--txt)">${e.name}</span>${e.curPay&&e.totalPays?`<span class="badge bdg-sky">${e.curPay} de ${e.totalPays}</span>`:''}${e.day?`<span style="font-size:10px;color:var(--muted)">día ${e.day}</span>`:''}${e.isLast?`<span style="font-size:10px;color:var(--sage);font-weight:bold">✓ último</span>`:''}</div>
       <span style="color:var(--sky);font-weight:bold">${fx(Math.round(e.amt))}</span>
     </div>`).join('')}
     <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sky)"><strong style="color:var(--sky)">Total:</strong><strong style="color:var(--sky)">${fx(Math.round(debtPayQ))}</strong></div>
@@ -1143,8 +1134,9 @@ function rPlan(){
   ${(()=>{
     const allPays=[];
     expDetail.filter(e=>e.day>0).forEach(e=>allPays.push({day:e.day,name:'📋 '+e.name,amt:e.amt,type:'gasto'}));
-    debtDetail.filter(e=>e.day>0).forEach(e=>allPays.push({day:e.day,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':''),amt:e.amt,type:'deuda'}));
-    urgentLiqs.forEach(d=>{const ld=new Date(d.liqDate+'T12:00');allPays.push({day:ld.getDate(),name:'🚨 '+d.name+' (LIQUIDACIÓN)',amt:d.bal,type:'liq'});});
+    debtDetail.filter(e=>e.day>0).forEach(e=>allPays.push({day:e.day,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':''),amt:e.amt,type:'deuda'}));
+    const debtDetailIds=new Set(debtDetail.map(e=>e.id));
+    urgentLiqs.filter(d=>!debtDetailIds.has(d.id)).forEach(d=>{const ld=new Date(d.liqDate+'T12:00');allPays.push({day:ld.getDate(),name:'🏁 '+d.name+' (último pago)',amt:liqMensualidad(d),type:'liq'});});
     allPays.sort((a,b)=>a.day-b.day);
     if(!allPays.length)return'';
     const passedDay=today.getDate();
@@ -1162,27 +1154,26 @@ function rPlan(){
     </div>`;
   })()}
 
-  <!-- LIQUIDACIONES ESTA QUINCENA -->
+  <!-- DEUDAS QUE TERMINAN ESTE CICLO -->
   ${urgentLiqs.length>0?`
-  <div class="card card-red">
-    <div class="ct">🚨 Liquidaciones del ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
-    ${urgentLiqs.map(d=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(184,92,74,.15)">
+  <div class="card" style="border-left:3px solid var(--sage)">
+    <div class="ct">🏁 Deudas que terminan este ciclo</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Estos son los últimos pagos de estas deudas. El monto ya está incluido en "Pagos de deuda" arriba.</div>
+    ${urgentLiqs.map(d=>{const mo=liqMensualidad(d);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)">
       <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
-      <div class="row"><span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span><span style="font-size:10px;color:var(--muted)">${d.daysLeft}d</span></div>
-    </div>`).join('')}
-    <div class="row-b" style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(184,92,74,.2)"><strong style="color:var(--terra)">Total:</strong><strong style="color:var(--terra);font-size:16px">${fx(urgentTotal)}</strong></div>
+      <div style="text-align:right"><span style="color:var(--sky);font-weight:bold">${fx(Math.round(mo))}</span><div style="font-size:10px;color:var(--sage)">✓ Último pago · ${fmtDate(d.liqDate)}</div></div>
+    </div>`;}).join('')}
   </div>`:''}
 
   <!-- VISTA PREVIA QUINCENA DESPUÉS -->
   <div class="card card-amber">
     <div class="ct">📅 Siguiente ciclo</div>
     <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">Bono mensual ${bfOtherQ>0?`(${fx(bfOtherQ)}) <strong style="color:var(--sage)">cae en ese ciclo</strong>`:'no cae en ese ciclo'}</div>
-    ${afterLiqs.length>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:6px">Liquidaciones pendientes:</div>
-    ${afterLiqs.map(d=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(160,112,48,.15);font-size:12px">
+    ${afterLiqs.length>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:6px">Deudas que terminan:</div>
+    ${afterLiqs.map(d=>{const mo=liqMensualidad(d);return`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(160,112,48,.15);font-size:12px">
       <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
-      <span style="color:var(--amber);font-weight:bold">${fx(d.bal)} · ${d.daysLeft}d</span>
-    </div>`).join('')}
-    <div class="row-b" style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(160,112,48,.2)"><strong style="color:var(--amber)">Total liq.:</strong><strong style="color:var(--amber)">${fx(afterTotal)}</strong></div>`:`<div style="font-size:11px;color:var(--sage)">✓ Sin liquidaciones en la quincena siguiente.</div>`}
+      <span style="color:var(--amber);font-weight:bold">${fx(Math.round(mo))} · ${d.daysLeft}d</span>
+    </div>`;}).join('')}`:`<div style="font-size:11px;color:var(--sage)">✓ Sin liquidaciones en la quincena siguiente.</div>`}
   </div>
 
   <!-- ESTRATEGIA BOLA DE NIEVE -->

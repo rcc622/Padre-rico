@@ -1388,8 +1388,9 @@ function rPlan(){
 
   // ── TODAY'S PAYMENTS ──
   const todayDay=today.getDate();
+  const todayISO=today.toISOString().split('T')[0];
   const todayPayExp=S.exp.filter(e=>(+(e.payDay)||0)===todayDay);
-  const todayPayDebt=S.debts.filter(d=>(+(d.payDay)||0)===todayDay);
+  const todayPayDebt=S.debts.filter(d=>(+(d.payDay)||0)===todayDay||(d.nextPay&&d.nextPay===todayISO));
   const todayLiqs=upcoming().filter(d2=>{const ld=new Date(d2.liqDate+'T12:00');return ld.getDate()===todayDay&&ld.getMonth()===today.getMonth()&&ld.getFullYear()===today.getFullYear();});
   const hasTodayPay=todayPayExp.length||todayPayDebt.length||todayLiqs.length;
 
@@ -1406,14 +1407,16 @@ function rPlan(){
   </div>
 
   <!-- HOY TOCA PAGAR -->
-  ${hasTodayPay&&!showNext?`
-  <div class="card card-red">
-    <div class="ct">📌 Hoy toca pagar (día ${todayDay})</div>
-    ${todayPayExp.map(e=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(184,92,74,.15);font-size:12px"><span style="color:var(--txt)">📋 ${e.name}</span><span style="color:var(--terra);font-weight:bold">${fx(toMonthly(e.amt,e.freq||'mensual'))}</span></div>`).join('')}
-    ${todayPayDebt.map(d=>`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(184,92,74,.15);font-size:12px"><span style="color:var(--txt)">⛓️ ${d.name}${d.curPay&&d.totalPays?' ('+d.curPay+' de '+d.totalPays+')':''}</span><span style="color:var(--terra);font-weight:bold">${fx(d.pay)}</span></div>`).join('')}
-    ${todayLiqs.map(d=>{const mo=toMonthly(d.pay||0,d.freq||'mensual');return`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(184,92,74,.15);font-size:12px"><span style="color:var(--txt)">🏁 ${d.name} <strong>(último pago)</strong></span><span style="color:var(--sky);font-weight:bold">${fx(Math.round(mo))}</span></div>`;}).join('')}
-  </div>`:''}
-
+  ${hasTodayPay&&!showNext?(()=>{
+    const allTodayPaid=todayPayExp.every(e=>isPaid('exp',e.id))&&todayPayDebt.every(d=>isPaid('debt',d.id))&&todayLiqs.every(d=>isPaid('debt',d.id));
+    return`
+  <div class="card ${allTodayPaid?'card-grn':'card-red'}">
+    <div class="ct">${allTodayPaid?'✅':'📌'} Hoy toca pagar (día ${todayDay})${allTodayPaid?' — todo al corriente':''}</div>
+    ${todayPayExp.map(e=>{const paid=isPaid('exp',e.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:5px 0;border-bottom:1px solid ${allTodayPaid?'rgba(78,124,106,.15)':'rgba(184,92,74,.15)'};font-size:12px"><div class="row" style="gap:6px">${paid?'<span style="color:var(--sage)">✅</span>':'<span style="color:var(--terra)">⏳</span>'}<span style="color:var(--txt)">📋 ${e.name}</span></div><span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(toMonthly(e.amt,e.freq||'mensual'))}</span></div>`;}).join('')}
+    ${todayPayDebt.map(d=>{const paid=isPaid('debt',d.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:5px 0;border-bottom:1px solid ${allTodayPaid?'rgba(78,124,106,.15)':'rgba(184,92,74,.15)'};font-size:12px"><div class="row" style="gap:6px">${paid?'<span style="color:var(--sage)">✅</span>':'<span style="color:var(--terra)">⏳</span>'}<span style="color:var(--txt)">⛓️ ${d.name}${d.curPay&&d.totalPays?' ('+d.curPay+' de '+d.totalPays+')':''}</span></div><span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(d.pay)}</span></div>`;}).join('')}
+    ${todayLiqs.map(d=>{const paid=isPaid('debt',d.id);const mo=toMonthly(d.pay||0,d.freq||'mensual');return`<div class="row-b ${paid?'paid-row':''}" style="padding:5px 0;border-bottom:1px solid ${allTodayPaid?'rgba(78,124,106,.15)':'rgba(184,92,74,.15)'};font-size:12px"><div class="row" style="gap:6px">${paid?'<span style="color:var(--sage)">✅</span>':'<span style="color:var(--terra)">⏳</span>'}<span style="color:var(--txt)">🏁 ${d.name} <strong>(último pago)</strong></span></div><span style="color:${paid?'var(--sage)':'var(--sky)'};font-weight:bold">${fx(Math.round(mo))}</span></div>`;}).join('')}
+  </div>`;
+  })():''}
   <div class="card card-sage">
     <div class="ct">🎯 ${whenLabel}</div>
     <div style="font-size:14px;color:var(--sage2);font-weight:bold;margin-bottom:4px">${qLabel}</div>
@@ -1598,17 +1601,6 @@ function rPlan(){
     </div>`;
   }catch(e){return'';}})():''}
 
-
-  <!-- DEUDAS QUE TERMINAN ESTE CICLO -->
-  ${urgentLiqs.length>0?`
-  <div class="card" style="border-left:3px solid var(--sage)">
-    <div class="ct">🏁 Deudas que terminan este ciclo</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Estos son los últimos pagos de estas deudas. El monto ya está incluido en "Pagos de deuda" arriba.</div>
-    ${urgentLiqs.map(d=>{const mo=liqMensualidad(d);return`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)">
-      <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
-      <div style="text-align:right"><span style="color:var(--sky);font-weight:bold">${fx(Math.round(mo))}</span><div style="font-size:10px;color:var(--sage)">✓ Último pago · ${fmtDate(d.liqDate)}</div></div>
-    </div>`;}).join('')}
-  </div>`:''}
 
   <!-- VISTA PREVIA QUINCENA DESPUÉS -->
   <div class="card card-amber">

@@ -265,7 +265,7 @@ button:active{transform:scale(.97)}
 const SK='prv5';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
-  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{}};
+  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[]};
 
 function migrate(){
   // Try loading v4 data first
@@ -428,6 +428,44 @@ function survivalSaved(){
   return S.survivalRetos.filter(r=>r.cycle===ck&&r.completed).reduce((a,r)=>{
     const allR=genSurvivalRetos(0);const match=allR.find(x=>x.id===r.id);return a+(match?.save||0);
   },0);
+}
+
+// ══ SAVINGS GOALS ════════════════════════════════════
+function addSavGoal(){
+  const n=document.getElementById('sgn')?.value.trim();
+  const t=+(document.getElementById('sgt')?.value)||0;
+  const dl=document.getElementById('sgd')?.value||'';
+  const icon=document.getElementById('sgi')?.value||'🎯';
+  if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
+  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,done:false};
+  pt({savGoals:[...S.savGoals,goal]});
+  toast('🎯 Meta de ahorro creada');rPlan();
+}
+function depositSavGoal(id){
+  const el=document.getElementById('sgdep_'+id);
+  const amt=+(el?.value)||0;
+  if(!amt){toast('Ingresa un monto');return;}
+  pt({savGoals:S.savGoals.map(g=>{
+    if(g.id!==id)return g;
+    const dep={date:new Date().toISOString().split('T')[0],amt};
+    const newSaved=(+g.saved||0)+amt;
+    return{...g,saved:newSaved,deposits:[...(g.deposits||[]),dep],done:newSaved>=g.target};
+  })});
+  toast('💰 Abono registrado: '+fx(amt));rPlan();
+}
+function rmSavGoal(id){
+  showConfirm('¿Eliminar esta meta?','Se perderá el historial de abonos.',()=>{
+    pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');rPlan();
+  });
+}
+function savGoalPerQ(g){
+  const today=new Date();
+  const dl=new Date(g.deadline+'T12:00');
+  const remaining=Math.max(0,g.target-(+g.saved||0));
+  if(remaining<=0)return 0;
+  const msLeft=dl-today;
+  const qLeft=Math.max(1,Math.ceil(msLeft/(15*864e5))); // quincenas remaining
+  return Math.ceil(remaining/qLeft);
 }
 
 // ══ COMPUTED ════════════════════════════════════════
@@ -604,7 +642,8 @@ function rDash(){
   const pDebtPay=tDebtPay()/div;
   const pSav=savAmt()/div;
   const pExtras=tExtras()/div;
-  const pFlow=pInc+pExtras-pExp-pSav-pDebtPay;
+  const pSavGoals=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)*(isQ?1:2);
+  const pFlow=pInc+pExtras-pExp-pSav-pSavGoals-pDebtPay;
 
   document.getElementById('tab-dash').innerHTML=`
   <!-- META -->
@@ -724,6 +763,22 @@ function rDash(){
     <div class="ct">📖 Principio de la quincena</div>
     <div style="font-size:13px;font-style:italic;line-height:1.85;color:var(--txt2)">${principle()}</div>
   </div>
+
+  <!-- METAS DE AHORRO ACTIVAS -->
+  ${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).length>0?`
+  <div class="card" style="border-left:3px solid var(--sky)">
+    <div class="ct">🎯 Metas de ahorro activas</div>
+    ${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).map(g=>{
+      const pct=Math.min(100,((+g.saved||0)/g.target*100));
+      const perQ=savGoalPerQ(g);
+      const daysLeft=Math.ceil((new Date(g.deadline+'T12:00')-new Date())/864e5);
+      return`<div style="padding:8px 0;border-bottom:1px solid var(--border)">
+        <div class="row-b" style="margin-bottom:4px"><div class="row" style="gap:6px"><span>${g.icon||'🎯'}</span><span style="font-weight:bold;color:var(--txt)">${g.name}</span></div><span style="font-size:12px;color:var(--sky);font-weight:bold">${fx(perQ)}/qna</span></div>
+        <div class="pw" style="height:5px"><div class="pb" style="width:${pct.toFixed(0)}%;background:var(--sky)"></div></div>
+        <div class="row-b" style="font-size:10px;color:var(--muted);margin-top:3px"><span>${fx(Math.round(+g.saved||0))} de ${fx(g.target)}</span><span>${daysLeft}d restantes</span></div>
+      </div>`;
+    }).join('')}
+  </div>`:''}
 
   <!-- PAID PROGRESS THIS CYCLE -->
   ${(()=>{try{
@@ -1362,6 +1417,8 @@ function rPlan(){
   });
 
   const savQ=savAmt()/2;
+  // Savings goals: total per quincena for active goals
+  const savGoalQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);
 
   // ── LIQUIDACIONES within cycle date range ──
   const urgentLiqs=upcoming().filter(dd2=>{
@@ -1380,7 +1437,7 @@ function rPlan(){
     return ld>cEnd&&ld<=nEnd;
   });
 
-  const disponible=incQ-expQ-savQ-debtPayQ;
+  const disponible=incQ-expQ-savQ-savGoalQ-debtPayQ;
 
   // Compute PENDING amounts for waterfall (subtract checked/paid items)
   let expPending=0,debtPending=0;
@@ -1393,7 +1450,7 @@ function rPlan(){
       if(!isPaid('debt',e.id))debtPending+=e.amt;
     });
   }else{expPending=expQ;debtPending=debtPayQ;}
-  const disponiblePending=incQ-expPending-savQ-debtPending;
+  const disponiblePending=incQ-expPending-savQ-savGoalQ-debtPending;
 
   // No double-counting: liquidaciones are already in debtPayQ
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
@@ -1450,6 +1507,7 @@ function rPlan(){
 
       <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expPending))}</strong></div>
       <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(savQ))}</strong></div>
+      ${savGoalQ>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas de ahorro</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalQ))}</strong></div>`:''}
       <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPending))}</strong></div>
 
       <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
@@ -1471,6 +1529,52 @@ function rPlan(){
       return'<div class="row-b"><div class="row" style="gap:6px"><span style="font-size:13px">✅</span><span style="font-size:12px;color:var(--sage2);font-weight:bold">'+(ac>0?ac+' aplicado'+(ac>1?'s':'')+' · ':'')+expDetail.length+debtDetail.length+' pendiente'+(expDetail.length+debtDetail.length!==1?'s':'')+'</span></div><span style="font-size:12px;color:var(--sage);font-weight:bold">'+fx(Math.round(paidTotal()))+'</span></div><div class="pw" style="margin-top:6px"><div class="pb" style="width:'+(totalItems>0?(ac/totalItems*100).toFixed(0):0)+'%;background:var(--sage)"></div></div>'+(pc>0?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar '+pc+' pago'+(pc>1?'s':'')+' al historial</button>':'');
     })()}
   </div>`:''}
+
+  <!-- METAS DE AHORRO -->
+  <div class="card">
+    <div class="ct">🎯 Metas de ahorro</div>
+    ${S.savGoals.length>0?S.savGoals.map(g=>{
+      const remaining=Math.max(0,g.target-(+g.saved||0));
+      const pct=Math.min(100,((+g.saved||0)/g.target*100));
+      const perQ=savGoalPerQ(g);
+      const dl=new Date(g.deadline+'T12:00');
+      const daysLeft=Math.ceil((dl-new Date())/864e5);
+      const qLeft=Math.max(1,Math.ceil(daysLeft/15));
+      const isOverdue=daysLeft<0;
+      const isDone=g.done||remaining<=0;
+      return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
+        <div class="row-b" style="margin-bottom:8px">
+          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${g.name}</div><div style="font-size:10px;color:var(--muted)">${isDone?'✅ ¡Meta alcanzada!':isOverdue?'⚠️ Fecha vencida':'Faltan '+daysLeft+' días ('+qLeft+' quincena'+(qLeft>1?'s':'')+')'}</div></div></div>
+          <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
+        </div>
+        <div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
+        <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
+        ${!isDone?`
+          <div class="row-b" style="margin-bottom:10px">
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(perQ)}</div><div style="font-size:9px;color:var(--muted)">apartar/quincena</div></div>
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
+          </div>
+          <div class="row" style="gap:8px">
+            <input type="number" id="sgdep_${g.id}" placeholder="Monto a abonar" style="flex:1">
+            <button class="btn btn-sage btn-sm" onclick="depositSavGoal(${g.id})">+ Abonar</button>
+          </div>
+          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>'<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+'</span><span style="color:var(--sage);font-weight:bold">+'+fx(d.amt)+'</span></div>').join('')}</div>`:''}
+        `:`<div style="text-align:center;font-size:12px;color:var(--sage)">🎉 Ahorraste ${fx(Math.round(+g.saved||0))} — ¡disfruta!</div>`}
+      </div>`;
+    }).join(''):''}
+    <div style="${S.savGoals.length>0?'border-top:1px solid var(--border);padding-top:14px;margin-top:4px':''}">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${S.savGoals.length>0?'Agregar otra meta:':'¿Necesitas ahorrar para algo? Crea tu meta y te calculo cuánto apartar por quincena.'}</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-bottom:8px">
+        <div><label>Icono</label><select id="sgi" style="width:60px;text-align:center;font-size:16px"><option>🎉</option><option>🏠</option><option>🚗</option><option>✈️</option><option>🎄</option><option>📱</option><option>🎓</option><option>💍</option><option>🎯</option><option>🛡️</option></select></div>
+        <div><label>¿Para qué ahorras?</label><input type="text" id="sgn" placeholder="Fiesta, viaje, fondo de emergencia..."></div>
+      </div>
+      <div class="g2" style="margin-bottom:10px">
+        <div><label>¿Cuánto necesitas? ($)</label><input type="number" id="sgt" placeholder="15000"></div>
+        <div><label>¿Para cuándo?</label><input type="date" id="sgd"></div>
+      </div>
+      <button class="btn btn-sage" onclick="addSavGoal()">🎯 Crear meta de ahorro</button>
+    </div>
+  </div>
 
   <!-- PLAN DE APARTADO -->
   ${expSavePlan.length>0?`<div class="card card-sky">

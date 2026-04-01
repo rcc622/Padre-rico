@@ -1539,23 +1539,31 @@ function rPlan(){
 
   <!-- WATERFALL -->
   <div class="card">
-    <div class="ct">💰 Flujo pendiente — ${fmtD(cStart)} → ${fmtD(cEnd)}</div>
-    ${appliedCount()>0&&!showNext?`<div style="font-size:10px;color:var(--sage);margin-bottom:8px;padding:6px 10px;background:var(--sagedim2);border-radius:6px">✅ ${appliedCount()} pago${appliedCount()>1?'s':''} ya aplicado${appliedCount()>1?'s':''} — los montos abajo reflejan solo lo pendiente.</div>`:''}
+    <div class="ct">💰 Flujo del ciclo — ${fmtD(cStart)} → ${fmtD(cEnd)}</div>
     <div style="font-size:13px;line-height:2.4">
       <div class="row-b"><span style="color:var(--sage)">💰 Salario quincenal</span><strong style="color:var(--sage)">${fx(Math.round(salQ))}</strong></div>
       ${bfThisQ>0?`<div class="row-b"><span style="color:var(--sage)">🎁 + Bono mensual (día ${bfDay})</span><strong style="color:var(--sage)">+${fx(bfThisQ)}</strong></div>`:''}
       ${extrasQ>0?`<div class="row-b"><span style="color:var(--sage)">📈 + Extras</span><strong style="color:var(--sage)">+${fx(Math.round(extrasQ))}</strong></div>`:''}
       <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b"><span style="color:var(--sage);font-weight:bold">= Ingreso esta quincena</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
 
-      <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expPending))}</strong></div>
+      <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos (total ciclo)</span><strong style="color:var(--terra)">−${fx(Math.round(expQ))}</strong></div>
       <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(savQ))}</strong></div>
-      ${savGoalPending>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas + Apartados</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalPending))}</strong></div>`:''}
-      <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPending))}</strong></div>
+      ${savGoalQ>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas + Apartados</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalQ))}</strong></div>`:''}
+      <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda (total ciclo)</span><strong style="color:var(--sky)">−${fx(Math.round(debtPayQ))}</strong></div>
+
+      ${(()=>{
+        const totalApplied=(expQ-expPending)+(debtPayQ-debtPending)+(savGoalQ-savGoalPending);
+        if(totalApplied>0&&!showNext){
+          return'<div class="row-b" style="margin-top:4px"><span style="color:var(--sage)">✅ Ya pagado / aplicado</span><strong style="color:var(--sage)">+'+fx(Math.round(totalApplied))+'</strong></div>';
+        }
+        return'';
+      })()}
 
       <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
         <span style="font-weight:bold;color:var(--txt)">= Disponible</span>
         <strong style="font-size:18px;color:${disponiblePending>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(disponiblePending))}</strong>
       </div>
+      ${!showNext&&(expQ-expPending+debtPayQ-debtPending)>0?`<div style="font-size:10px;color:var(--muted);margin-top:4px">Pendiente: gastos ${fx(Math.round(expPending))} + deudas ${fx(Math.round(debtPending))}${savGoalPending>0?' + metas '+fx(Math.round(savGoalPending)):''}</div>`:''}
     </div>
     ${disponiblePending<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(disponiblePending))}</strong>. ${bfThisQ===0&&S.inc.bf>0?'Tu bono ('+fx(S.inc.bf)+') cae en la otra quincena.':''} ${hormigaTotal?'Hormiga último periodo: '+fx(hormigaTotal)+'.':''}<div style="margin-top:6px;color:var(--amber);font-weight:bold">👇 Activa retos de supervivencia abajo para cubrir este déficit.</div></div>`:''}
     ${disponiblePending>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te sobran <strong>${fx(Math.round(disponiblePending))}</strong>. Sugerencia: abona a la deuda #1 de tu bola de nieve.</div>`:''}

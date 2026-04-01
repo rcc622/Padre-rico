@@ -379,6 +379,7 @@ function paidTotal(){
     if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)total+=(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual'));}
     else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);} // week 2 of weekly expense
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)total+=savGoalPerQ(g);} // savings goal
+    else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)total+=Math.round((+e.amt||0)/2);} // apartado
     else if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)total+=toMonthly(+d.pay||0,d.freq||'mensual');}
   }
   return total;
@@ -478,6 +479,25 @@ function savGoalPerQ(g){
   const msLeft=dl-today;
   const qLeft=Math.max(1,Math.ceil(msLeft/(15*864e5))); // quincenas remaining
   return Math.ceil(remaining/qLeft);
+}
+function getExpSavePlan(){
+  // Compute which monthly expenses need an "apartado" (save half each quincena)
+  const today=new Date();today.setHours(0,0,0,0);
+  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+  let cStart,cEnd;
+  if(d>=15&&d<=29){cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
+  else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
+  else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
+  function dayInC(pd){if(!pd)return false;const tds=[];for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){const mx=new Date(cStart.getFullYear(),tm+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
+  const plan=[];
+  S.exp.forEach(e=>{
+    const f=e.freq||'mensual';if(f!=='mensual')return;
+    const pd=+(e.payDay)||0;const mo=+e.amt||0;
+    if(mo<500)return;
+    if(pd>0&&!dayInC(pd)){plan.push({id:e.id,name:e.name,amt:mo,half:Math.round(mo/2),day:pd,cat:e.cat,type:'other'});}
+    else if(pd>0&&dayInC(pd)){plan.push({id:e.id,name:e.name,amt:mo,half:Math.round(mo/2),day:pd,cat:e.cat,type:'this'});}
+  });
+  return plan;
 }
 
 // ══ COMPUTED ════════════════════════════════════════
@@ -1382,8 +1402,11 @@ function rPlan(){
     const pd=+(e.payDay)||0;const mo=+e.amt||0;
     if(mo<500)return; // only for significant expenses
     if(pd>0&&!dayInCycle(pd)){
-      // This monthly expense falls in the OTHER quincena — save half now
-      expSavePlan.push({name:e.name,amt:mo,half:Math.round(mo/2),day:pd,cat:e.cat});
+      // Falls in the OTHER quincena — save half now
+      expSavePlan.push({id:e.id,name:e.name,amt:mo,half:Math.round(mo/2),day:pd,cat:e.cat,type:'other'});
+    } else if(pd>0&&dayInCycle(pd)){
+      // Falls in THIS quincena — save half for next time
+      expSavePlan.push({id:e.id,name:e.name,amt:mo,half:Math.round(mo/2),day:pd,cat:e.cat,type:'this'});
     }
   });
 
@@ -1429,8 +1452,9 @@ function rPlan(){
   });
 
   const savQ=savAmt()/2;
-  // Savings goals: total per quincena for active goals
-  const savGoalQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);
+  // Savings goals + apartados: total per quincena
+  const savGoalQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)
+    +expSavePlan.reduce((a,e)=>a+e.half,0);
 
   // ── LIQUIDACIONES within cycle date range ──
   const urgentLiqs=upcoming().filter(dd2=>{
@@ -1463,6 +1487,9 @@ function rPlan(){
     });
     S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{
       if(!isPaid('sav',g.id))savGoalPending+=savGoalPerQ(g);
+    });
+    expSavePlan.forEach(e=>{
+      if(!isPaid('apt',e.id))savGoalPending+=e.half;
     });
   }else{expPending=expQ;debtPending=debtPayQ;savGoalPending=savGoalQ;}
   const disponiblePending=incQ-expPending-savQ-savGoalPending-debtPending;
@@ -1522,7 +1549,7 @@ function rPlan(){
 
       <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expPending))}</strong></div>
       <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(savQ))}</strong></div>
-      ${savGoalPending>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas de ahorro</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalPending))}</strong></div>`:''}
+      ${savGoalPending>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas + Apartados</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalPending))}</strong></div>`:''}
       <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPending))}</strong></div>
 
       <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
@@ -1544,18 +1571,6 @@ function rPlan(){
       return'<div class="row-b"><div class="row" style="gap:6px"><span style="font-size:13px">✅</span><span style="font-size:12px;color:var(--sage2);font-weight:bold">'+(ac>0?ac+' aplicado'+(ac>1?'s':'')+' · ':'')+expDetail.length+debtDetail.length+' pendiente'+(expDetail.length+debtDetail.length!==1?'s':'')+'</span></div><span style="font-size:12px;color:var(--sage);font-weight:bold">'+fx(Math.round(paidTotal()))+'</span></div><div class="pw" style="margin-top:6px"><div class="pb" style="width:'+(totalItems>0?(ac/totalItems*100).toFixed(0):0)+'%;background:var(--sage)"></div></div>'+(pc>0?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar '+pc+' pago'+(pc>1?'s':'')+' al historial</button>':'');
     })()}
   </div>`:''}
-
-  <!-- PLAN DE APARTADO -->
-  ${expSavePlan.length>0?`<div class="card card-sky">
-    <div class="ct">💰 Plan de apartado — Ahorra para la otra quincena</div>
-    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px;line-height:1.6">Estos gastos fijos caen en la otra quincena. Aparta la mitad ahora para no quedarte corto.</div>
-    ${expSavePlan.map(e=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(74,110,140,.15)">
-      <div><div style="font-size:13px;color:var(--txt);font-weight:bold">${e.name}</div><div style="font-size:10px;color:var(--muted)">${e.cat||''} · se paga día ${e.day} · Total: ${fx(e.amt)}</div></div>
-      <div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--sky)">${fx(e.half)}</div><div style="font-size:9px;color:var(--muted)">apartar esta qna</div></div>
-    </div>`).join('')}
-    <div class="row-b" style="padding-top:10px;margin-top:6px;border-top:2px solid rgba(74,110,140,.3)"><strong style="color:var(--sky)">Total a apartar:</strong><strong style="color:var(--sky);font-size:16px">${fx(expSavePlan.reduce((a,e)=>a+e.half,0))}</strong></div>
-    <div style="font-size:10px;color:var(--sky);margin-top:8px;line-height:1.6">💡 Transfiere este monto a una cuenta de ahorro o sepáralo en un sobre.</div>
-  </div>`:``}
 
   <!-- UNIFIED PAYMENT TRACKER -->
   ${(()=>{
@@ -1580,6 +1595,14 @@ function rPlan(){
       const remaining=Math.max(0,g.target-(+g.saved||0));
       const pct=Math.min(100,((+g.saved||0)/g.target*100)).toFixed(0);
       allPays.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});
+    });
+    // Apartado — save half of big monthly expenses
+    expSavePlan.forEach(e=>{
+      const paid=!showNext&&isPaid('apt',e.id);
+      const label=e.type==='other'
+        ?'💰 Apartar '+e.name+' (pago día '+e.day+' · '+fx(e.amt)+')'
+        :'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';
+      allPays.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});
     });
     allPays.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
     if(!allPays.length)return'';
@@ -1727,6 +1750,8 @@ function calcNextPayISO(dayNum){
   return np.toISOString().split('T')[0];
 }
 function applyPayments(){
+  // Auto-backup before applying
+  try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch{}
   const ck=cycleKey();
   const items=S.paidItems[ck]||{};
   let appliedExp=0,appliedDebt=0;
@@ -1768,6 +1793,7 @@ function applyPayments(){
         appliedExp++;
       }
     }
+    else if(type==='apt'){appliedExp++;} // apartado is just a reminder, no state change needed
     // Mark as applied (keep in paidItems)
     items[key]='applied';
   }
@@ -1782,9 +1808,26 @@ function applyPayments(){
 function confirmApply(){
   const pc=pendingCount();
   if(pc===0){toast('No hay pagos pendientes de aplicar');return;}
+  const hasBackup=!!localStorage.getItem('prv5_backup');
+  const backupDate=localStorage.getItem('prv5_backup_date');
+  const bkLabel=backupDate?fmtDate(backupDate.split('T')[0]):'';
   showConfirm('¿Aplicar pagos al historial?',
-    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se avanzará la mensualidad (+1) de las <strong>'+pc+'</strong> deuda'+(pc>1?'s':'')+' marcada'+(pc>1?'s':'')+' como pagada'+(pc>1?'s':'')+' y se reducirá su saldo.<br><br><strong style="color:var(--terra)">Esta acción no se puede deshacer.</strong></div>',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se avanzará la mensualidad (+1) de las <strong>'+pc+'</strong> deuda'+(pc>1?'s':'')+' marcada'+(pc>1?'s':'')+' como pagada'+(pc>1?'s':'')+' y se reducirá su saldo.<br><br>Se creará un <strong>respaldo automático</strong> antes de aplicar.'+(hasBackup?'<br><span style="font-size:10px;color:var(--muted)">Último respaldo: '+bkLabel+'</span>':'')+'<br><br><strong style="color:var(--terra)">Esta acción no se puede deshacer</strong> (pero puedes restaurar el respaldo).</div><div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="exportData();closeConfirm()">📤 Exportar respaldo manual primero</button>'+(hasBackup?'<button class="btn btn-ghost btn-sm" style="width:100%;color:var(--amber)" onclick="restoreBackup()">↩ Restaurar último respaldo'+(bkLabel?' ('+bkLabel+')':'')+'</button>':'')+'</div>',
     applyPayments);
+}
+function restoreBackup(){
+  const bk=localStorage.getItem('prv5_backup');
+  if(!bk){toast('No hay respaldo disponible');return;}
+  showConfirm('¿Restaurar respaldo?',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se reemplazarán <strong>todos tus datos actuales</strong> con el respaldo guardado antes del último "Aplicar pagos".<br><br><strong style="color:var(--terra)">Perderás los cambios hechos después del respaldo.</strong></div>',
+    ()=>{
+      try{
+        const data=JSON.parse(bk);
+        S={...S,...data};sv();
+        toast('✅ Respaldo restaurado');
+        go('plan');
+      }catch{toast('Error al restaurar');}
+    });
 }
 function updExpFields(){
   const f=document.getElementById('ef')?.value||'mensual';
@@ -1929,6 +1972,24 @@ function rHabitos(){
       <button class="btn btn-sage" onclick="addSavGoalH()">🎯 Crear meta de ahorro</button>
     </div>
   </div>
+
+  <!-- PLAN DE APARTADO -->
+  ${(()=>{try{
+    const ap=getExpSavePlan();
+    if(!ap.length)return'';
+    const otherQ=ap.filter(e=>e.type==='other');
+    const thisQ=ap.filter(e=>e.type==='this');
+    const totalApartar=ap.reduce((a,e)=>a+e.half,0);
+    return'<div class="card card-sky"><div class="ct">💰 Plan de apartado quincenal</div>'
+    +'<div style="font-size:11px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Tus gastos fijos mensuales de $500+ divididos en 2 quincenas. Aparta la mitad cada quincena para que el golpe no te descuadre.</div>'
+    +(otherQ.length>0?'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Se pagan la otra quincena — aparta ahora</div>'
+      +otherQ.map(e=>'<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(74,110,140,.15)"><div><div style="font-size:13px;color:var(--txt);font-weight:bold">'+e.name+'</div><div style="font-size:10px;color:var(--muted)">'+(e.cat||'')+' · día '+e.day+' · Total: '+fx(e.amt)+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--sky)">'+fx(e.half)+'</div><div style="font-size:9px;color:var(--muted)">apartar esta qna</div></div></div>').join(''):'')
+    +(thisQ.length>0?'<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:'+(otherQ.length?'14px':'0')+' 0 6px">Se pagan esta quincena — aparta para la próxima</div>'
+      +thisQ.map(e=>'<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(160,112,48,.15)"><div><div style="font-size:13px;color:var(--txt);font-weight:bold">'+e.name+'</div><div style="font-size:10px;color:var(--muted)">'+(e.cat||'')+' · día '+e.day+' · Total: '+fx(e.amt)+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--amber)">'+fx(e.half)+'</div><div style="font-size:9px;color:var(--muted)">apartar p/próx qna</div></div></div>').join(''):'')
+    +'<div class="row-b" style="padding-top:10px;margin-top:8px;border-top:2px solid rgba(74,110,140,.3)"><strong style="color:var(--sky)">Total a apartar/qna:</strong><strong style="color:var(--sky);font-size:16px">'+fx(totalApartar)+'</strong></div>'
+    +'<div style="font-size:10px;color:var(--sky);margin-top:8px;line-height:1.6">💡 Estos montos aparecen como items en tu tabla de Pagos del Ciclo en Plan de Acción.</div>'
+    +'</div>';
+  }catch{return'';}})()}
 
   <!-- SALA DE ESPERA 48H -->
   <div class="card">

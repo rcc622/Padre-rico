@@ -1364,43 +1364,37 @@ function rPlan(){
   });
   const incQ=salQ+bfThisQ+extrasQ;
 
-  // ── EXPENSES (include ALL, mark applied) ──
-  let expQ=0,expAppliedAmt=0;
+  // ── EXPENSES ──
+  let expQ=0;
   const expDetail=[];
   S.exp.forEach(e=>{
     const f=e.freq||'mensual';
     const mo=toMonthly(+e.amt||0,f);
     const pd=+(e.payDay)||0;
-    const applied=!showNext&&isApplied('exp',e.id);
 
     if(f==='semanal'){
       const weekAmt=+e.amt||0;
-      const app1=!showNext&&isApplied('exp',e.id);
-      const app2=!showNext&&isApplied('expw2',e.id);
       expQ+=weekAmt*2;
-      if(app1)expAppliedAmt+=weekAmt;
-      if(app2)expAppliedAmt+=weekAmt;
-      if(!app1)expDetail.push({id:e.id,name:e.name,amt:weekAmt,day:0,freq:f,week:1});
-      if(!app2)expDetail.push({id:e.id,name:e.name,amt:weekAmt,day:0,freq:f,week:2,paidType:'expw2'});
+      expDetail.push({id:e.id,name:e.name,amt:weekAmt,day:0,freq:f,week:1});
+      expDetail.push({id:e.id,name:e.name,amt:weekAmt,day:0,freq:f,week:2,paidType:'expw2'});
     }else if(f==='quincenal'){
       expQ+=(+e.amt||0);
-      if(applied){expAppliedAmt+=(+e.amt||0);}
-      else{expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
+      expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});
     }else if(f==='bimestral'){
       const bm=e.bimMeses||'par';
       const isPar=m2=>(m2+1)%2===0;
       const isTarget=bm==='par'?isPar:(m2)=>!isPar(m2);
       if(pd>0&&dayInCycle(pd)){
         const testM=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();
-        if(isTarget(testM)){expQ+=e.amt;if(applied)expAppliedAmt+=e.amt;else expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f,note:bm==='par'?'mes par':'mes non'});}
+        if(isTarget(testM)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f,note:bm==='par'?'mes par':'mes non'});}
       }else if(!pd){
-        expQ+=mo/2;if(applied)expAppliedAmt+=mo/2;else expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
+        expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
       }
     }else{
       if(pd>0){
-        if(dayInCycle(pd)){expQ+=mo;if(applied)expAppliedAmt+=mo;else expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}
+        if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}
       }else{
-        expQ+=mo/2;if(applied)expAppliedAmt+=mo/2;else expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
+        expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
       }
     }
   });
@@ -1424,8 +1418,8 @@ function rPlan(){
     }
   });
 
-  // ── DEBT PAYMENTS (include ALL, mark applied) ──
-  let debtPayQ=0,debtAppliedAmt=0;
+  // ── DEBT PAYMENTS ──
+  let debtPayQ=0;
   const debtDetail=[];
   const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
   S.debts.forEach(d=>{
@@ -1433,27 +1427,25 @@ function rPlan(){
     const mo=toMonthly(+d.pay||0,f);
     const pd=+(d.payDay)||0;
     const isLast=_urgLiqIds.has(d.id);
-    const applied=!showNext&&isApplied('debt',d.id);
 
     if(d.nextPay){
       const npd=new Date(d.nextPay+'T12:00');
       if(npd>=cStart&&npd<=cEnd){
         debtPayQ+=(+d.pay||0);
-        if(applied){debtAppliedAmt+=(+d.pay||0);}
-        else{debtDetail.push({id:d.id,name:d.name,amt:+d.pay||0,day:npd.getDate(),curPay:d.curPay,totalPays:d.totalPays,isLast});}
+        debtDetail.push({id:d.id,name:d.name,amt:+d.pay||0,day:npd.getDate(),curPay:d.curPay,totalPays:d.totalPays,isLast});
       }
       return;
     }
     if(f==='quincenal'){
       if(pd>0){
-        if(dayInCycle(pd)){debtPayQ+=d.pay||0;if(applied)debtAppliedAmt+=d.pay||0;else debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});}
+        if(dayInCycle(pd)){debtPayQ+=d.pay||0;debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});}
       }else{
-        debtPayQ+=d.pay||0;if(applied)debtAppliedAmt+=d.pay||0;else debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast});
+        debtPayQ+=d.pay||0;debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast});
       }
     }else if(pd>0&&dayInCycle(pd)){
-      debtPayQ+=mo;if(applied)debtAppliedAmt+=mo;else debtDetail.push({id:d.id,name:d.name,amt:mo,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});
+      debtPayQ+=mo;debtDetail.push({id:d.id,name:d.name,amt:mo,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});
     }else if(!pd){
-      debtPayQ+=mo/2;if(applied)debtAppliedAmt+=mo/2;else debtDetail.push({id:d.id,name:d.name,amt:mo/2,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast,noDate:true});
+      debtPayQ+=mo/2;debtDetail.push({id:d.id,name:d.name,amt:mo/2,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast,noDate:true});
     }
   });
 
@@ -1481,52 +1473,35 @@ function rPlan(){
 
   const disponible=incQ-expQ-savQ-savGoalQ-debtPayQ;
 
-  // ── SIMPLE MONEY TRACKING ──
-  // checked = user tapped ✓ (paid in real life, not yet "applied")
-  // applied = user pressed "Apply" (already removed from lists)
-  // Both mean money LEFT the account.
-  
-  // Sum checked items still in lists
+  // ── MONEY TRACKING ──
+  // checked = user tapped ✓ but NOT yet "applied"
+  // applied = user pressed "Apply" — confirmed
   let checkedExpAmt=0,checkedDebtAmt=0,checkedSavAmt=0;
+  let appliedExpAmt=0,appliedDebtAmt=0,appliedSavAmt=0;
   if(!showNext){
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';if(isPaid(pt2,e.id))checkedExpAmt+=e.amt;});
-    debtDetail.forEach(e=>{if(isPaid('debt',e.id))checkedDebtAmt+=e.amt;});
-    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{if(isPaid('sav',g.id))checkedSavAmt+=savGoalPerQ(g);});
-    expSavePlan.forEach(e=>{if(isPaid('apt',e.id))checkedSavAmt+=e.half;});
+    expDetail.forEach(e=>{
+      const pt2=e.paidType||'exp';
+      if(isApplied(pt2,e.id)){appliedExpAmt+=e.amt;}
+      else if(isPaid(pt2,e.id)){checkedExpAmt+=e.amt;}
+    });
+    debtDetail.forEach(e=>{
+      if(isApplied('debt',e.id)){appliedDebtAmt+=e.amt;}
+      else if(isPaid('debt',e.id)){checkedDebtAmt+=e.amt;}
+    });
+    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{
+      if(isApplied('sav',g.id)){appliedSavAmt+=savGoalPerQ(g);}
+      else if(isPaid('sav',g.id)){checkedSavAmt+=savGoalPerQ(g);}
+    });
+    expSavePlan.forEach(e=>{
+      if(isApplied('apt',e.id)){appliedSavAmt+=e.half;}
+      else if(isPaid('apt',e.id)){checkedSavAmt+=e.half;}
+    });
   }
   const checkedTotal=checkedExpAmt+checkedDebtAmt+checkedSavAmt;
+  const appliedTotal=appliedExpAmt+appliedDebtAmt+appliedSavAmt;
   
-  // Applied = already removed from lists (stored total)
-  const ck2=cycleKey();
-  let appliedTotal=0;
-  if(!showNext){
-    const pi=S.paidItems[ck2]||{};
-    if(pi._appliedTotal)appliedTotal=+pi._appliedTotal;
-    else{
-      for(const key in pi){
-        if(key.startsWith('_')||pi[key]!=='applied')continue;
-        const [type,idStr]=key.split('_');const id=+idStr;
-        if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)appliedTotal+=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');}
-        else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)appliedTotal+=(+e.amt||0);}
-        else if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)appliedTotal+=(+d.pay||0);}
-        else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)appliedTotal+=savGoalPerQ(g);}
-        else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)appliedTotal+=Math.round((+e.amt||0)/2);}
-      }
-      appliedTotal=Math.max(appliedTotal,expAppliedAmt+debtAppliedAmt);
-    }
-  }
-  
-  // Total money out = applied + checked
-  const totalPaidOut=appliedTotal+checkedTotal;
-  
-  // Unchecked items = still need to pay
-  const uncheckedExp=expDetail.reduce((a,e)=>a+e.amt,0)-checkedExpAmt;
-  const uncheckedDebt=debtDetail.reduce((a,e)=>a+e.amt,0)-checkedDebtAmt;
-  const uncheckedSav=savGoalQ-checkedSavAmt-(showNext?0:S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).filter(g=>isApplied('sav',g.id)).reduce((a,g)=>a+savGoalPerQ(g),0))-(showNext?0:expSavePlan.filter(e=>isApplied('apt',e.id)).reduce((a,e)=>a+e.half,0));
-  
-  // disponibleReal = what you'll have after ALL obligations
-  // = income - applied - checked - unchecked - ahorro = income - everything
-  const disponibleReal=disponible; // same as original since all obligations are included
+  // disponibleReal = fixed presupuesto (never changes with checks/applies)
+  const disponibleReal=disponible;
   // No double-counting: liquidaciones are already in debtPayQ
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
   const lastSnap=lastHormiga();
@@ -1832,16 +1807,8 @@ function applyPayments(){
           d.curPay=Math.min(d.curPay+1,d.totalPays+1);
         }
         d.bal=Math.max(0,(+d.bal||0)-amt);
-        if(d.nextPay){
-          const np=new Date(d.nextPay+'T12:00');
-          const f=d.freq||'mensual';
-          if(f==='semanal')np.setDate(np.getDate()+7);
-          else if(f==='quincenal')np.setDate(np.getDate()+15);
-          else if(f==='bimestral')np.setMonth(np.getMonth()+2);
-          else np.setMonth(np.getMonth()+1);
-          d.nextPay=np.toISOString().split('T')[0];
-          d.payDay=np.getDate();
-        }
+        // Do NOT advance nextPay here — debt stays visible in this cycle as "Pagado"
+        // nextPay advances when user starts a new cycle
         appliedDebt++;
       }
     }else if(type==='exp'){

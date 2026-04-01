@@ -381,6 +381,7 @@ function paidTotal(){
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)total+=savGoalPerQ(g);} // savings goal
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)total+=Math.round((+e.amt||0)/2);} // apartado
     else if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)total+=toMonthly(+d.pay||0,d.freq||'mensual');}
+    else if(type==='imp'){total+=Math.round(S.impulsesBudget/2);}
   }
   return total;
 }
@@ -416,14 +417,14 @@ function genSurvivalRetos(deficit){
 function activateSurvival(retoId){
   const ck=cycleKey();
   const existing=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck);
-  if(existing){existing.active=!existing.active;sv();rPlan();toast(existing.active?'🎯 Reto activado':'Reto desactivado');return;}
+  if(existing){existing.active=!existing.active;sv();toast(existing.active?'🎯 Reto activado':'Reto desactivado');return;}
   S.survivalRetos.push({id:retoId,cycle:ck,active:true,completed:false,activatedAt:Date.now()});
-  sv();rPlan();toast('🎯 Reto de supervivencia activado');
+  sv();toast('🎯 Reto de supervivencia activado');
 }
 function completeSurvival(retoId){
   const ck=cycleKey();
   const r=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===ck);
-  if(r){r.completed=true;r.completedAt=Date.now();sv();rPlan();toast('🏆 ¡Reto completado!');}
+  if(r){r.completed=true;r.completedAt=Date.now();sv();toast('🏆 ¡Reto completado!');}
 }
 function survivalSaved(){
   const ck=cycleKey();
@@ -441,7 +442,7 @@ function addSavGoal(){
   if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
   const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,done:false};
   pt({savGoals:[...S.savGoals,goal]});
-  toast('🎯 Meta de ahorro creada');rPlan();rHabitos();
+  toast('🎯 Meta de ahorro creada');rHabitos();
 }
 function depositSavGoal(id,prefix){
   const pfx=prefix||'sgdep_';
@@ -454,7 +455,7 @@ function depositSavGoal(id,prefix){
     const newSaved=(+g.saved||0)+amt;
     return{...g,saved:newSaved,deposits:[...(g.deposits||[]),dep],done:newSaved>=g.target};
   })});
-  toast('💰 Abono registrado: '+fx(amt));rPlan();rHabitos();
+  toast('💰 Abono registrado: '+fx(amt));rHabitos();
 }
 function addSavGoalH(){
   const n=document.getElementById('sgnh')?.value.trim();
@@ -468,7 +469,7 @@ function addSavGoalH(){
 }
 function rmSavGoal(id){
   showConfirm('¿Eliminar esta meta?','Se perderá el historial de abonos.',()=>{
-    pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');rPlan();rHabitos();
+    pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');rHabitos();
   });
 }
 function savGoalPerQ(g){
@@ -1053,7 +1054,8 @@ const QUICK_EXP=[
 ];
 let dStrat='snowball';
 let editDebtId=null;
-let planQ='actual'; // 'actual' or 'next'
+let planQ='actual';
+let planView='pagos'; // 'pagos' | 'estrategia' | 'retos'
 let debtSort='prox'; // 'prox', 'alfa', 'grupo'
 
 function rFlujo(){
@@ -1280,248 +1282,123 @@ function rFlujo(){
 }
 
 // ══ PLAN DE ACCIÓN ═════════════════════════════════
+function applyPayments(){
+  try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch{}
+  const ck=cycleKey();
+  const items=S.paidItems[ck]||{};
+  let appliedExp=0,appliedDebt=0,appliedAmt=0;
+  for(const key in items){
+    if(items[key]==='applied'||key.startsWith('_'))continue;
+    const [type,idStr]=key.split('_');const id=+idStr;let amt=0;
+    if(type==='debt'){
+      const d2=S.debts.find(x=>x.id===id);
+      if(d2){amt=+d2.pay||0;if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);d2.bal=Math.max(0,(+d2.bal||0)-amt);appliedDebt++;}
+    }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');appliedExp++;}
+    else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;appliedExp++;}
+    else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
+    else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
+    else if(type==='imp'){amt=Math.round(S.impulsesBudget/2);appliedExp++;}
+    appliedAmt+=amt;items[key]='applied';
+  }
+  items._appliedTotal=((+items._appliedTotal)||0)+appliedAmt;
+  S.paidItems[ck]=items;sv();
+  const total=appliedExp+appliedDebt;
+  if(total>0){toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':''));rPlan();rFlujo();hdrUp();}
+  else{toast('No hay pagos seleccionados');}
+}
+function confirmApply(){
+  const pc=pendingCount();
+  if(pc===0){toast('No hay pagos seleccionados');return;}
+  showConfirm('¿Aplicar pagos seleccionados?',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se aplicarán los <strong>'+pc+'</strong> pago'+(pc>1?'s':'')+' seleccionado'+(pc>1?'s':'')+'. Se creará un respaldo automático.<br><br><strong style="color:var(--terra)">Esta acción no se puede deshacer</strong> (pero puedes restaurar el respaldo).</div><div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="exportData();closeConfirm()">📤 Exportar respaldo primero</button></div>',
+    applyPayments);
+}
+function restoreBackup(){
+  const bk=localStorage.getItem('prv5_backup');
+  if(!bk){toast('No hay respaldo disponible');return;}
+  showConfirm('¿Restaurar respaldo?',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se reemplazarán todos tus datos con el respaldo.<br><br><strong style="color:var(--terra)">Perderás los cambios posteriores.</strong></div>',
+    ()=>{try{S={...S,...JSON.parse(bk)};sv();toast('✅ Respaldo restaurado');go('plan');}catch{toast('Error al restaurar');}});
+}
+
 function rPlan(){
   const today=new Date();today.setHours(0,0,0,0);
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
 
-  // ── PAYROLL CYCLE LOGIC ──
-  // 1ra qna: payday 30/31, covers 30/31 current month → 14 next month
-  // 2da qna: payday 15, covers 15 → 29 of same month
-  // Determine which cycle today falls in:
+  // ── CYCLE LOGIC ──
   let cycleType,cycleStart,cycleEnd,cyclePayday;
-  if(d>=15&&d<=29){
-    // 2da quincena: 15 → 29 del mismo mes
-    cycleType='2da';
-    cycleStart=new Date(y,m,15);
-    cycleEnd=new Date(y,m,29);
-    cyclePayday=new Date(y,m,15);
-  }else{
-    // 1ra quincena: 30/31 del mes anterior (o actual) → 14 del mes actual (o siguiente)
-    cycleType='1ra';
-    if(d>=30){
-      cycleStart=new Date(y,m,30);
-      cycleEnd=new Date(y,m+1,14);
-      cyclePayday=new Date(y,m,new Date(y,m+1,0).getDate()); // last day of month
-    }else{
-      // d is 1-14
-      const prevLastDay=new Date(y,m,0).getDate();
-      cycleStart=new Date(y,m-1,Math.min(30,prevLastDay));
-      cycleEnd=new Date(y,m,14);
-      cyclePayday=new Date(y,m-1,prevLastDay);
-    }
-  }
-
-  // Next cycle
+  if(d>=15&&d<=29){cycleType='2da';cycleStart=new Date(y,m,15);cycleEnd=new Date(y,m,29);cyclePayday=new Date(y,m,15);}
+  else{cycleType='1ra';if(d>=30){cycleStart=new Date(y,m,30);cycleEnd=new Date(y,m+1,14);cyclePayday=new Date(y,m,new Date(y,m+1,0).getDate());}else{const pld=new Date(y,m,0).getDate();cycleStart=new Date(y,m-1,Math.min(30,pld));cycleEnd=new Date(y,m,14);cyclePayday=new Date(y,m-1,pld);}}
   let nextType,nextStart,nextEnd,nextPayday;
-  if(cycleType==='2da'){
-    nextType='1ra';
-    const lastDay=new Date(y,m+1,0).getDate();
-    nextStart=new Date(y,m,30);
-    nextEnd=new Date(y,m+1,14);
-    nextPayday=new Date(y,m,lastDay);
-  }else{
-    nextType='2da';
-    if(d>=30){nextStart=new Date(y,m+1,15);nextEnd=new Date(y,m+1,29);nextPayday=new Date(y,m+1,15);}
-    else{nextStart=new Date(y,m,15);nextEnd=new Date(y,m,29);nextPayday=new Date(y,m,15);}
-  }
-
-  // Toggle
+  if(cycleType==='2da'){nextType='1ra';const ld=new Date(y,m+1,0).getDate();nextStart=new Date(y,m,30);nextEnd=new Date(y,m+1,14);nextPayday=new Date(y,m,ld);}
+  else{nextType='2da';if(d>=30){nextStart=new Date(y,m+1,15);nextEnd=new Date(y,m+1,29);nextPayday=new Date(y,m+1,15);}else{nextStart=new Date(y,m,15);nextEnd=new Date(y,m,29);nextPayday=new Date(y,m,15);}}
   const showNext=planQ==='next';
-  const ct=showNext?nextType:cycleType; // '1ra' or '2da'
+  const ct=showNext?nextType:cycleType;
   const cStart=showNext?nextStart:cycleStart;
   const cEnd=showNext?nextEnd:cycleEnd;
   const cPayday=showNext?nextPayday:cyclePayday;
-  const whenLabel=showNext?'Próxima quincena':'Quincena actual';
   const fmtD=d2=>d2.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
   const qLabel=`${ct} quincena · ${fmtD(cStart)} → ${fmtD(cEnd)}`;
-  const paydayLabel=`Día de pago: ${fmtD(cPayday)}`;
-
-  // Helper: does a payDay (1-31) fall within this cycle's date range?
-  function dayInCycle(pd){
-    if(!pd)return false;
-    // Check across months — create test dates for current and next month
-    const testDates=[];
-    for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){
-      const maxD=new Date(cStart.getFullYear(),tm+1,0).getDate();
-      if(pd<=maxD)testDates.push(new Date(cStart.getFullYear(),tm,pd));
-    }
-    return testDates.some(td=>td>=cStart&&td<=cEnd);
-  }
+  function dayInCycle(pd){if(!pd)return false;const tds=[];for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){const mx=new Date(cStart.getFullYear(),tm+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
 
   // ── INCOME ──
   const salQ=S.inc.sal/2;
   const bfDay=+(S.inc.bfDate)||0;
   const bfThisQ=dayInCycle(bfDay)?(+S.inc.bf||0):0;
-  const bfOtherQ=dayInCycle(bfDay)?0:(+S.inc.bf||0);
-  // Extras: recurrent split /2, unique only if date falls in this cycle
   let extrasQ=0;
-  S.extras.forEach(x=>{
-    if(x.tipo==='recurrente'){extrasQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;}
-    else if(x.date){
-      const xd=new Date(x.date+'T12:00');
-      if(xd>=cStart&&xd<=cEnd)extrasQ+=(+x.amt||0);
-    }
-  });
+  S.extras.forEach(x=>{if(x.tipo==='recurrente'){extrasQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;}else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extrasQ+=(+x.amt||0);}});
   const incQ=salQ+bfThisQ+extrasQ;
 
   // ── EXPENSES ──
-  let expQ=0;
-  const expDetail=[];
-  S.exp.forEach(e=>{
-    const f=e.freq||'mensual';
-    const mo=toMonthly(+e.amt||0,f);
-    const pd=+(e.payDay)||0;
-
-    if(f==='semanal'){
-      const weekAmt=+e.amt||0;
-      expQ+=weekAmt*2;
-      expDetail.push({id:e.id,name:e.name,amt:weekAmt,day:0,freq:f,week:1});
-      expDetail.push({id:e.id,name:e.name,amt:weekAmt,day:0,freq:f,week:2,paidType:'expw2'});
-    }else if(f==='quincenal'){
-      expQ+=(+e.amt||0);
-      expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});
-    }else if(f==='bimestral'){
-      const bm=e.bimMeses||'par';
-      const isPar=m2=>(m2+1)%2===0;
-      const isTarget=bm==='par'?isPar:(m2)=>!isPar(m2);
-      if(pd>0&&dayInCycle(pd)){
-        const testM=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();
-        if(isTarget(testM)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f,note:bm==='par'?'mes par':'mes non'});}
-      }else if(!pd){
-        expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
-      }
-    }else{
-      if(pd>0){
-        if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}
-      }else{
-        expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});
-      }
-    }
+  let expQ=0;const expDetail=[];
+  S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
+    if(f==='semanal'){const w=+e.amt||0;expQ+=w*2;expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:1});expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:2,paidType:'expw2'});}
+    else if(f==='quincenal'){expQ+=(+e.amt||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
+    else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
+    else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
   });
 
-  // Separate expenses: weekly (sem1/sem2), fixed monthly to save, and other
-  const expWeek1=expDetail.filter(e=>e.week===1);
-  const expWeek2=expDetail.filter(e=>e.week===2);
-  const expFixed=expDetail.filter(e=>!e.week&&e.freq!=='semanal');
-  // Monthly expenses that DON'T fall in this cycle = need saving plan
-  const expSavePlan=[];
-  S.exp.forEach(e=>{
-    const f=e.freq||'mensual';if(f!=='mensual')return;
-    const pd=+(e.payDay)||0;const mo=+e.amt||0;
-    if(mo<500)return; // only for significant expenses
-    if(pd>0&&!dayInCycle(pd)){
-      // Falls in the OTHER quincena — save half now
-      expSavePlan.push({id:e.id,name:e.name,amt:mo,half:Math.round(mo/2),day:pd,cat:e.cat,type:'other'});
-    } else if(pd>0&&dayInCycle(pd)){
-      // Falls in THIS quincena — save half for next time
-      expSavePlan.push({id:e.id,name:e.name,amt:mo,half:Math.round(mo/2),day:pd,cat:e.cat,type:'this'});
-    }
-  });
-
-  // ── DEBT PAYMENTS ──
-  let debtPayQ=0;
-  const debtDetail=[];
+  // ── DEBTS ──
+  let debtPayQ=0;const debtDetail=[];
   const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
-  S.debts.forEach(d=>{
-    const f=d.freq||'mensual';
-    const mo=toMonthly(+d.pay||0,f);
-    const pd=+(d.payDay)||0;
-    const isLast=_urgLiqIds.has(d.id);
-
-    if(d.nextPay){
-      const npd=new Date(d.nextPay+'T12:00');
-      if(npd>=cStart&&npd<=cEnd){
-        debtPayQ+=(+d.pay||0);
-        debtDetail.push({id:d.id,name:d.name,amt:+d.pay||0,day:npd.getDate(),curPay:d.curPay,totalPays:d.totalPays,isLast});
-      }
-      return;
-    }
-    if(f==='quincenal'){
-      if(pd>0){
-        if(dayInCycle(pd)){debtPayQ+=d.pay||0;debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});}
-      }else{
-        debtPayQ+=d.pay||0;debtDetail.push({id:d.id,name:d.name,amt:d.pay||0,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast});
-      }
-    }else if(pd>0&&dayInCycle(pd)){
-      debtPayQ+=mo;debtDetail.push({id:d.id,name:d.name,amt:mo,day:pd,curPay:d.curPay,totalPays:d.totalPays,isLast});
-    }else if(!pd){
-      debtPayQ+=mo/2;debtDetail.push({id:d.id,name:d.name,amt:mo/2,day:0,curPay:d.curPay,totalPays:d.totalPays,isLast,noDate:true});
-    }
+  S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
+    if(db.nextPay){const npd=new Date(db.nextPay+'T12:00');if(npd>=cStart&&npd<=cEnd){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npd.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});}return;}
+    if(f==='quincenal'){if(pd>0){if(dayInCycle(pd)){debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:pd,curPay:db.curPay,totalPays:db.totalPays,isLast});}}else{debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast});}}
+    else if(pd>0&&dayInCycle(pd)){debtPayQ+=mo;debtDetail.push({id:db.id,name:db.name,amt:mo,day:pd,curPay:db.curPay,totalPays:db.totalPays,isLast});}
+    else if(!pd){debtPayQ+=mo/2;debtDetail.push({id:db.id,name:db.name,amt:mo/2,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast,noDate:true});}
   });
 
+  // ── SAVINGS & APARTADOS ──
   const savQ=savAmt()/2;
-  // Savings goals + apartados: total per quincena
-  const savGoalQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)
-    +expSavePlan.reduce((a,e)=>a+e.half,0);
+  const savGoalQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);
+  const expSavePlan=getExpSavePlan();
+  const aptQ=expSavePlan.reduce((a,e)=>a+e.half,0);
+  const totalSavQ=savGoalQ+aptQ;
 
-  // ── LIQUIDACIONES within cycle date range ──
-  const urgentLiqs=upcoming().filter(dd2=>{
-    const ld=new Date(dd2.liqDate+'T12:00');
-    return ld>=cStart&&ld<=cEnd;
-  });
-  // Liquidaciones are INFORMATIONAL — the payment is already counted in debtPayQ
-  // Show mensualidad, not total balance
-  const liqMensualidad=(d)=>toMonthly(d.pay||0,d.freq||'mensual');
+  // ── BUDGET (FIXED) ──
+  const disponible=incQ-expQ-savQ-totalSavQ-debtPayQ;
 
-  // After this cycle (next cycle's liquidations)
-  const nStart=showNext?cEnd:nextStart;
-  const nEnd=showNext?new Date(nextEnd.getTime()+15*864e5):nextEnd;
-  const afterLiqs=upcoming().filter(dd2=>{
-    const ld=new Date(dd2.liqDate+'T12:00');
-    return ld>cEnd&&ld<=nEnd;
-  });
-
-  const disponible=incQ-expQ-savQ-savGoalQ-debtPayQ;
-
-  // ── MONEY TRACKING ──
-  // checked = user tapped ✓ but NOT yet "applied"
-  // applied = user pressed "Apply" — confirmed
-  let checkedExpAmt=0,checkedDebtAmt=0,checkedSavAmt=0;
-  let appliedExpAmt=0,appliedDebtAmt=0,appliedSavAmt=0;
+  // ── CHECKED & APPLIED TRACKING ──
+  let checkedAmt=0,appliedAmt2=0;
   if(!showNext){
-    expDetail.forEach(e=>{
-      const pt2=e.paidType||'exp';
-      if(isApplied(pt2,e.id)){appliedExpAmt+=e.amt;}
-      else if(isPaid(pt2,e.id)){checkedExpAmt+=e.amt;}
-    });
-    debtDetail.forEach(e=>{
-      if(isApplied('debt',e.id)){appliedDebtAmt+=e.amt;}
-      else if(isPaid('debt',e.id)){checkedDebtAmt+=e.amt;}
-    });
-    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{
-      if(isApplied('sav',g.id)){appliedSavAmt+=savGoalPerQ(g);}
-      else if(isPaid('sav',g.id)){checkedSavAmt+=savGoalPerQ(g);}
-    });
-    expSavePlan.forEach(e=>{
-      if(isApplied('apt',e.id)){appliedSavAmt+=e.half;}
-      else if(isPaid('apt',e.id)){checkedSavAmt+=e.half;}
-    });
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';if(isApplied(pt2,e.id))appliedAmt2+=e.amt;else if(isPaid(pt2,e.id))checkedAmt+=e.amt;});
+    debtDetail.forEach(e=>{if(isApplied('debt',e.id))appliedAmt2+=e.amt;else if(isPaid('debt',e.id))checkedAmt+=e.amt;});
+    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{if(isApplied('sav',g.id))appliedAmt2+=savGoalPerQ(g);else if(isPaid('sav',g.id))checkedAmt+=savGoalPerQ(g);});
+    expSavePlan.forEach(e=>{if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
   }
-  const checkedTotal=checkedExpAmt+checkedDebtAmt+checkedSavAmt;
-  const appliedTotal=appliedExpAmt+appliedDebtAmt+appliedSavAmt;
-  
-  // disponibleReal = fixed presupuesto (never changes with checks/applies)
-  const disponibleReal=disponible;
-  // No double-counting: liquidaciones are already in debtPayQ
-  const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
-  const lastSnap=lastHormiga();
-  const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
 
-  // ── TODAY'S PAYMENTS ──
+  const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:(+b.rate||0)-(+a.rate||0));
   const todayDay=today.getDate();
-  const todayISO=today.toISOString().split('T')[0];
-  const todayPayExp=S.exp.filter(e=>(+(e.payDay)||0)===todayDay);
-  const todayPayDebt=S.debts.filter(d=>(+(d.payDay)||0)===todayDay||(d.nextPay&&d.nextPay===todayISO));
-  const todayDebtIds=new Set(todayPayDebt.map(d=>d.id));
-  const todayLiqs=upcoming().filter(d2=>{
-    if(todayDebtIds.has(d2.id))return false; // already in todayPayDebt
-    const ld=new Date(d2.liqDate+'T12:00');return ld.getDate()===todayDay&&ld.getMonth()===today.getMonth()&&ld.getFullYear()===today.getFullYear();
-  });
-  const hasTodayPay=todayPayExp.length||todayPayDebt.length||todayLiqs.length;
 
-  document.getElementById('tab-plan').innerHTML=`
-  <!-- TOGGLE -->
-  <div class="card" style="padding:10px 18px">
+  // ── SUB-NAV ──
+  const subNav=`<div class="chips" style="margin-bottom:14px">
+    <button class="chip ${planView==='pagos'?'style=\"background:var(--sagedim);border-color:var(--sage);color:var(--sage2);font-weight:bold\"':''}" onclick="planView='pagos';rPlan()">💳 Pagos</button>
+    <button class="chip ${planView==='estrategia'?'style=\"background:var(--sagedim);border-color:var(--sage);color:var(--sage2);font-weight:bold\"':''}" onclick="planView='estrategia';rPlan()">📊 Estrategia</button>
+    <button class="chip ${planView==='retos'?'style=\"background:var(--sagedim);border-color:var(--sage);color:var(--sage2);font-weight:bold\"':''}" onclick="planView='retos';rPlan()">🎯 Retos</button>
+  </div>`;
+
+  // ── TOGGLE ──
+  const toggle=`<div class="card" style="padding:10px 18px">
     <div class="row-b">
       <span style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Plan para:</span>
       <div class="row" style="gap:4px">
@@ -1529,429 +1406,249 @@ function rPlan(){
         <button class="btn btn-sm ${planQ==='next'?'btn-sage':'btn-ghost'}" onclick="planQ='next';rPlan()">Próxima quincena</button>
       </div>
     </div>
-  </div>
-
-  <!-- HOY TOCA PAGAR -->
-  ${hasTodayPay&&!showNext?(()=>{
-    const allTodayPaid=todayPayExp.every(e=>isPaid('exp',e.id))&&todayPayDebt.every(d=>isPaid('debt',d.id))&&todayLiqs.every(d=>isPaid('debt',d.id));
-    return`
-  <div class="card ${allTodayPaid?'card-grn':'card-red'}">
-    <div class="ct">${allTodayPaid?'✅':'📌'} Hoy toca pagar (día ${todayDay})${allTodayPaid?' — todo al corriente':''}</div>
-    ${todayPayExp.map(e=>{const paid=isPaid('exp',e.id);return`<div class="row-b ${paid?'paid-row':''}" style="padding:5px 0;border-bottom:1px solid ${allTodayPaid?'rgba(78,124,106,.15)':'rgba(184,92,74,.15)'};font-size:12px"><div class="row" style="gap:6px">${paid?'<span style="color:var(--sage)">✅</span>':'<span style="color:var(--terra)">⏳</span>'}<span style="color:var(--txt)">📋 ${e.name}</span></div><span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(toMonthly(e.amt,e.freq||'mensual'))}</span></div>`;}).join('')}
-    ${todayPayDebt.map(d=>{const paid=isPaid('debt',d.id);const isLiq=d.liqDate&&new Date(d.liqDate+'T12:00').getDate()===todayDay&&new Date(d.liqDate+'T12:00').getMonth()===today.getMonth();return`<div class="row-b ${paid?'paid-row':''}" style="padding:5px 0;border-bottom:1px solid ${allTodayPaid?'rgba(78,124,106,.15)':'rgba(184,92,74,.15)'};font-size:12px"><div class="row" style="gap:6px">${paid?'<span style="color:var(--sage)">✅</span>':'<span style="color:var(--terra)">⏳</span>'}<span style="color:var(--txt)">⛓️ ${d.name}${d.curPay&&d.totalPays?' ('+d.curPay+'/'+d.totalPays+')':''}${isLiq?' · último pago':''}</span></div><span style="color:${paid?'var(--sage)':'var(--terra)'};font-weight:bold">${fx(d.pay)}</span></div>`;}).join('')}
-    ${todayLiqs.map(d=>{const paid=isPaid('debt',d.id);const mo=toMonthly(d.pay||0,d.freq||'mensual');return`<div class="row-b ${paid?'paid-row':''}" style="padding:5px 0;border-bottom:1px solid ${allTodayPaid?'rgba(78,124,106,.15)':'rgba(184,92,74,.15)'};font-size:12px"><div class="row" style="gap:6px">${paid?'<span style="color:var(--sage)">✅</span>':'<span style="color:var(--terra)">⏳</span>'}<span style="color:var(--txt)">🏁 ${d.name} <strong>(último pago)</strong></span></div><span style="color:${paid?'var(--sage)':'var(--sky)'};font-weight:bold">${fx(Math.round(mo))}</span></div>`;}).join('')}
   </div>`;
-  })():''}
-  <div class="card card-sage">
-    <div class="ct">🎯 ${whenLabel}</div>
-    <div style="font-size:14px;color:var(--sage2);font-weight:bold;margin-bottom:4px">${qLabel}</div>
-    <div style="font-size:12px;color:var(--sage);margin-bottom:6px">${paydayLabel}</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">${bfThisQ>0?`Tu bono mensual de ${fx(S.inc.bf)} <strong>cae en este ciclo</strong> (día ${bfDay}).`:`Tu bono mensual (${fx(S.inc.bf||0)}) cae el día ${bfDay||'—'} — no cae en este ciclo.`}</div>
-  </div>
 
-  <!-- WATERFALL -->
-  <div class="card">
-    <div class="ct">💰 Presupuesto del ciclo — ${fmtD(cStart)} → ${fmtD(cEnd)}</div>
-    <div style="font-size:13px;line-height:2.4">
-      <div class="row-b"><span style="color:var(--sage)">💰 Salario quincenal</span><strong style="color:var(--sage)">${fx(Math.round(salQ))}</strong></div>
-      ${bfThisQ>0?`<div class="row-b"><span style="color:var(--sage)">🎁 + Bono mensual (día ${bfDay})</span><strong style="color:var(--sage)">+${fx(bfThisQ)}</strong></div>`:''}
-      ${extrasQ>0?`<div class="row-b"><span style="color:var(--sage)">📈 + Extras</span><strong style="color:var(--sage)">+${fx(Math.round(extrasQ))}</strong></div>`:''}
-      <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b"><span style="color:var(--sage);font-weight:bold">= Ingreso esta quincena</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
-
-      <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expQ))}</strong></div>
-      <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(savQ))}</strong></div>
-      ${savGoalQ>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas + Apartados</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalQ))}</strong></div>`:''}
-      <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPayQ))}</strong></div>
-
-      <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
-        <span style="font-weight:bold;color:var(--txt)">= Disponible</span>
-        <strong style="font-size:18px;color:${disponible>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(disponible))}</strong>
-      </div>
-    </div>
-    ${disponible<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(Math.round(disponible)))}</strong> este ciclo.</div>`:''}
-    ${disponible>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te quedan <strong>${fx(Math.round(disponible))}</strong> libres este ciclo.</div>`:''}
-  </div>
-
-  <!-- CASH STATUS -->
-  ${!showNext&&(checkedTotal+appliedTotal)>0?`
-  <div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
-    <div class="ct">💵 Estado de tu cuenta</div>
-    <div style="font-size:13px;line-height:2.2">
-      <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
-      ${appliedTotal>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${appliedCount()})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedTotal))}</strong></div>`:''}
-      ${checkedTotal>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados sin aplicar (${pendingCount()})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedTotal))}</strong></div>`:''}
-      <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
-        <span style="font-weight:bold;color:var(--txt)">💵 ${checkedTotal>0?'Proyección en cuenta':'En tu cuenta'}</span>
-        <strong style="color:${(incQ-appliedTotal-checkedTotal)>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(incQ-appliedTotal-checkedTotal))}</strong>
-      </div>
-      ${checkedTotal>0?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son una proyección. Presiona "Aplicar" para confirmar.</div>`:''}
-    </div>
-  </div>`:''}
-
-  <!-- PAID PROGRESS -->
-  ${!showNext&&(expDetail.length>0||debtDetail.length>0||appliedCount()>0||pendingCount()>0)?`
-  <div class="card card-grn" style="padding:12px 18px">
-    ${(()=>{
-      const ac=appliedCount(),pc=pendingCount();
-      const totalInTracker=expDetail.length+debtDetail.length;
-      const allDone=totalInTracker===0&&ac>0&&pc===0;
-      if(allDone)return'<div style="text-align:center;padding:12px 0"><div style="font-size:28px;margin-bottom:8px">✅</div><div style="font-size:15px;font-weight:bold;color:var(--sage2);margin-bottom:4px">¡Estás al corriente!</div><div style="font-size:12px;color:var(--sage)">'+ac+' pago'+(ac>1?'s':'')+' aplicado'+(ac>1?'s':'')+'.</div></div>';
-      const parts=[];
-      if(ac>0)parts.push(ac+' aplicado'+(ac>1?'s':''));
-      if(pc>0)parts.push(pc+' seleccionado'+(pc>1?'s':''));
-      const unchecked=totalInTracker-pc; // items not checked at all
-      if(unchecked>0)parts.push(unchecked+' pendiente'+(unchecked>1?'s':''));
-      return'<div class="row-b"><div style="font-size:12px;color:var(--sage2);font-weight:bold">'+parts.join(' · ')+'</div></div>'
-        +(pc>0?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar '+pc+' seleccionado'+(pc>1?'s':'')+' al historial</button>':'');
-    })()}
-  </div>`:''}
-  <!-- UNIFIED PAYMENT TRACKER -->
-  ${(()=>{
+  // ════════════════════════════
+  // VIEW: PAGOS
+  // ════════════════════════════
+  if(planView==='pagos'){
+    // Build unified tracker
     const allPays=[];
-    expDetail.forEach(e=>{
-      const pt2=e.paidType||'exp';
-      const paid=!showNext&&isPaid(pt2,e.id);
-      const label=e.week?e.name+' (Sem '+e.week+')':e.name;
-      allPays.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid,freq:e.freq});
-    });
-    debtDetail.forEach(e=>{
-      const paid=!showNext&&isPaid('debt',e.id);
-      const isUnico=S.debts.find(d=>d.id===e.id)?.freq==='unico';
-      allPays.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isUnico?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid,noDate:e.noDate});
-    });
-    const debtDetailIds=new Set(debtDetail.map(e=>e.id));
-    urgentLiqs.filter(d=>!debtDetailIds.has(d.id)).forEach(d=>{const ld=new Date(d.liqDate+'T12:00');const paid=!showNext&&isPaid('debt',d.id);allPays.push({day:ld.getDate(),name:'🏁 '+d.name+' (último pago)',amt:liqMensualidad(d),type:'liq',id:d.id,ptype:'debt',paid});});
-    // Savings goals — per quincena amount
-    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{
-      const perQ=savGoalPerQ(g);
-      const paid=!showNext&&isPaid('sav',g.id);
-      const remaining=Math.max(0,g.target-(+g.saved||0));
-      const pct=Math.min(100,((+g.saved||0)/g.target*100)).toFixed(0);
-      allPays.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});
-    });
-    // Apartado — save half of big monthly expenses
-    expSavePlan.forEach(e=>{
-      const paid=!showNext&&isPaid('apt',e.id);
-      const label=e.type==='other'
-        ?'💰 Apartar '+e.name+' (pago día '+e.day+' · '+fx(e.amt)+')'
-        :'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';
-      allPays.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});
-    });
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;allPays.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
+    debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';allPays.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
+    // Savings goals
+    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{const perQ=savGoalPerQ(g);const paid=!showNext&&isPaid('sav',g.id);allPays.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});});
+    // Apartados
+    expSavePlan.forEach(e=>{const paid=!showNext&&isPaid('apt',e.id);const label=e.type==='other'?'💰 Apartar '+e.name+' (día '+e.day+' · '+fx(e.amt)+')':'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';allPays.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});});
+    // Impulse budget
+    if(S.impulsesBudget>0){const ib=Math.round(S.impulsesBudget/2);const paid=!showNext&&isPaid('imp',0);allPays.push({day:0,name:'🛍️ Presupuesto impulsos ('+fx(S.impulsesBudget)+'/mes)',amt:ib,type:'ahorro',id:0,ptype:'imp',paid});}
+
     allPays.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
-    if(!allPays.length)return'';
     const passedDay=today.getDate();
     const unpaid=allPays.filter(p=>!p.paid);
     const selected=allPays.filter(p=>p.paid&&!isApplied(p.ptype,p.id));
     const applied=allPays.filter(p=>p.paid&&isApplied(p.ptype,p.id));
-    const unpaidExpT=unpaid.filter(p=>p.type==='gasto').reduce((a,p)=>a+p.amt,0);
-    const unpaidDebtT=unpaid.filter(p=>p.type!=='gasto'&&p.type!=='ahorro').reduce((a,p)=>a+p.amt,0);
-    const unpaidSavT=unpaid.filter(p=>p.type==='ahorro').reduce((a,p)=>a+p.amt,0);
     const selectedT=selected.reduce((a,p)=>a+p.amt,0);
     const appliedT=applied.reduce((a,p)=>a+p.amt,0);
-    const ri=(p,style)=>{const isT=!showNext&&p.day===passedDay;const col=style==='applied'?'var(--sage)':style==='selected'?'var(--amber)':p.type==='ahorro'?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';const cls=style!=='pending'?'paid-row':'';return'<div class="row-b '+cls+'" style="padding:7px 0;border-bottom:1px solid var(--border);'+(isT&&style==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':'')+(style==='selected'?'font-style:italic;opacity:.75;':'')+'"><div class="row" style="gap:8px">'+(!showNext?'<button class="check-btn '+(style!=='pending'?'checked':'')+'" onclick="togglePaid(\''+p.ptype+'\','+p.id+')" style="width:22px;height:22px;font-size:11px;'+(style==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':'')+(style==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':'')+'">'+(style!=='pending'?'✓':'')+'</button>':'')+'<span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">'+dl+'</span><span style="font-size:12px;color:var(--txt)">'+p.name+'</span></div><span style="font-size:12px;color:'+col+';font-weight:bold">'+fx(Math.round(p.amt))+'</span></div>';};
-    return'<div class="card"><div class="ct">📅 Pagos del ciclo — '+fmtD(cStart)+' al '+fmtD(cEnd)+'</div>'
-    // PENDIENTES
-    +(unpaid.length>0?'<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes ('+unpaid.length+')</div>'+unpaid.map(p=>ri(p,'pending')).join('')+'<div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--border);flex-wrap:wrap;gap:8px"><span style="color:var(--terra);font-weight:bold;font-size:11px">Gastos: '+fx(Math.round(unpaidExpT))+'</span><span style="color:var(--sky);font-weight:bold;font-size:11px">Deudas: '+fx(Math.round(unpaidDebtT))+'</span>'+(unpaidSavT>0?'<span style="color:var(--sage);font-weight:bold;font-size:11px">Ahorro: '+fx(Math.round(unpaidSavT))+'</span>':'')+'</div>'
-    :'<div style="text-align:center;padding:14px 0"><span style="font-size:24px">✅</span><div style="font-size:14px;color:var(--sage);font-weight:bold;margin-top:6px">¡Todo seleccionado!</div></div>')
-    // SELECCIONADOS (not yet applied)
-    +(selected.length>0?'<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">☑ Seleccionados — por aplicar ('+selected.length+')</div>'+selected.map(p=>ri(p,'selected')).join('')+'<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--amber)"><span style="font-size:11px;color:var(--amber);font-style:italic">Seleccionado:</span><span style="font-size:11px;color:var(--amber);font-weight:bold;font-style:italic">'+fx(Math.round(selectedT))+'</span></div>':'')
-    // APLICADOS (confirmed)
-    +(applied.length>0?'<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">✅ Pagados ('+applied.length+')</div>'+applied.map(p=>ri(p,'applied')).join('')+'<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--sage)"><span style="font-size:11px;color:var(--sage)">Pagado:</span><span style="font-size:11px;color:var(--sage);font-weight:bold">'+fx(Math.round(appliedT))+'</span></div>':'')
-    +'</div>';
-  })()}
 
-  <!-- SURVIVAL RETOS (when deficit) -->
-  ${disponibleReal<0&&!showNext?(()=>{try{
-    const deficit=Math.abs(disponibleReal);
-    const retos=genSurvivalRetos(deficit);
-    const ck=cycleKey();
-    const activeRetos=S.survivalRetos.filter(r=>r.cycle===ck);
-    const totalPotSave=activeRetos.filter(r=>r.active||r.completed).reduce((a,r)=>{const m=retos.find(x=>x.id===r.id);return a+(m?.save||0);},0);
-    const totalCompletedSave=activeRetos.filter(r=>r.completed).reduce((a,r)=>{const m=retos.find(x=>x.id===r.id);return a+(m?.save||0);},0);
-    const activeCt=activeRetos.filter(r=>r.active&&!r.completed).length;
-    const completedCt=activeRetos.filter(r=>r.completed).length;
-    const diffStars=(d)=>d<=1?'⭐':d<=2?'⭐⭐':'⭐⭐⭐';
-    return`<div class="card" style="border-left:3px solid var(--amber)">
-      <div class="ct">🛟 Modo Supervivencia — Cubre tu déficit</div>
-      <div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">Tu quincena tiene un <strong style="color:var(--terra)">déficit de ${fx(deficit)}</strong>. Activa retos para recortar gastos y llegar al siguiente pago.</div>
-      ${totalPotSave>0?`<div class="card ${totalPotSave>=deficit?'card-grn':'card-amber'}" style="margin-bottom:14px;padding:12px 16px">
-        <div class="row-b">
-          <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">Ahorro potencial con retos activos</div><div class="stat-sm" style="color:${totalPotSave>=deficit?'var(--sage)':'var(--amber)'}">${fx(totalPotSave)}</div></div>
-          <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Completados</div><div class="stat-sm" style="color:var(--sage)">${fx(totalCompletedSave)}</div></div>
+    const ri=(p,st)=>{const isT=!showNext&&p.day===passedDay;const col=st==='applied'?'var(--sage)':st==='selected'?'var(--amber)':p.type==='ahorro'?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';const cls=st!=='pending'?'paid-row':'';
+      return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
+        <div class="row" style="gap:8px">
+          ${!showNext?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:''}
+          <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
+          <span style="font-size:12px;color:var(--txt)">${p.name}</span>
         </div>
-        <div class="pw" style="margin-top:8px"><div class="pb" style="width:${Math.min(100,totalPotSave/deficit*100).toFixed(0)}%;background:${totalPotSave>=deficit?'var(--sage)':'var(--amber)'}"></div></div>
-        <div style="font-size:10px;color:var(--muted);margin-top:4px">${totalPotSave>=deficit?'✅ Tus retos cubren el déficit — ¡a cumplirlos!':'Necesitas '+fx(deficit-totalPotSave)+' más. Activa más retos.'}</div>
-      </div>`:``}
-      ${retos.map(r=>{
-        const sr=activeRetos.find(x=>x.id===r.id);
-        const isActive=sr?.active&&!sr?.completed;
-        const isCompleted=sr?.completed;
-        return`<div class="card surv-card ${isCompleted?'done':''}" style="margin-bottom:8px;padding:14px" ${!isCompleted?`onclick="activateSurvival('${r.id}')"`:''}>
-          <div class="row-b" style="margin-bottom:6px">
+        <span style="font-size:12px;color:${col};font-weight:bold">${fx(Math.round(p.amt))}</span>
+      </div>`;};
+
+    document.getElementById('tab-plan').innerHTML=`
+    ${subNav}${toggle}
+
+    <!-- PRESUPUESTO -->
+    <div class="card">
+      <div class="ct">💰 Presupuesto del ciclo — ${fmtD(cStart)} → ${fmtD(cEnd)}</div>
+      <div style="font-size:13px;line-height:2.4">
+        <div class="row-b"><span style="color:var(--sage)">💰 Salario quincenal</span><strong style="color:var(--sage)">${fx(Math.round(salQ))}</strong></div>
+        ${bfThisQ>0?`<div class="row-b"><span style="color:var(--sage)">🎁 + Bono mensual (día ${bfDay})</span><strong style="color:var(--sage)">+${fx(bfThisQ)}</strong></div>`:''}
+        ${extrasQ>0?`<div class="row-b"><span style="color:var(--sage)">📈 + Extras</span><strong style="color:var(--sage)">+${fx(Math.round(extrasQ))}</strong></div>`:''}
+        <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b"><span style="color:var(--sage);font-weight:bold">= Ingreso esta quincena</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
+        <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expQ))}</strong></div>
+        <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(savQ))}</strong></div>
+        ${totalSavQ>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas + Apartados</span><strong style="color:var(--sky)">−${fx(Math.round(totalSavQ))}</strong></div>`:''}
+        <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPayQ))}</strong></div>
+        <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
+          <span style="font-weight:bold;color:var(--txt)">= Disponible</span>
+          <strong style="font-size:18px;color:${disponible>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(disponible))}</strong>
+        </div>
+      </div>
+      ${disponible<0?`<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.25);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--terra);line-height:1.7">⚠️ <strong>Déficit de ${fx(Math.abs(Math.round(disponible)))}</strong> este ciclo.</div>`:''}
+      ${disponible>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">✅ Te quedan <strong>${fx(Math.round(disponible))}</strong> libres.</div>`:''}
+    </div>
+
+    <!-- ESTADO CUENTA -->
+    ${!showNext&&(checkedAmt+appliedAmt2)>0?`
+    <div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
+      <div class="ct">💵 Estado de tu cuenta</div>
+      <div style="font-size:13px;line-height:2.2">
+        <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
+        ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${appliedCount()})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
+        ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${pendingCount()})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
+        <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
+          <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
+          <strong style="color:${(incQ-appliedAmt2-checkedAmt)>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(incQ-appliedAmt2-checkedAmt))}</strong>
+        </div>
+        ${checkedAmt>0?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
+      </div>
+    </div>`:''}
+
+    <!-- PROGRESS -->
+    ${!showNext?`
+    <div class="card card-grn" style="padding:12px 18px">
+      ${(()=>{const ac=appliedCount(),pc=pendingCount(),unc=allPays.length-applied.length-selected.length;
+        const parts=[];if(ac>0)parts.push(ac+' aplicado'+(ac>1?'s':''));if(pc>0)parts.push(pc+' seleccionado'+(pc>1?'s':''));if(unc>0)parts.push(unc+' pendiente'+(unc>1?'s':''));
+        return`<div style="font-size:12px;color:var(--sage2);font-weight:bold">${parts.join(' · ')}</div>`+(pc>0?`<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar ${pc} seleccionado${pc>1?'s':''} al historial</button>`:'');
+      })()}
+    </div>`:``}
+
+    <!-- PAGOS DEL CICLO -->
+    <div class="card">
+      <div class="ct">📅 Pagos del ciclo — ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
+      ${unpaid.length>0?`<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes (${unpaid.length})</div>${unpaid.map(p=>ri(p,'pending')).join('')}`:'<div style="text-align:center;padding:14px 0"><span style="font-size:24px">✅</span><div style="font-size:14px;color:var(--sage);font-weight:bold;margin-top:6px">¡Todo seleccionado!</div></div>'}
+      ${selected.length>0?`<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">☑ Seleccionados — por aplicar (${selected.length})</div>${selected.map(p=>ri(p,'selected')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--amber)"><span style="font-size:11px;color:var(--amber);font-style:italic">Seleccionado:</span><span style="font-size:11px;color:var(--amber);font-weight:bold;font-style:italic">${fx(Math.round(selectedT))}</span></div>`:''}
+      ${applied.length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">✅ Pagados (${applied.length})</div>${applied.map(p=>ri(p,'applied')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--sage)"><span style="font-size:11px;color:var(--sage)">Pagado:</span><span style="font-size:11px;color:var(--sage);font-weight:bold">${fx(Math.round(appliedT))}</span></div>`:''}
+    </div>`;
+    return;
+  }
+
+  // ════════════════════════════
+  // VIEW: ESTRATEGIA
+  // ════════════════════════════
+  if(planView==='estrategia'){
+    const debtTotal2=tDebt();
+    const bv=+S.inc.bv||0;
+    const bv70=Math.round(bv*0.7);
+    const bv20=Math.round(bv*0.2);
+    const bv10=Math.round(bv*0.1);
+    const newDebtAfterBono=Math.max(0,debtTotal2-bv70);
+    const pctReduction=debtTotal2>0?Math.round(bv70/debtTotal2*100):0;
+
+    document.getElementById('tab-plan').innerHTML=`
+    ${subNav}${toggle}
+
+    <!-- BONO SEMESTRAL -->
+    ${bv>0?`<div class="card card-sage">
+      <div class="ct">💰 Plan para tu bono semestral de ${fx(bv)}</div>
+      <div style="font-size:13px;color:var(--txt2);line-height:1.9;margin-bottom:14px">
+        Cuando recibas tu bono:<br><br>
+        <span style="color:var(--sage);font-weight:bold">• 70%</span> → <strong>${fx(bv70)}</strong> — Abono directo a deuda con mayor tasa<br>
+        <span style="color:var(--sky);font-weight:bold">• 20%</span> → <strong>${fx(bv20)}</strong> — Fondo de emergencia<br>
+        <span style="color:var(--amber);font-weight:bold">• 10%</span> → <strong>${fx(bv10)}</strong> — Para celebrar tu avance
+      </div>
+      ${debtTotal2>0?`<div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--sage);line-height:1.7">
+        💡 El 70% (${fx(bv70)}) reduce tu deuda de ${fx(debtTotal2)} a ${fx(newDebtAfterBono)} — un golpe de ${pctReduction}%.
+      </div>`:''}
+    </div>`:''}
+
+    <!-- PLAN DE ATAQUE -->
+    <div class="card">
+      <div class="ct">Plan de ataque — Orden de prioridad</div>
+      <div style="margin-bottom:13px">
+        <div onclick="dStrat='snowball';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'};margin-bottom:8px">
+          <div style="font-weight:bold;font-size:15px;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">Primero la más pequeña.</div>
+        </div>
+        <div onclick="dStrat='avalanche';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='avalanche'?'var(--sage)':'var(--border)'};background:${dStrat==='avalanche'?'var(--sagedim2)':'var(--bg)'}">
+          <div style="font-weight:bold;font-size:15px;color:${dStrat==='avalanche'?'var(--sage2)':'var(--txt)'}">🏔️ Avalancha</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">Primero la de mayor tasa.</div>
+        </div>
+      </div>
+
+      <div style="background:var(--skydim);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--sky);line-height:1.7;margin-bottom:16px">
+        💡 Cuando termines de pagar la <strong>#1</strong>, toma ese pago y súmalo a la <strong>#2</strong>. El pago crece como bola de nieve y cada deuda cae más rápido.
+      </div>
+
+      ${sorted.map((db,i)=>{
+        const moP=toMonthly(db.pay||0,db.freq||'mensual');
+        const isFirst=i===0;
+        const hasMSI=db.curPay&&db.totalPays;
+        const pd2=+(db.payDay)||0;
+        let npLabel='';
+        if(db.nextPay){npLabel='pago día '+new Date(db.nextPay+'T12:00').getDate();}
+        else if(pd2){npLabel='pago día '+pd2;}
+        const liqLabel=db.liqDate?'Liquida: '+fmtDate(db.liqDate):'';
+        const fqLabel=freqShort(db.freq||'mensual');
+        return`<div style="padding:14px 0;border-bottom:1px solid var(--border)">
+          <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px">
-              <span style="font-size:20px">${r.icon}</span>
-              <div>
-                <div style="font-weight:bold;color:var(--txt);font-size:13px">${r.name}</div>
-                <div style="font-size:11px;color:var(--muted);margin-top:2px">${r.desc}</div>
-              </div>
+              ${isFirst?`<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>`:`<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#${i+1}</span>`}
+              <span style="font-weight:bold;color:var(--txt);font-size:15px">${db.name}</span>
+              ${hasMSI?`<span class="badge bdg-sky">${db.curPay} de ${db.totalPays}</span>`:''}
             </div>
-            <div style="text-align:right">
-              <div style="font-size:14px;font-weight:bold;color:var(--sage)">+${fx(r.save)}</div>
-              <div style="font-size:9px;color:var(--muted)">${diffStars(r.diff)}</div>
-            </div>
+            <strong style="color:var(--sky);font-size:18px">${fx(Math.round(moP))}</strong>
           </div>
-          <div class="row-b">
-            <span style="font-size:10px;color:var(--muted)">${isActive?'🎯 Activo — toca para desactivar':isCompleted?'🏆 Completado':'Toca para activar'}</span>
-            ${isActive?`<button class="btn btn-sage btn-sm" onclick="event.stopPropagation();completeSurvival('${r.id}')">✓ Completé el reto</button>`:''}
+          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:${isFirst?0:32}px">
+            Pago: ${fx(db.pay)}/${fqLabel}${npLabel?' · '+npLabel:''}${liqLabel?' · '+liqLabel:''}
           </div>
         </div>`;
       }).join('')}
-    </div>`;
-  }catch(e){return'';}})():''}
-
-
-  <!-- VISTA PREVIA QUINCENA DESPUÉS -->
-  <div class="card card-amber">
-    <div class="ct">📅 Siguiente ciclo</div>
-    <div style="font-size:12px;color:var(--txt2);margin-bottom:10px">Bono mensual ${bfOtherQ>0?`(${fx(bfOtherQ)}) <strong style="color:var(--sage)">cae en ese ciclo</strong>`:'no cae en ese ciclo'}</div>
-    ${afterLiqs.length>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:6px">Deudas que terminan:</div>
-    ${afterLiqs.map(d=>{const mo=liqMensualidad(d);return`<div class="row-b" style="padding:5px 0;border-bottom:1px solid rgba(160,112,48,.15);font-size:12px">
-      <div class="row"><span style="font-weight:bold">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
-      <span style="color:var(--amber);font-weight:bold">${fx(Math.round(mo))} · ${d.daysLeft}d</span>
-    </div>`;}).join('')}`:`<div style="font-size:11px;color:var(--sage)">✓ Sin liquidaciones en la quincena siguiente.</div>`}
-  </div>
-
-  <!-- ESTRATEGIA BOLA DE NIEVE -->
-  ${S.debts.length>0?`
-  <div class="card">
-    <div class="ct">Plan de ataque — Orden de prioridad</div>
-    <div class="g2" style="margin-bottom:13px">
-      <div onclick="dStrat='snowball';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'}">
-        <div style="font-weight:bold;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Primero la más pequeña.</div>
-      </div>
-      <div onclick="dStrat='avalanche';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='avalanche'?'var(--sage)':'var(--border)'};background:${dStrat==='avalanche'?'var(--sagedim2)':'var(--bg)'}">
-        <div style="font-weight:bold;color:${dStrat==='avalanche'?'var(--sage2)':'var(--txt)'}">🏔️ Avalancha</div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">Primero la de mayor tasa.</div>
-      </div>
     </div>
-    ${sorted.map((d,i)=>{
-      const moP=toMonthly(d.pay||0,d.freq||'mensual');
-      return`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
-        <div class="row-b">
-          <div class="row"><span class="badge ${i===0?'bdg-sage':'bdg-sky'}">${i===0?'🎯 AHORA':'#'+(i+1)}</span><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}</div>
-          <div class="row">${d.rate?`<span class="badge bdg-red">${d.rate}%</span>`:''}<span style="color:var(--terra);font-weight:bold">${fx(d.bal)}</span></div>
-        </div>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px">${d.pay?'Pago: '+fx(d.pay)+'/'+freqShort(d.freq||'mensual'):''} ${d.payDay?'· pago día '+d.payDay:''} ${d.liqDate?'· Liquida: '+fmtDate(d.liqDate):''}</div>
-      </div>`;
-    }).join('')}
-    <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--sage);line-height:1.7">🔄 <strong>Cuando termines de pagar la #1</strong>, toma ese pago y súmalo a la #2. El pago crece como bola de nieve y cada deuda cae más rápido.</div>
-  </div>
 
-  ${S.inc.bv>0?`<div class="card card-sky"><div class="ct">💰 Plan para tu Bono Semestral de ${fx(S.inc.bv)}</div>
-    <div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Cuando recibas tu bono:</div>
-    <div style="font-size:13px;line-height:2.3">
-      <div>• <strong style="color:var(--terra)">70%</strong> → <strong>${fx(S.inc.bv*.7)}</strong> — Abono directo a deuda con mayor tasa</div>
-      <div>• <strong style="color:var(--sage)">20%</strong> → <strong>${fx(S.inc.bv*.2)}</strong> — Fondo de emergencia</div>
-      <div>• <strong style="color:var(--sky)">10%</strong> → <strong>${fx(S.inc.bv*.1)}</strong> — Para celebrar tu avance</div>
-    </div>
-    ${tDebt()>0?`<div style="background:rgba(74,110,140,.08);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;margin-top:12px;font-size:12px;color:var(--txt2);line-height:1.7">💡 El 70% (${fx(S.inc.bv*.7)}) reduce tu deuda de ${fx(tDebt())} a ${fx(Math.max(0,tDebt()-S.inc.bv*.7))} — un golpe de ${((S.inc.bv*.7/tDebt())*100).toFixed(0)}%.</div>`:''}</div>`:''}`:''}
-  `;
-}
-
-let editExpId=null;
-function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
-function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
-function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
-function updDebtUnico(){
-  const f=document.getElementById('dpf')?.value||'mensual';
-  if(f==='unico'){
-    const bal=document.getElementById('db')?.value||0;
-    const dm=document.getElementById('dm');if(dm&&!dm.value)dm.value=bal;
-    const dc=document.getElementById('dcur');if(dc)dc.value='1';
-    const dt=document.getElementById('dtot');if(dt)dt.value='1';
-    // Sync liqDate with nextPay
-    const npd=document.getElementById('dpd')?.value||'';
-    const dliq=document.getElementById('dliq');if(dliq)dliq.value=npd;
+    ${disponible<0?`<div class="card card-red" style="text-align:center;padding:20px">
+      <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tu presupuesto tiene un <strong>déficit de ${fx(Math.abs(Math.round(disponible)))}</strong>. Revisa tus pagos antes de planear estrategia.</div>
+    </div>`:``}`;
+    return;
   }
-}
-function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;
-  const isUnico=f==='unico';
-  const pay=isUnico?b:(+(document.getElementById('dm')?.value)||0);
-  const cur=isUnico?1:(+(document.getElementById('dcur')?.value)||0);
-  const tot=isUnico?1:(+(document.getElementById('dtot')?.value)||0);
-  pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:pay,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:isUnico?npDate:(document.getElementById('dliq')?.value||''),note:document.getElementById('dnote')?.value.trim()||'',curPay:cur,totalPays:tot,group:document.getElementById('dgrp')?.value.trim()||''}]});toast('⛓️ Deuda registrada');rFlujo();}
-function calcNextPayISO(dayNum){
-  if(!dayNum)return'';
-  const t=new Date();t.setHours(0,0,0,0);
-  const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();
-  const np=dayNum>=d?new Date(y,m,dayNum):new Date(y,m+1,dayNum);
-  return np.toISOString().split('T')[0];
-}
-function applyPayments(){
-  // Auto-backup before applying
-  try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch{}
-  const ck=cycleKey();
-  const items=S.paidItems[ck]||{};
-  let appliedExp=0,appliedDebt=0,appliedAmt=0;
-  for(const key in items){
-    if(items[key]==='applied'||key.startsWith('_'))continue;
-    const [type,idStr]=key.split('_');
-    const id=+idStr;
-    let amt=0;
-    if(type==='debt'){
-      const d=S.debts.find(x=>x.id===id);
-      if(d){
-        amt=+d.pay||0;
-        if(d.curPay&&d.totalPays&&d.curPay<=d.totalPays){
-          d.curPay=Math.min(d.curPay+1,d.totalPays+1);
-        }
-        d.bal=Math.max(0,(+d.bal||0)-amt);
-        // Do NOT advance nextPay here — debt stays visible in this cycle as "Pagado"
-        // nextPay advances when user starts a new cycle
-        appliedDebt++;
-      }
-    }else if(type==='exp'){
-      const e=S.exp.find(x=>x.id===id);
-      if(e)amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');
-      appliedExp++;
-    }else if(type==='expw2'){
-      const e=S.exp.find(x=>x.id===id);
-      if(e)amt=+e.amt||0;
-      appliedExp++;
-    }else if(type==='sav'){
-      const g=S.savGoals.find(x=>x.id===id);
-      if(g){
-        const perQ=savGoalPerQ(g);
-        amt=perQ;
-        const dep={date:new Date().toISOString().split('T')[0],amt:perQ,auto:true};
-        g.saved=(+g.saved||0)+perQ;
-        g.deposits=[...(g.deposits||[]),dep];
-        if(g.saved>=g.target)g.done=true;
-      }
-      appliedExp++;
-    }else if(type==='apt'){
-      const e=S.exp.find(x=>x.id===id);
-      if(e)amt=Math.round((+e.amt||0)/2);
-      appliedExp++;
+
+  // ════════════════════════════
+  // VIEW: RETOS
+  // ════════════════════════════
+  if(planView==='retos'){
+    const deficit=Math.max(0,-disponible);
+    const isDeficit=disponible<0;
+    const ck=cycleKey();
+    const activeRetos=S.survivalRetos.filter(r=>r.cycle===ck);
+    const diffStars=(dv)=>dv<=1?'⭐':dv<=2?'⭐⭐':'⭐⭐⭐';
+
+    // Different retos for deficit vs positive
+    let retos=[];
+    if(isDeficit){
+      retos=genSurvivalRetos(deficit);
+    }else{
+      // Positive balance retos — optimize & grow
+      retos=[
+        {id:'pos_extra',icon:'💰',name:'Abono extra a deuda #1',desc:'Usa tu sobrante de '+fx(Math.round(disponible))+' para abonar a la primera deuda de tu bola de nieve.',save:Math.round(disponible*0.5),diff:1},
+        {id:'pos_ahorro',icon:'🏦',name:'Duplicar tu ahorro esta quincena',desc:'Mueve el doble de tu ahorro programado a tu cuenta de ahorro.',save:Math.round(savQ),diff:1},
+        {id:'pos_emergencia',icon:'🛡️',name:'Fondo de emergencia',desc:'Destina '+fx(Math.round(disponible*0.3))+' a tu fondo de emergencia.',save:Math.round(disponible*0.3),diff:1},
+      ];
+      // Also include optimization retos
+      retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Planea rutas, comparte rides, usa menos el coche.',save:Math.round(Math.max(disponible*0.1,200)),diff:2});
+      retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Haz lista antes de ir y no compres NADA fuera de ella.',save:Math.round(Math.max(disponible*0.08,150)),diff:1});
+      retos.push({id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Prepara tu comida en casa y evita comprar en la calle.',save:Math.round(Math.max(disponible*0.1,250)),diff:2});
+      retos.push({id:'surv_nocompras',icon:'🚫',name:'Semana sin gastar',desc:'Intenta pasar 7 días sin compras no esenciales.',save:Math.round(Math.max(disponible*0.15,300)),diff:3});
     }
-    appliedAmt+=amt;
-    items[key]='applied';
+
+    const totalPotSave=activeRetos.filter(r=>r.active||r.completed).reduce((a,r)=>{const m2=retos.find(x=>x.id===r.id);return a+(m2?.save||0);},0);
+
+    document.getElementById('tab-plan').innerHTML=`
+    ${subNav}${toggle}
+    <div class="card" style="border-left:3px solid ${isDeficit?'var(--amber)':'var(--sage)'}">
+      <div class="ct">${isDeficit?'🛟 Modo Supervivencia — Cubre tu déficit':'🚀 Retos de optimización'}</div>
+      <div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">${isDeficit
+        ?`Tu quincena tiene un <strong style="color:var(--terra)">déficit de ${fx(deficit)}</strong>. Activa retos para recortar gastos y llegar al siguiente pago.`
+        :`Tu presupuesto está <strong style="color:var(--sage)">en verde</strong> con ${fx(Math.round(disponible))} libres. Activa retos para optimizar y hacer crecer tu dinero.`}</div>
+
+      ${totalPotSave>0?`<div class="card ${isDeficit?(totalPotSave>=deficit?'card-grn':'card-amber'):'card-grn'}" style="margin-bottom:14px;padding:12px 16px">
+        <div class="row-b">
+          <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">${isDeficit?'Ahorro potencial':'Potencial de crecimiento'}</div><div class="stat-sm" style="color:var(--sage)">${fx(totalPotSave)}</div></div>
+          ${isDeficit&&deficit>0?`<div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Déficit</div><div class="stat-sm" style="color:var(--terra)">${fx(deficit)}</div></div>`:''}
+        </div>
+        ${isDeficit?`<div class="pw" style="margin-top:8px"><div class="pb" style="width:${Math.min(100,totalPotSave/deficit*100).toFixed(0)}%;background:${totalPotSave>=deficit?'var(--sage)':'var(--amber)'}"></div></div>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">${totalPotSave>=deficit?'✅ Tus retos cubren el déficit — ¡a cumplirlos!':'Necesitas '+fx(deficit-totalPotSave)+' más. Activa más retos.'}</div>`:''}
+      </div>`:``}
+
+      ${retos.map(r=>{
+        const sr=activeRetos.find(x=>x.id===r.id);
+        const isA=sr?.active&&!sr?.completed;
+        const isC=sr?.completed;
+        return`<div class="card ${isC?'card-grn':'card-sage'}" style="margin-bottom:8px;padding:14px;cursor:${isC?'default':'pointer'}" ${!isC?`onclick="activateSurvival('${r.id}')"`:''}>
+          <div class="row-b" style="margin-bottom:4px">
+            <div>
+              <div style="font-size:24px;margin-bottom:6px">${r.icon}</div>
+              <div style="font-weight:bold;color:var(--txt);font-size:14px">${r.name}</div>
+              <div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">${r.desc}</div>
+              <div style="font-size:10px;color:var(--muted);margin-top:4px">${isA?'🎯 Activo — toca para desactivar':isC?'🏆 Completado':'Toca para activar'}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;padding-left:12px">
+              <div style="font-size:16px;font-weight:bold;color:var(--sage)">+${fx(r.save)}</div>
+              <div style="font-size:10px;margin-top:2px">${diffStars(r.diff)}</div>
+            </div>
+          </div>
+          ${isA?`<button class="btn btn-sage btn-sm" style="margin-top:8px;width:100%" onclick="event.stopPropagation();completeSurvival('${r.id}')">✓ Completé este reto</button>`:''}
+        </div>`;
+      }).join('')}
+    </div>`;
+    return;
   }
-  // Store cumulative applied total for this cycle
-  items._appliedTotal=((+items._appliedTotal)||0)+appliedAmt;
-  S.paidItems[ck]=items;
-  sv();
-  const total=appliedExp+appliedDebt;
-  if(total>0){
-    toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':'')+' por '+fx(appliedAmt));
-    rPlan();rFlujo();hdrUp();if(document.getElementById('tab-habitos').classList.contains('act'))rHabitos();
-  }else{toast('No hay pagos seleccionados');}
-}
-function confirmApply(){
-  const pc=pendingCount();
-  if(pc===0){toast('No hay pagos seleccionados');return;}
-  const hasBackup=!!localStorage.getItem('prv5_backup');
-  const backupDate=localStorage.getItem('prv5_backup_date');
-  const bkLabel=backupDate?fmtDate(backupDate.split('T')[0]):'';
-  showConfirm('¿Aplicar pagos seleccionados?',
-    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se avanzará la mensualidad (+1) de las <strong>'+pc+'</strong> deuda'+(pc>1?'s':'')+' marcada'+(pc>1?'s':'')+' como pagada'+(pc>1?'s':'')+' y se reducirá su saldo.<br><br>Se creará un <strong>respaldo automático</strong> antes de aplicar.'+(hasBackup?'<br><span style="font-size:10px;color:var(--muted)">Último respaldo: '+bkLabel+'</span>':'')+'<br><br><strong style="color:var(--terra)">Esta acción no se puede deshacer</strong> (pero puedes restaurar el respaldo).</div><div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="exportData();closeConfirm()">📤 Exportar respaldo manual primero</button>'+(hasBackup?'<button class="btn btn-ghost btn-sm" style="width:100%;color:var(--amber)" onclick="restoreBackup()">↩ Restaurar último respaldo'+(bkLabel?' ('+bkLabel+')':'')+'</button>':'')+'</div>',
-    applyPayments);
-}
-function restoreBackup(){
-  const bk=localStorage.getItem('prv5_backup');
-  if(!bk){toast('No hay respaldo disponible');return;}
-  showConfirm('¿Restaurar respaldo?',
-    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se reemplazarán <strong>todos tus datos actuales</strong> con el respaldo guardado antes del último "Aplicar pagos".<br><br><strong style="color:var(--terra)">Perderás los cambios hechos después del respaldo.</strong></div>',
-    ()=>{
-      try{
-        const data=JSON.parse(bk);
-        S={...S,...data};sv();
-        toast('✅ Respaldo restaurado');
-        go('plan');
-      }catch{toast('Error al restaurar');}
-    });
-}
-function updExpFields(){
-  const f=document.getElementById('ef')?.value||'mensual';
-  const wrap=document.getElementById('expExtraFields');
-  if(!wrap)return;
-  if(f==='mensual'){
-    wrap.innerHTML=`<div class="g2" style="margin-bottom:10px"><div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31"></div><div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px"></div></div></div>`;
-  }else if(f==='bimestral'){
-    wrap.innerHTML=`<div class="g2" style="margin-bottom:10px"><div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31"></div><div><label>¿Meses pares o nones?</label><select id="ebm"><option value="par">Pares (feb, abr, jun...)</option><option value="non">Nones (ene, mar, may...)</option></select></div></div>`;
-  }else if(f==='semanal'){
-    wrap.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Se paga cada semana — no necesita día específico. ≈4.33 pagos/mes.</div>`;
-  }else{
-    wrap.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Se paga cada quincena — aplica en ambos ciclos.</div>`;
-  }
-  prevExpMo();
-}
-function nextPayDate(e){
-  const f=e.freq||'mensual';const today=new Date();today.setHours(0,0,0,0);
-  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
-  if(f==='semanal'){const next=new Date(today);next.setDate(d+(7-today.getDay())%7||7);return next;}
-  if(f==='quincenal'){if(d<=15)return new Date(y,m,15);return new Date(y,m+1,1);}
-  if(f==='mensual'){const pd=+(e.payDay)||1;if(pd>=d)return new Date(y,m,pd);return new Date(y,m+1,pd);}
-  if(f==='bimestral'){
-    const pd=+(e.payDay)||1;const bm=e.bimMeses||'par';
-    const isPar=m2=>(m2+1)%2===0;const isTarget=bm==='par'?isPar:m2=>!isPar(m2);
-    if(isTarget(m)&&pd>=d)return new Date(y,m,pd);
-    for(let i=1;i<=3;i++){const nm=m+i;if(isTarget(nm))return new Date(y,nm,pd);}
-    return new Date(y,m+2,pd);
-  }
-  return today;
-}
-function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
-function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';if(!n||!a)return;
-  const pd=(f==='mensual'||f==='bimestral')?(+(document.getElementById('epd')?.value)||0):0;
-  const bm=f==='bimestral'?(document.getElementById('ebm')?.value||'par'):'';
-  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}:e)});editExpId=null;toast('✓ Gasto actualizado');}
-  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}]});toast('✓ Gasto registrado');}
-  rFlujo();}
-function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
-function editExp(id){editExpId=id;rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
-function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const t=document.getElementById('xt')?.value||'unico';if(!n||!a)return;
-  const extra={id:Date.now(),name:n,amt:a,tipo:t};
-  if(t==='recurrente'){extra.freq=document.getElementById('xf')?.value||'mensual';}
-  else{extra.date=document.getElementById('xd')?.value||new Date().toISOString().split('T')[0];}
-  pt({extras:[...S.extras,extra]});toast('✓ Ingreso extra registrado');rFlujo();}
-function rmExtra(id){pt({extras:S.extras.filter(x=>x.id!==id)});toast('Ingreso extra eliminado');rFlujo();}
-function rmDebt(id){
-  const d=S.debts.find(x=>x.id===id);
-  if(!d){pt({debts:S.debts.filter(x=>x.id!==id)});return;}
-  showConfirm('¿Eliminar esta deuda?',
-    `<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.2);border-radius:8px;padding:14px;margin-bottom:8px"><div style="font-weight:bold;color:var(--terra);font-size:15px;margin-bottom:4px">${d.name}</div><div style="font-size:12px;color:var(--txt2)">Saldo: <strong>${fx(d.bal)}</strong>${d.pay?' · Pago: <strong>'+fx(d.pay)+'</strong>':''}${d.note?' · '+d.note:''}</div></div><div style="font-size:12px;color:var(--terra)">⚠️ Esta acción no se puede deshacer.</div>`,
-    ()=>{pt({debts:S.debts.filter(x=>x.id!==id)});editDebtId=null;toast('Deuda eliminada');rFlujo();}
-  );
-}
-function editDebt(id){editDebtId=id;rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
-function cancelEdit(){editDebtId=null;rFlujo();}
-function setDebtGroup(id,val){
-  if(val==='__new'){
-    const g=prompt('Nombre del nuevo grupo (ej: Tarjetas, MSI, Préstamos):');
-    if(!g||!g.trim())return rFlujo();
-    pt({debts:S.debts.map(d=>d.id===id?{...d,group:g.trim()}:d)});
-  }else{
-    pt({debts:S.debts.map(d=>d.id===id?{...d,group:val||''}:d)});
-  }
-  toast(val?'📁 Grupo asignado':'Grupo removido');rFlujo();
-}
-function toggleDebtGroup(g){
-  if(!S.debtGroupCollapsed)S.debtGroupCollapsed={};
-  S.debtGroupCollapsed[g]=!S.debtGroupCollapsed[g];
-  sv();rFlujo();
-}
-function saveDebt(){
-  const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;
-  const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;
-  const isUnico=f==='unico';
-  const pay=isUnico?b:(+(document.getElementById('dm')?.value)||0);
-  const cur=isUnico?1:(+(document.getElementById('dcur')?.value)||0);
-  const tot=isUnico?1:(+(document.getElementById('dtot')?.value)||0);
-  const liq=isUnico?npDate:(document.getElementById('dliq')?.value||'');
-  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:b,pay:pay,freq:f,payDay:pd,nextPay:npDate,liqDate:liq,note:document.getElementById('dnote')?.value.trim()||'',curPay:cur,totalPays:tot,group:document.getElementById('dgrp')?.value.trim()||''}:d)});
-  editDebtId=null;toast('✓ Deuda actualizada');rFlujo();
 }
 
 // ══ MIS HÁBITOS (Fase 1: estructura + sala de espera 48h) ═══

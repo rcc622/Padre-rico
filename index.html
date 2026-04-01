@@ -1391,11 +1391,7 @@ function rPlan(){
   const todayDay=today.getDate();
 
   // ── SUB-NAV ──
-  const subNav=`<div class="chips" style="margin-bottom:14px">
-    <button class="chip ${planView==='pagos'?'style=\"background:var(--sagedim);border-color:var(--sage);color:var(--sage2);font-weight:bold\"':''}" onclick="planView='pagos';rPlan()">💳 Pagos</button>
-    <button class="chip ${planView==='estrategia'?'style=\"background:var(--sagedim);border-color:var(--sage);color:var(--sage2);font-weight:bold\"':''}" onclick="planView='estrategia';rPlan()">📊 Estrategia</button>
-    <button class="chip ${planView==='retos'?'style=\"background:var(--sagedim);border-color:var(--sage);color:var(--sage2);font-weight:bold\"':''}" onclick="planView='retos';rPlan()">🎯 Retos</button>
-  </div>`;
+  const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia'],['retos','🎯 Retos']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
 
   // ── TOGGLE ──
   const toggle=`<div class="card" style="padding:10px 18px">

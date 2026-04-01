@@ -378,6 +378,7 @@ function paidTotal(){
     const id=+idStr;
     if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)total+=(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual'));}
     else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);} // week 2 of weekly expense
+    else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)total+=savGoalPerQ(g);} // savings goal
     else if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)total+=toMonthly(+d.pay||0,d.freq||'mensual');}
   }
   return total;
@@ -439,10 +440,11 @@ function addSavGoal(){
   if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
   const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,done:false};
   pt({savGoals:[...S.savGoals,goal]});
-  toast('🎯 Meta de ahorro creada');rPlan();
+  toast('🎯 Meta de ahorro creada');rPlan();rHabitos();
 }
-function depositSavGoal(id){
-  const el=document.getElementById('sgdep_'+id);
+function depositSavGoal(id,prefix){
+  const pfx=prefix||'sgdep_';
+  const el=document.getElementById(pfx+id);
   const amt=+(el?.value)||0;
   if(!amt){toast('Ingresa un monto');return;}
   pt({savGoals:S.savGoals.map(g=>{
@@ -451,11 +453,21 @@ function depositSavGoal(id){
     const newSaved=(+g.saved||0)+amt;
     return{...g,saved:newSaved,deposits:[...(g.deposits||[]),dep],done:newSaved>=g.target};
   })});
-  toast('💰 Abono registrado: '+fx(amt));rPlan();
+  toast('💰 Abono registrado: '+fx(amt));rPlan();rHabitos();
+}
+function addSavGoalH(){
+  const n=document.getElementById('sgnh')?.value.trim();
+  const t=+(document.getElementById('sgth')?.value)||0;
+  const dl=document.getElementById('sgdh')?.value||'';
+  const icon=document.getElementById('sgih')?.value||'🎯';
+  if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
+  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,done:false};
+  pt({savGoals:[...S.savGoals,goal]});
+  toast('🎯 Meta de ahorro creada');rHabitos();
 }
 function rmSavGoal(id){
   showConfirm('¿Eliminar esta meta?','Se perderá el historial de abonos.',()=>{
-    pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');rPlan();
+    pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');rPlan();rHabitos();
   });
 }
 function savGoalPerQ(g){
@@ -1440,7 +1452,7 @@ function rPlan(){
   const disponible=incQ-expQ-savQ-savGoalQ-debtPayQ;
 
   // Compute PENDING amounts for waterfall (subtract checked/paid items)
-  let expPending=0,debtPending=0;
+  let expPending=0,debtPending=0,savGoalPending=0;
   if(!showNext){
     expDetail.forEach(e=>{
       const pt2=e.paidType||'exp';
@@ -1449,8 +1461,11 @@ function rPlan(){
     debtDetail.forEach(e=>{
       if(!isPaid('debt',e.id))debtPending+=e.amt;
     });
-  }else{expPending=expQ;debtPending=debtPayQ;}
-  const disponiblePending=incQ-expPending-savQ-savGoalQ-debtPending;
+    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{
+      if(!isPaid('sav',g.id))savGoalPending+=savGoalPerQ(g);
+    });
+  }else{expPending=expQ;debtPending=debtPayQ;savGoalPending=savGoalQ;}
+  const disponiblePending=incQ-expPending-savQ-savGoalPending-debtPending;
 
   // No double-counting: liquidaciones are already in debtPayQ
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:b.rate-a.rate);
@@ -1507,7 +1522,7 @@ function rPlan(){
 
       <div class="row-b" style="margin-top:8px"><span style="color:var(--terra)">📋 − Gastos fijos</span><strong style="color:var(--terra)">−${fx(Math.round(expPending))}</strong></div>
       <div class="row-b"><span style="color:var(--sage)">💾 − Ahorro (${S.savPct}%)</span><strong style="color:var(--sage)">−${fx(Math.round(savQ))}</strong></div>
-      ${savGoalQ>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas de ahorro</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalQ))}</strong></div>`:''}
+      ${savGoalPending>0?`<div class="row-b"><span style="color:var(--sky)">🎯 − Metas de ahorro</span><strong style="color:var(--sky)">−${fx(Math.round(savGoalPending))}</strong></div>`:''}
       <div class="row-b"><span style="color:var(--sky)">⛓️ − Pagos de deuda</span><strong style="color:var(--sky)">−${fx(Math.round(debtPending))}</strong></div>
 
       <div style="border-top:2px solid var(--border);margin-top:6px;padding-top:8px" class="row-b">
@@ -1529,52 +1544,6 @@ function rPlan(){
       return'<div class="row-b"><div class="row" style="gap:6px"><span style="font-size:13px">✅</span><span style="font-size:12px;color:var(--sage2);font-weight:bold">'+(ac>0?ac+' aplicado'+(ac>1?'s':'')+' · ':'')+expDetail.length+debtDetail.length+' pendiente'+(expDetail.length+debtDetail.length!==1?'s':'')+'</span></div><span style="font-size:12px;color:var(--sage);font-weight:bold">'+fx(Math.round(paidTotal()))+'</span></div><div class="pw" style="margin-top:6px"><div class="pb" style="width:'+(totalItems>0?(ac/totalItems*100).toFixed(0):0)+'%;background:var(--sage)"></div></div>'+(pc>0?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar '+pc+' pago'+(pc>1?'s':'')+' al historial</button>':'');
     })()}
   </div>`:''}
-
-  <!-- METAS DE AHORRO -->
-  <div class="card">
-    <div class="ct">🎯 Metas de ahorro</div>
-    ${S.savGoals.length>0?S.savGoals.map(g=>{
-      const remaining=Math.max(0,g.target-(+g.saved||0));
-      const pct=Math.min(100,((+g.saved||0)/g.target*100));
-      const perQ=savGoalPerQ(g);
-      const dl=new Date(g.deadline+'T12:00');
-      const daysLeft=Math.ceil((dl-new Date())/864e5);
-      const qLeft=Math.max(1,Math.ceil(daysLeft/15));
-      const isOverdue=daysLeft<0;
-      const isDone=g.done||remaining<=0;
-      return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
-        <div class="row-b" style="margin-bottom:8px">
-          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${g.name}</div><div style="font-size:10px;color:var(--muted)">${isDone?'✅ ¡Meta alcanzada!':isOverdue?'⚠️ Fecha vencida':'Faltan '+daysLeft+' días ('+qLeft+' quincena'+(qLeft>1?'s':'')+')'}</div></div></div>
-          <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
-        </div>
-        <div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
-        <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
-        ${!isDone?`
-          <div class="row-b" style="margin-bottom:10px">
-            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(perQ)}</div><div style="font-size:9px;color:var(--muted)">apartar/quincena</div></div>
-            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
-          </div>
-          <div class="row" style="gap:8px">
-            <input type="number" id="sgdep_${g.id}" placeholder="Monto a abonar" style="flex:1">
-            <button class="btn btn-sage btn-sm" onclick="depositSavGoal(${g.id})">+ Abonar</button>
-          </div>
-          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>'<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+'</span><span style="color:var(--sage);font-weight:bold">+'+fx(d.amt)+'</span></div>').join('')}</div>`:''}
-        `:`<div style="text-align:center;font-size:12px;color:var(--sage)">🎉 Ahorraste ${fx(Math.round(+g.saved||0))} — ¡disfruta!</div>`}
-      </div>`;
-    }).join(''):''}
-    <div style="${S.savGoals.length>0?'border-top:1px solid var(--border);padding-top:14px;margin-top:4px':''}">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${S.savGoals.length>0?'Agregar otra meta:':'¿Necesitas ahorrar para algo? Crea tu meta y te calculo cuánto apartar por quincena.'}</div>
-      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-bottom:8px">
-        <div><label>Icono</label><select id="sgi" style="width:60px;text-align:center;font-size:16px"><option>🎉</option><option>🏠</option><option>🚗</option><option>✈️</option><option>🎄</option><option>📱</option><option>🎓</option><option>💍</option><option>🎯</option><option>🛡️</option></select></div>
-        <div><label>¿Para qué ahorras?</label><input type="text" id="sgn" placeholder="Fiesta, viaje, fondo de emergencia..."></div>
-      </div>
-      <div class="g2" style="margin-bottom:10px">
-        <div><label>¿Cuánto necesitas? ($)</label><input type="number" id="sgt" placeholder="15000"></div>
-        <div><label>¿Para cuándo?</label><input type="date" id="sgd"></div>
-      </div>
-      <button class="btn btn-sage" onclick="addSavGoal()">🎯 Crear meta de ahorro</button>
-    </div>
-  </div>
 
   <!-- PLAN DE APARTADO -->
   ${expSavePlan.length>0?`<div class="card card-sky">
@@ -1604,6 +1573,14 @@ function rPlan(){
     });
     const debtDetailIds=new Set(debtDetail.map(e=>e.id));
     urgentLiqs.filter(d=>!debtDetailIds.has(d.id)).forEach(d=>{const ld=new Date(d.liqDate+'T12:00');const paid=!showNext&&isPaid('debt',d.id);allPays.push({day:ld.getDate(),name:'🏁 '+d.name+' (último pago)',amt:liqMensualidad(d),type:'liq',id:d.id,ptype:'debt',paid});});
+    // Savings goals — per quincena amount
+    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{
+      const perQ=savGoalPerQ(g);
+      const paid=!showNext&&isPaid('sav',g.id);
+      const remaining=Math.max(0,g.target-(+g.saved||0));
+      const pct=Math.min(100,((+g.saved||0)/g.target*100)).toFixed(0);
+      allPays.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});
+    });
     allPays.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
     if(!allPays.length)return'';
     const passedDay=today.getDate();
@@ -1612,9 +1589,10 @@ function rPlan(){
     const unpaidExpT=unpaid.filter(p=>p.type==='gasto').reduce((a,p)=>a+p.amt,0);
     const unpaidDebtT=unpaid.filter(p=>p.type!=='gasto').reduce((a,p)=>a+p.amt,0);
     const paidT=paidL.reduce((a,p)=>a+p.amt,0);
-    const ri=(p,ip)=>{const isT=!showNext&&p.day===passedDay;const col=ip?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';return'<div class="row-b '+(ip?'paid-row':'')+'" style="padding:7px 0;border-bottom:1px solid var(--border);'+(isT&&!ip?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':'')+'"><div class="row" style="gap:8px">'+(!showNext?'<button class="check-btn '+(ip?'checked':'')+'" onclick="togglePaid(\''+p.ptype+'\','+p.id+')" style="width:22px;height:22px;font-size:11px">'+(ip?'✓':'')+'</button>':'')+'<span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">'+dl+'</span><span style="font-size:12px;color:var(--txt)">'+p.name+'</span></div><span style="font-size:12px;color:'+col+';font-weight:bold">'+fx(Math.round(p.amt))+'</span></div>';};
+    const ri=(p,ip)=>{const isT=!showNext&&p.day===passedDay;const col=ip?'var(--sage)':p.type==='ahorro'?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';return'<div class="row-b '+(ip?'paid-row':'')+'" style="padding:7px 0;border-bottom:1px solid var(--border);'+(isT&&!ip?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':'')+'"><div class="row" style="gap:8px">'+(!showNext?'<button class="check-btn '+(ip?'checked':'')+'" onclick="togglePaid(\''+p.ptype+'\','+p.id+')" style="width:22px;height:22px;font-size:11px">'+(ip?'✓':'')+'</button>':'')+'<span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">'+dl+'</span><span style="font-size:12px;color:var(--txt)">'+p.name+'</span></div><span style="font-size:12px;color:'+col+';font-weight:bold">'+fx(Math.round(p.amt))+'</span></div>';};
+    const unpaidSavT=unpaid.filter(p=>p.type==='ahorro').reduce((a,p)=>a+p.amt,0);
     return'<div class="card"><div class="ct">📅 Pagos del ciclo — '+fmtD(cStart)+' al '+fmtD(cEnd)+'</div>'
-    +(unpaid.length>0?'<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes ('+unpaid.length+')</div>'+unpaid.map(p=>ri(p,false)).join('')+'<div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--border)"><span style="color:var(--terra);font-weight:bold">Gastos: '+fx(Math.round(unpaidExpT))+'</span><span style="color:var(--sky);font-weight:bold">Deudas: '+fx(Math.round(unpaidDebtT))+'</span></div>'
+    +(unpaid.length>0?'<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes ('+unpaid.length+')</div>'+unpaid.map(p=>ri(p,false)).join('')+'<div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--border);flex-wrap:wrap;gap:8px"><span style="color:var(--terra);font-weight:bold;font-size:11px">Gastos: '+fx(Math.round(unpaidExpT))+'</span><span style="color:var(--sky);font-weight:bold;font-size:11px">Deudas: '+fx(Math.round(unpaidDebtT))+'</span>'+(unpaidSavT>0?'<span style="color:var(--sage);font-weight:bold;font-size:11px">Ahorro: '+fx(Math.round(unpaidSavT))+'</span>':'')+'</div>'
     :'<div style="text-align:center;padding:14px 0"><span style="font-size:24px">✅</span><div style="font-size:14px;color:var(--sage);font-weight:bold;margin-top:6px">¡Todo pagado este ciclo!</div><div style="font-size:11px;color:var(--muted);margin-top:2px">'+paidL.length+' pagos por '+fx(Math.round(paidT))+'</div></div>')
     +(paidL.length>0?'<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">Pagados ('+paidL.length+')</div>'+paidL.map(p=>ri(p,true)).join('')+'<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--sage)"><span style="font-size:11px;color:var(--sage)">Pagado:</span><span style="font-size:11px;color:var(--sage);font-weight:bold">'+fx(Math.round(paidT))+'</span></div>':'')
     +'</div>';
@@ -1778,6 +1756,18 @@ function applyPayments(){
         appliedDebt++;
       }
     }else if(type==='exp'||type==='expw2'){appliedExp++;}
+    else if(type==='sav'){
+      // Auto-deposit the per-quincena amount to the savings goal
+      const g=S.savGoals.find(x=>x.id===id);
+      if(g){
+        const perQ=savGoalPerQ(g);
+        const dep={date:new Date().toISOString().split('T')[0],amt:perQ,auto:true};
+        g.saved=(+g.saved||0)+perQ;
+        g.deposits=[...(g.deposits||[]),dep];
+        if(g.saved>=g.target)g.done=true;
+        appliedExp++;
+      }
+    }
     // Mark as applied (keep in paidItems)
     items[key]='applied';
   }
@@ -1786,7 +1776,7 @@ function applyPayments(){
   const total=appliedExp+appliedDebt;
   if(total>0){
     toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':''));
-    rPlan();rFlujo();hdrUp();
+    rPlan();rFlujo();hdrUp();if(document.getElementById('tab-habitos').classList.contains('act'))rHabitos();
   }else{toast('No hay pagos pendientes de aplicar');}
 }
 function confirmApply(){
@@ -1890,8 +1880,54 @@ function rHabitos(){
 
   document.getElementById('tab-habitos').innerHTML=`
   <div class="card card-sage">
-    <div class="ct">🧠 Intervención de Hábitos</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Herramientas para cambiar patrones de gasto impulsivo. Registra tus impulsos de compra antes de ejecutarlos.</div>
+    <div class="ct">🧠 Mis Hábitos y Metas</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Tus metas de ahorro, control de impulsos y herramientas para cambiar patrones de gasto.</div>
+  </div>
+
+  <!-- METAS DE AHORRO (full) -->
+  <div class="card">
+    <div class="ct">🎯 Metas de ahorro</div>
+    ${S.savGoals.length>0?S.savGoals.map(g=>{
+      const remaining=Math.max(0,g.target-(+g.saved||0));
+      const pct=Math.min(100,((+g.saved||0)/g.target*100));
+      const perQ=savGoalPerQ(g);
+      const dl=new Date(g.deadline+'T12:00');
+      const daysLeft=Math.ceil((dl-new Date())/864e5);
+      const qLeft=Math.max(1,Math.ceil(daysLeft/15));
+      const isOverdue=daysLeft<0;
+      const isDone=g.done||remaining<=0;
+      return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
+        <div class="row-b" style="margin-bottom:8px">
+          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${g.name}</div><div style="font-size:10px;color:var(--muted)">${isDone?'✅ ¡Meta alcanzada!':isOverdue?'⚠️ Fecha vencida':'Faltan '+daysLeft+' días ('+qLeft+' quincena'+(qLeft>1?'s':'')+')'}</div></div></div>
+          <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
+        </div>
+        <div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
+        <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
+        ${!isDone?`
+          <div class="row-b" style="margin-bottom:10px">
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(perQ)}</div><div style="font-size:9px;color:var(--muted)">apartar/quincena</div></div>
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
+          </div>
+          <div class="row" style="gap:8px">
+            <input type="number" id="sgdeph_${g.id}" placeholder="Monto a abonar" style="flex:1">
+            <button class="btn btn-sage btn-sm" onclick="depositSavGoal(${g.id},'sgdeph_')">+ Abonar</button>
+          </div>
+          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>'<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+'</span><span style="color:var(--sage);font-weight:bold">+'+fx(d.amt)+'</span></div>').join('')}</div>`:''}
+        `:`<div style="text-align:center;font-size:12px;color:var(--sage)">🎉 Ahorraste ${fx(Math.round(+g.saved||0))} — ¡disfruta!</div>`}
+      </div>`;
+    }).join(''):''}
+    <div style="${S.savGoals.length>0?'border-top:1px solid var(--border);padding-top:14px;margin-top:4px':''}">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${S.savGoals.length>0?'Agregar otra meta:':'¿Necesitas ahorrar para algo? Crea tu meta y te calculo cuánto apartar por quincena.'}</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-bottom:8px">
+        <div><label>Icono</label><select id="sgih" style="width:60px;text-align:center;font-size:16px"><option>🎉</option><option>🏠</option><option>🚗</option><option>✈️</option><option>🎄</option><option>📱</option><option>🎓</option><option>💍</option><option>🎯</option><option>🛡️</option></select></div>
+        <div><label>¿Para qué ahorras?</label><input type="text" id="sgnh" placeholder="Fiesta, viaje, fondo de emergencia..."></div>
+      </div>
+      <div class="g2" style="margin-bottom:10px">
+        <div><label>¿Cuánto necesitas? ($)</label><input type="number" id="sgth" placeholder="15000"></div>
+        <div><label>¿Para cuándo?</label><input type="date" id="sgdh"></div>
+      </div>
+      <button class="btn btn-sage" onclick="addSavGoalH()">🎯 Crear meta de ahorro</button>
+    </div>
   </div>
 
   <!-- SALA DE ESPERA 48H -->

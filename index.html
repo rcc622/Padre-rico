@@ -1055,7 +1055,7 @@ const QUICK_EXP=[
   {n:'💊 Farmacia',a:0,c:'Salud / Medicamentos'},
 ];
 
-function rFlujo(){
+function rFlujo(){try{
   const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});
   const maxC=Math.max(...Object.values(bc),1);
   const up=upcoming();
@@ -1276,6 +1276,68 @@ function rFlujo(){
     }catch(e){return'<div style="color:var(--terra)">Error: '+e.message+'</div>';}})()}
   </div>`:''}
   `;
+}catch(e){document.getElementById('tab-flujo').innerHTML='<div class="card card-red"><div class="ct">Error en Ingresos y Gastos</div><div style="font-size:12px;color:var(--terra)">'+e.message+'</div></div>';console.error('rFlujo error:',e);}
+}
+function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
+function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
+function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
+function calcNextPayISO(dayNum){if(!dayNum)return'';const t=new Date();t.setHours(0,0,0,0);const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();const np=dayNum>=d?new Date(y,m,dayNum):new Date(y,m+1,dayNum);return np.toISOString().split('T')[0];}
+function updExpFields(){
+  const f=document.getElementById('ef')?.value||'mensual';
+  const wrap=document.getElementById('expExtraFields');
+  if(!wrap)return;
+  if(f==='mensual'){wrap.innerHTML=`<div class="g2" style="margin-bottom:10px"><div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31"></div><div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px"></div></div></div>`;}
+  else if(f==='bimestral'){wrap.innerHTML=`<div class="g2" style="margin-bottom:10px"><div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31"></div><div><label>¿Meses pares o nones?</label><select id="ebm"><option value="par">Pares (feb, abr, jun...)</option><option value="non">Nones (ene, mar, may...)</option></select></div></div>`;}
+  else if(f==='semanal'){wrap.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Se paga cada semana — no necesita día específico. ≈4.33 pagos/mes.</div>`;}
+  else{wrap.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Se paga cada quincena — aplica en ambos ciclos.</div>`;}
+  prevExpMo();
+}
+function nextPayDate(e){
+  const f=e.freq||'mensual';const today=new Date();today.setHours(0,0,0,0);
+  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+  if(f==='semanal'){const next=new Date(today);next.setDate(d+(7-today.getDay())%7||7);return next;}
+  if(f==='quincenal'){if(d<=15)return new Date(y,m,15);return new Date(y,m+1,1);}
+  if(f==='mensual'){const pd=+(e.payDay)||1;if(pd>=d)return new Date(y,m,pd);return new Date(y,m+1,pd);}
+  if(f==='bimestral'){const pd=+(e.payDay)||1;const bm=e.bimMeses||'par';const isPar=m2=>(m2+1)%2===0;const isTarget=bm==='par'?isPar:m2=>!isPar(m2);if(isTarget(m)&&pd>=d)return new Date(y,m,pd);for(let i=1;i<=3;i++){const nm=m+i;if(isTarget(nm))return new Date(y,nm,pd);}return new Date(y,m+2,pd);}
+  return today;
+}
+function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
+function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';if(!n||!a)return;
+  const pd=(f==='mensual'||f==='bimestral')?(+(document.getElementById('epd')?.value)||0):0;
+  const bm=f==='bimestral'?(document.getElementById('ebm')?.value||'par'):'';
+  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}:e)});editExpId=null;toast('✓ Gasto actualizado');}
+  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}]});toast('✓ Gasto registrado');}
+  rFlujo();}
+function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
+function editExp(id){editExpId=id;rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const t=document.getElementById('xt')?.value||'unico';if(!n||!a)return;
+  const extra={id:Date.now(),name:n,amt:a,tipo:t};
+  if(t==='recurrente'){extra.freq=document.getElementById('xf')?.value||'mensual';}
+  else{extra.date=document.getElementById('xd')?.value||new Date().toISOString().split('T')[0];}
+  pt({extras:[...S.extras,extra]});toast('✓ Ingreso extra registrado');rFlujo();}
+function rmExtra(id){pt({extras:S.extras.filter(x=>x.id!==id)});toast('Ingreso extra eliminado');rFlujo();}
+function addDebt(){const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||''}]});toast('⛓️ Deuda registrada');rFlujo();}
+function rmDebt(id){
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){pt({debts:S.debts.filter(x=>x.id!==id)});return;}
+  showConfirm('¿Eliminar esta deuda?',
+    `<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.2);border-radius:8px;padding:14px;margin-bottom:8px"><div style="font-weight:bold;color:var(--terra);font-size:15px;margin-bottom:4px">${d.name}</div><div style="font-size:12px;color:var(--txt2)">Saldo: <strong>${fx(d.bal)}</strong>${d.pay?' · Pago: <strong>'+fx(d.pay)+'</strong>':''}${d.note?' · '+d.note:''}</div></div><div style="font-size:12px;color:var(--terra)">⚠️ Esta acción no se puede deshacer.</div>`,
+    ()=>{pt({debts:S.debts.filter(x=>x.id!==id)});editDebtId=null;toast('Deuda eliminada');rFlujo();}
+  );
+}
+function editDebt(id){editDebtId=id;rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function cancelEdit(){editDebtId=null;rFlujo();}
+function setDebtGroup(id,val){
+  if(val==='__new'){const g=prompt('Nombre del nuevo grupo (ej: Tarjetas, MSI, Préstamos):');if(!g||!g.trim())return rFlujo();pt({debts:S.debts.map(d=>d.id===id?{...d,group:g.trim()}:d)});}
+  else{pt({debts:S.debts.map(d=>d.id===id?{...d,group:val||''}:d)});}
+  toast(val?'📁 Grupo asignado':'Grupo removido');rFlujo();
+}
+function toggleDebtGroup(g){if(!S.debtGroupCollapsed)S.debtGroupCollapsed={};S.debtGroupCollapsed[g]=!S.debtGroupCollapsed[g];sv();rFlujo();}
+function saveDebt(){
+  const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;
+  const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;
+  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||''}:d)});
+  editDebtId=null;toast('✓ Deuda actualizada');rFlujo();
 }
 
 // ══ PLAN DE ACCIÓN ═════════════════════════════════

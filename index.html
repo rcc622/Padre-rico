@@ -34,6 +34,7 @@ button:active{transform:scale(.97)}
 .btn-sage:hover{background:var(--sage2)}
 .btn-ghost{background:transparent;border:1px solid rgba(78,124,106,.4);color:var(--sage)}
 .btn-red{background:var(--terradim);border:1px solid rgba(184,92,74,.25);color:var(--terra)}
+.btn-sky{background:var(--skydim);border:1px solid rgba(74,110,140,.25);color:var(--sky)}
 .btn-sm{padding:5px 11px;font-size:11px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:13px;box-shadow:var(--shadow)}
@@ -453,30 +454,41 @@ function completeSurvival(retoId){
   if(!r)return;
   const allR=genSurvivalRetos(1000);
   const match=allR.find(x=>x.id===retoId);
-  const saved=match?.save||0;
+  const theoretical=match?.save||0;
   r.completed=true;r.completedAt=Date.now();sv();
   
-  if(saved>0){
+  if(theoretical>0){
     const topDebt=S.debts.filter(d=>(+d.bal||0)>0).sort((a,b)=>(+a.bal||0)-(+b.bal||0))[0];
     const savGoal=S.savGoals.find(g=>!g.done&&g.target>(+g.saved||0));
-    let opts='';
-    if(topDebt)opts+=`<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToDebt(${topDebt.id},${saved})">⛓️ Abonar ${fx(saved)} a "${topDebt.name}"</button>`;
-    if(savGoal)opts+=`<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToGoal(${savGoal.id},${saved})">🎯 Abonar ${fx(saved)} a "${savGoal.name}"</button>`;
-    opts+=`<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm();rHabitos();">Dejarlo como flujo libre</button>`;
-    showConfirm('🏆 ¡Reto completado!',
-      '<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:12px">Liberaste <strong style="color:var(--sage)">'+fx(saved)+'</strong> con este reto. ¿A dónde lo diriges?</div>'+opts,
-      ()=>{});
-  }else{toast('🏆 ¡Reto completado!');rPlan();}
+    
+    const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:14px">El ahorro estimado era <strong>'+fx(theoretical)+'</strong>. ¿Cuánto ahorraste realmente?</div>'
+      +'<div style="margin-bottom:14px"><label style="font-size:11px;color:var(--muted)">Ahorro real ($)</label><input type="number" id="retoRealAmt" value="'+theoretical+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:12px;text-align:center">¿A dónde diriges este ahorro?</div>'
+      +(topDebt?'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToDebt('+topDebt.id+')">⛓️ Abonar a deuda: '+topDebt.name+'</button>':'')
+      +(savGoal?'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToGoal('+savGoal.id+')">🎯 Abonar a meta: '+savGoal.name+'</button>':'')
+      +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoAsExtra()">📈 Registrar como ingreso extra</button>'
+      +'<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm();rHabitos();">Dejarlo como flujo libre</button>';
+    showConfirm('🏆 ¡Reto completado!',body,()=>{});
+  }else{toast('🏆 ¡Reto completado!');rHabitos();}
 }
-function applyRetoToDebt(debtId,amt){
+function _getRetoAmt(){return +(document.getElementById('retoRealAmt')?.value)||0;}
+function applyRetoToDebt(debtId){
+  const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
   const d=S.debts.find(x=>x.id===debtId);
   if(d){d.bal=Math.max(0,(+d.bal||0)-amt);sv();}
-  closeConfirm();toast('✅ '+fx(amt)+' abonado a deuda');rPlan();
+  closeConfirm();toast('✅ '+fx(amt)+' abonado a deuda');rHabitos();
 }
-function applyRetoToGoal(goalId,amt){
+function applyRetoToGoal(goalId){
+  const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
   const g=S.savGoals.find(x=>x.id===goalId);
-  if(g){g.saved=(+g.saved||0)+amt;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:amt,auto:true}];if(g.saved>=g.target)g.done=true;sv();}
-  closeConfirm();toast('✅ '+fx(amt)+' abonado a meta');rPlan();
+  if(g){g.saved=(+g.saved||0)+amt;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt,auto:false,note:'Reto completado'}];if(g.saved>=g.target)g.done=true;sv();}
+  closeConfirm();toast('✅ '+fx(amt)+' abonado a meta');rHabitos();
+}
+function applyRetoAsExtra(){
+  const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
+  const extra={id:Date.now(),name:'Ahorro de reto',amt,tipo:'unico',date:new Date().toISOString().split('T')[0]};
+  pt({extras:[...S.extras,extra]});
+  closeConfirm();toast('✅ '+fx(amt)+' registrado como ingreso extra');rHabitos();
 }
 function toggleRetoCheck(retoId,idx){
   if(!S.retoChecks)S.retoChecks={};
@@ -1851,7 +1863,33 @@ function renderRetos(){
       const cCls=isC?'card-grn':isA?'':'card-sage';const aBrd=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':'';
       return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
         +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+r.icon+'</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+r.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:var(--sage)">+'+fx(r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
-        +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+checks.length+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{const done=idx<checks.length;const lbl=r.track==='dia'?'D'+(idx+1):r.track==='sem'?'S'+(idx+1):'✓';return'<button style="min-width:36px;height:36px;border-radius:8px;border:2px solid '+(done?'var(--sage)':'var(--border)')+';background:'+(done?'var(--sagedim)':'var(--bg)')+';color:'+(done?'var(--sage)':'var(--muted)')+';font-size:11px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:0 6px" onclick="event.stopPropagation();toggleRetoCheck(\''+r.id+'\','+idx+')">'+(done?'✓':lbl)+'</button>';}).join('')+'</div>'+(checks.length>=totalN?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival(\''+r.id+'\')">🏆 ¡Reto completado!</button>':'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival(\''+r.id+'\')">Desactivar reto</button>')+'</div>':'')
+        +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+checks.length+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{
+                  const done=idx<checks.length;
+                  const actAt=sr?.activatedAt||Date.now();
+                  const baseD=new Date(actAt);baseD.setHours(0,0,0,0);
+                  let dateLbl='';
+                  const shortM=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+                  if(r.track==='dia'){
+                    const dd=new Date(baseD.getTime()+idx*864e5);
+                    dateLbl=dd.getDate()+' '+shortM[dd.getMonth()];
+                  }else if(r.track==='sem'){
+                    const wStart=new Date(baseD.getTime()+idx*7*864e5);
+                    const wEnd=new Date(wStart.getTime()+6*864e5);
+                    dateLbl=wStart.getDate()+'-'+wEnd.getDate()+' '+shortM[wEnd.getMonth()];
+                  }else{
+                    // Quincenal — show cycle range
+                    const today3=new Date();today3.setHours(0,0,0,0);
+                    const dd3=today3.getDate(),mm3=today3.getMonth(),yy3=today3.getFullYear();
+                    let qS,qE;
+                    if(dd3>=15&&dd3<=29){qS=new Date(yy3,mm3,15);qE=new Date(yy3,mm3,29);}
+                    else if(dd3>=30){qS=new Date(yy3,mm3,30);qE=new Date(yy3,mm3+1,14);}
+                    else{qS=new Date(yy3,mm3-1,30);qE=new Date(yy3,mm3,14);}
+                    dateLbl=qS.getDate()+' '+shortM[qS.getMonth()]+' - '+qE.getDate()+' '+shortM[qE.getMonth()];
+                  }
+                  const isToday=r.track==='dia'&&new Date(baseD.getTime()+idx*864e5).toDateString()===new Date().toDateString();
+                  const todayBorder=isToday&&!done?'border-color:var(--amber);box-shadow:0 0 0 2px rgba(160,112,48,.2);':'';
+                  return'<button style="min-width:44px;height:44px;border-radius:10px;border:2px solid '+(done?'var(--sage)':'var(--border)')+';background:'+(done?'var(--sagedim)':'var(--bg)')+';color:'+(done?'var(--sage)':'var(--muted)')+';font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:2px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+todayBorder+'" onclick="event.stopPropagation();toggleRetoCheck(\''+r.id+'\','+idx+')">'+(done?'<span style=\"font-size:14px\">✓</span>':'')+'<span>'+dateLbl+'</span></button>';
+                }).join('')+'</div>'+(checks.length>=totalN?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival(\''+r.id+'\')">🏆 ¡Reto completado!</button>':'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival(\''+r.id+'\')">Desactivar reto</button>')+'</div>':'')
         +(!isA&&!isC?'<div style="font-size:10px;color:var(--muted);margin-top:6px">Toca para activar</div>':'')
         +(isC?'<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +'+fx(r.save)+' liberados</div>':'')
         +'</div>';

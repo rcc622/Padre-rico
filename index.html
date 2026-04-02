@@ -911,6 +911,7 @@ function rDash(){
 
 // ══ MI QUINCENA (análisis Nu + snapshots) ════════════
 let nuTxns=[];
+let nuDebit=[],nuCredit=[];
 const HK={
   '🛒 Minisuper / OXXO':['OXXO','7-ELEVEN','7ELEVEN','EXTRA SUPER','BUEN PRECIO','MODELORAMA','DUNOSUSA','BARA ','CADENA COMERCIAL'],
   '🚗 Delivery':['UBER EATS','UBEREATS','RAPPI','DIDI FOOD','DIDIFOOD','CORNERSHOP','JUSTO'],
@@ -980,6 +981,13 @@ function saveSnapshot(txns){
     score:score(),
     patrimonio:nw(),
     deudaTotal:tDebt(),
+    // Separate debit/credit data
+    debitTotal:nuDebit.reduce((a,t)=>a+t.amt,0),
+    creditTotal:nuCredit.reduce((a,t)=>a+t.amt,0),
+    debitTxns:nuDebit.length,
+    creditTxns:nuCredit.length,
+    hormigaDebit:Object.fromEntries(detectH(nuDebit)),
+    hormigaCredit:Object.fromEntries(detectH(nuCredit)),
   };
   pt({snapshots:[...S.snapshots,snap]});
   toast('📊 Capítulo quincenal guardado');
@@ -1007,51 +1015,121 @@ function compareSnap(current){
 }
 
 function rQuincena(){
-  const hd=detectH(nuTxns),totH=hd.reduce((a,[,v])=>a+v.total,0),totAll=nuTxns.reduce((a,t)=>a+t.amt,0);
+  const hasDebit=nuDebit.length>0;
+  const hasCredit=nuCredit.length>0;
+  const hasAny=hasDebit||hasCredit;
+  nuTxns=[...nuDebit,...nuCredit];
+
+  const hdAll=detectH(nuTxns),totHAll=hdAll.reduce((a,[,v])=>a+v.total,0),totAll=nuTxns.reduce((a,t)=>a+t.amt,0);
+  const hdDeb=hasDebit?detectH(nuDebit):[];const totDeb=nuDebit.reduce((a,t)=>a+t.amt,0);const totHDeb=hdDeb.reduce((a,[,v])=>a+v.total,0);
+  const hdCred=hasCredit?detectH(nuCredit):[];const totCred=nuCredit.reduce((a,t)=>a+t.amt,0);const totHCred=hdCred.reduce((a,[,v])=>a+v.total,0);
   const lastSnap=S.snapshots.length?[...S.snapshots].sort((a,b)=>new Date(b.periodEnd||b.date)-new Date(a.periodEnd||a.date))[0]:null;
+
+  const renderAnalysis=(txns,hd,totH,totG,label,color)=>{
+    if(!txns.length)return'';
+    return`
+    <div class="g2" style="margin-bottom:13px">
+      ${kpi('💸 Total',fx(totG),color,'gastado')}
+      ${kpi('🐜 Hormiga',fx(totH),'var(--amber)',(totG>0?(totH/totG*100).toFixed(1):0)+'%')}
+    </div>
+    ${hd.length>0?`<div class="card"><div class="ct">🐜 Hormiga — ${label}</div>
+    ${hd.map(([cat,data])=>`<div class="hi"><div><div style="font-weight:bold;margin-bottom:2px;color:var(--txt)">${cat}</div><div style="font-size:11px;color:var(--muted)">${data.count} txns · Prom. ${fx(data.total/data.count)}</div></div><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:16px">${fx(data.total)}</div><div style="font-size:10px;color:var(--muted)">${fx(data.total*26)}/año</div></div></div>`).join('')}
+    </div>`:''}
+    <div class="card"><div class="ct">Top gastos — ${label}</div>${[...txns].sort((a,b)=>b.amt-a.amt).slice(0,10).map((t,i)=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row"><span style="color:var(--muted);min-width:20px">${i+1}</span><span style="color:var(--txt)">${t.desc.slice(0,36)}</span></div><span style="color:var(--terra);font-weight:bold">${fx(t.amt)}</span></div>`).join('')}</div>`;
+  };
 
   document.getElementById('tab-quincena').innerHTML=`
   <div class="card card-sage">
-    <div class="ct">📊 Análisis de Estado de Cuenta</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Descarga tu CSV desde Nu: <strong style="color:var(--sage2)">Perfil → Exportar transacciones</strong>. Cada CSV que subes se convierte en un capítulo de tu historia financiera.</div>
-    ${S.snapshots.length>0?`<div style="margin-top:10px;font-size:11px;color:var(--sage)">📖 ${S.snapshots.length} capítulo${S.snapshots.length>1?'s':''} guardado${S.snapshots.length>1?'s':''} · Último: ${lastSnap?fmtDate(lastSnap.date):''}</div>`:''}
+    <div class="ct">📊 Análisis de Estados de Cuenta</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Sube tus CSVs de Nu. Separar débito y crédito te da una radiografía más precisa: débito = gasto real, crédito = deuda nueva.</div>
+    ${S.snapshots.length>0?`<div style="margin-top:10px;font-size:11px;color:var(--sage)">📖 ${S.snapshots.length} capítulo${S.snapshots.length>1?'s':''} guardado${S.snapshots.length>1?'s':''}</div>`:''}
   </div>
 
-  ${nuTxns.length===0?`
-  <div class="card">
-    <div class="drop" id="dz" onclick="document.getElementById('fup').click()" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="onDrop(event)">
-      <div style="font-size:40px;margin-bottom:12px">📂</div>
-      <div style="font-size:15px;margin-bottom:6px;color:var(--txt)">Arrastra tu CSV aquí</div>
-      <div style="font-size:12px;color:var(--muted)">O toca para seleccionar el archivo</div>
+  <!-- UPLOAD ZONES -->
+  <div class="g2" style="margin-bottom:13px">
+    <div class="card" style="margin-bottom:0;text-align:center;padding:16px;${hasDebit?'border-color:var(--sage)':''}">
+      <div style="font-size:24px;margin-bottom:6px">${hasDebit?'✅':'💳'}</div>
+      <div style="font-size:13px;font-weight:bold;color:${hasDebit?'var(--sage)':'var(--txt)'};margin-bottom:4px">Débito</div>
+      ${hasDebit?`<div style="font-size:11px;color:var(--sage)">${nuDebit.length} transacciones · ${fx(totDeb)}</div><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="nuDebit=[];nuTxns=[...nuCredit];rQuincena()">✕ Quitar</button>`
+      :`<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Gasto real — dinero que ya salió</div>
+        <button class="btn btn-sage btn-sm" onclick="document.getElementById('fupD').click()">Subir CSV débito</button>
+        <input type="file" id="fupD" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'debit')">`}
     </div>
-    <input type="file" id="fup" accept=".csv,.txt" style="display:none" onchange="onFile(this.files[0])">
+    <div class="card" style="margin-bottom:0;text-align:center;padding:16px;${hasCredit?'border-color:var(--sky)':''}">
+      <div style="font-size:24px;margin-bottom:6px">${hasCredit?'✅':'💳'}</div>
+      <div style="font-size:13px;font-weight:bold;color:${hasCredit?'var(--sky)':'var(--txt)'};margin-bottom:4px">Crédito</div>
+      ${hasCredit?`<div style="font-size:11px;color:var(--sky)">${nuCredit.length} transacciones · ${fx(totCred)}</div><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="nuCredit=[];nuTxns=[...nuDebit];rQuincena()">✕ Quitar</button>`
+      :`<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Deuda nueva — compras a crédito</div>
+        <button class="btn btn-sage btn-sm" onclick="document.getElementById('fupC').click()">Subir CSV crédito</button>
+        <input type="file" id="fupC" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'credit')">`}
+    </div>
   </div>
-  <div class="card"><div class="ct">¿Cómo descargo el CSV de Nu?</div><div style="font-size:13px;line-height:2.1;color:var(--txt2)"><div>1. Abre la app de Nu en tu celular</div><div>2. Toca tu foto de perfil (esquina superior)</div><div>3. Busca "Exportar transacciones" o "Historial"</div><div>4. Descarga el CSV y súbelo aquí</div></div></div>
+
+  ${!hasAny?`
+  <div class="card"><div class="ct">¿Cómo descargo el CSV de Nu?</div><div style="font-size:13px;line-height:2.1;color:var(--txt2)"><div>1. Abre la app de Nu en tu celular</div><div>2. Toca tu foto de perfil (esquina superior)</div><div>3. Busca "Exportar transacciones" o "Historial"</div><div>4. Descarga el CSV y súbelo aquí</div><div style="margin-top:8px;font-size:11px;color:var(--amber)">💡 Nu tiene CSVs separados para tu cuenta (débito) y tu tarjeta (crédito).</div></div></div>
   `:`
-  <!-- SAVE SNAPSHOT BUTTON -->
+  <!-- SAVE SNAPSHOT -->
   ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
     <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo quincenal?</div>
-    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">Esto guarda las métricas de este periodo para comparar con futuras quincenas.</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">Guarda las métricas para comparar con futuras quincenas.${hasDebit&&hasCredit?' Incluye débito y crédito.':''}</div>
     <button class="btn btn-sage" onclick="saveSnapshot(nuTxns);nuTxns._saved=true;rQuincena()">Guardar capítulo</button>
   </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo guardado</div></div>`}
 
-  <div class="g3" style="margin-bottom:13px">
-    ${kpi('📋 Transacciones',nuTxns.length,'var(--sky)','analizadas')}
-    ${kpi('💸 Total gastado',fx(totAll),'var(--terra)','en el periodo')}
-    ${kpi('🐜 Gastos hormiga',fx(totH),'var(--amber)',(totAll>0?(totH/totAll*100).toFixed(1):0)+'% del total')}
+  <!-- RESUMEN COMBINADO -->
+  ${hasDebit&&hasCredit?`
+  <div class="card">
+    <div class="ct">📊 Resumen combinado</div>
+    <div class="g3" style="margin-bottom:0">
+      ${kpi('💸 Total',fx(totAll),'var(--terra)',nuTxns.length+' txns')}
+      ${kpi('💳 Débito',fx(totDeb),'var(--sage)',nuDebit.length+' txns')}
+      ${kpi('💳 Crédito',fx(totCred),'var(--sky)',nuCredit.length+' txns')}
+    </div>
   </div>
+  ${totCred>0?`<div class="card card-red" style="padding:14px 18px">
+    <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Gastaste <strong>${fx(totCred)}</strong> a crédito este periodo — eso es deuda nueva. ${totCred>totDeb?'<strong>Tu gasto a crédito es mayor que tu gasto en débito.</strong>':''}</div>
+  </div>`:''}`:''}
 
-  <!-- GASTOS HORMIGA -->
-  ${hd.length>0?`<div class="card"><div class="ct">🐜 Gastos Hormiga Detectados</div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:13px">Compras frecuentes que en conjunto destruyen tu flujo:</div>
-  ${hd.map(([cat,data])=>{
-    const annual=data.total*12;
-    return`<div class="hi"><div><div style="font-weight:bold;margin-bottom:2px;color:var(--txt)">${cat}</div><div style="font-size:11px;color:var(--muted)">${data.count} transacciones · Prom. ${fx(data.total/data.count)}/compra</div></div><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:16px">${fx(data.total)}</div><div style="font-size:10px;color:var(--muted)">${fx(annual)}/año</div></div></div>`;
-  }).join('')}
-  <div style="background:var(--sagedim2);border:1px solid rgba(78,124,106,.2);border-radius:8px;padding:12px;margin-top:12px">
-    <strong style="color:var(--sage2)">💡 Controlando estos hábitos liberarías ${fx(totH)}/mes = ${fx(totH*12)}/año</strong>
-    ${tDebt()>0?`<div style="font-size:11px;color:var(--txt2);margin-top:6px">Eso equivale a liquidar ${fx(totH*12)} en deudas en un año — ${tDebt()>0?((totH*12/tDebt())*100).toFixed(0)+'% de tu deuda total':''}</div>`:''}
-  </div></div>`:''}
+  <!-- ANÁLISIS DÉBITO -->
+  ${hasDebit?`<div style="margin-bottom:4px"><div style="font-size:10px;color:var(--sage);letter-spacing:2px;text-transform:uppercase;font-weight:bold;padding:8px 0">💳 ANÁLISIS DÉBITO — Gasto real</div></div>
+  <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Gastaste de tu cuenta</div><div class="stat" style="color:var(--terra)">${fx(totDeb)}</div><div style="font-size:10px;color:var(--muted)">${nuDebit.length} transacciones</div></div>
+  ${renderAnalysis(nuDebit,hdDeb,totHDeb,totDeb,'Débito','var(--terra)')}
+  `:''}
+
+  <!-- ANÁLISIS CRÉDITO -->
+  ${hasCredit?`<div style="margin-bottom:4px;margin-top:14px"><div style="font-size:10px;color:var(--sky);letter-spacing:2px;text-transform:uppercase;font-weight:bold;padding:8px 0">💳 ANÁLISIS CRÉDITO — Deuda nueva</div></div>
+  <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Generaste en deuda</div><div class="stat" style="color:var(--sky)">${fx(totCred)}</div><div style="font-size:10px;color:var(--muted)">${nuCredit.length} transacciones</div></div>
+  ${renderAnalysis(nuCredit,hdCred,totHCred,totCred,'Crédito','var(--sky)')}
+  `:''}
+
+  <!-- RADIOGRAFÍA MINISUPER (combined) -->
+  ${(()=>{
+    const hd=hdAll;
+    const mini=hd.find(([cat])=>cat.includes('Minisuper'));
+    if(!mini)return'';
+    const [,data]=mini;
+    const periodDays=Math.max(1,(()=>{try{
+      const pds2=(s)=>{if(!s)return'';const m2=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m2?m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0'):(/^\d{4}-\d{2}-\d{2}$/.test(s)?s:'');};
+      const ds=nuTxns.map(t=>pds2(t.date)).filter(d3=>d3&&!isNaN(new Date(d3+'T12:00').getTime())).sort();
+      if(ds.length<2)return 15;
+      const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);
+      return isNaN(diff)||diff<=0?15:diff;
+    }catch{return 15;}})());
+    const freq=periodDays>0?(data.count/periodDays).toFixed(1):'—';
+    return`<div class="card card-amber">
+      <div class="ct">🛒 Radiografía del Minisuper</div>
+      <div class="g2" style="margin-bottom:12px">
+        ${kpi('Visitas',data.count,'var(--amber)','en el periodo')}
+        ${kpi('Frecuencia',freq+'×/día','var(--terra)','promedio diario')}
+      </div>
+      <div class="g2">
+        ${kpi('Promedio',fx(data.total/data.count),'var(--amber)','por visita')}
+        ${kpi('Total',fx(data.total),'var(--terra)',fx(data.total*12)+'/año')}
+      </div>
+      <div style="background:rgba(160,112,48,.08);border:1px solid rgba(160,112,48,.2);border-radius:8px;padding:12px;margin-top:13px;font-size:12px;color:var(--txt2);line-height:1.7">
+        💡 Si reduces a 1 visita cada 2 días ahorrarías ~${fx(data.total*0.5)}/periodo
+      </div>
+    </div>`;
+  })()}
 
   <!-- COMPARATIVA QUINCENAL -->
   ${(()=>{
@@ -1080,50 +1158,13 @@ function rQuincena(){
     </div>`;
   })()}
 
-  <!-- RADIOGRAFÍA MINISUPER -->
-  ${(()=>{
-    const mini=hd.find(([cat])=>cat.includes('Minisuper'));
-    if(!mini)return'';
-    const [,data]=mini;
-    const dates=nuTxns.filter(t=>HK['🛒 Minisuper / OXXO'].some(k=>t.desc.toUpperCase().includes(k))).map(t=>t.date).filter(Boolean);
-    const uniqueDays=new Set(dates).size;
-    const periodDays=Math.max(1,(() => {
-      try{
-        const pds2=(s)=>{if(!s)return'';const m2=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m2?m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0'):(/^\d{4}-\d{2}-\d{2}$/.test(s)?s:'');};
-        const ds=nuTxns.map(t=>pds2(t.date)).filter(d3=>d3&&!isNaN(new Date(d3+'T12:00').getTime())).sort();
-        if(ds.length<2)return 15;
-        const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);
-        return isNaN(diff)||diff<=0?15:diff;
-      }catch{return 15;}
-    })());
-    const freq=periodDays>0?(data.count/periodDays).toFixed(1):'—';
-    return`<div class="card card-amber">
-      <div class="ct">🛒 Radiografía del Minisuper</div>
-      <div class="g2" style="margin-bottom:12px">
-        ${kpi('Visitas',data.count,'var(--amber)','en el periodo')}
-        ${kpi('Frecuencia',freq+'×/día','var(--terra)','promedio diario')}
-      </div>
-      <div class="g2">
-        ${kpi('Promedio',fx(data.total/data.count),'var(--amber)','por visita')}
-        ${kpi('Total',fx(data.total),'var(--terra)',fx(data.total*12)+'/año')}
-      </div>
-      <div style="background:rgba(160,112,48,.08);border:1px solid rgba(160,112,48,.2);border-radius:8px;padding:12px;margin-top:13px;font-size:12px;color:var(--txt2);line-height:1.7">
-        💡 Si reduces a 1 visita cada 2 días ahorrarías ~${fx(data.total*0.5)}/periodo
-      </div>
-    </div>`;
-  })()}
-
-  <!-- TOP GASTOS -->
-  <div class="card"><div class="ct">Top 10 gastos</div>${nuTxns.sort((a,b)=>b.amt-a.amt).slice(0,10).map((t,i)=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row"><span style="color:var(--muted);min-width:20px">${i+1}</span><span style="color:var(--txt)">${t.desc.slice(0,36)}</span></div><span style="color:var(--terra);font-weight:bold">${fx(t.amt)}</span></div>`).join('')}</div>
-
-  <!-- COMERCIOS FRECUENTES -->
-  <div class="card"><div class="ct">Comercios más frecuentes</div>${(()=>{const fc={};nuTxns.forEach(t=>fc[t.desc.slice(0,28)]=(fc[t.desc.slice(0,28)]||0)+1);return Object.entries(fc).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([d,c])=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="color:var(--txt)">${d}</span><span class="badge bdg-sage">${c}× veces</span></div>`).join('');})()}</div>
-
-  <button class="btn btn-ghost" onclick="nuTxns=[];rQuincena()">↺ Cargar otro archivo</button>
+  <button class="btn btn-ghost" onclick="nuDebit=[];nuCredit=[];nuTxns=[];rQuincena()">↺ Cargar otros archivos</button>
   `}`;
 }
 
-function onFile(f){if(!f)return;const r=new FileReader();r.onload=e=>{nuTxns=parseNu(e.target.result);nuTxns._saved=false;if(!nuTxns.length){alert('No se pudieron leer transacciones. Verifica que sea el CSV correcto.');return;}toast('✓ '+nuTxns.length+' transacciones leídas');rQuincena();};r.readAsText(f,'UTF-8');}
+
+function onFileType(f,type){if(!f)return;const r=new FileReader();r.onload=e=>{const txns=parseNu(e.target.result);if(!txns.length){alert('No se pudieron leer transacciones.');return;}if(type==='debit'){nuDebit=txns;nuDebit._saved=false;}else{nuCredit=txns;nuCredit._saved=false;}nuTxns=[...nuDebit,...nuCredit];nuTxns._saved=false;toast('✓ '+txns.length+' transacciones de '+(type==='debit'?'débito':'crédito')+' leídas');rQuincena();};r.readAsText(f,'UTF-8');}
+function onFile(f){onFileType(f,'debit');}
 function onDrop(e){e.preventDefault();document.getElementById('dz')?.classList.remove('over');const f=e.dataTransfer.files[0];if(f)onFile(f);}
 
 // ══ DEUDAS & FLUJO (merged tab) ═════════════════════
@@ -2170,6 +2211,10 @@ function rHistoria(){
                 <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Total gastado</div><div style="font-size:22px;font-weight:bold;color:var(--terra)">${fx(sn.totalGasto)}</div></div>
               </div>
               <div class="card" style="margin-bottom:10px;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Gastos hormiga</div><div style="font-size:22px;font-weight:bold;color:var(--amber)">${fx(hT)}</div><div style="font-size:10px;color:var(--muted)">${sn.totalGasto>0?(hT/sn.totalGasto*100).toFixed(1):'0'}% del total</div></div>
+              ${sn.debitTotal||sn.creditTotal?`<div class="g2" style="margin-bottom:12px">
+                <div class="card" style="margin-bottom:0;text-align:center;padding:10px;border-color:var(--sage)"><div style="font-size:9px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">💳 Débito</div><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(sn.debitTotal||0)}</div><div style="font-size:9px;color:var(--muted)">${sn.debitTxns||0} txns</div></div>
+                <div class="card" style="margin-bottom:0;text-align:center;padding:10px;border-color:var(--sky)"><div style="font-size:9px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;margin-bottom:3px">💳 Crédito</div><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(sn.creditTotal||0)}</div><div style="font-size:9px;color:var(--muted)">${sn.creditTxns||0} txns</div></div>
+              </div>`:''}
               ${hCats.length>0?`<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Gastos hormiga detectados</div>${hCats.map(([cat,d])=>'<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border)"><div><div style="font-size:12px;font-weight:bold;color:var(--txt)">'+cat+'</div><div style="font-size:10px;color:var(--muted)">'+d.count+' compra'+(d.count>1?'s':'')+' · Prom. '+fx(Math.round(d.total/d.count))+'</div></div><div style="text-align:right"><div style="font-size:14px;font-weight:bold;color:var(--amber)">'+fx(d.total)+'</div><div style="font-size:9px;color:var(--muted)">'+fx(Math.round(d.total*26))+'/año</div></div></div>').join('')}`:''}
               ${(sn.topByAmt||[]).length>0?`<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">Top 10 gastos</div>${sn.topByAmt.map((t,idx)=>'<div class="row-b" style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--border)"><div class="row" style="gap:6px"><span style="color:var(--muted);min-width:18px">'+(idx+1)+'</span><span>'+t.desc+'</span></div><strong style="color:var(--terra)">'+fx(t.amt)+'</strong></div>').join('')}`:''}
               ${(sn.topCommerces||[]).length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">Comercios más frecuentes</div>${sn.topCommerces.map(c2=>'<div class="row-b" style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--border)"><span>'+c2.name+'</span><span class="badge bdg-sage">'+c2.count+'× veces</span></div>').join('')}`:''}

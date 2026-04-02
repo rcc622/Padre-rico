@@ -1088,11 +1088,15 @@ function rQuincena(){
     const dates=nuTxns.filter(t=>HK['🛒 Minisuper / OXXO'].some(k=>t.desc.toUpperCase().includes(k))).map(t=>t.date).filter(Boolean);
     const uniqueDays=new Set(dates).size;
     const periodDays=Math.max(1,(() => {
-      const ds=nuTxns.map(t=>t.date).filter(Boolean).sort();
-      if(ds.length<2)return 15;
-      return Math.max(1,Math.ceil((new Date(ds[ds.length-1])-new Date(ds[0]))/864e5));
+      try{
+        const pds2=(s)=>{if(!s)return'';const m2=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m2?m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0'):(/^\d{4}-\d{2}-\d{2}$/.test(s)?s:'');};
+        const ds=nuTxns.map(t=>pds2(t.date)).filter(d3=>d3&&!isNaN(new Date(d3+'T12:00').getTime())).sort();
+        if(ds.length<2)return 15;
+        const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);
+        return isNaN(diff)||diff<=0?15:diff;
+      }catch{return 15;}
     })());
-    const freq=(data.count/periodDays).toFixed(1);
+    const freq=periodDays>0?(data.count/periodDays).toFixed(1):'—';
     return`<div class="card card-amber">
       <div class="ct">🛒 Radiografía del Minisuper</div>
       <div class="g2" style="margin-bottom:12px">

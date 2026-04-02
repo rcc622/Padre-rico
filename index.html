@@ -2025,62 +2025,6 @@ function rHabitos(){
     +'</div>';
   }catch{return'';}})()}
 
-  <!-- RETO QUINCENAL -->
-  ${(()=>{try{
-    const lastSnap=lastHormiga();
-    if(!lastSnap)return'';
-    // Find worst category
-    const cats=Object.entries(lastSnap.hormiga||{}).sort((a,b)=>b[1].total-a[1].total);
-    if(!cats.length)return'';
-    const [worstCat,worstData]=cats[0];
-    const miniData=lastSnap.hormiga['🛒 Minisuper / OXXO'];
-
-    // Active challenge
-    const activeReto=S.challenges.find(c=>!c.completed&&!c.failed);
-    // Past retos
-    const pastRetos=S.challenges.filter(c=>c.completed||c.failed);
-
-    if(!activeReto){
-      // Generate suggested reto based on data
-      const suggestions=[];
-      if(miniData&&miniData.count>10)suggestions.push({type:'mini_visits',icon:'🛒',name:'Máximo '+Math.ceil(miniData.count*0.6)+' visitas al minisuper',desc:'La quincena pasada fuiste '+miniData.count+' veces. Puedes reducir a '+Math.ceil(miniData.count*0.6)+'?',target:Math.ceil(miniData.count*0.6),baseline:miniData.count,cat:'🛒 Minisuper / OXXO',metric:'count'});
-      if(worstData.total>500)suggestions.push({type:'reduce_cat',icon:worstCat.split(' ')[0],name:'Reducir '+worstCat+' un 30%',desc:'Gastaste '+fx(worstData.total)+' la quincena pasada. Meta: máximo '+fx(Math.round(worstData.total*0.7)),target:Math.round(worstData.total*0.7),baseline:worstData.total,cat:worstCat,metric:'total'});
-      const onlineData=lastSnap.hormiga['📦 Compras online'];
-      if(onlineData&&onlineData.count>2)suggestions.push({type:'online_count',icon:'📦',name:'Máximo '+Math.max(1,onlineData.count-2)+' compras online',desc:'Hiciste '+onlineData.count+' compras online. Puedes bajar a '+Math.max(1,onlineData.count-2)+'?',target:Math.max(1,onlineData.count-2),baseline:onlineData.count,cat:'📦 Compras online',metric:'count'});
-      if(!suggestions.length)suggestions.push({type:'save_pct',icon:'💾',name:'Sube tu ahorro 2%',desc:'Estás en '+S.savPct+'%. Puedes llegar a '+(S.savPct+2)+'%?',target:S.savPct+2,baseline:S.savPct,cat:'ahorro',metric:'pct'});
-
-      return`<div class="card card-sky">
-        <div class="ct">🎯 Reto Quincenal</div>
-        <div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.7">Elige un reto para esta quincena basado en tus datos reales:</div>
-        ${suggestions.map((s,i)=>`<div style="padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:all .15s;background:var(--bg)" onclick="startReto(${i})" onmouseover="this.style.borderColor='var(--sage)'" onmouseout="this.style.borderColor='var(--border)'">
-          <div class="row" style="margin-bottom:4px"><span style="font-size:18px">${s.icon}</span><span style="font-weight:bold;color:var(--txt)">${s.name}</span></div>
-          <div style="font-size:11px;color:var(--muted);line-height:1.6">${s.desc}</div>
-        </div>`).join('')}
-        <div id="_rdata" style="display:none" data-r="${encodeURIComponent(JSON.stringify(suggestions))}"></div>
-      </div>`;
-    }
-
-    // Show active reto
-    const pctDone=activeReto.target>0?Math.min(100,Math.max(0,100-((activeReto.current||activeReto.baseline)/activeReto.target*100-100))):0;
-    const daysLeft=activeReto.startedAt?Math.max(0,15-Math.floor((Date.now()-activeReto.startedAt)/864e5)):15;
-
-    return`<div class="card card-sky">
-      <div class="ct">🎯 Reto Activo</div>
-      <div class="row" style="margin-bottom:10px"><span style="font-size:24px">${activeReto.icon}</span><div><div style="font-weight:bold;color:var(--txt)">${activeReto.name}</div><div style="font-size:11px;color:var(--muted)">${activeReto.desc}</div></div></div>
-      <div class="row-b" style="margin-bottom:4px"><span style="font-size:11px;color:var(--muted)">Progreso</span><span style="font-size:11px;color:var(--sky);font-weight:bold">${daysLeft} días restantes</span></div>
-      <div class="pw"><div class="pb" style="width:50%;background:var(--sky)"></div></div>
-      <div style="font-size:11px;color:var(--muted);margin-top:8px">Sube tu próximo CSV para evaluar el resultado automáticamente.</div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="cancelReto()">Cancelar reto</button>
-    </div>`;
-  }catch(e){console.error('Reto render:',e);return'';}})()}
-
-  <!-- HISTORIAL RETOS -->
-  ${S.challenges.filter(c=>c.completed||c.failed).length>0?`<div class="card"><div class="ct">📋 Historial de Retos</div>
-  ${S.challenges.filter(c=>c.completed||c.failed).reverse().slice(0,5).map(c=>`<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border);font-size:12px">
-    <div class="row"><span>${c.completed?'✅':'❌'}</span><span style="color:var(--txt)">${c.name}</span></div>
-    <span class="badge ${c.completed?'bdg-sage':'bdg-red'}">${c.completed?'Completado':'No alcanzado'}</span>
-  </div>`).join('')}</div>`:''}
-
   <!-- HISTORIAL RESUELTOS -->
   ${resolved.length>0?`<div class="card"><div class="ct">Historial de impulsos</div>
   <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${avoided.length} evitados · ${resolved.length-avoided.length} comprados</div>

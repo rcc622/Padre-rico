@@ -686,7 +686,13 @@ function launchApp(){document.getElementById('onboarding').style.display='none';
 
 // ══ HELPERS ═════════════════════════════════════════
 const kpi=(title,val,color,sub)=>`<div class="card" style="margin-bottom:0;text-align:center"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}</div></div>`;
-const fmtDate=(s)=>{if(!s)return'';try{return new Date(s+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});}catch{return s;}};
+const fmtDate=(s)=>{if(!s)return'';try{
+  let d=s;
+  // Handle DD/MM/YYYY format
+  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m)d=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  return new Date(d+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+}catch{return s;}};
 const PRINCIPS=[
   '"Una parte de todo lo que ganas debe ser tuya para siempre." — Arkad',
   '"Los ricos compran activos. La clase media compra pasivos creyendo que son activos." — Kiyosaki',
@@ -944,9 +950,22 @@ function detectH(txns){
 function saveSnapshot(txns){
   const hd=detectH(txns);
   const hormiga={};hd.forEach(([cat,data])=>hormiga[cat]=data);
-  const dates=txns.map(t=>t.date).filter(Boolean).sort();
+  // Parse dates: handle DD/MM/YYYY → YYYY-MM-DD
+  const parseDateStr=(s)=>{
+    if(!s)return'';
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s; // already ISO
+    const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if(m)return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+    return s;
+  };
+  const dates=txns.map(t=>parseDateStr(t.date)).filter(Boolean).sort();
   const topC={};txns.forEach(t=>{const k=t.desc.slice(0,28);topC[k]=(topC[k]||0)+1;});
   const topCommerces=Object.entries(topC).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,count])=>({name,count}));
+  // Top 10 by amount
+  const topByAmt=[...txns].sort((a,b)=>b.amt-a.amt).slice(0,10).map(t=>({desc:t.desc.slice(0,30),amt:t.amt}));
+  // Frequency by merchant
+  const freqC={};txns.forEach(t=>{const k=t.desc.slice(0,28).toUpperCase();freqC[k]=(freqC[k]||0)+1;});
+  const topFreq=Object.entries(freqC).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,count])=>({name,count}));
 
   const snap={
     id:Date.now(),
@@ -956,7 +975,8 @@ function saveSnapshot(txns){
     totalGasto:txns.reduce((a,t)=>a+t.amt,0),
     totalTxns:txns.length,
     hormiga,
-    topCommerces,
+    topCommerces:topFreq,
+    topByAmt,
     score:score(),
     patrimonio:nw(),
     deudaTotal:tDebt(),
@@ -2109,10 +2129,53 @@ function rHistoria(){
   if(histView==='logros'){const ul=S.achievements||[];ct=`<div class="card card-sage"><div class="ct">🏆 Logros</div><div style="font-size:12px;color:var(--txt2)">${ul.length} de ${ACHS.length} desbloqueados</div><div class="pw" style="margin-top:8px"><div class="pb" style="width:${(ul.length/ACHS.length*100).toFixed(0)}%;background:var(--sage)"></div></div></div>${ACHS.map(a=>{const u=ul.find(x=>x.id===a.id);return`<div class="card" style="${u?'':'opacity:.5'}"><div class="row" style="gap:12px"><span style="font-size:28px;${u?'':'filter:grayscale(1)'}">${a.e}</span><div style="flex:1"><div style="font-weight:bold;color:${u?'var(--sage2)':'var(--muted)'};font-size:13px">${a.n}</div><div style="font-size:11px;color:var(--muted)">${a.d}</div></div>${u?`<span class="badge bdg-sage">${fmtDate(u.at.split('T')[0])}</span>`:'<span class="badge" style="background:var(--bg2);color:var(--muted);border:1px solid var(--border)">🔒</span>'}</div></div>`;}).join('')}`;}
 
   // ═══ TIMELINE ═══
-  if(histView==='timeline'){ct=snaps.length===0?`<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:10px">📖</div><div style="color:var(--muted)">Ve a Mi Quincena y sube tu primer CSV.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="go('quincena')">Ir</button></div>`:`<div class="card">${snaps.map((sn,i)=>{const isF=i===0,hT=Object.values(sn.hormiga||{}).reduce((a,v)=>a+v.total,0),tc=Object.entries(sn.hormiga||{}).sort((a,b)=>b[1].total-a[1].total)[0];return`<div class="tl-item"><div class="tl-line"><div class="tl-dot ${isF?'active':''}"></div></div><div style="flex:1"><div class="row-b" style="margin-bottom:6px"><div><div style="font-weight:bold;color:${isF?'var(--sage2)':'var(--txt)'};font-size:13px">Capítulo ${snaps.length-i}</div><div style="font-size:11px;color:var(--muted)">${sn.periodStart?fmtDate(sn.periodStart)+' → '+fmtDate(sn.periodEnd):fmtDate(sn.date)}</div></div><div class="row" style="gap:6px"><span class="badge ${sn.score>=50?'bdg-sage':sn.score>=30?'bdg-amber':'bdg-red'}">Score ${sn.score}</span><button class="btn btn-red btn-sm" onclick="delSnap(${sn.id})" style="padding:3px 7px;font-size:10px">✕</button></div></div><div class="g2" style="gap:8px;font-size:11px"><div>💸 <strong style="color:var(--terra)">${fx(sn.totalGasto)}</strong></div><div>🐜 <strong style="color:var(--amber)">${fx(hT)}</strong></div><div>⛓️ <strong>${fx(sn.deudaTotal)}</strong></div><div>📊 <strong style="color:${sn.patrimonio>=0?'var(--sage)':'var(--terra)'}">${fx(sn.patrimonio)}</strong></div></div>${tc?`<div style="font-size:10px;color:var(--muted);margin-top:6px">Mayor fuga: ${tc[0]} (${fx(tc[1].total)})</div>`:''}</div></div>`;}).join('')}</div>`;}
+  if(histView==='timeline'){
+    if(snaps.length===0){
+      ct=`<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:10px">📖</div><div style="color:var(--muted)">Ve a Mi Quincena y sube tu primer CSV.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="go('quincena')">Ir</button></div>`;
+    }else{
+      ct=`<div class="card">${snaps.map((sn,i)=>{
+        const isF=i===0;
+        const hT=Object.values(sn.hormiga||{}).reduce((a,v)=>a+v.total,0);
+        const tc=Object.entries(sn.hormiga||{}).sort((a,b)=>b[1].total-a[1].total)[0];
+        const isExp=expandedSnap===sn.id;
+        const hCats=Object.entries(sn.hormiga||{}).sort((a,b)=>b[1].total-a[1].total);
+        return`<div class="tl-item" style="cursor:pointer" onclick="toggleSnapDetail(${sn.id})">
+          <div class="tl-line"><div class="tl-dot ${isF?'active':''}"></div></div>
+          <div style="flex:1">
+            <div class="row-b" style="margin-bottom:6px">
+              <div>
+                <div style="font-weight:bold;color:${isF?'var(--sage2)':'var(--txt)'};font-size:13px">Capítulo ${snaps.length-i}</div>
+                <div style="font-size:11px;color:var(--muted)">${sn.periodStart?fmtDate(sn.periodStart)+' → '+fmtDate(sn.periodEnd):fmtDate(sn.date)}</div>
+              </div>
+              <div class="row" style="gap:6px">
+                <span class="badge ${sn.score>=50?'bdg-sage':sn.score>=30?'bdg-amber':'bdg-red'}">Score ${sn.score}</span>
+                <button class="btn btn-red btn-sm" onclick="event.stopPropagation();delSnap(${sn.id})" style="padding:3px 7px;font-size:10px">✕</button>
+              </div>
+            </div>
+            <div class="g2" style="gap:8px;font-size:11px">
+              <div>💸 <strong style="color:var(--terra)">${fx(sn.totalGasto)}</strong></div>
+              <div>🐜 <strong style="color:var(--amber)">${fx(hT)}</strong></div>
+              <div>⛓️ <strong>${fx(sn.deudaTotal)}</strong></div>
+              <div>📊 <strong style="color:${sn.patrimonio>=0?'var(--sage)':'var(--terra)'}">${fx(sn.patrimonio)}</strong></div>
+            </div>
+            <div style="font-size:10px;color:var(--muted);margin-top:6px">${isExp?'▲ Cerrar detalle':'▼ Ver análisis completo'}</div>
+            ${isExp?`
+            <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px">
+              <div class="g2" style="margin-bottom:12px">
+                <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Transacciones</div><div style="font-size:22px;font-weight:bold;color:var(--txt)">${sn.totalTxns}</div></div>
+                <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Total gastado</div><div style="font-size:22px;font-weight:bold;color:var(--terra)">${fx(sn.totalGasto)}</div></div>
+              </div>
+              <div class="card" style="margin-bottom:10px;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Gastos hormiga</div><div style="font-size:22px;font-weight:bold;color:var(--amber)">${fx(hT)}</div><div style="font-size:10px;color:var(--muted)">${sn.totalGasto>0?(hT/sn.totalGasto*100).toFixed(1):'0'}% del total</div></div>
+              ${hCats.length>0?`<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Gastos hormiga detectados</div>${hCats.map(([cat,d])=>'<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border)"><div><div style="font-size:12px;font-weight:bold;color:var(--txt)">'+cat+'</div><div style="font-size:10px;color:var(--muted)">'+d.count+' compra'+(d.count>1?'s':'')+' · Prom. '+fx(Math.round(d.total/d.count))+'</div></div><div style="text-align:right"><div style="font-size:14px;font-weight:bold;color:var(--amber)">'+fx(d.total)+'</div><div style="font-size:9px;color:var(--muted)">'+fx(Math.round(d.total*26))+'/año</div></div></div>').join('')}`:''}
+              ${(sn.topByAmt||[]).length>0?`<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">Top 10 gastos</div>${sn.topByAmt.map((t,idx)=>'<div class="row-b" style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--border)"><div class="row" style="gap:6px"><span style="color:var(--muted);min-width:18px">'+(idx+1)+'</span><span>'+t.desc+'</span></div><strong style="color:var(--terra)">'+fx(t.amt)+'</strong></div>').join('')}`:''}
+              ${(sn.topCommerces||[]).length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">Comercios más frecuentes</div>${sn.topCommerces.map(c2=>'<div class="row-b" style="padding:4px 0;font-size:12px;border-bottom:1px solid var(--border)"><span>'+c2.name+'</span><span class="badge bdg-sage">'+c2.count+'× veces</span></div>').join('')}`:''}
+            </div>`:''}
+          </div>
+        </div>`;
+      }).join('')}</div>`;
+    }
+  }
 
-
-  // ═══ DEUDAS LIQUIDADAS ═══
   if(histView==='liq'){
     // Debts where bal<=0 or curPay>totalPays or liqDate has passed
     const today2=new Date();today2.setHours(0,0,0,0);
@@ -2226,6 +2289,8 @@ document.getElementById('simImp').innerHTML=`<div class="ct">💡 Impacto</div>$
 }
 
 function delSnap(id){if(!confirm('¿Eliminar este capítulo?'))return;pt({snapshots:S.snapshots.filter(s=>s.id!==id)});toast('Capítulo eliminado');rHistoria();}
+let expandedSnap=null;
+function toggleSnapDetail(id){expandedSnap=expandedSnap===id?null:id;rHistoria();}
 
 function exportData(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});

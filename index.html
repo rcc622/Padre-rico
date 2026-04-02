@@ -443,9 +443,9 @@ function genSurvivalRetos(deficit){
 function activateSurvival(retoId){
   const ck=cycleKey();
   const existing=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck);
-  if(existing){existing.active=!existing.active;sv();toast(existing.active?'🎯 Reto activado':'Reto desactivado');return;}
+  if(existing){existing.active=!existing.active;sv();rHabitos();toast(existing.active?'🎯 Reto activado':'Reto desactivado');return;}
   S.survivalRetos.push({id:retoId,cycle:ck,active:true,completed:false,activatedAt:Date.now()});
-  sv();toast('🎯 Reto de supervivencia activado');
+  sv();rHabitos();toast('🎯 Reto de supervivencia activado');
 }
 function completeSurvival(retoId){
   const ck=cycleKey();
@@ -462,7 +462,7 @@ function completeSurvival(retoId){
     let opts='';
     if(topDebt)opts+=`<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToDebt(${topDebt.id},${saved})">⛓️ Abonar ${fx(saved)} a "${topDebt.name}"</button>`;
     if(savGoal)opts+=`<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToGoal(${savGoal.id},${saved})">🎯 Abonar ${fx(saved)} a "${savGoal.name}"</button>`;
-    opts+=`<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm();rPlan();">Dejarlo como flujo libre</button>`;
+    opts+=`<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm();rHabitos();">Dejarlo como flujo libre</button>`;
     showConfirm('🏆 ¡Reto completado!',
       '<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:12px">Liberaste <strong style="color:var(--sage)">'+fx(saved)+'</strong> con este reto. ¿A dónde lo diriges?</div>'+opts,
       ()=>{});
@@ -485,7 +485,7 @@ function toggleRetoCheck(retoId,idx){
   const checks=S.retoChecks[k]||[];
   if(idx<checks.length){S.retoChecks[k]=checks.slice(0,idx);}
   else{checks.push(new Date().toISOString().split('T')[0]);S.retoChecks[k]=checks;}
-  sv();rPlan();
+  sv();rHabitos();
 }
 function survivalSaved(){
   const ck=cycleKey();
@@ -888,7 +888,7 @@ function rDash(){
           ${!sr.completed?`<div class="pw" style="height:5px"><div class="pb" style="width:${pctD}%;background:${pctD>=100?'var(--sage)':'var(--amber)'}"></div></div>`:''}
         </div>`;
       }).join('')}
-      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="planView='retos';go('plan')">Ver todos los retos →</button>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="go('habitos')">Ver todos los retos →</button>
     </div>`;
   }catch{return'';}})()}
 
@@ -1117,6 +1117,12 @@ function rFlujo(){try{
   const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});
   const maxC=Math.max(...Object.values(bc),1);
   const up=upcoming();
+  const activeDebts=S.debts.filter(d2=>{
+    if((+d2.bal||0)<=0)return false;
+    if(d2.curPay&&d2.totalPays&&d2.curPay>d2.totalPays)return false;
+    return true;
+  });
+  const liqCount=S.debts.length-activeDebts.length;
 
   document.getElementById('tab-flujo').innerHTML=`
   <!-- INGRESOS -->
@@ -1238,7 +1244,7 @@ function rFlujo(){try{
   ${S.debts.length>0?`
   <div class="card">
     <div class="row-b" style="margin-bottom:8px">
-      <div class="ct" style="margin-bottom:0">📅 Mis deudas (${S.debts.length})</div>
+      <div class="ct" style="margin-bottom:0">📅 Mis deudas (${activeDebts.length})${liqCount>0?` <span style="font-size:11px;color:var(--sage);font-weight:normal">· ${liqCount} liquidada${liqCount>1?'s':''}</span>`:''}</div>
     </div>
     <div class="debt-sort-pills">
       <button class="btn btn-sm ${debtSort==='prox'?'btn-sage':'btn-ghost'}" onclick="debtSort='prox';rFlujo()">📅 Próximo pago</button>
@@ -1247,7 +1253,12 @@ function rFlujo(){try{
       <button class="btn btn-sm ${debtSort==='saldo'?'btn-sage':'btn-ghost'}" onclick="debtSort='saldo';rFlujo()">💰 Mayor pago</button>
     </div>
     ${(()=>{try{
-      let sorted2=[...S.debts];
+      let sorted2=[...S.debts].filter(d2=>{
+        // Hide liquidated debts (bal=0 or fully paid)
+        if((+d2.bal||0)<=0)return false;
+        if(d2.curPay&&d2.totalPays&&d2.curPay>d2.totalPays)return false;
+        return true;
+      });
       if(debtSort==='prox'){
         sorted2.sort((a,b)=>{
           const now=new Date();now.setHours(0,0,0,0);
@@ -1508,7 +1519,7 @@ function rPlan(){
   const todayDay=today.getDate();
 
   // ── SUB-NAV ──
-  const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia'],['retos','🎯 Retos']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
+  const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
 
   // ── TOGGLE ──
   const toggle=`<div class="card" style="padding:10px 18px">
@@ -1668,110 +1679,80 @@ function rPlan(){
     return;
   }
 
-  // ════════════════════════════
-  // VIEW: RETOS
-  // ════════════════════════════
-  if(planView==='retos'){
-    const deficit=Math.max(0,-disponible);
-    const isDeficit=disponible<0;
-    const ck=cycleKey();
-    const activeRetos=S.survivalRetos.filter(r=>r.cycle===ck);
-    const diffStars=(dv)=>dv<=1?'⭐':dv<=2?'⭐⭐':'⭐⭐⭐';
-    if(!S.retoChecks)S.retoChecks={};
 
-    let retos=[];
-    if(isDeficit){
-      retos=genSurvivalRetos(deficit);
-    }else{
-      retos=[
-        {id:'pos_extra',icon:'💰',name:'Abono extra a deuda #1',desc:'Usa '+fx(Math.round(disponible*0.5))+' de tu sobrante para abonar a la primera deuda de tu bola de nieve.',save:Math.round(disponible*0.5),diff:1,track:'qna',steps:1},
-        {id:'pos_ahorro',icon:'🏦',name:'Duplicar tu ahorro',desc:'Mueve '+fx(Math.round(savQ))+' extra a tu cuenta de ahorro esta quincena.',save:Math.round(savQ),diff:1,track:'qna',steps:1},
-        {id:'pos_emergencia',icon:'🛡️',name:'Fondo de emergencia',desc:'Destina '+fx(Math.round(disponible*0.3))+' a tu fondo de emergencia.',save:Math.round(disponible*0.3),diff:1,track:'qna',steps:1},
-        {id:'surv_nocompras',icon:'🚫',name:'Semana sin gastar',desc:'Intenta pasar 7 días sin compras no esenciales. Marca cada día.',save:Math.round(Math.max(disponible*0.15,300)),diff:3,track:'dia',steps:7},
-        {id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Lleva lunch de casa. Cada día que comes fuera son ~$100-150.',save:Math.round(Math.max(disponible*0.1,250)),diff:2,track:'dia',steps:10},
-      ];
-      // Add expense-based retos
-      const superExp2=S.exp.find(e=>/super|súper|despensa/i.test(e.name||''));
-      const superW2=superExp2?(+superExp2.amt||0):500;
-      const gasExp2=S.exp.find(e=>/gasol/i.test(e.name||''));
-      const gasW2=gasExp2?(+gasExp2.amt||0):700;
-      retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Tu gasto semanal es ~'+fx(superW2)+'. Bájalo 15% a '+fx(Math.round(superW2*0.85))+' con lista estricta.',save:Math.round(superW2*0.15*2),diff:1,track:'sem',steps:2});
-      retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Tu gasto es ~'+fx(gasW2)+'/sem. Reduce 20% a '+fx(Math.round(gasW2*0.8))+' planeando rutas.',save:Math.round(gasW2*0.2*2),diff:2,track:'sem',steps:2});
-    }
-
-    const totalPotSave=activeRetos.filter(r=>r.active||r.completed).reduce((a,r)=>{const m2=retos.find(x=>x.id===r.id);return a+(m2?.save||0);},0);
-
-    // Track helper
-    const getChecks=(retoId)=>{const k=retoId+'_'+ck;return S.retoChecks[k]||[];};
-    const trackLabel=(t)=>t==='dia'?'día':t==='sem'?'semana':'quincena';
-
-    document.getElementById('tab-plan').innerHTML=`
-    ${subNav}
-    <div class="card" style="border-left:3px solid ${isDeficit?'var(--amber)':'var(--sage)'}">
-      <div class="ct">${isDeficit?'🛟 Modo Supervivencia — Cubre tu déficit':'🚀 Retos de optimización'}</div>
-      <div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">${isDeficit
-        ?`Tu quincena tiene un <strong style="color:var(--terra)">déficit de ${fx(deficit)}</strong>. Activa retos para recortar gastos y llegar al siguiente pago.`
-        :`Tu presupuesto está <strong style="color:var(--sage)">en verde</strong> con ${fx(Math.round(disponible))} libres. Activa retos para optimizar.`}</div>
-
-      ${totalPotSave>0?`<div class="card ${isDeficit?(totalPotSave>=deficit?'card-grn':'card-amber'):'card-grn'}" style="margin-bottom:14px;padding:12px 16px">
-        <div class="row-b">
-          <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">${isDeficit?'Ahorro potencial':'Potencial de crecimiento'}</div><div class="stat-sm" style="color:var(--sage)">${fx(totalPotSave)}</div></div>
-          ${isDeficit&&deficit>0?`<div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Déficit</div><div class="stat-sm" style="color:var(--terra)">${fx(deficit)}</div></div>`:''}
-        </div>
-        ${isDeficit&&deficit>0?`<div class="pw" style="margin-top:8px"><div class="pb" style="width:${Math.min(100,totalPotSave/deficit*100).toFixed(0)}%;background:${totalPotSave>=deficit?'var(--sage)':'var(--amber)'}"></div></div>
-        <div style="font-size:10px;color:var(--muted);margin-top:4px">${totalPotSave>=deficit?'✅ Tus retos cubren el déficit':'Necesitas '+fx(deficit-totalPotSave)+' más.'}</div>`:''}
-      </div>`:``}
-
-      ${retos.map(r=>{
-        const sr=activeRetos.find(x=>x.id===r.id);
-        const isA=sr?.active&&!sr?.completed;
-        const isC=sr?.completed;
-        const checks=getChecks(r.id);
-        const totalNeeded=r.steps||1;
-        const pctDone=isA?Math.min(100,Math.round(checks.length/totalNeeded*100)):0;
-        const cardClass=isC?'card-grn':isA?'':'card-sage';
-        const activeBorder=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':'';
-        return`<div class="card ${cardClass}" style="margin-bottom:10px;padding:14px;${isC?'':'cursor:pointer;'}${activeBorder}" ${!isC&&!isA?`onclick="activateSurvival('${r.id}')"`:''}>
-          <div class="row-b" style="margin-bottom:4px">
-            <div>
-              <div style="font-size:24px;margin-bottom:6px">${r.icon}</div>
-              <div style="font-weight:bold;color:var(--txt);font-size:14px">${r.name}</div>
-              <div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">${r.desc}</div>
-            </div>
-            <div style="text-align:right;flex-shrink:0;padding-left:12px">
-              <div style="font-size:16px;font-weight:bold;color:var(--sage)">+${fx(r.save)}</div>
-              <div style="font-size:10px;margin-top:2px">${diffStars(r.diff)}</div>
-            </div>
-          </div>
-          ${isA?`
-            <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)">
-              <div class="row-b" style="margin-bottom:6px">
-                <span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: ${checks.length}/${totalNeeded} ${trackLabel(r.track)}${totalNeeded>1?'s':''}</span>
-                <span style="font-size:11px;color:var(--muted)">${pctDone}%</span>
-              </div>
-              <div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:${pctDone}%;background:${pctDone>=100?'var(--sage)':'var(--amber)'}"></div></div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px">
-                ${Array.from({length:totalNeeded},(_, idx)=>{
-                  const done=idx<checks.length;
-                  const lbl=r.track==='dia'?'D'+(idx+1):r.track==='sem'?'S'+(idx+1):'✓';
-                  return`<button style="min-width:36px;height:36px;border-radius:8px;border:2px solid ${done?'var(--sage)':'var(--border)'};background:${done?'var(--sagedim)':'var(--bg)'};color:${done?'var(--sage)':'var(--muted)'};font-size:11px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:0 6px" onclick="event.stopPropagation();toggleRetoCheck('${r.id}',${idx})">${done?'✓':lbl}</button>`;
-                }).join('')}
-              </div>
-              ${checks.length>=totalNeeded?`<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival('${r.id}')">🏆 ¡Reto completado!</button>`
-              :`<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival('${r.id}')">Desactivar reto</button>`}
-            </div>
-          `:''}
-          ${!isA&&!isC?`<div style="font-size:10px;color:var(--muted);margin-top:6px">Toca para activar</div>`:''}
-          ${isC?`<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +${fx(r.save)} liberados</div>`:''}
-        </div>`;
-      }).join('')}
-    </div>`;
-    return;
-  }
 }
 
 
 // ══ MIS HÁBITOS (Fase 1: estructura + sala de espera 48h) ═══
+function renderRetos(){
+  try{
+  const today=new Date();today.setHours(0,0,0,0);
+  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+  // Quick budget calc
+  let cStart,cEnd;
+  if(d>=15&&d<=29){cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
+  else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
+  else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
+  function dayInC(pd){if(!pd)return false;const tds=[];for(let tm2=cStart.getMonth()-1;tm2<=cEnd.getMonth()+1;tm2++){const mx=new Date(cStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
+  const salQ=S.inc.sal/2;const bfDay=+(S.inc.bfDate)||0;const bfQ=dayInC(bfDay)?(+S.inc.bf||0):0;
+  let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extQ+=(+x.amt||0);}});
+  const incQ=salQ+bfQ+extQ;
+  let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*2;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
+  let debtQ=0;S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(db.nextPay){const np=new Date(db.nextPay+'T12:00');if(np>=cStart&&np<=cEnd)debtQ+=(+db.pay||0);}else if(f==='quincenal')debtQ+=(db.pay||0);else if(pd>0&&dayInC(pd))debtQ+=mo;else if(!pd)debtQ+=mo/2;});
+  const savQ=savAmt()/2;
+  const savGQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);
+  const aptQ=getExpSavePlan().reduce((a,e)=>a+e.half,0);
+  const disponible=incQ-expQ-savQ-savGQ-aptQ-debtQ;
+
+  const deficit=Math.max(0,-disponible);
+  const isDeficit=disponible<0;
+  const ck=cycleKey();
+  const activeRetos=S.survivalRetos.filter(r=>r.cycle===ck);
+  const diffStars=(dv)=>dv<=1?'⭐':dv<=2?'⭐⭐':'⭐⭐⭐';
+  if(!S.retoChecks)S.retoChecks={};
+
+  let retos=[];
+  if(isDeficit){
+    retos=genSurvivalRetos(deficit);
+  }else{
+    retos=[
+      {id:'pos_extra',icon:'💰',name:'Abono extra a deuda #1',desc:'Usa '+fx(Math.round(disponible*0.5))+' de tu sobrante para abonar a la deuda más pequeña.',save:Math.round(disponible*0.5),diff:1,track:'qna',steps:1},
+      {id:'pos_ahorro',icon:'🏦',name:'Duplicar tu ahorro',desc:'Mueve '+fx(Math.round(savQ))+' extra a tu cuenta de ahorro.',save:Math.round(savQ),diff:1,track:'qna',steps:1},
+      {id:'pos_emergencia',icon:'🛡️',name:'Fondo de emergencia',desc:'Destina '+fx(Math.round(disponible*0.3))+' a tu fondo de emergencia.',save:Math.round(disponible*0.3),diff:1,track:'qna',steps:1},
+      {id:'surv_nocompras',icon:'🚫',name:'Semana sin gastar',desc:'Intenta pasar 7 días sin compras no esenciales.',save:Math.round(Math.max(disponible*0.15,300)),diff:3,track:'dia',steps:7},
+      {id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Lleva lunch de casa. Cada día que comes fuera son ~$100-150.',save:Math.round(Math.max(disponible*0.1,250)),diff:2,track:'dia',steps:10},
+    ];
+    const sE=S.exp.find(e=>/super|súper|despensa/i.test(e.name||''));const sW=sE?(+sE.amt||0):500;
+    const gE=S.exp.find(e=>/gasol/i.test(e.name||''));const gW=gE?(+gE.amt||0):700;
+    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Tu gasto semanal es ~'+fx(sW)+'. Bájalo 15% a '+fx(Math.round(sW*0.85))+'.',save:Math.round(sW*0.15*2),diff:1,track:'sem',steps:2});
+    retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Tu gasto es ~'+fx(gW)+'/sem. Reduce 20% a '+fx(Math.round(gW*0.8))+'.',save:Math.round(gW*0.2*2),diff:2,track:'sem',steps:2});
+  }
+
+  const totalPotSave=activeRetos.filter(r=>r.active||r.completed).reduce((a,r)=>{const m2=retos.find(x=>x.id===r.id);return a+(m2?.save||0);},0);
+  const getChecks=(rid)=>{const k=rid+'_'+ck;return S.retoChecks[k]||[];};
+  const trackLabel=(t)=>t==='dia'?'día':t==='sem'?'semana':'quincena';
+
+  return`<div class="card" style="border-left:3px solid ${isDeficit?'var(--amber)':'var(--sage)'}">
+    <div class="ct">${isDeficit?'🛟 Modo Supervivencia — Cubre tu déficit':'🚀 Retos de optimización'}</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">${isDeficit
+      ?'Tu quincena tiene un <strong style="color:var(--terra)">déficit de '+fx(deficit)+'</strong>. Activa retos para recortar gastos.'
+      :'Tu presupuesto está <strong style="color:var(--sage)">en verde</strong> con '+fx(Math.round(disponible))+' libres. Activa retos para optimizar.'}</div>
+    ${totalPotSave>0?'<div class="card '+(isDeficit?(totalPotSave>=deficit?'card-grn':'card-amber'):'card-grn')+'" style="margin-bottom:14px;padding:12px 16px"><div class="row-b"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">'+(isDeficit?'Ahorro potencial':'Potencial de crecimiento')+'</div><div class="stat-sm" style="color:var(--sage)">'+fx(totalPotSave)+'</div></div>'+(isDeficit&&deficit>0?'<div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Déficit</div><div class="stat-sm" style="color:var(--terra)">'+fx(deficit)+'</div></div>':'')+'</div>'+(isDeficit&&deficit>0?'<div class="pw" style="margin-top:8px"><div class="pb" style="width:'+Math.min(100,totalPotSave/deficit*100).toFixed(0)+'%;background:'+(totalPotSave>=deficit?'var(--sage)':'var(--amber)')+'"></div></div><div style="font-size:10px;color:var(--muted);margin-top:4px">'+(totalPotSave>=deficit?'✅ Tus retos cubren el déficit':'Necesitas '+fx(deficit-totalPotSave)+' más.')+'</div>':'')+'</div>':''}
+    ${retos.map(r=>{
+      const sr=activeRetos.find(x=>x.id===r.id);const isA=sr?.active&&!sr?.completed;const isC=sr?.completed;
+      const checks=getChecks(r.id);const totalN=r.steps||1;const pctD=isA?Math.min(100,Math.round(checks.length/totalN*100)):0;
+      const cCls=isC?'card-grn':isA?'':'card-sage';const aBrd=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':'';
+      return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
+        +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+r.icon+'</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+r.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:var(--sage)">+'+fx(r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
+        +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+checks.length+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{const done=idx<checks.length;const lbl=r.track==='dia'?'D'+(idx+1):r.track==='sem'?'S'+(idx+1):'✓';return'<button style="min-width:36px;height:36px;border-radius:8px;border:2px solid '+(done?'var(--sage)':'var(--border)')+';background:'+(done?'var(--sagedim)':'var(--bg)')+';color:'+(done?'var(--sage)':'var(--muted)')+';font-size:11px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:0 6px" onclick="event.stopPropagation();toggleRetoCheck(\''+r.id+'\','+idx+')">'+(done?'✓':lbl)+'</button>';}).join('')+'</div>'+(checks.length>=totalN?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival(\''+r.id+'\')">🏆 ¡Reto completado!</button>':'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival(\''+r.id+'\')">Desactivar reto</button>')+'</div>':'')
+        +(!isA&&!isC?'<div style="font-size:10px;color:var(--muted);margin-top:6px">Toca para activar</div>':'')
+        +(isC?'<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +'+fx(r.save)+' liberados</div>':'')
+        +'</div>';
+    }).join('')}
+  </div>`;
+  }catch(e){return'<div class="card card-red"><div style="font-size:12px;color:var(--terra)">Error en retos: '+e.message+'</div></div>';}
+}
+
 function rHabitos(){
   const now=Date.now();
   const pending=S.waitList.filter(w=>!w.resolved);
@@ -1784,8 +1765,11 @@ function rHabitos(){
   document.getElementById('tab-habitos').innerHTML=`
   <div class="card card-sage">
     <div class="ct">🧠 Mis Hábitos y Metas</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Tus metas de ahorro, control de impulsos y herramientas para cambiar patrones de gasto.</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Tus retos, metas de ahorro, control de impulsos y herramientas para cambiar patrones de gasto.</div>
   </div>
+
+  <!-- RETOS -->
+  ${renderRetos()}
 
   <!-- PÁGATE PRIMERO -->
   <div class="card">

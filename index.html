@@ -309,6 +309,8 @@ function toast(msg){
 
 // ══ CONFIRM MODAL ════════════════════════════════════
 let _confirmCb=null;
+let editDebtId=null,editExpId=null;
+let dStrat='snowball',planQ='actual',planView='pagos',debtSort='prox';
 function showConfirm(title,body,onConfirm){
   _confirmCb=onConfirm;
   const m=document.getElementById('confirmModal');
@@ -1052,11 +1054,6 @@ const QUICK_EXP=[
   {n:'📱 Celular',a:0,c:'Internet / Telefonía'},{n:'🎮 Netflix',a:0,c:'Entretenimiento'},
   {n:'💊 Farmacia',a:0,c:'Salud / Medicamentos'},
 ];
-let dStrat='snowball';
-let editDebtId=null;
-let planQ='actual';
-let planView='pagos'; // 'pagos' | 'estrategia' | 'retos'
-let debtSort='prox'; // 'prox', 'alfa', 'grupo'
 
 function rFlujo(){
   const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});

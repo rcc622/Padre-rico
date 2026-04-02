@@ -1536,24 +1536,42 @@ function rPlan(){
   // VIEW: PAGOS
   // ════════════════════════════
   if(planView==='pagos'){
-    // Build unified tracker
-    const allPays=[];
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;allPays.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
-    debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';allPays.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
-    // Savings goals
-    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{const perQ=savGoalPerQ(g);const paid=!showNext&&isPaid('sav',g.id);allPays.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});});
-    // Apartados
-    expSavePlan.forEach(e=>{const paid=!showNext&&isPaid('apt',e.id);const label=e.type==='other'?'💰 Apartar '+e.name+' (día '+e.day+' · '+fx(e.amt)+')':'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';allPays.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});});
-    // Impulse budget
-    if(S.impulsesBudget>0){const ib=Math.round(S.impulsesBudget/2);const paid=!showNext&&isPaid('imp',0);allPays.push({day:0,name:'🛍️ Presupuesto impulsos ('+fx(S.impulsesBudget)+'/mes)',amt:ib,type:'ahorro',id:0,ptype:'imp',paid});}
+    // Build tracker — split mandatory vs optional
+    const mandatory=[],optional=[];
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
+    debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';mandatory.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
+    // Optional: savings, apartados, impulses
+    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{const perQ=savGoalPerQ(g);const paid=!showNext&&isPaid('sav',g.id);optional.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});});
+    expSavePlan.forEach(e=>{const paid=!showNext&&isPaid('apt',e.id);const label=e.type==='other'?'💰 Apartar '+e.name+' (día '+e.day+' · '+fx(e.amt)+')':'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';optional.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});});
+    if(S.impulsesBudget>0){const ib=Math.round(S.impulsesBudget/2);const paid=!showNext&&isPaid('imp',0);optional.push({day:0,name:'🛍️ Presupuesto impulsos ('+fx(S.impulsesBudget)+'/mes)',amt:ib,type:'ahorro',id:0,ptype:'imp',paid});}
 
-    allPays.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
+    mandatory.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
     const passedDay=today.getDate();
-    const unpaid=allPays.filter(p=>!p.paid);
-    const selected=allPays.filter(p=>p.paid&&!isApplied(p.ptype,p.id));
-    const applied=allPays.filter(p=>p.paid&&isApplied(p.ptype,p.id));
-    const selectedT=selected.reduce((a,p)=>a+p.amt,0);
-    const appliedT=applied.reduce((a,p)=>a+p.amt,0);
+    const allPays=[...mandatory,...optional];
+
+    // Mandatory splits
+    const mUnpaid=mandatory.filter(p=>!p.paid);
+    const mSelected=mandatory.filter(p=>p.paid&&!isApplied(p.ptype,p.id));
+    const mApplied=mandatory.filter(p=>p.paid&&isApplied(p.ptype,p.id));
+    const mUnpaidT=mUnpaid.reduce((a,p)=>a+p.amt,0);
+    const mSelectedT=mSelected.reduce((a,p)=>a+p.amt,0);
+    const mAppliedT=mApplied.reduce((a,p)=>a+p.amt,0);
+
+    // Optional splits
+    const oUnpaid=optional.filter(p=>!p.paid);
+    const oSelected=optional.filter(p=>p.paid&&!isApplied(p.ptype,p.id));
+    const oApplied=optional.filter(p=>p.paid&&isApplied(p.ptype,p.id));
+    const oUnpaidT=oUnpaid.reduce((a,p)=>a+p.amt,0);
+    const oTotalT=optional.reduce((a,p)=>a+p.amt,0);
+
+    // All selected/applied
+    const allSelected=[...mSelected,...oSelected];
+    const allApplied=[...mApplied,...oApplied];
+    const selectedT=allSelected.reduce((a,p)=>a+p.amt,0);
+    const appliedTT=allApplied.reduce((a,p)=>a+p.amt,0);
+
+    // Deficit = only mandatory unpaid
+    const mandatoryDeficit=mUnpaidT-(incQ-appliedAmt2-checkedAmt);
 
     const ri=(p,st)=>{const isT=!showNext&&p.day===passedDay;const col=st==='applied'?'var(--sage)':st==='selected'?'var(--amber)':p.type==='ahorro'?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';const cls=st!=='pending'?'paid-row':'';
       return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
@@ -1568,13 +1586,18 @@ function rPlan(){
     document.getElementById('tab-plan').innerHTML=`
     ${subNav}${toggle}
 
-    <!-- INGRESO + ESTADO CUENTA -->
+    <!-- DEFICIT ALERT -->
+    ${mUnpaidT>0&&!showNext?`<div class="card card-red" style="padding:14px 18px">
+      <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mUnpaidT))}</strong> (${mUnpaid.length} gasto${mUnpaid.length!==1?'s':''} y deudas). Selecciónalos y aplícalos conforme vayas pagando.</div>
+    </div>`:''}
+
+    <!-- ESTADO CUENTA -->
     <div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
       <div style="font-size:13px;line-height:2.2">
         <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
-        ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${appliedCount()})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
-        ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${pendingCount()})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
+        ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
+        ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
           <strong style="color:${(incQ-appliedAmt2-checkedAmt)>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(incQ-appliedAmt2-checkedAmt))}</strong>
@@ -1583,18 +1606,28 @@ function rPlan(){
       </div>
     </div>
 
-    <!-- PAGOS DEL CICLO -->
+    <!-- PAGOS OBLIGATORIOS -->
     <div class="card">
       <div class="ct">📅 Pagos del ciclo — ${fmtD(cStart)} al ${fmtD(cEnd)}</div>
-      ${unpaid.length>0?`<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes (${unpaid.length})</div>${unpaid.map(p=>ri(p,'pending')).join('')}`:'<div style="text-align:center;padding:14px 0"><span style="font-size:24px">✅</span><div style="font-size:14px;color:var(--sage);font-weight:bold;margin-top:6px">¡Todo seleccionado!</div></div>'}
-      ${selected.length>0?`<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">☑ Seleccionados — por aplicar (${selected.length})</div>${selected.map(p=>ri(p,'selected')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--amber)"><span style="font-size:11px;color:var(--amber);font-style:italic">Seleccionado:</span><span style="font-size:11px;color:var(--amber);font-weight:bold;font-style:italic">${fx(Math.round(selectedT))}</span></div>`:''}
-      ${applied.length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">✅ Pagados (${applied.length})</div>${applied.map(p=>ri(p,'applied')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--sage)"><span style="font-size:11px;color:var(--sage)">Pagado:</span><span style="font-size:11px;color:var(--sage);font-weight:bold">${fx(Math.round(appliedT))}</span></div>`:''}
+      ${mUnpaid.length>0?`<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes (${mUnpaid.length})</div>${mUnpaid.map(p=>ri(p,'pending')).join('')}<div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--border)"><span style="font-size:12px;color:var(--terra);font-weight:bold">Total pendiente:</span><span style="font-size:14px;color:var(--terra);font-weight:bold">${fx(Math.round(mUnpaidT))}</span></div>`:'<div style="text-align:center;padding:14px 0"><span style="font-size:24px">✅</span><div style="font-size:14px;color:var(--sage);font-weight:bold;margin-top:6px">¡Todo al corriente!</div></div>'}
+      ${mSelected.length>0?`<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">☑ Seleccionados (${mSelected.length})</div>${mSelected.map(p=>ri(p,'selected')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--amber)"><span style="font-size:11px;color:var(--amber);font-style:italic">Seleccionado:</span><span style="font-size:11px;color:var(--amber);font-weight:bold;font-style:italic">${fx(Math.round(mSelectedT))}</span></div>`:''}
+      ${mApplied.length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">✅ Pagados (${mApplied.length})</div>${mApplied.map(p=>ri(p,'applied')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--sage)"><span style="font-size:11px;color:var(--sage)">Pagado:</span><span style="font-size:11px;color:var(--sage);font-weight:bold">${fx(Math.round(mAppliedT))}</span></div>`:''}
     </div>
 
-    <!-- APPLY BUTTON AT BOTTOM -->
+    <!-- AHORROS OPCIONAL -->
+    ${optional.length>0?`<div class="card" style="border-left:3px solid var(--sage)">
+      <div class="ct">💰 Ahorros (opcional)</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Metas de ahorro, apartados y presupuesto de impulsos. No son obligatorios pero te ayudan a crecer.</div>
+      ${oUnpaid.length>0?`${oUnpaid.map(p=>ri(p,'pending')).join('')}`:''}
+      ${oSelected.length>0?`<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:10px 0 6px">☑ Seleccionados</div>${oSelected.map(p=>ri(p,'selected')).join('')}`:''}
+      ${oApplied.length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:10px 0 6px">✅ Aplicados</div>${oApplied.map(p=>ri(p,'applied')).join('')}`:''}
+      <div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total ahorro/qna:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">${fx(Math.round(oTotalT))}</span></div>
+    </div>`:''}
+
+    <!-- APPLY BUTTON -->
     ${!showNext&&pendingCount()>0?`
     <div class="card card-grn" style="padding:12px 18px">
-      <div style="font-size:12px;color:var(--sage2);font-weight:bold">${pendingCount()} seleccionado${pendingCount()>1?'s':''} · ${unpaid.length} pendiente${unpaid.length!==1?'s':''}</div>
+      <div style="font-size:12px;color:var(--sage2);font-weight:bold">${pendingCount()} seleccionado${pendingCount()>1?'s':''} · ${mUnpaid.length+oUnpaid.length} pendiente${mUnpaid.length+oUnpaid.length!==1?'s':''}</div>
       <button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar ${pendingCount()} seleccionado${pendingCount()>1?'s':''} al historial</button>
     </div>`:``}`;
     return;
@@ -1604,16 +1637,27 @@ function rPlan(){
   // VIEW: ESTRATEGIA
   // ════════════════════════════
   if(planView==='estrategia'){
-    const debtTotal2=tDebt();
+    // Filter active debts only (bal>0)
+    const activeDebtsS=S.debts.filter(db=>(+db.bal||0)>0&&!(db.curPay&&db.totalPays&&db.curPay>db.totalPays));
+    const sortedActive=[...activeDebtsS].sort((a,b)=>dStrat==='snowball'?(+a.bal||0)-(+b.bal||0):((+b.rate||0)-(+a.rate||0)));
+    const debtTotal2=activeDebtsS.reduce((a,db)=>a+(+db.bal||0),0);
     const bv=+S.inc.bv||0;
-    const bv70=Math.round(bv*0.7);
-    const bv20=Math.round(bv*0.2);
-    const bv10=Math.round(bv*0.1);
+    const bv70=Math.round(bv*0.7);const bv20=Math.round(bv*0.2);const bv10=Math.round(bv*0.1);
     const newDebtAfterBono=Math.max(0,debtTotal2-bv70);
     const pctReduction=debtTotal2>0?Math.round(bv70/debtTotal2*100):0;
 
+    // Calculate mandatory pending (gastos + deudas not yet paid)
+    const mPendingAmt=expDetail.reduce((a,e)=>{const pt2=e.paidType||'exp';return a+(!isPaid(pt2,e.id)?e.amt:0);},0)+debtDetail.reduce((a,e)=>a+(!isPaid('debt',e.id)?e.amt:0),0);
+    const hasPending=mPendingAmt>0;
+
     document.getElementById('tab-plan').innerHTML=`
     ${subNav}
+
+    <!-- PENDING ALERT -->
+    ${hasPending&&!showNext?`<div class="card card-red" style="padding:14px 18px">
+      <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mPendingAmt))}</strong>. Liquida primero tus pagos antes de planear estrategia.</div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;color:var(--terra)" onclick="planView='pagos';rPlan()">Ir a Pagos →</button>
+    </div>`:''}
 
     <!-- BONO SEMESTRAL -->
     ${bv>0?`<div class="card card-sage">
@@ -1630,8 +1674,9 @@ function rPlan(){
     </div>`:''}
 
     <!-- PLAN DE ATAQUE -->
-    <div class="card">
+    <div class="card" style="${hasPending?'opacity:.5;pointer-events:none':''}">
       <div class="ct">Plan de ataque — Orden de prioridad</div>
+      ${hasPending?`<div style="font-size:12px;color:var(--terra);margin-bottom:12px;line-height:1.7">🔒 Función suspendida. Liquida tus pagos pendientes primero para ver tu plan de ataque actualizado.</div>`:`
       <div style="margin-bottom:13px">
         <div onclick="dStrat='snowball';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'};margin-bottom:8px">
           <div style="font-weight:bold;font-size:15px;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
@@ -1642,12 +1687,11 @@ function rPlan(){
           <div style="font-size:12px;color:var(--muted);margin-top:4px">Primero la de mayor tasa.</div>
         </div>
       </div>
-
       <div style="background:var(--skydim);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--sky);line-height:1.7;margin-bottom:16px">
         💡 Cuando termines de pagar la <strong>#1</strong>, toma ese pago y súmalo a la <strong>#2</strong>. El pago crece como bola de nieve y cada deuda cae más rápido.
-      </div>
+      </div>`}
 
-      ${sorted.map((db,i)=>{
+      ${sortedActive.map((db,i)=>{
         const moP=toMonthly(db.pay||0,db.freq||'mensual');
         const isFirst=i===0;
         const hasMSI=db.curPay&&db.totalPays;
@@ -1660,22 +1704,18 @@ function rPlan(){
         return`<div style="padding:14px 0;border-bottom:1px solid var(--border)">
           <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px">
-              ${isFirst?`<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>`:`<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#${i+1}</span>`}
+              ${isFirst&&!hasPending?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
               <span style="font-weight:bold;color:var(--txt);font-size:15px">${db.name}</span>
-              ${hasMSI?`<span class="badge bdg-sky">${db.curPay} de ${db.totalPays}</span>`:''}
+              ${hasMSI?'<span class="badge bdg-sky">'+db.curPay+' de '+db.totalPays+'</span>':''}
             </div>
             <strong style="color:var(--sky);font-size:18px">${fx(Math.round(moP))}</strong>
           </div>
-          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:${isFirst?0:32}px">
+          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:${isFirst&&!hasPending?0:32}px">
             Pago: ${fx(db.pay)}/${fqLabel}${npLabel?' · '+npLabel:''}${liqLabel?' · '+liqLabel:''}
           </div>
         </div>`;
       }).join('')}
-    </div>
-
-    ${disponible<0?`<div class="card card-red" style="text-align:center;padding:20px">
-      <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tu presupuesto tiene un <strong>déficit de ${fx(Math.abs(Math.round(disponible)))}</strong>. Revisa tus pagos antes de planear estrategia.</div>
-    </div>`:``}`;
+    </div>`;
     return;
   }
 
@@ -1765,13 +1805,85 @@ function rHabitos(){
   document.getElementById('tab-habitos').innerHTML=`
   <div class="card card-sage">
     <div class="ct">🧠 Mis Hábitos y Metas</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Tus retos, metas de ahorro, control de impulsos y herramientas para cambiar patrones de gasto.</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Retos activos, control de impulsos, ahorro y herramientas para cambiar tus patrones financieros.</div>
   </div>
 
-  <!-- RETOS -->
+  <!-- 1. RETOS ACTIVOS -->
   ${renderRetos()}
 
-  <!-- PÁGATE PRIMERO -->
+  <!-- 2. CONTROL DE IMPULSOS -->
+  ${ready.length>0?`<div class="card card-amber">
+    <div class="ct">🔔 Listas para decidir (48h cumplidas)</div>
+    ${ready.map(w=>`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div class="row-b" style="margin-bottom:8px">
+        <div><div style="font-weight:bold;color:var(--txt)">${w.name}</div><div style="font-size:11px;color:var(--muted)">${w.store} · ${fmtDate(new Date(w.createdAt).toISOString().split('T')[0])}</div></div>
+        <span style="color:var(--terra);font-weight:bold;font-size:16px">${fx(w.price)}</span>
+      </div>
+      <div style="font-size:13px;color:var(--txt2);margin-bottom:10px">¿Todavía lo necesitas?</div>
+      <div class="row" style="gap:8px">
+        <button class="btn btn-red btn-sm" onclick="resolveWait(${w.id},true)">Sí, lo compré</button>
+        <button class="btn btn-sage btn-sm" onclick="resolveWait(${w.id},false)">🎉 Ya no lo quiero</button>
+      </div>
+    </div>`).join('')}
+  </div>`:''}
+
+  <div class="card">
+    <div class="ct">⏳ Sala de Espera — Regla de las 48 Horas</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.7">¿Quieres comprar algo? Regístralo aquí. Si después de 48h todavía lo necesitas, cómpralo. El 60-70% de impulsos se cancelan con esta pausa.</div>
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:12px">
+      <div><label>¿Qué quieres comprar?</label><input type="text" id="wn" placeholder="Audífonos, gadget, ropa..."></div>
+      <div><label>Precio estimado ($)</label><input type="number" id="wp" placeholder="0"></div>
+      <div><label>Tienda</label><select id="ws"><option>Amazon</option><option>MercadoLibre</option><option>Tienda física</option><option>Otro</option></select></div>
+    </div>
+    <button class="btn btn-sage" onclick="addWait()">⏳ Poner en espera 48h</button>
+  </div>
+
+  ${waiting.length>0?`<div class="card">
+    <div class="ct">⏳ En espera</div>
+    ${waiting.map(w=>{
+      const elapsed=now-w.createdAt;
+      const hoursLeft=Math.max(0,48-elapsed/3600000);
+      const h=Math.floor(hoursLeft);const m=Math.floor((hoursLeft-h)*60);
+      return`<div class="row-b" style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-weight:bold;color:var(--txt)">${w.name}</div>
+          <div style="font-size:11px;color:var(--muted)">${w.store} · ${fx(w.price)}</div>
+        </div>
+        <div class="countdown">${h}h ${m}m restantes</div>
+      </div>`;
+    }).join('')}
+  </div>`:''}
+
+  <div class="card">
+    <div class="ct">🛍️ Presupuesto de Impulsos</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.7">Define cuánto es OK gastar en compras no esenciales cada quincena.</div>
+    <div class="row-b" style="margin-bottom:9px">
+      <span style="font-size:13px">Presupuesto: <strong style="color:var(--sage)">${fx(S.impulsesBudget)}</strong>/quincena</span>
+    </div>
+    <input type="range" min="500" max="5000" step="100" value="${S.impulsesBudget}" style="width:100%;margin-bottom:5px"
+      oninput="pt({impulsesBudget:+this.value});document.getElementById('impBdg').textContent=fx(+this.value)+'/quincena'">
+    <div id="impBdg" style="font-size:11px;color:var(--sage);text-align:right">${fx(S.impulsesBudget)}/quincena</div>
+    ${(()=>{
+      const lastSnap2=lastHormiga();
+      if(!lastSnap2)return'<div style="font-size:11px;color:var(--muted);margin-top:8px">Sube un CSV en Mi Quincena para ver cuánto gastas vs tu presupuesto.</div>';
+      const impulseTotal=(lastSnap2.hormiga['📦 Compras online']?.total||0)+(lastSnap2.hormiga['🛒 Minisuper / OXXO']?.total||0)+(lastSnap2.hormiga['🚗 Delivery']?.total||0);
+      const pct=S.impulsesBudget>0?(impulseTotal/S.impulsesBudget*100):0;
+      const col=pct<60?'var(--sage)':pct<80?'var(--amber)':'var(--terra)';
+      return`<div style="margin-top:12px">
+        <div class="row-b" style="margin-bottom:4px"><span style="font-size:11px;color:var(--muted)">Último periodo: impulsos detectados</span><span style="font-size:12px;font-weight:bold;color:${col}">${fx(impulseTotal)} (${pct.toFixed(0)}%)</span></div>
+        <div class="pw"><div class="pb" style="width:${Math.min(100,pct)}%;background:${col}"></div></div>
+        ${pct>100?`<div style="font-size:11px;color:var(--terra);margin-top:6px">⚠️ Te pasaste ${fx(impulseTotal-S.impulsesBudget)} del presupuesto</div>`:''}
+      </div>`;
+    })()}
+  </div>
+
+  ${totalSaved>0?`<div class="card card-grn" style="text-align:center">
+    <div style="font-size:10px;letter-spacing:2px;color:var(--sage);margin-bottom:6px;text-transform:uppercase">DINERO SALVADO</div>
+    <div class="stat" style="color:var(--sage)">${fx(totalSaved)}</div>
+    <div class="lbl" style="margin-top:4px">${avoided.length} compra${avoided.length>1?'s':''} impulsiva${avoided.length>1?'s':''} evitada${avoided.length>1?'s':''}</div>
+  </div>`:''}
+
+  <!-- 3. AHORRO Y PLANIFICACIÓN -->
   <div class="card">
     <div class="ct">🪙 Págate Primero — Regla de Babilonia</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto.</div>
@@ -1781,6 +1893,7 @@ function rHabitos(){
     <div style="font-size:11px;color:var(--sage);text-align:right">${S.savPct}% = ${fx(Math.round(savAmt()/2))}/qna (${fx(savAmt())}/mes)</div>
   </div>
 
+  <!-- METAS DE AHORRO -->
   <!-- METAS DE AHORRO (full) -->
   <div class="card">
     <div class="ct">🎯 Metas de ahorro</div>
@@ -1844,81 +1957,6 @@ function rHabitos(){
     +'<div style="font-size:10px;color:var(--sky);margin-top:8px;line-height:1.6">💡 Estos montos aparecen como items en tu tabla de Pagos del Ciclo en Plan de Acción.</div>'
     +'</div>';
   }catch{return'';}})()}
-
-  <!-- SALA DE ESPERA 48H -->
-  <div class="card">
-    <div class="ct">⏳ Sala de Espera — Regla de las 48 Horas</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.7">¿Quieres comprar algo? Regístralo aquí. Si después de 48h todavía lo necesitas, cómpralo. El 60-70% de impulsos se cancelan con esta pausa.</div>
-    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:10px;margin-bottom:12px">
-      <div><label>¿Qué quieres comprar?</label><input type="text" id="wn" placeholder="Audífonos, gadget, ropa..."></div>
-      <div><label>Precio estimado ($)</label><input type="number" id="wp" placeholder="0"></div>
-      <div><label>Tienda</label><select id="ws"><option>Amazon</option><option>MercadoLibre</option><option>Tienda física</option><option>Otro</option></select></div>
-    </div>
-    <button class="btn btn-sage" onclick="addWait()">⏳ Poner en espera 48h</button>
-  </div>
-
-  ${totalSaved>0?`<div class="card card-grn" style="text-align:center">
-    <div style="font-size:10px;letter-spacing:2px;color:var(--sage);margin-bottom:6px;text-transform:uppercase">DINERO SALVADO</div>
-    <div class="stat" style="color:var(--sage)">${fx(totalSaved)}</div>
-    <div class="lbl" style="margin-top:4px">${avoided.length} compra${avoided.length>1?'s':''} impulsiva${avoided.length>1?'s':''} evitada${avoided.length>1?'s':''}</div>
-  </div>`:''}
-
-  <!-- LISTAS PARA RESOLVER -->
-  ${ready.length>0?`<div class="card card-amber">
-    <div class="ct">🔔 Listas para decidir (48h cumplidas)</div>
-    ${ready.map(w=>`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
-      <div class="row-b" style="margin-bottom:8px">
-        <div><div style="font-weight:bold;color:var(--txt)">${w.name}</div><div style="font-size:11px;color:var(--muted)">${w.store} · ${fmtDate(new Date(w.createdAt).toISOString().split('T')[0])}</div></div>
-        <span style="color:var(--terra);font-weight:bold;font-size:16px">${fx(w.price)}</span>
-      </div>
-      <div style="font-size:13px;color:var(--txt2);margin-bottom:10px">¿Todavía lo necesitas?</div>
-      <div class="row" style="gap:8px">
-        <button class="btn btn-red btn-sm" onclick="resolveWait(${w.id},true)">Sí, lo compré</button>
-        <button class="btn btn-sage btn-sm" onclick="resolveWait(${w.id},false)">🎉 Ya no lo quiero</button>
-      </div>
-    </div>`).join('')}
-  </div>`:''}
-
-  <!-- EN ESPERA -->
-  ${waiting.length>0?`<div class="card">
-    <div class="ct">⏳ En espera</div>
-    ${waiting.map(w=>{
-      const elapsed=now-w.createdAt;
-      const hoursLeft=Math.max(0,48-elapsed/3600000);
-      const h=Math.floor(hoursLeft);const m=Math.floor((hoursLeft-h)*60);
-      return`<div class="row-b" style="padding:10px 0;border-bottom:1px solid var(--border)">
-        <div>
-          <div style="font-weight:bold;color:var(--txt)">${w.name}</div>
-          <div style="font-size:11px;color:var(--muted)">${w.store} · ${fx(w.price)}</div>
-        </div>
-        <div class="countdown">${h}h ${m}m restantes</div>
-      </div>`;
-    }).join('')}
-  </div>`:''}
-
-  <!-- PRESUPUESTO DE IMPULSOS -->
-  <div class="card">
-    <div class="ct">🎯 Presupuesto de Impulsos Quincenal</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.7">Define cuánto es OK gastar en compras no esenciales cada quincena.</div>
-    <div class="row-b" style="margin-bottom:9px">
-      <span style="font-size:13px">Presupuesto: <strong style="color:var(--sage)">${fx(S.impulsesBudget)}</strong>/quincena</span>
-    </div>
-    <input type="range" min="500" max="5000" step="100" value="${S.impulsesBudget}" style="width:100%;margin-bottom:5px"
-      oninput="pt({impulsesBudget:+this.value});document.getElementById('impBdg').textContent=fx(+this.value)+'/quincena'">
-    <div id="impBdg" style="font-size:11px;color:var(--sage);text-align:right">${fx(S.impulsesBudget)}/quincena</div>
-    ${(()=>{
-      const lastSnap=lastHormiga();
-      if(!lastSnap)return'<div style="font-size:11px;color:var(--muted);margin-top:8px">Sube un CSV en Mi Quincena para ver cuánto gastas vs tu presupuesto.</div>';
-      const impulseTotal=(lastSnap.hormiga['📦 Compras online']?.total||0)+(lastSnap.hormiga['🛒 Minisuper / OXXO']?.total||0)+(lastSnap.hormiga['🚗 Delivery']?.total||0);
-      const pct=S.impulsesBudget>0?(impulseTotal/S.impulsesBudget*100):0;
-      const col=pct<60?'var(--sage)':pct<80?'var(--amber)':'var(--terra)';
-      return`<div style="margin-top:12px">
-        <div class="row-b" style="margin-bottom:4px"><span style="font-size:11px;color:var(--muted)">Último periodo: impulsos detectados</span><span style="font-size:12px;font-weight:bold;color:${col}">${fx(impulseTotal)} (${pct.toFixed(0)}%)</span></div>
-        <div class="pw"><div class="pb" style="width:${Math.min(100,pct)}%;background:${col}"></div></div>
-        ${pct>100?`<div style="font-size:11px;color:var(--terra);margin-top:6px">⚠️ Te pasaste ${fx(impulseTotal-S.impulsesBudget)} del presupuesto</div>`:''}
-      </div>`;
-    })()}
-  </div>
 
   <!-- RETO QUINCENAL -->
   ${(()=>{try{

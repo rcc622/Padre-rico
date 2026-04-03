@@ -2000,7 +2000,6 @@ function rHabitos(){
       +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'
       +'<div class="row-b" style="margin-bottom:12px"><span style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(totalMoney)+' ganados</span><span style="font-size:11px;color:var(--muted)">Faltan '+fx(Math.max(0,targetMoney-totalMoney))+'</span></div>'
       +'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Registrar horas</div>'
-      +'<div style="margin-bottom:8px"><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'" style="width:100%"></div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px"><div><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'"></div><div><label>De</label><input type="time" id="otFrom" value="18:00"></div><div><label>A</label><input type="time" id="otTo" value="20:00"></div></div>'
       +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
       +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:10px" onclick="logOvertime()">⏰ Registrar horas</button>'

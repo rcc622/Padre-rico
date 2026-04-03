@@ -1223,14 +1223,12 @@ function rFlujo(){try{
   const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['deudas','⛓️ Deudas']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
 
   // ── KPI RESUMEN ALWAYS ON TOP ──
-  const flujoKPI=`<div class="g2" style="margin-bottom:4px">
-    ${kpi('💰 Ingreso',fx(mInc()+tExtras())+'/mes','var(--sage)',fx(Math.round((mInc()+tExtras())/2))+'/qna')}
-    ${kpi('📋 Gastos',fx(tExp())+'/mes','var(--terra)',S.exp.length+' conceptos')}
+  const flujoKPI=`<div style="margin-bottom:5px">${kpi('💰 Ingreso',fx(mInc()+tExtras())+'/mes','var(--sage)',fx(Math.round((mInc()+tExtras())/2))+'/qna')}</div>
+  <div style="display:flex;gap:8px;margin-bottom:5px">
+    <div style="flex:1">${kpi('📋 Gastos',fx(tExp())+'/mes','var(--terra)',S.exp.length+' conceptos')}</div>
+    <div style="flex:1">${kpi('⛓️ Deudas',fx(tDebtPay())+'/mes','var(--sky)',activeDebts.length+' activas'+(liqCount>0?' · '+liqCount+' liq.':''))}</div>
   </div>
-  <div class="g2" style="margin-bottom:14px">
-    ${kpi('⛓️ Deudas',fx(tDebtPay())+'/mes','var(--sky)',activeDebts.length+' activas'+(liqCount>0?' · '+liqCount+' liquid.':''))}
-    ${kpi('🌊 Flujo libre',fx(Math.round(mInc()+tExtras()-tExp()-tDebtPay()-savAmt()))+'/mes',mInc()+tExtras()-tExp()-tDebtPay()-savAmt()>=0?'var(--sage)':'var(--terra)','después de todo')}
-  </div>`;
+  <div style="margin-bottom:14px">${kpi('🌊 Flujo libre',fx(Math.round(mInc()+tExtras()-tExp()-tDebtPay()-savAmt()))+'/mes',mInc()+tExtras()-tExp()-tDebtPay()-savAmt()>=0?'var(--sage)':'var(--terra)','después de todo')}</div>`;
 
   document.getElementById('tab-flujo').innerHTML=`
   ${flujoNav}${flujoKPI}
@@ -2004,7 +2002,12 @@ function rHabitos(){
       +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="logOvertime()">⏰ Registrar horas</button>'
       +(ot.entries.length>0?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="exportOvertime()">📄 Exportar reporte .txt</button>':'')
       +(ot.entries.length>0?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Historial</div>'
-        +ot.entries.slice().reverse().map(e=>'<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px"><div><span style="color:var(--txt)">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span>'+(e.desc?' · '+e.desc:'')+'</div><div style="text-align:right"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong> <span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span></div></div>').join(''):'')
+        +ot.entries.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.from||'').localeCompare(b.from||'')).map((e,idx)=>{
+          const eidx=ot.entries.indexOf(e);
+          return'<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">'
+            +'<div class="row-b"><div><span style="color:var(--txt)">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span></div><div class="row" style="gap:6px"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong><span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:9px" onclick="editOtEntry('+eidx+')">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="delOtEntry('+eidx+')">✕</button></div></div>'
+            +(e.desc?'<div style="color:var(--muted);font-size:10px;margin-top:2px">'+e.desc+'</div>':'')
+          +'</div>';}).join(''):'')
       +'</div>';
   }catch{return'';}})()}
   `:''}
@@ -2234,23 +2237,20 @@ function showOvertimeCalc(){
     +'<div class="row-b" style="margin-bottom:2px"><span>Pendiente esta qna:</span><strong style="color:var(--terra)">'+fx(Math.round(pendingThis))+'</strong></div>'
     +'<div class="row-b" style="margin-bottom:2px"><span>Compromisos próxima qna:</span><strong style="color:var(--terra)">'+fx(Math.round(nextTotal))+'</strong></div>'
     +'<div class="row-b" style="margin-bottom:2px"><span>Ingreso próxima qna:</span><strong style="color:var(--sage)">'+fx(Math.round(salQ))+'</strong></div>'
-    +'<div class="row-b" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><span style="font-weight:bold">Déficit total:</span><strong style="color:var(--terra)">'+fx(Math.round(totalDeficit))+'</strong></div>'
+    +'<div class="row-b" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><span style="font-weight:bold">Déficit total:</span><strong style="color:'+(totalDeficit>0?'var(--terra)':'var(--sage)')+'">'+fx(Math.round(totalDeficit))+'</strong></div>'
     +'</div>'
-    +(totalDeficit>0?
-      '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Para cubrir necesitas <strong>'+hoursNeeded+'h</strong> a $'+RATE+'/hr. ¿A cuántas te comprometes?</div>'
-      +'<div class="card card-sky" style="text-align:center;margin-bottom:14px;padding:14px">'
-      +'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Horas extra a realizar</div>'
-      +'<input type="number" id="otHrsCommit" value="'+hoursNeeded+'" step="0.5" min="1" style="width:120px;font-size:36px;text-align:center;font-weight:bold;color:var(--sky);border:none;border-bottom:2px solid var(--sky);background:transparent;font-family:Georgia,serif" onclick="this.select()">'
-      +'<div style="font-size:11px;color:var(--muted);margin-top:6px">= <span id="otCalcMoney">'+fx(Math.round(hoursNeeded*RATE))+'</span> a $'+RATE+'/hr</div>'
-      +'</div>'
-    :'<div style="text-align:center;font-size:14px;color:var(--sage);font-weight:bold;margin-bottom:10px">✅ ¡No hay déficit!</div>');
+    +(totalDeficit>0?'<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Para cubrir necesitas <strong>'+hoursNeeded+'h</strong> a $'+RATE+'/hr.</div>'
+    :'<div style="font-size:11px;color:var(--sage);margin-bottom:4px">✅ No hay déficit, pero puedes registrar horas extra como ingreso adicional.</div>')
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px">¿A cuántas horas te comprometes?</div>'
+    +'<div class="card card-sky" style="text-align:center;margin-bottom:14px;padding:14px">'
+    +'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Horas extra a realizar</div>'
+    +'<input type="number" id="otHrsCommit" value="'+(hoursNeeded||5)+'" step="0.5" min="1" style="width:120px;font-size:36px;text-align:center;font-weight:bold;color:var(--sky);border:none;border-bottom:2px solid var(--sky);background:transparent;font-family:Georgia,serif" onclick="this.select()">'
+    +'<div style="font-size:11px;color:var(--muted);margin-top:6px">= <span id="otCalcMoney">'+fx(Math.round((hoursNeeded||5)*RATE))+'</span> a $'+RATE+'/hr</div>'
+    +'</div>';
   showConfirm('⏰ Calculadora de Horas Extra',body,null);
-  // Replace default buttons with our custom ones
   const row=document.getElementById('confirmModal').querySelector('.row');
-  if(row&&totalDeficit>0){
+  if(row){
     row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="acceptOvertime('+Math.round(totalDeficit)+','+Math.round(pendingThis)+','+Math.round(nextTotal)+')">⏰ Aceptar reto</button>';
-  }else if(row){
-    row.innerHTML='<button class="btn btn-sage" onclick="closeConfirm()">Entendido</button>';
   }
   // Wire up hours input
   setTimeout(()=>{
@@ -2290,6 +2290,43 @@ function logOvertime(){
   if(existingExtra){existingExtra.amt=(+existingExtra.amt||0)+earned;}
   else{S.extras.push({id:Date.now(),name:'Horas extra ('+ck+')',amt:earned,tipo:'unico',date:new Date().toISOString().split('T')[0]});}
   sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rHabitos();
+}
+function delOtEntry(idx){
+  const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
+  const e=ot.entries[idx];if(!e)return;
+  const earned=Math.round(e.hours*ot.rate);
+  // Remove from extras
+  const ext=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
+  if(ext)ext.amt=Math.max(0,(+ext.amt||0)-earned);
+  ot.entries.splice(idx,1);sv();toast('Registro eliminado');rHabitos();
+}
+function editOtEntry(idx){
+  const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
+  const e=ot.entries[idx];if(!e)return;
+  const body='<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="oeDate" value="'+e.date+'"></div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label>De</label><input type="time" id="oeFrom" value="'+e.from+'"></div><div style="flex:1"><label>A</label><input type="time" id="oeTo" value="'+e.to+'"></div></div>'
+    +'<div style="margin-bottom:10px"><label>Actividad</label><input type="text" id="oeDesc" value="'+(e.desc||'')+'" style="width:100%"></div>';
+  showConfirm('✏️ Editar registro',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="saveOtEntry('+idx+')">Guardar</button>';
+}
+function saveOtEntry(idx){
+  const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
+  const e=ot.entries[idx];if(!e)return;
+  const oldEarned=Math.round(e.hours*ot.rate);
+  const nd=document.getElementById('oeDate')?.value||e.date;
+  const nf=document.getElementById('oeFrom')?.value||e.from;
+  const nt=document.getElementById('oeTo')?.value||e.to;
+  const ndesc=document.getElementById('oeDesc')?.value?.trim()||'';
+  const[fh,fm]=nf.split(':').map(Number);const[th,tm]=nt.split(':').map(Number);
+  let hrs=(th+tm/60)-(fh+fm/60);if(hrs<=0)hrs+=24;
+  hrs=Math.round(hrs*10)/10;
+  const newEarned=Math.round(hrs*ot.rate);
+  // Update extras
+  const ext=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
+  if(ext)ext.amt=Math.max(0,(+ext.amt||0)-oldEarned+newEarned);
+  e.date=nd;e.from=nf;e.to=nt;e.hours=hrs;e.desc=ndesc;
+  sv();closeConfirm();toast('✏️ Registro actualizado');rHabitos();
 }
 function exportOvertime(){
   const ck=cycleKey();

@@ -342,6 +342,11 @@ const INFO={
   apartado:'<strong>Plan de apartado</strong>: gastos mensuales grandes (renta, colegiaturas) se pagan 1 vez al mes. Apartar la mitad cada quincena evita el golpe.',
   pagateprimero:'<strong>Págate Primero</strong> — principio de "El Hombre Más Rico de Babilonia": antes de pagar cualquier gasto, separa un % para ti.',
   simulador:'<strong>Simulador "¿Qué pasa si?"</strong><br><br>Mueve los sliders para proyectar 12 meses:<br>• Hormiga: reduce minisuper, delivery, online<br>• Ahorro %: sube tu porcentaje<br>• Pago extra: dinero adicional a deudas<br>• Bono a deuda: aplica 70% de tu bono semestral<br><br>Línea verde = con cambios. Roja = sin cambios.',
+  ahorroPotencial:'<strong>Ahorro Potencial</strong> es la suma de dinero que podrías liberar esta quincena si cumples todos los retos que tienes activos.<br><br>Cada reto tiene un monto estimado (ej: "Llevar lunch" = $723). Si activas 3 retos, el ahorro potencial suma los 3.<br><br><strong>Déficit</strong> es cuánto te falta para cubrir todos tus gastos fijos y deudas con tu ingreso quincenal. Si el ahorro potencial iguala o supera el déficit, ¡tus retos cubren el hueco!<br><br>La barra muestra qué porcentaje del déficit cubres con tus retos activos.',
+  badges:'<strong>Badges</strong> son rangos que reflejan tu nivel financiero actual. A diferencia de los logros, los badges pueden perderse — si tu score baja de 50, pierdes el badge "Medio Camino".<br><br>Piensa en ellos como tu "título" actual. Cada badge desbloqueado demuestra que alcanzaste ese nivel al menos una vez.',
+  logrosInfo:'<strong>Logros</strong> son hitos permanentes. Una vez desbloqueados, son tuyos para siempre — no se pierden aunque tu situación cambie.<br><br>Representan acciones concretas: subir tu primer CSV, liquidar una deuda, completar un reto. Son evidencia de tu progreso.',
+  badges:'<strong>Badges</strong> son rangos que reflejan tu nivel financiero actual.<br><br>A diferencia de los logros (que son hitos de una sola vez), los badges representan dónde estás HOY: tu score, tu porcentaje de ahorro, tu patrimonio.<br><br>Toca cualquier badge para saber qué necesitas para desbloquearlo.',
+  logrosInfo:'<strong>Logros</strong> son hitos que desbloqueas una sola vez al cumplir una meta. Ejemplo: subir tu primer CSV, liquidar tu primera deuda, evitar 10 impulsos.<br><br>Cada logro tiene un botón (?) que te explica por qué lo ganaste y qué significa.',
 };
 const ib=(key,label)=>'<button class="info-btn" onclick="event.stopPropagation();showInfo(\''+(label||key)+'\',INFO.'+key+')">?</button>';
 
@@ -1909,7 +1914,7 @@ function renderRetos(){
     <div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">${isDeficit
       ?'Tu quincena tiene un <strong style="color:var(--terra)">déficit de '+fx(deficit)+'</strong>. Activa retos para recortar gastos.'
       :'Tu presupuesto está <strong style="color:var(--sage)">en verde</strong> con '+fx(Math.round(disponible))+' libres. Activa retos para optimizar.'}</div>
-    ${totalPotSave>0?'<div class="card '+(isDeficit?(totalPotSave>=deficit?'card-grn':'card-amber'):'card-grn')+'" style="margin-bottom:14px;padding:12px 16px"><div class="row-b"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">'+(isDeficit?'Ahorro potencial':'Potencial de crecimiento')+'</div><div class="stat-sm" style="color:var(--sage)">'+fx(totalPotSave)+'</div></div>'+(isDeficit&&deficit>0?'<div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Déficit</div><div class="stat-sm" style="color:var(--terra)">'+fx(deficit)+'</div></div>':'')+'</div>'+(isDeficit&&deficit>0?'<div class="pw" style="margin-top:8px"><div class="pb" style="width:'+Math.min(100,totalPotSave/deficit*100).toFixed(0)+'%;background:'+(totalPotSave>=deficit?'var(--sage)':'var(--amber)')+'"></div></div><div style="font-size:10px;color:var(--muted);margin-top:4px">'+(totalPotSave>=deficit?'✅ Tus retos cubren el déficit':'Necesitas '+fx(deficit-totalPotSave)+' más.')+'</div>':'')+'</div>':''}
+    ${totalPotSave>0?'<div class="card '+(isDeficit?(totalPotSave>=deficit?'card-grn':'card-amber'):'card-grn')+'" style="margin-bottom:14px;padding:12px 16px"><div class="row-b"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">'+(isDeficit?'Ahorro potencial':'Potencial de crecimiento')+' '+ib('ahorroPotencial','Ahorro potencial')+'</div><div class="stat-sm" style="color:var(--sage)">'+fx(totalPotSave)+'</div></div>'+(isDeficit&&deficit>0?'<div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Déficit</div><div class="stat-sm" style="color:var(--terra)">'+fx(deficit)+'</div></div>':'')+'</div>'+(isDeficit&&deficit>0?'<div class="pw" style="margin-top:8px"><div class="pb" style="width:'+Math.min(100,totalPotSave/deficit*100).toFixed(0)+'%;background:'+(totalPotSave>=deficit?'var(--sage)':'var(--amber)')+'"></div></div><div style="font-size:10px;color:var(--muted);margin-top:4px">'+(totalPotSave>=deficit?'✅ Tus retos cubren el déficit':'Necesitas '+fx(deficit-totalPotSave)+' más.')+'</div>':'')+'</div>':''}
     ${retos.map(r=>{
       const sr=activeRetos.find(x=>x.id===r.id);const isA=sr?.active&&!sr?.completed;const isC=sr?.completed;
       const checks=getChecks(r.id);const totalN=r.steps||1;const pctD=isA?Math.min(100,Math.round(checks.length/totalN*100)):0;
@@ -1947,6 +1952,9 @@ function renderRetos(){
         +(isC?'<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +'+fx(r.save)+' liberados</div>':'')
         +'</div>';
     }).join('')}
+
+    <!-- CUSTOM HABITS inside retos -->
+    ${renderCustomHabits()}
   </div>`;
   }catch(e){return'<div class="card card-red"><div style="font-size:12px;color:var(--terra)">Error en retos: '+e.message+'</div></div>';}
 }
@@ -2011,10 +2019,7 @@ function rHabitos(){
       +'</div>';
   }catch{return'';}})()}
 
-  <!-- CUSTOM HABITS -->
-  ${renderCustomHabits()}
-
-  <div class="card">
+  <div class="card" style="border-color:rgba(160,112,48,.25);background:rgba(160,112,48,.02)">
     <div class="ct">🚫 Crear hábito a eliminar</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Registra un gasto recurrente que quieres dejar (alcohol, cigarro, comida chatarra). Cada día que resistas, se acumula el ahorro.</div>
     <div style="margin-bottom:10px"><label>Nombre del hábito</label><input type="text" id="chName" placeholder="Ej: No tomar alcohol" style="width:100%"></div>
@@ -2422,14 +2427,14 @@ function renderCustomHabits(){
     const streak=(()=>{let s=0;const d=new Date();d.setHours(0,0,0,0);for(let i=0;i<60;i++){const ds=new Date(d.getTime()-i*864e5).toISOString().split('T')[0];if(h.checks.includes(ds))s++;else if(i>0)break;}return s;})();
     // Last 14 days grid
     const days=[];for(let i=13;i>=0;i--){const d=new Date(Date.now()-i*864e5);days.push({date:d.toISOString().split('T')[0],day:d.getDate(),mon:shortM[d.getMonth()]});}
-    return'<div class="card" style="border:2px solid var(--sage);background:rgba(78,124,106,.03)">'
+    return'<div class="card" style="border:2px solid var(--amber);background:rgba(160,112,48,.04)">'
       +'<div class="row-b" style="margin-bottom:8px"><div><div style="font-size:18px;margin-bottom:4px">🚫</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+h.name+'</div></div>'
       +'<div style="text-align:right"><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="removeCustomHabit('+h.id+')">✕</button></div></div>'
       +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Evitando: '+h.items.map(it=>it.name+' ($'+it.cost+' c/'+it.freqDays+'d)').join(', ')+'</div>'
       +'<div style="display:flex;gap:6px;margin-bottom:10px">'
-      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:var(--sagedim)"><div style="font-size:9px;color:var(--sage);text-transform:uppercase;letter-spacing:1px">Días</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+totalDays+'</div></div>'
-      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:var(--sagedim)"><div style="font-size:9px;color:var(--sage);text-transform:uppercase;letter-spacing:1px">Ahorrado</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(totalSaved)+'</div></div>'
-      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:var(--sagedim)"><div style="font-size:9px;color:var(--sage);text-transform:uppercase;letter-spacing:1px">Racha</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+streak+'d</div></div>'
+      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:rgba(160,112,48,.06);border-color:rgba(160,112,48,.2)"><div style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:1px">Días</div><div style="font-size:20px;font-weight:bold;color:var(--amber)">'+totalDays+'</div></div>'
+      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:rgba(160,112,48,.06);border-color:rgba(160,112,48,.2)"><div style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:1px">Ahorrado</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(totalSaved)+'</div></div>'
+      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:rgba(160,112,48,.06);border-color:rgba(160,112,48,.2)"><div style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:1px">Racha</div><div style="font-size:20px;font-weight:bold;color:var(--amber)">'+streak+'d 🔥</div></div>'
       +'</div>'
       +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Últimos 14 días (toca para marcar):</div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">'
@@ -2489,7 +2494,41 @@ let histView='sim';
 function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
 function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
 function project(mo,ov={}){const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};const hD=ov.delivery!==undefined?ov.delivery:aH('🚗 Delivery');const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');const hO=ov.online!==undefined?ov.online:aH('📦 Compras online');const hT=hD+hM+hO;const ex=ov.extraDebt||0;const bD=ov.bonusToDebt||false;const bS=(+S.inc.bv)||0;let dt=tDebt(),saved=0;const r=[{m:0,dt,pt:nw(),h:hT}];for(let m=1;m<=mo;m++){const payment=Math.min(dt,dpB+ex);dt=Math.max(0,dt-payment);if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);saved+=sav;if(bD&&bS>0&&m%6===0)saved+=bS*0.2;const fr=inc-expB-payment-sav-hT;if(fr>0)saved+=fr*0.3;r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT)});}return r;}
-const ACHS=[{id:'ch1',e:'📊',n:'Primer Capítulo',d:'Subiste tu primer CSV',ck:()=>S.snapshots.length>=1},{id:'s3',e:'🔥',n:'Constancia',d:'3 quincenas seguidas',ck:()=>qStreak()>=3},{id:'s6',e:'🔥',n:'Medio Año',d:'6 quincenas seguidas',ck:()=>qStreak()>=6},{id:'s12',e:'👑',n:'Año Completo',d:'12 capítulos',ck:()=>S.snapshots.length>=12},{id:'i5',e:'🧊',n:'Regla de 48h',d:'5+ impulsos evitados',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).length>=5},{id:'i10',e:'🧊',n:'Autocontrol',d:'10+ impulsos evitados',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).length>=10},{id:'sv15',e:'💰',n:'Babilonio',d:'Ahorro al 15%+',ck:()=>S.savPct>=15},{id:'sv20',e:'💰',n:'Sabio de Babilonia',d:'Ahorro al 20%+',ck:()=>S.savPct>=20},{id:'sc50',e:'📈',n:'Medio Camino',d:'Score 50+',ck:()=>score()>=50},{id:'sc70',e:'📈',n:'En Forma',d:'Score 70+',ck:()=>score()>=70},{id:'sc80',e:'👑',n:'Padre Rico',d:'Score 80+',ck:()=>score()>=80},{id:'nwp',e:'🌟',n:'Patrimonio Positivo',d:'Patrimonio > $0',ck:()=>nw()>0},{id:'hd',e:'🐜',n:'Domador de Hormiga',d:'Hormiga bajó 20%',ck:()=>{if(S.snapshots.length<3)return false;const s=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));const f=Object.values(s[0].hormiga||{}).reduce((a,v)=>a+v.total,0);const l=Object.values(s[s.length-1].hormiga||{}).reduce((a,v)=>a+v.total,0);return f>0&&l<f*0.8;}}];
+const ACHS=[
+  // ══ LOGROS (hitos — cosas que HICISTE) ══
+  {id:'ch1',cat:'logro',e:'📊',n:'Primer Capítulo',d:'Subiste tu primer CSV',info:'Cada CSV que subes crea un capítulo de tu historia financiera. El primer paso es el más importante.',ck:()=>S.snapshots.length>=1},
+  {id:'ch5',cat:'logro',e:'📚',n:'Historiador',d:'5 capítulos guardados',info:'Con 5 capítulos la app detecta tendencias en tus hábitos de gasto.',ck:()=>S.snapshots.length>=5},
+  {id:'s3',cat:'logro',e:'🔥',n:'Constancia',d:'3 quincenas seguidas',info:'3 quincenas seguidas subiendo CSV. La constancia es el hábito más valioso.',ck:()=>qStreak()>=3},
+  {id:'s6',cat:'logro',e:'🔥',n:'Medio Año',d:'6 quincenas seguidas',info:'6 meses monitoreando tu dinero. Ya es un hábito formado.',ck:()=>qStreak()>=6},
+  {id:'s12',cat:'logro',e:'👑',n:'Año Completo',d:'12 capítulos',info:'Un año entero de datos. Ahora puedes comparar enero vs enero.',ck:()=>S.snapshots.length>=12},
+  {id:'i5',cat:'logro',e:'🧊',n:'Regla de 48h',d:'5+ impulsos evitados',info:'Resististe 5 compras impulsivas usando la sala de espera.',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).length>=5},
+  {id:'i10',cat:'logro',e:'🛡️',n:'Autocontrol',d:'10+ impulsos evitados',info:'10 impulsos derrotados. Ya distingues entre querer y necesitar.',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).length>=10},
+  {id:'i25',cat:'logro',e:'🏰',n:'Fortaleza Mental',d:'25+ impulsos evitados',info:'25 impulsos evitados. Tu mente es tu mejor herramienta financiera.',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).length>=25},
+  {id:'sg1',cat:'logro',e:'🎯',n:'Primera Meta',d:'Cumpliste una meta de ahorro',info:'Definiste una meta, apartaste quincena a quincena, y la alcanzaste.',ck:()=>(S.savGoals||[]).some(g=>g.done)},
+  {id:'d1',cat:'logro',e:'⛓️',n:'Primera Liquidación',d:'Liquidaste tu primera deuda',info:'La primera deuda liquidada es la más difícil. Cada siguiente cae más fácil.',ck:()=>S.debts.some(d=>(+d.bal||0)<=0)},
+  {id:'d5',cat:'logro',e:'💪',n:'Cazador de Deudas',d:'5 deudas liquidadas',info:'5 deudas menos. Tu flujo mensual se libera con cada una.',ck:()=>S.debts.filter(d=>(+d.bal||0)<=0).length>=5},
+  {id:'d10',cat:'logro',e:'🏆',n:'Exterminador',d:'10 deudas liquidadas',info:'10 deudas liquidadas. Ya controlas tu dinero.',ck:()=>S.debts.filter(d=>(+d.bal||0)<=0).length>=10},
+  {id:'hd',cat:'logro',e:'🐜',n:'Domador de Hormiga',d:'Hormiga bajó 20%',info:'Redujiste gastos hormiga un 20% vs tu primer capítulo.',ck:()=>{if(S.snapshots.length<3)return false;const s=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));const f=Object.values(s[0].hormiga||{}).reduce((a,v)=>a+v.total,0);const l=Object.values(s[s.length-1].hormiga||{}).reduce((a,v)=>a+v.total,0);return f>0&&l<f*0.8;}},
+  {id:'r1',cat:'logro',e:'🎯',n:'Primer Reto',d:'Completaste un reto',info:'Activaste un reto, cumpliste cada checkpoint, y lo completaste.',ck:()=>(S.survivalRetos||[]).some(r=>r.completed)},
+  {id:'r5',cat:'logro',e:'🔥',n:'Máquina de Retos',d:'5 retos completados',info:'5 retos completados. Los hábitos se forman con repetición.',ck:()=>(S.survivalRetos||[]).filter(r=>r.completed).length>=5},
+  // ══ BADGES (rangos — quién ERES) ══
+  {id:'sc30',cat:'badge',e:'🌱',n:'Despegue',d:'Score 30+',info:'Saliste de la zona roja. Tu flujo empieza a estabilizarse.',ck:()=>score()>=30},
+  {id:'sc50',cat:'badge',e:'⚡',n:'Medio Camino',d:'Score 50+',info:'Score 50 = estable. Ya no sobrevives, empiezas a construir.',ck:()=>score()>=50},
+  {id:'sc70',cat:'badge',e:'🔱',n:'En Forma',d:'Score 70+',info:'Score 70 = saludable. Flujo positivo, ahorro activo, deuda controlada.',ck:()=>score()>=70},
+  {id:'sc80',cat:'badge',e:'👑',n:'Padre Rico',d:'Score 80+',info:'El objetivo final. Tu dinero trabaja para ti, no al revés.',ck:()=>score()>=80},
+  {id:'sv15',cat:'badge',e:'🪙',n:'Babilonio',d:'Ahorro al 15%+',info:'Apartaste 15% antes de gastar. Principio #1 del Hombre más Rico de Babilonia.',ck:()=>S.savPct>=15},
+  {id:'sv20',cat:'badge',e:'💎',n:'Sabio de Babilonia',d:'Ahorro al 20%+',info:'20% de ahorro te pone en el top 5% de disciplina financiera en México.',ck:()=>S.savPct>=20},
+  {id:'nwp',cat:'badge',e:'🌟',n:'Patrimonio Positivo',d:'Patrimonio > $0',info:'Tienes más de lo que debes. Punto de inflexión hacia construir riqueza.',ck:()=>nw()>0},
+  // ══ SECRETOS ══
+  {id:'sec_madrugador',cat:'secret',e:'🌅',n:'Madrugador',d:'???',secret:true,info:'Registraste horas extra antes de las 6am. El éxito se construye temprano.',ck:()=>{const ot=S.overtimeLog||{};return Object.values(ot).some(o=>o.entries?.some(e=>{const h=+(e.from||'').split(':')[0];return h<6;}));}},
+  {id:'sec_nocturno',cat:'secret',e:'🌙',n:'Búho Nocturno',d:'???',secret:true,info:'Registraste horas extra después de las 10pm.',ck:()=>{const ot=S.overtimeLog||{};return Object.values(ot).some(o=>o.entries?.some(e=>{const h=+(e.from||'').split(':')[0];return h>=22;}));}},
+  {id:'sec_streak7',cat:'secret',e:'🔥',n:'Semana de Fuego',d:'???',secret:true,info:'7 días seguidos marcando un hábito personalizado.',ck:()=>(S.customHabits||[]).some(h=>{let s=0;const d=new Date();d.setHours(0,0,0,0);for(let i=0;i<7;i++){if(h.checks?.includes(new Date(d.getTime()-i*864e5).toISOString().split('T')[0]))s++;else break;}return s>=7;})},
+  {id:'sec_1000saved',cat:'secret',e:'💰',n:'Club de los $1,000',d:'???',secret:true,info:'Ahorraste $1,000+ evitando impulsos en la sala de espera.',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).reduce((a,w)=>a+(+w.price||0),0)>=1000},
+  {id:'sec_allpaid',cat:'secret',e:'✅',n:'Quincena Perfecta',d:'???',secret:true,info:'Aplicaste TODOS los pagos de una quincena. Control total.',ck:()=>{const ck2=cycleKey();const items=S.paidItems[ck2]||{};const applied=Object.values(items).filter(v=>v==='applied').length;return applied>=5;}},
+  {id:'sec_nodebt',cat:'secret',e:'🕊️',n:'Libre',d:'???',secret:true,info:'Todas tus deudas están en $0. Libre de deuda.',ck:()=>S.debts.length>0&&S.debts.every(d=>(+d.bal||0)<=0)},
+  {id:'sec_habit30',cat:'secret',e:'💪',n:'30 Días',d:'???',secret:true,info:'30 días marcados en un hábito personalizado. Un mes entero de disciplina.',ck:()=>(S.customHabits||[]).some(h=>(h.checks||[]).length>=30)},
+  {id:'sec_ot20',cat:'secret',e:'⏰',n:'Guerrero del Tiempo',d:'???',secret:true,info:'Registraste 20+ horas extra en un ciclo. Tu esfuerzo vale.',ck:()=>{const ot=S.overtimeLog||{};return Object.values(ot).some(o=>o.entries?.reduce((a,e)=>a+(+e.hours||0),0)>=20);}},
+];
 function checkAch(){let nw2=[];ACHS.forEach(a=>{if(S.achievements.find(x=>x.id===a.id))return;if(a.ck()){S.achievements.push({id:a.id,at:new Date().toISOString()});nw2.push(a);}});if(nw2.length){sv();nw2.forEach(a=>toast('🏆 '+a.n));}}
 
 function rHistoria(){
@@ -2522,12 +2561,83 @@ function rHistoria(){
   if(histView==='evo'){
     const cs=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
     if(cs.length<2){ct=`<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">Necesitas al menos 2 capítulos. Llevas ${cs.length}.</div></div>`;}
-    else{const w=320,h=140;const mkC=(title,vals,color)=>{const last=vals[vals.length-1],first=vals[0],diff=last-first;return`<div class="card"><div class="row-b"><div class="ct" style="margin-bottom:0">${title}</div><div style="font-size:12px;font-weight:bold;color:${diff>=0?'var(--sage)':'var(--terra)'}">${diff>=0?'+':''}${fx(diff)}</div></div><div style="text-align:center;overflow-x:auto"><svg viewBox="0 0 ${w} ${h+14}" style="max-width:${w}px;width:100%">${svgFill(vals,w,h,color)}${svgLine(vals,w,h,color,false)}${vals.map((v,i)=>{const x=12+i/(vals.length-1)*(w-24),mn=Math.min(...vals),mx2=Math.max(...vals),rn=mx2-mn||1,y=12+(1-(v-mn)/rn)*(h-24);return`<circle cx="${x}" cy="${y}" r="3" fill="${color}"/><text x="${x}" y="${y-8}" text-anchor="middle" font-size="8" fill="#5C5650">${fx(v)}</text>`;}).join('')}${cs.map((_,i)=>`<text x="${12+i/(cs.length-1)*(w-24)}" y="${h+11}" text-anchor="middle" font-size="9" fill="#9A9590">C${i+1}</text>`).join('')}</svg></div></div>`;};
-    ct=`<div class="card card-sage"><div class="ct">📈 Evolución Financiera</div><div style="font-size:12px;color:var(--txt2)">Tus números quincena a quincena.</div></div>`+mkC('📊 Patrimonio Neto',cs.map(s=>s.patrimonio),'#4E7C6A')+mkC('⛓️ Deuda Total',cs.map(s=>s.deudaTotal),'#B85C4A')+mkC('🐜 Gastos Hormiga',cs.map(s=>Object.values(s.hormiga||{}).reduce((a,v)=>a+v.total,0)),'#A07030')+mkC('📈 Score',cs.map(s=>s.score),'#4A6E8C');}
+    else{
+      const fmtV=(v,isScore)=>isScore?v.toString():fx(v);
+      const mkC=(title,vals,color,isScore)=>{
+        if(!vals.length)return'';
+        const last=vals[vals.length-1],first=vals[0],diff=last-first;
+        const mn=Math.min(...vals),mx2=Math.max(...vals);
+        const rn=mx2-mn||1;
+        const w=360,h=180,pl=60,pr=14,pt2=20,pb2=26;
+        const cw=w-pl-pr,ch=h-pt2-pb2;
+        const toX=(i)=>pl+(vals.length>1?i/(vals.length-1):0.5)*cw;
+        const toY=(v)=>pt2+(1-(v-mn)/rn)*ch;
+        // Y-axis: 3-5 ticks
+        const steps=Math.min(4,Math.max(2,vals.length));
+        const yTicks=[];for(let i=0;i<=steps;i++){const v=mn+rn*i/steps;yTicks.push(Math.round(v));}
+        const diffLabel=isScore?(diff>=0?'+':'')+diff:(diff>=0?'+':'')+fx(diff);
+        return`<div class="card"><div class="row-b"><div class="ct" style="margin-bottom:0">${title}</div><div style="font-size:12px;font-weight:bold;color:${diff>=0?'var(--sage)':'var(--terra)'}">${diffLabel}</div></div><svg viewBox="0 0 ${w} ${h}" style="width:100%;display:block">${yTicks.map(v=>`<line x1="${pl}" y1="${toY(v)}" x2="${pl+cw}" y2="${toY(v)}" stroke="#e8e3de" stroke-width=".5" ${v!==yTicks[0]&&v!==yTicks[yTicks.length-1]?'stroke-dasharray="4,3"':''}/><text x="${pl-8}" y="${toY(v)+3}" text-anchor="end" font-size="8" font-family="Georgia,serif" fill="#9A9590">${fmtV(v,isScore)}</text>`).join('')}${(()=>{const pts=vals.map((v,i)=>toX(i)+','+toY(v));return'<polygon points="'+pl+','+toY(mn)+' '+pts.join(' ')+' '+(pl+cw)+','+toY(mn)+'" fill="'+color+'" opacity=".08"/><polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linejoin="round"/>';})()}${vals.map((v,i)=>`<circle cx="${toX(i)}" cy="${toY(v)}" r="4" fill="${color}"/><text x="${toX(i)}" y="${toY(v)-10}" text-anchor="middle" font-size="8" font-weight="bold" font-family="Georgia,serif" fill="#5C5650">${fmtV(v,isScore)}</text>`).join('')}${vals.map((_,i)=>`<text x="${toX(i)}" y="${h-6}" text-anchor="middle" font-size="9" font-family="Georgia,serif" fill="#9A9590">C${i+1}</text>`).join('')}</svg></div>`;
+      };
+    ct=`<div class="card card-sage"><div class="ct">📈 Evolución Financiera</div><div style="font-size:12px;color:var(--txt2)">Tus números quincena a quincena.</div></div>`+mkC('📊 Patrimonio Neto',cs.map(s=>s.patrimonio),'#4E7C6A')+mkC('⛓️ Deuda Total',cs.map(s=>s.deudaTotal),'#B85C4A')+mkC('🐜 Gastos Hormiga',cs.map(s=>Object.values(s.hormiga||{}).reduce((a,v)=>a+v.total,0)),'#A07030')+mkC('📈 Score',cs.map(s=>s.score),'#4A6E8C',true);}
   }
 
   // ═══ LOGROS ═══
-  if(histView==='logros'){const ul=S.achievements||[];ct=`<div class="card card-sage"><div class="ct">🏆 Logros</div><div style="font-size:12px;color:var(--txt2)">${ul.length} de ${ACHS.length} desbloqueados</div><div class="pw" style="margin-top:8px"><div class="pb" style="width:${(ul.length/ACHS.length*100).toFixed(0)}%;background:var(--sage)"></div></div></div>${ACHS.map(a=>{const u=ul.find(x=>x.id===a.id);return`<div class="card" style="${u?'':'opacity:.5'}"><div class="row" style="gap:12px"><span style="font-size:28px;${u?'':'filter:grayscale(1)'}">${a.e}</span><div style="flex:1"><div style="font-weight:bold;color:${u?'var(--sage2)':'var(--muted)'};font-size:13px">${a.n}</div><div style="font-size:11px;color:var(--muted)">${a.d}</div></div>${u?`<span class="badge bdg-sage">${fmtDate(u.at.split('T')[0])}</span>`:'<span class="badge" style="background:var(--bg2);color:var(--muted);border:1px solid var(--border)">🔒</span>'}</div></div>`;}).join('')}`;}
+  if(histView==='logros'){
+    const ul=S.achievements||[];
+    const logros=ACHS.filter(a=>!a.secret&&!a.badge);
+    const badges=ACHS.filter(a=>a.badge);
+    const secrets=ACHS.filter(a=>a.secret);
+    const logrosUn=logros.filter(a=>ul.find(x=>x.id===a.id)).length;
+    const badgesUn=badges.filter(a=>ul.find(x=>x.id===a.id)).length;
+    const secretsUn=secrets.filter(a=>ul.find(x=>x.id===a.id)).length;
+    const totalUn=logrosUn+badgesUn+secretsUn;
+    const totalAll=ACHS.length;
+
+    const renderItem=(a)=>{
+      const u=ul.find(x=>x.id===a.id);
+      if(a.secret&&!u)return'';
+      const desc=a.secret&&!u?'???':a.d;
+      const infoEsc=a.info?a.info.replace(/'/g,"\\'"):'';
+      const bCol=a.secret?'var(--amber)':a.badge?'var(--sky)':'var(--sage)';
+      const bgCol=a.secret?'rgba(160,112,48,.06)':a.badge?'rgba(74,110,140,.05)':'rgba(78,124,106,.04)';
+      return'<div style="display:flex;align-items:center;gap:12px;padding:12px;border-radius:10px;margin-bottom:6px;'+(u?'background:'+bgCol+';border-left:3px solid '+bCol:'opacity:.5;background:var(--bg)')+'"><span style="font-size:26px;'+(u?'':'filter:grayscale(1)')+'">'+a.e+'</span><div style="flex:1;min-width:0"><div style="font-weight:bold;color:'+(u?bCol:'var(--muted)')+';font-size:13px">'+a.n+(a.secret?'<span style="font-size:8px;background:var(--amberdim);color:var(--amber);padding:1px 5px;border-radius:4px;margin-left:6px;font-weight:bold">SECRETO</span>':'')+'</div><div style="font-size:11px;color:var(--muted)">'+desc+'</div></div><div class="row" style="gap:4px;flex-shrink:0">'+(infoEsc?'<button class="info-btn" onclick="event.stopPropagation();showInfo(\''+a.n.replace(/'/g,"\\'")+'\',\''+(u?infoEsc:'🔒 <strong>Bloqueado</strong><br><br>Pista: '+desc.replace(/'/g,"\\'")+'.<br><br>Completa este '+(a.badge?'badge':'logro')+' para desbloquear la explicación completa.')+'\')">?</button>':'')+(u?'<span class="badge bdg-sage" style="font-size:9px">'+fmtDate(u.at.split('T')[0])+'</span>':'<span style="font-size:14px;color:var(--muted)">🔒</span>')+'</div></div>';
+    };
+
+    ct=`<div class="card card-sage">
+      <div class="ct">🏆 Logros y Badges</div>
+      <div style="font-size:12px;color:var(--txt2)">${totalUn} de ${totalAll} desbloqueados</div>
+      <div class="pw" style="margin-top:8px"><div class="pb" style="width:${(totalUn/totalAll*100).toFixed(0)}%;background:var(--sage)"></div></div>
+      ${secrets.length-secretsUn>0?`<div style="font-size:10px;color:var(--amber);margin-top:6px">🔮 ${secrets.length-secretsUn} secreto${secrets.length-secretsUn>1?'s':''} por descubrir...</div>`:''}
+    </div>
+
+    <!-- BADGES -->
+    <div class="card" style="border-color:rgba(74,110,140,.25)">
+      <div class="ct">🎖️ Badges — Tu Rango ${ib('badges','Badges')}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px">${badgesUn} de ${badges.length} desbloqueados</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-bottom:12px">
+        ${badges.map(a=>{
+          const u2=ul.find(x=>x.id===a.id);
+          const infoEsc2=a.info?a.info.replace(/'/g,"\\'"):'';
+          const hintEsc2='🔒 <strong>Bloqueado</strong><br><br>Pista: '+a.d.replace(/'/g,"\\'")+'. Sigue avanzando para desbloquearlo.';
+          return'<div style="text-align:center;width:70px;cursor:pointer" onclick="showInfo(\''+a.n.replace(/'/g,"\\'")+'\',\''+(u2?infoEsc2:hintEsc2)+'\')"><div style="font-size:32px;margin-bottom:4px;'+(u2?'':'filter:grayscale(1);opacity:.35')+'">'+a.e+'</div><div style="font-size:10px;font-weight:bold;color:'+(u2?'var(--sky)':'var(--muted)')+'">'+a.n+'</div><div style="font-size:9px;color:var(--muted)">'+a.d+'</div>'+(u2?'<div style="font-size:8px;color:var(--sky);margin-top:2px">'+fmtDate(u2.at.split('T')[0])+'</div>':'')+'</div>';
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- LOGROS -->
+    <div class="card">
+      <div class="ct">🏆 Logros ${ib('logrosInfo','Logros')}</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${logrosUn} de ${logros.length}. Cada logro marca un momento importante de tu camino.</div>
+      ${logros.map(a=>renderItem(a)).join('')}
+    </div>
+
+    <!-- SECRETOS -->
+    ${secretsUn>0?`<div class="card" style="border-color:rgba(160,112,48,.25);background:rgba(160,112,48,.02)">
+      <div class="ct" style="color:var(--amber)">🔮 Logros Secretos</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${secretsUn} descubierto${secretsUn>1?'s':''}. Se revelan solo al completarlos.</div>
+      ${secrets.filter(a=>ul.find(x=>x.id===a.id)).map(a=>renderItem(a)).join('')}
+    </div>`:''}`;
+  }
 
   // ═══ TIMELINE ═══
   if(histView==='timeline'){
@@ -2714,9 +2824,9 @@ function rHistoria(){
   if(histView==='sim')setTimeout(runSim,50);
 }
 function runSim(){const sl=document.getElementById('simSl');if(!sl)return;const rg=sl.querySelectorAll('input[type=range]');const mi=+(rg[0]?.value)||0,dl=+(rg[1]?.value)||0,ol=+(rg[2]?.value)||0,sp=+(rg[3]?.value)||10,ex=+(rg[4]?.value)||0;const bn=document.getElementById('slBon')?.checked||false;const base=project(12),mod=project(12,{minisuper:mi,delivery:dl,online:ol,savPct:sp,extraDebt:ex,bonusToDebt:bn});const w=320,h=160,all=[...base.map(p=>p.pt),...mod.map(p=>p.pt)],mn=Math.min(...all),mx=Math.max(...all),rn=mx-mn||1,pd=12,cw=w-pd*2,ch=h-pd*2;const toP=a=>a.map((p,i)=>({x:pd+i/(a.length-1)*cw,y:pd+(1-(p.pt-mn)/rn)*ch}));const bP=toP(base),mP=toP(mod),bL=bP.map(p=>`${p.x},${p.y}`).join(' '),mL=mP.map(p=>`${p.x},${p.y}`).join(' ');
-document.getElementById('simCnv').innerHTML=`<svg viewBox="0 0 ${w} ${h+16}" style="width:100%;max-width:${w}px">${[0,.25,.5,.75,1].map(p=>{const y2=pd+p*ch;return`<line x1="${pd}" y1="${y2}" x2="${pd+cw}" y2="${y2}" stroke="#E5E0D5" stroke-width=".5"/>`;}).join('')}<polyline points="${bL}" fill="none" stroke="#B85C4A" stroke-width="1.5" stroke-dasharray="5,3"/><polygon points="${pd},${pd+ch} ${mL} ${pd+cw},${pd+ch}" fill="#4E7C6A" opacity=".1"/><polyline points="${mL}" fill="none" stroke="#4E7C6A" stroke-width="2.5"/><circle cx="${mP[12].x}" cy="${mP[12].y}" r="4" fill="#4E7C6A"/><circle cx="${bP[12].x}" cy="${bP[12].y}" r="3" fill="#B85C4A"/>${['Hoy','3m','6m','9m','12m'].map((l,i)=>`<text x="${pd+i/4*cw}" y="${h+12}" text-anchor="middle" font-size="9" fill="#9A9590">${l}</text>`).join('')}<line x1="${pd}" y1="${h+2}" x2="${pd+18}" y2="${h+2}" stroke="#B85C4A" stroke-width="1.5" stroke-dasharray="4,2"/><text x="${pd+22}" y="${h+5}" font-size="8" fill="#B85C4A">Actual</text><line x1="${pd+80}" y1="${h+2}" x2="${pd+98}" y2="${h+2}" stroke="#4E7C6A" stroke-width="2"/><text x="${pd+102}" y="${h+5}" font-size="8" fill="#4E7C6A">Con cambios</text></svg>`;
+document.getElementById('simCnv').innerHTML=`<svg viewBox="0 0 ${w+40} ${h+16}" style="width:100%;max-width:${w+40}px">${[0,.5,1].map(p=>{const y2=pd+p*ch;const val=fx(Math.round(mx-(mx-mn)*p));return`<line x1="${pd+40}" y1="${y2}" x2="${pd+cw+40}" y2="${y2}" stroke="#E5E0D5" stroke-width=".5"/><text x="${pd+36}" y="${y2+3}" text-anchor="end" font-size="8" fill="#9A9590">${val}</text>`;}).join('')}<polyline points="${bP.map(p=>`${p.x+40},${p.y}`).join(' ')}" fill="none" stroke="#B85C4A" stroke-width="1.5" stroke-dasharray="5,3"/><polygon points="${pd+40},${pd+ch} ${mP.map(p=>`${p.x+40},${p.y}`).join(' ')} ${pd+cw+40},${pd+ch}" fill="#4E7C6A" opacity=".1"/><polyline points="${mP.map(p=>`${p.x+40},${p.y}`).join(' ')}" fill="none" stroke="#4E7C6A" stroke-width="2.5"/><circle cx="${mP[12].x+40}" cy="${mP[12].y}" r="4" fill="#4E7C6A"/><circle cx="${bP[12].x+40}" cy="${bP[12].y}" r="3" fill="#B85C4A"/>${['Hoy','3m','6m','9m','12m'].map((l,i)=>`<text x="${pd+40+i/4*cw}" y="${h+12}" text-anchor="middle" font-size="9" fill="#9A9590">${l}</text>`).join('')}<line x1="${pd+40}" y1="${h+2}" x2="${pd+58}" y2="${h+2}" stroke="#B85C4A" stroke-width="1.5" stroke-dasharray="4,2"/><text x="${pd+62}" y="${h+5}" font-size="8" fill="#B85C4A">Actual</text><line x1="${pd+120}" y1="${h+2}" x2="${pd+138}" y2="${h+2}" stroke="#4E7C6A" stroke-width="2"/><text x="${pd+142}" y="${h+5}" font-size="8" fill="#4E7C6A">Con cambios</text></svg>`;
 const bF=base[12],mF=mod[12],pD=mF.pt-bF.pt,dD=bF.dt-mF.dt,hS=base.reduce((a,p)=>a+p.h,0)-mod.reduce((a,p)=>a+p.h,0);
-document.getElementById('simRes').innerHTML=`<div class="g2"><div style="text-align:center"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Patrimonio 12m</div><div style="font-size:11px;color:var(--terra);text-decoration:line-through">${fx(bF.pt)}</div><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(mF.pt)}</div></div><div style="text-align:center"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Deuda 12m</div><div style="font-size:11px;color:var(--terra);text-decoration:line-through">${fx(bF.dt)}</div><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(mF.dt)}</div></div></div>`;
+document.getElementById('simRes').innerHTML=`<div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Hoy</div><div style="font-size:13px;font-weight:bold;color:var(--txt)">${fx(mod[0].pt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Patrimonio 12m</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.pt)}</div><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(mF.pt)}</div></div></div><div style="display:flex;gap:6px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda hoy</div><div style="font-size:13px;font-weight:bold;color:var(--terra)">${fx(mod[0].dt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda 12m</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.dt)}</div><div style="font-size:18px;font-weight:bold;color:${mF.dt>0?'var(--terra)':'var(--sage)'}">${fx(mF.dt)}</div></div></div>`;
 document.getElementById('simImp').innerHTML=`<div class="ct">💡 Impacto</div>${pD?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">${pD>0?'📈':'📉'} Patrimonio: <strong style="color:${pD>0?'var(--sage)':'var(--terra)'}">${pD>0?'+':''}${fx(pD)}</strong> en 12m</div>`:''}${dD>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⛓️ Liquidas <strong style="color:var(--sage)">${fx(dD)} más</strong> de deuda</div>`:''}${hS>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">🐜 Ahorras <strong style="color:var(--sage)">${fx(hS)}</strong> en hormiga/año</div>`:''}${!pD&&dD<=0&&hS<=0?'<div style="font-size:12px;color:var(--muted)">Mueve los sliders para ver el impacto.</div>':''}`;
 }
 

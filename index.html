@@ -2022,7 +2022,10 @@ function rHabitos(){
   <div class="card" style="border-color:rgba(160,112,48,.25);background:rgba(160,112,48,.02)">
     <div class="ct">🚫 Crear hábito a eliminar</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Registra un gasto recurrente que quieres dejar (alcohol, cigarro, comida chatarra). Cada día que resistas, se acumula el ahorro.</div>
-    <div style="margin-bottom:10px"><label>Nombre del hábito</label><input type="text" id="chName" placeholder="Ej: No tomar alcohol" style="width:100%"></div>
+    <div class="g2" style="margin-bottom:10px">
+      <div><label>Nombre del hábito</label><input type="text" id="chName" placeholder="Ej: No tomar alcohol" style="width:100%"></div>
+      <div><label>Duración (días)</label><input type="number" id="chDays" placeholder="30" value="30" min="7" max="365"></div>
+    </div>
     <div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Gastos que evitas:</div>
     <div id="chItems">
       <div class="ch-item-row" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px">
@@ -2390,7 +2393,7 @@ function exportOvertime(){
 function addCustomHabit(){
   const name=document.getElementById('chName')?.value?.trim();
   if(!name){toast('Ponle nombre al hábito');return;}
-  // Collect items
+  const durationDays=+(document.getElementById('chDays')?.value)||30;
   const items=[];
   document.querySelectorAll('.ch-item-row').forEach(row=>{
     const n=row.querySelector('.ch-in')?.value?.trim()||'';
@@ -2401,7 +2404,8 @@ function addCustomHabit(){
   if(!items.length){toast('Agrega al menos un gasto que evitas');return;}
   const dailySave=items.reduce((a,it)=>a+it.cost/it.freqDays,0);
   if(!S.customHabits)S.customHabits=[];
-  S.customHabits.push({id:Date.now(),name,items,dailySave:Math.round(dailySave*100)/100,checks:[],createdAt:Date.now()});
+  const startDate=new Date().toISOString().split('T')[0];
+  S.customHabits.push({id:Date.now(),name,items,dailySave:Math.round(dailySave*100)/100,checks:[],createdAt:Date.now(),startDate,durationDays});
   sv();toast('🎯 Hábito creado: '+name);rHabitos();
 }
 function checkCustomHabit(id,date){
@@ -2418,34 +2422,57 @@ function removeCustomHabit(id){
 }
 function renderCustomHabits(){
   if(!S.customHabits?.length)return'';
-  const today=new Date().toISOString().split('T')[0];
+  // Migrate old habits without startDate
+  S.customHabits.forEach(h=>{
+    if(!h.startDate){h.startDate=new Date(h.createdAt||Date.now()).toISOString().split('T')[0];h.durationDays=h.durationDays||30;sv();}
+  });
+  const today=new Date();today.setHours(0,0,0,0);
+  const todayISO=today.toISOString().split('T')[0];
   const shortM=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   return S.customHabits.map(h=>{
+    const startD=h.startDate?new Date(h.startDate+'T12:00'):new Date(h.createdAt);
+    startD.setHours(0,0,0,0);
+    const dur=h.durationDays||30;
     const totalDays=h.checks.length;
     const totalSaved=Math.round(totalDays*h.dailySave);
-    const todayChecked=h.checks.includes(today);
-    const streak=(()=>{let s=0;const d=new Date();d.setHours(0,0,0,0);for(let i=0;i<60;i++){const ds=new Date(d.getTime()-i*864e5).toISOString().split('T')[0];if(h.checks.includes(ds))s++;else if(i>0)break;}return s;})();
-    // Last 14 days grid
-    const days=[];for(let i=13;i>=0;i--){const d=new Date(Date.now()-i*864e5);days.push({date:d.toISOString().split('T')[0],day:d.getDate(),mon:shortM[d.getMonth()]});}
+    const daysSinceStart=Math.max(0,Math.floor((today-startD)/864e5));
+    const daysLeft=Math.max(0,dur-daysSinceStart);
+    const pctProgress=Math.min(100,Math.round(daysSinceStart/dur*100));
+    const pctChecked=Math.min(100,Math.round(totalDays/dur*100));
+    const streak=(()=>{let s=0;for(let i=0;i<60;i++){const ds=new Date(today.getTime()-i*864e5).toISOString().split('T')[0];if(h.checks.includes(ds))s++;else if(i>0)break;}return s;})();
+    // Build days grid from startDate for duration
+    const days=[];
+    for(let i=0;i<dur;i++){
+      const d=new Date(startD.getTime()+i*864e5);
+      const iso=d.toISOString().split('T')[0];
+      const isPast=d<today;
+      const isToday2=iso===todayISO;
+      const isFuture=d>today;
+      days.push({date:iso,day:d.getDate(),mon:shortM[d.getMonth()],isPast,isToday:isToday2,isFuture});
+    }
+    const missed=days.filter(d=>d.isPast&&!h.checks.includes(d.date)).length;
+    
     return'<div class="card" style="border:2px solid var(--amber);background:rgba(160,112,48,.04)">'
       +'<div class="row-b" style="margin-bottom:8px"><div><div style="font-size:18px;margin-bottom:4px">🚫</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+h.name+'</div></div>'
       +'<div style="text-align:right"><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="removeCustomHabit('+h.id+')">✕</button></div></div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Evitando: '+h.items.map(it=>it.name+' ($'+it.cost+' c/'+it.freqDays+'d)').join(', ')+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px;line-height:1.5">Evitando: '+h.items.map(it=>it.name+' ($'+it.cost+' c/'+it.freqDays+'d)').join(', ')+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:10px">Día '+(daysSinceStart+1)+' de '+dur+' · '+daysLeft+' días restantes'+(missed>0?' · <span style="color:var(--terra)">'+missed+' fallado'+(missed>1?'s':'')+'</span>':'')+'</div>'
+      +'<div class="pw" style="margin-bottom:10px;height:6px"><div class="pb" style="width:'+pctChecked+'%;background:'+(pctChecked>=90?'var(--sage)':'var(--amber)')+'"></div></div>'
       +'<div style="display:flex;gap:6px;margin-bottom:10px">'
-      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:rgba(160,112,48,.06);border-color:rgba(160,112,48,.2)"><div style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:1px">Días</div><div style="font-size:20px;font-weight:bold;color:var(--amber)">'+totalDays+'</div></div>'
+      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:rgba(160,112,48,.06);border-color:rgba(160,112,48,.2)"><div style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:1px">Cumplidos</div><div style="font-size:20px;font-weight:bold;color:var(--amber)">'+totalDays+'/'+dur+'</div></div>'
       +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:rgba(160,112,48,.06);border-color:rgba(160,112,48,.2)"><div style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:1px">Ahorrado</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(totalSaved)+'</div></div>'
       +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:rgba(160,112,48,.06);border-color:rgba(160,112,48,.2)"><div style="font-size:9px;color:var(--amber);text-transform:uppercase;letter-spacing:1px">Racha</div><div style="font-size:20px;font-weight:bold;color:var(--amber)">'+streak+'d 🔥</div></div>'
       +'</div>'
-      +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Últimos 14 días (toca para marcar):</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Toca cada día que cumpliste:</div>'
       +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">'
       +days.map(d=>{
         const done=h.checks.includes(d.date);
-        const isToday=d.date===today;
-        return'<button style="min-width:40px;height:40px;border-radius:8px;border:2px solid '+(done?'var(--sage)':isToday?'var(--amber)':'var(--border)')+';background:'+(done?'var(--sagedim)':'var(--bg)')+';color:'+(done?'var(--sage)':'var(--muted)')+';font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:2px 4px;'+(isToday&&!done?'box-shadow:0 0 0 2px rgba(160,112,48,.2);':'')
-        +'" onclick="checkCustomHabit('+h.id+',\''+d.date+'\')">'+(done?'<span style="font-size:12px">✓</span>':'')+'<span>'+d.day+' '+d.mon+'</span></button>';
+        const missedDay=d.isPast&&!done;
+        return'<button style="min-width:40px;height:40px;border-radius:8px;border:2px solid '+(done?'var(--sage)':d.isToday?'var(--amber)':missedDay?'rgba(184,92,74,.3)':'var(--border)')+';background:'+(done?'var(--sagedim)':missedDay?'rgba(184,92,74,.06)':d.isFuture?'rgba(200,200,200,.1)':'var(--bg)')+';color:'+(done?'var(--sage)':missedDay?'var(--terra)':'var(--muted)')+';font-size:9px;font-weight:bold;cursor:'+(d.isFuture?'default':'pointer')+';font-family:Georgia,serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:2px 4px;'+(d.isToday&&!done?'box-shadow:0 0 0 2px rgba(160,112,48,.25);':'')+(d.isFuture?'opacity:.4;':'')
+        +'" '+(d.isFuture?'':'onclick="checkCustomHabit('+h.id+',\''+d.date+'\')"')+'>'+(done?'<span style="font-size:12px">✓</span>':missedDay?'<span style="font-size:10px">✗</span>':'')+'<span>'+d.day+' '+d.mon+'</span></button>';
       }).join('')
       +'</div>'
-      +'<div style="font-size:11px;color:var(--sage);line-height:1.5">💰 Ahorro diario: '+fx(Math.round(h.dailySave))+' · Proyección mensual: '+fx(Math.round(h.dailySave*30))+'</div>'
+      +'<div style="font-size:11px;color:var(--sage);line-height:1.5">💰 Ahorro diario: '+fx(Math.round(h.dailySave))+' · Si cumples los '+dur+' días: '+fx(Math.round(h.dailySave*dur))+'</div>'
     +'</div>';
   }).join('');
 }

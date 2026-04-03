@@ -2004,7 +2004,9 @@ function rHabitos(){
       +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
       +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:10px" onclick="logOvertime()">⏰ Registrar horas</button>'
       +(ot.entries.length>0?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Historial</div>'
-        +ot.entries.slice().reverse().map(e=>'<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px"><div><span style="color:var(--txt)">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span>'+(e.desc?' · '+e.desc:'')+'</div><div style="text-align:right"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong> <span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span></div></div>').join(''):'')
+        +ot.entries.slice().reverse().map(e=>'<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px"><div><span style="color:var(--txt)">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span>'+(e.desc?' · '+e.desc:'')+'</div><div style="text-align:right"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong> <span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span></div></div>').join('')
+        +'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="exportOvertime()">📄 Exportar reporte .txt</button>'
+        +'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="exportOvertime()">📋 Exportar reporte .txt</button>':'')
       +'</div>';
   }catch{return'';}})()}
   `:''}
@@ -2290,6 +2292,70 @@ function logOvertime(){
   if(existingExtra){existingExtra.amt=(+existingExtra.amt||0)+earned;}
   else{S.extras.push({id:Date.now(),name:'Horas extra ('+ck+')',amt:earned,tipo:'unico',date:new Date().toISOString().split('T')[0]});}
   sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rHabitos();
+}
+function exportOvertime(){
+  const ck=cycleKey();
+  const ot=(S.overtimeLog||{})[ck];
+  if(!ot||!ot.entries.length){toast('No hay horas registradas');return;}
+  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const to12=(t)=>{if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+String(m).padStart(2,'0')+' '+ampm;};
+  // Sort oldest first
+  const sorted=[...ot.entries].sort((a,b)=>a.date.localeCompare(b.date));
+  let totalHrs=0;
+  const lines=sorted.map(e=>{
+    const d=new Date(e.date+'T12:00');
+    const dd=String(d.getDate()).padStart(2,'0');
+    const mm=String(d.getMonth()+1).padStart(2,'0');
+    const mesNombre=meses[d.getMonth()];
+    totalHrs+=e.hours;
+    return mesNombre+' '+dd+' - '+to12(e.from)+' a '+to12(e.to)+' / '+e.hours.toFixed(1)+' hrs / '+(e.desc||'Sin descripción');
+  });
+  let txt='REPORTE DE HORAS EXTRA\n';
+  txt+='Periodo: '+ck+'\n';
+  txt+='Tarifa: $'+ot.rate+'/hr\n';
+  txt+='================================\n\n';
+  txt+=lines.join('\n');
+  txt+='\n\n================================\n';
+  txt+='Total: '+totalHrs.toFixed(1)+' horas = $'+Math.round(totalHrs*ot.rate)+'\n';
+  const blob=new Blob([txt],{type:'text/plain'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='horas-extra-'+ck+'.txt';a.click();
+  URL.revokeObjectURL(url);
+  toast('📄 Reporte exportado');
+}
+function exportOvertime(){
+  const ck=cycleKey();
+  const ot=(S.overtimeLog||{})[ck];
+  if(!ot||!ot.entries.length){toast('No hay horas registradas');return;}
+  const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const to12=(t)=>{if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+String(m).padStart(2,'0')+' '+ampm;};
+  // Sort newest to oldest (as requested)
+  const sorted=[...ot.entries].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const totalHrs=sorted.reduce((a,e)=>a+(+e.hours||0),0);
+  const totalMoney=Math.round(totalHrs*ot.rate);
+  let txt='REPORTE DE HORAS EXTRA\n';
+  txt+='Ciclo: '+ck+'\n';
+  txt+='Tarifa: $'+ot.rate+'/hr\n';
+  txt+='================================\n\n';
+  sorted.forEach(e=>{
+    const d=new Date(e.date+'T12:00');
+    const dd=String(d.getDate()).padStart(2,'0');
+    const mm=String(d.getMonth()+1).padStart(2,'0');
+    const mesNombre=MESES[d.getMonth()];
+    txt+=mesNombre+' '+d.getDate()+'\n';
+    txt+=dd+'-'+mm+' - '+to12(e.from)+' a '+to12(e.to)+' / '+e.hours.toFixed(1)+' hrs / '+(e.desc||'Sin descripción')+'\n\n';
+  });
+  txt+='================================\n';
+  txt+='Total: '+totalHrs.toFixed(1)+' horas = $'+totalMoney.toLocaleString('es-MX')+'\n';
+  // Download
+  const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='horas_extra_'+ck.replace(/\s/g,'_')+'.txt';
+  document.body.appendChild(a);a.click();document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('📋 Reporte descargado');
 }
 
 function addWait(){

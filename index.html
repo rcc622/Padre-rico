@@ -1712,12 +1712,34 @@ function rPlan(){
       </div>
     </div>
 
-    <!-- OVERTIME CALCULATOR -->
-    <div class="card card-sky" style="text-align:center;padding:16px">
-      <div style="font-size:13px;color:var(--sky);font-weight:bold;margin-bottom:6px">⏰ ¿Necesitas cubrir un déficit?</div>
-      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Calcula cuántas horas extra necesitas para salir tablas.</div>
-      <button class="btn btn-sky btn-sm" onclick="showOvertimeCalc()">Calcular horas extra</button>
-    </div>
+    <!-- OVERTIME -->
+    ${(()=>{
+      const ck2=cycleKey();
+      const ot2=(S.overtimeLog||{})[ck2];
+      if(ot2?.accepted){
+        // Mini dashboard
+        const tH=ot2.entries.reduce((a,e)=>a+(+e.hours||0),0);
+        const tM=Math.round(tH*ot2.rate);
+        const p2=ot2.targetHrs>0?Math.min(100,Math.round(tH/ot2.targetHrs*100)):0;
+        return`<div class="card" style="border:2px solid var(--sky);background:rgba(74,110,140,.04);padding:14px">
+          <div class="row-b" style="margin-bottom:8px">
+            <div><div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold">⏰ Horas extra</div></div>
+            <div style="font-size:14px;font-weight:bold;color:var(--sky)">${tH.toFixed(1)} / ${ot2.targetHrs.toFixed(1)}h</div>
+          </div>
+          <div class="pw" style="height:5px;margin-bottom:6px"><div class="pb" style="width:${p2}%;background:${p2>=100?'var(--sage)':'var(--sky)'}"></div></div>
+          <div class="row-b"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(tM)} ganados</span><span style="font-size:11px;color:var(--muted)">Faltan ${fx(Math.max(0,Math.round(ot2.targetHrs*ot2.rate-tM)))}</span></div>
+          <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%" onclick="habitView='retos';go('habitos')">Registrar horas →</button>
+        </div>`;
+      }
+      if(showNext){
+        return`<div class="card card-sky" style="text-align:center;padding:16px">
+          <div style="font-size:13px;color:var(--sky);font-weight:bold;margin-bottom:6px">⏰ ¿Necesitas cubrir un déficit?</div>
+          <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Calcula cuántas horas extra necesitas para salir tablas.</div>
+          <button class="btn btn-sky btn-sm" onclick="showOvertimeCalc()">Calcular horas extra</button>
+        </div>`;
+      }
+      return'';
+    })()}
 
     <!-- PAGOS OBLIGATORIOS -->
     <div class="card">
@@ -1977,8 +1999,9 @@ function rHabitos(){
       +'<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--sky);font-weight:bold">'+totalHrs.toFixed(1)+' / '+ot.targetHrs.toFixed(1)+' horas</span><span style="font-size:11px;color:var(--muted)">'+pct+'%</span></div>'
       +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'
       +'<div class="row-b" style="margin-bottom:12px"><span style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(totalMoney)+' ganados</span><span style="font-size:11px;color:var(--muted)">Faltan '+fx(Math.max(0,targetMoney-totalMoney))+'</span></div>'
-      +'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Registrar horas de hoy</div>'
-      +'<div class="g2" style="margin-bottom:8px"><div><label>De (hora)</label><input type="time" id="otFrom" value="18:00"></div><div><label>A (hora)</label><input type="time" id="otTo" value="20:00"></div></div>'
+      +'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Registrar horas</div>'
+      +'<div style="margin-bottom:8px"><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'" style="width:100%"></div>'
+      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px"><div><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'"></div><div><label>De</label><input type="time" id="otFrom" value="18:00"></div><div><label>A</label><input type="time" id="otTo" value="20:00"></div></div>'
       +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
       +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:10px" onclick="logOvertime()">⏰ Registrar horas</button>'
       +(ot.entries.length>0?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Historial</div>'
@@ -2221,12 +2244,16 @@ function showOvertimeCalc(){
       +'<input type="number" id="otHrsCommit" value="'+hoursNeeded+'" step="0.5" min="1" style="width:120px;font-size:36px;text-align:center;font-weight:bold;color:var(--sky);border:none;border-bottom:2px solid var(--sky);background:transparent;font-family:Georgia,serif" onclick="this.select()">'
       +'<div style="font-size:11px;color:var(--muted);margin-top:6px">= <span id="otCalcMoney">'+fx(Math.round(hoursNeeded*RATE))+'</span> a $'+RATE+'/hr</div>'
       +'</div>'
-      
-      +'<button class="btn btn-sky btn-sm" style="width:100%" onclick="acceptOvertime('+Math.round(totalDeficit)+','+Math.round(pendingThis)+','+Math.round(nextTotal)+')">⏰ Aceptar reto de horas extra</button>'
-    :'<div style="text-align:center;font-size:14px;color:var(--sage);font-weight:bold;margin-bottom:10px">✅ ¡No hay déficit!</div>')
-    +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px" onclick="closeConfirm()">Cerrar</button>';
-  showConfirm('⏰ Calculadora de Horas Extra',body,()=>{});
-  // Update money calc on input (since script tag won't work in innerHTML)
+    :'<div style="text-align:center;font-size:14px;color:var(--sage);font-weight:bold;margin-bottom:10px">✅ ¡No hay déficit!</div>');
+  showConfirm('⏰ Calculadora de Horas Extra',body,null);
+  // Replace default buttons with our custom ones
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row&&totalDeficit>0){
+    row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="acceptOvertime('+Math.round(totalDeficit)+','+Math.round(pendingThis)+','+Math.round(nextTotal)+')">⏰ Aceptar reto</button>';
+  }else if(row){
+    row.innerHTML='<button class="btn btn-sage" onclick="closeConfirm()">Entendido</button>';
+  }
+  // Wire up hours input
   setTimeout(()=>{
     const inp=document.getElementById('otHrsCommit');
     const out=document.getElementById('otCalcMoney');
@@ -2245,6 +2272,7 @@ function acceptOvertime(deficit,pendingThis,nextTotal){
   toast('⏰ Reto activado: '+hrs+'h de horas extra');
 }
 function logOvertime(){
+  const dateVal=document.getElementById('otDate')?.value||new Date().toISOString().split('T')[0];
   const from=document.getElementById('otFrom')?.value||'';
   const to=document.getElementById('otTo')?.value||'';
   const desc=document.getElementById('otDesc')?.value?.trim()||'';
@@ -2256,7 +2284,7 @@ function logOvertime(){
   const ck=cycleKey();
   if(!S.overtimeLog)S.overtimeLog={};
   if(!S.overtimeLog[ck])S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:0,rate:172};
-  S.overtimeLog[ck].entries.push({date:new Date().toISOString().split('T')[0],from,to,hours:Math.round(hours*10)/10,desc});
+  S.overtimeLog[ck].entries.push({date:dateVal,from,to,hours:Math.round(hours*10)/10,desc});
   // Also add as extra income
   const earned=Math.round(hours*S.overtimeLog[ck].rate);
   const existingExtra=S.extras.find(x=>x.name==='Horas extra ('+ck+')');

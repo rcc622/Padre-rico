@@ -268,7 +268,7 @@ button:active{transform:scale(.97)}
 const SK='prv5';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
-  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{}};
+  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[]};
 
 function migrate(){
   // Try loading v4 data first
@@ -2010,6 +2010,25 @@ function rHabitos(){
           +'</div>';}).join(''):'')
       +'</div>';
   }catch{return'';}})()}
+
+  <!-- CUSTOM HABITS -->
+  ${renderCustomHabits()}
+
+  <div class="card">
+    <div class="ct">🚫 Crear hábito a eliminar</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Registra un gasto recurrente que quieres dejar (alcohol, cigarro, comida chatarra). Cada día que resistas, se acumula el ahorro.</div>
+    <div style="margin-bottom:10px"><label>Nombre del hábito</label><input type="text" id="chName" placeholder="Ej: No tomar alcohol" style="width:100%"></div>
+    <div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Gastos que evitas:</div>
+    <div id="chItems">
+      <div class="ch-item-row" style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px">
+        <div><label style="font-size:10px">¿Qué?</label><input type="text" class="ch-in" placeholder="Six de cerveza"></div>
+        <div><label style="font-size:10px">Costo $</label><input type="number" class="ch-ic" placeholder="200"></div>
+        <div><label style="font-size:10px">Cada # días</label><input type="number" class="ch-if" placeholder="7" value="7"></div>
+      </div>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-bottom:10px" onclick="document.getElementById('chItems').insertAdjacentHTML('beforeend','<div class=\\'ch-item-row\\' style=\\'display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px;margin-bottom:6px\\'><div><input type=\\'text\\' class=\\'ch-in\\' placeholder=\\'Cartón de vino\\'></div><div><input type=\\'number\\' class=\\'ch-ic\\' placeholder=\\'70\\'></div><div><input type=\\'number\\' class=\\'ch-if\\' placeholder=\\'3\\' value=\\'3\\'></div></div>')">+ Agregar otro gasto</button>
+    <button class="btn btn-sage btn-sm" style="width:100%" onclick="addCustomHabit()">🚫 Crear hábito</button>
+  </div>
   `:''}
 
   ${habitView==='impulsos'?`
@@ -2360,6 +2379,70 @@ function exportOvertime(){
   document.body.appendChild(a);a.click();document.body.removeChild(a);
   URL.revokeObjectURL(url);
   toast('📋 Reporte descargado');
+}
+
+// ══ CUSTOM HABITS (daily tracking) ═══════════════
+function addCustomHabit(){
+  const name=document.getElementById('chName')?.value?.trim();
+  if(!name){toast('Ponle nombre al hábito');return;}
+  // Collect items
+  const items=[];
+  document.querySelectorAll('.ch-item-row').forEach(row=>{
+    const n=row.querySelector('.ch-in')?.value?.trim()||'';
+    const c=+(row.querySelector('.ch-ic')?.value)||0;
+    const f=+(row.querySelector('.ch-if')?.value)||7;
+    if(n&&c>0)items.push({name:n,cost:c,freqDays:f});
+  });
+  if(!items.length){toast('Agrega al menos un gasto que evitas');return;}
+  const dailySave=items.reduce((a,it)=>a+it.cost/it.freqDays,0);
+  if(!S.customHabits)S.customHabits=[];
+  S.customHabits.push({id:Date.now(),name,items,dailySave:Math.round(dailySave*100)/100,checks:[],createdAt:Date.now()});
+  sv();toast('🎯 Hábito creado: '+name);rHabitos();
+}
+function checkCustomHabit(id,date){
+  const h=(S.customHabits||[]).find(x=>x.id===id);if(!h)return;
+  const d=date||new Date().toISOString().split('T')[0];
+  if(h.checks.includes(d)){h.checks=h.checks.filter(x=>x!==d);}
+  else{h.checks.push(d);}
+  sv();rHabitos();
+}
+function removeCustomHabit(id){
+  showConfirm('¿Eliminar hábito?','Se borrará el historial de este hábito.',()=>{
+    S.customHabits=(S.customHabits||[]).filter(x=>x.id!==id);sv();toast('Hábito eliminado');rHabitos();
+  });
+}
+function renderCustomHabits(){
+  if(!S.customHabits?.length)return'';
+  const today=new Date().toISOString().split('T')[0];
+  const shortM=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  return S.customHabits.map(h=>{
+    const totalDays=h.checks.length;
+    const totalSaved=Math.round(totalDays*h.dailySave);
+    const todayChecked=h.checks.includes(today);
+    const streak=(()=>{let s=0;const d=new Date();d.setHours(0,0,0,0);for(let i=0;i<60;i++){const ds=new Date(d.getTime()-i*864e5).toISOString().split('T')[0];if(h.checks.includes(ds))s++;else if(i>0)break;}return s;})();
+    // Last 14 days grid
+    const days=[];for(let i=13;i>=0;i--){const d=new Date(Date.now()-i*864e5);days.push({date:d.toISOString().split('T')[0],day:d.getDate(),mon:shortM[d.getMonth()]});}
+    return'<div class="card" style="border:2px solid var(--sage);background:rgba(78,124,106,.03)">'
+      +'<div class="row-b" style="margin-bottom:8px"><div><div style="font-size:18px;margin-bottom:4px">🚫</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+h.name+'</div></div>'
+      +'<div style="text-align:right"><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="removeCustomHabit('+h.id+')">✕</button></div></div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Evitando: '+h.items.map(it=>it.name+' ($'+it.cost+' c/'+it.freqDays+'d)').join(', ')+'</div>'
+      +'<div style="display:flex;gap:6px;margin-bottom:10px">'
+      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:var(--sagedim)"><div style="font-size:9px;color:var(--sage);text-transform:uppercase;letter-spacing:1px">Días</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+totalDays+'</div></div>'
+      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:var(--sagedim)"><div style="font-size:9px;color:var(--sage);text-transform:uppercase;letter-spacing:1px">Ahorrado</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(totalSaved)+'</div></div>'
+      +'<div class="card" style="flex:1;margin-bottom:0;text-align:center;padding:10px;background:var(--sagedim)"><div style="font-size:9px;color:var(--sage);text-transform:uppercase;letter-spacing:1px">Racha</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+streak+'d</div></div>'
+      +'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Últimos 14 días (toca para marcar):</div>'
+      +'<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">'
+      +days.map(d=>{
+        const done=h.checks.includes(d.date);
+        const isToday=d.date===today;
+        return'<button style="min-width:40px;height:40px;border-radius:8px;border:2px solid '+(done?'var(--sage)':isToday?'var(--amber)':'var(--border)')+';background:'+(done?'var(--sagedim)':'var(--bg)')+';color:'+(done?'var(--sage)':'var(--muted)')+';font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:2px 4px;'+(isToday&&!done?'box-shadow:0 0 0 2px rgba(160,112,48,.2);':'')
+        +'" onclick="checkCustomHabit('+h.id+',\''+d.date+'\')">'+(done?'<span style="font-size:12px">✓</span>':'')+'<span>'+d.day+' '+d.mon+'</span></button>';
+      }).join('')
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--sage);line-height:1.5">💰 Ahorro diario: '+fx(Math.round(h.dailySave))+' · Proyección mensual: '+fx(Math.round(h.dailySave*30))+'</div>'
+    +'</div>';
+  }).join('');
 }
 
 function addWait(){

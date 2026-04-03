@@ -102,6 +102,8 @@ button:active{transform:scale(.97)}
 /* Countdown badge */
 .countdown{display:inline-flex;align-items:center;gap:4px;background:var(--amberdim);border:1px solid rgba(160,112,48,.25);color:var(--amber);padding:2px 8px;border-radius:10px;font-size:10px;font-weight:bold}
 .countdown.ready{background:var(--sagedim);border-color:rgba(78,124,106,.25);color:var(--sage)}
+.info-btn{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--bg2);border:1px solid var(--border);color:var(--muted);font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;vertical-align:middle;margin-left:4px;flex-shrink:0}
+.info-btn:hover{background:var(--sagedim);color:var(--sage);border-color:var(--sage)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
 .loading{animation:pulse 1.2s infinite}
 @media(max-width:600px){
@@ -312,6 +314,8 @@ function toast(msg){
 let _confirmCb=null;
 let editDebtId=null,editExpId=null;
 let dStrat='snowball',planQ='actual',planView='pagos',debtSort='prox';
+let flujoView='ingresos';
+function toggleFlujo(sec){flujoView=sec;rFlujo();}
 function showConfirm(title,body,onConfirm){
   _confirmCb=onConfirm;
   const m=document.getElementById('confirmModal');
@@ -327,6 +331,18 @@ function showConfirm(title,body,onConfirm){
 }
 function closeConfirm(){document.getElementById('confirmModal').style.display='none';_confirmCb=null;}
 function execConfirm(){if(_confirmCb)_confirmCb();closeConfirm();}
+function showInfo(title,body){showConfirm(title,body,null);document.getElementById('confirmModal').querySelector('.row').innerHTML='<button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Entendido</button>';}
+const INFO={
+  patrimonio:'<strong>Patrimonio neto</strong> = lo que tienes (activos) menos lo que debes (deudas).<br><br>Si es negativo, debes más de lo que tienes. Es normal cuando estás pagando deudas. Cada pago que haces lo acerca a $0 y después a positivo.<br><br><strong>Meta:</strong> llevar tu patrimonio a positivo.',
+  score:'<strong>Score de salud financiera</strong> (0-100) mide qué tan sano está tu flujo de dinero.<br><br>Considera: % de ahorro, relación deuda/ingreso, gastos hormiga, patrimonio.<br><br><strong>Rangos:</strong><br>0-20: Sobreviviente<br>21-40: En recuperación<br>41-60: Estable<br>61-80: Saludable<br>81-100: Libre Financieramente',
+  hormiga:'<strong>Gastos hormiga</strong> son compras pequeñas y frecuentes: OXXO, delivery, cafés, compras en línea.<br><br>Individualmente son "baratos" ($50-$200) pero en la quincena suman $2,000-$5,000.',
+  bolanieve:'<strong>Bola de Nieve</strong>: pagas primero la deuda más pequeña. Cuando la terminas, sumas ese pago a la siguiente.<br><br><strong>Avalancha</strong>: pagas primero la de mayor tasa de interés. Ahorras más en intereses.',
+  disponible:'<strong>Disponible</strong> = ingreso − gastos fijos − ahorro − metas − deudas.<br><br>Positivo = te sobra. Negativo = déficit.',
+  apartado:'<strong>Plan de apartado</strong>: gastos mensuales grandes (renta, colegiaturas) se pagan 1 vez al mes. Apartar la mitad cada quincena evita el golpe.',
+  pagateprimero:'<strong>Págate Primero</strong> — principio de "El Hombre Más Rico de Babilonia": antes de pagar cualquier gasto, separa un % para ti.',
+  simulador:'<strong>Simulador "¿Qué pasa si?"</strong><br><br>Mueve los sliders para proyectar 12 meses:<br>• Hormiga: reduce minisuper, delivery, online<br>• Ahorro %: sube tu porcentaje<br>• Pago extra: dinero adicional a deudas<br>• Bono a deuda: aplica 70% de tu bono semestral<br><br>Línea verde = con cambios. Roja = sin cambios.',
+};
+const ib=(key,label)=>'<button class="info-btn" onclick="event.stopPropagation();showInfo(\''+(label||key)+'\',INFO.'+key+')">?</button>';
 
 // ══ PAID ITEMS TRACKING ══════════════════════════════
 function cycleKey(){
@@ -769,7 +785,7 @@ function rDash(){
 
   <!-- SCORE + RANGO -->
   <div class="card" style="text-align:center;padding:28px 18px">
-    <div style="font-size:10px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">SALUD FINANCIERA</div>
+    <div style="font-size:10px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">SALUD FINANCIERA ${ib('score','Salud Financiera')}</div>
     <div style="font-size:72px;font-weight:bold;color:${sc};line-height:1">${s}</div>
     <div style="color:${sc};margin:8px 0 4px;font-size:16px;font-weight:bold">${r.emoji} ${r.name}</div>
     ${streak>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:12px">🔥 Racha: ${streak} quincena${streak>1?'s':''} consecutiva${streak>1?'s':''}</div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Sube tu primer CSV para iniciar tu racha</div>`}
@@ -799,7 +815,7 @@ function rDash(){
   </div>
   <div class="${tExtras()>0?'g3':'g2'}" style="margin-bottom:13px">
     <div class="card" style="margin-bottom:0;text-align:center;${hormigaTotal?'cursor:pointer':''}" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🐜 Gastos hormiga</div>
+      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🐜 Gastos hormiga ${ib("hormiga","Gastos Hormiga")}</div>
       <div class="stat-sm" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div>
       <div class="lbl" style="margin-top:4px">${lastSnap?(hormigaTotal?'Toca para ver detalle ▾':'Sin hormiga'):'Sube CSV'}</div>
     </div>
@@ -853,7 +869,7 @@ function rDash(){
 
   <!-- PATRIMONIO -->
   <div class="card">
-    <div class="ct">Patrimonio Neto</div>
+    <div class="ct">Patrimonio Neto ${ib('patrimonio','Patrimonio')}</div>
     <div class="row-b">
       <div><div class="stat" style="color:${nw()>=0?'var(--sage)':'var(--terra)'}">${fx(nw())}</div><div class="lbl">Activos ${fx(tAss())} − Deudas ${fx(tDebt())}</div></div>
       <div style="text-align:right"><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Deuda / Ingreso anual</div><div style="font-size:22px;font-weight:bold;color:${tDebt()/(Math.max(mInc()*12,1))<0.4?'var(--sage)':'var(--terra)'}">${(tDebt()/Math.max(mInc()*12,1)*100).toFixed(0)}%</div></div>
@@ -1203,32 +1219,45 @@ function rFlujo(){try{
   });
   const liqCount=S.debts.length-activeDebts.length;
 
+  const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['deudas','⛓️ Deudas']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
+
+  // ── KPI RESUMEN ALWAYS ON TOP ──
+  const flujoKPI=`<div class="g2" style="margin-bottom:4px">
+    ${kpi('💰 Ingreso',fx(mInc()+tExtras())+'/mes','var(--sage)',fx(Math.round((mInc()+tExtras())/2))+'/qna')}
+    ${kpi('📋 Gastos',fx(tExp())+'/mes','var(--terra)',S.exp.length+' conceptos')}
+  </div>
+  <div class="g2" style="margin-bottom:14px">
+    ${kpi('⛓️ Deudas',fx(tDebtPay())+'/mes','var(--sky)',activeDebts.length+' activas'+(liqCount>0?' · '+liqCount+' liquid.':''))}
+    ${kpi('🌊 Flujo libre',fx(Math.round(mInc()+tExtras()-tExp()-tDebtPay()-savAmt()))+'/mes',mInc()+tExtras()-tExp()-tDebtPay()-savAmt()>=0?'var(--sage)':'var(--terra)','después de todo')}
+  </div>`;
+
   document.getElementById('tab-flujo').innerHTML=`
-  <!-- INGRESOS -->
+  ${flujoNav}${flujoKPI}
+
+  ${flujoView==='ingresos'?`
+  <!-- ═══ INGRESOS ═══ -->
   <div class="card">
-    <div class="ct">💰 Ingresos</div>
+    <div class="ct">💰 Salario y bonos</div>
     <div class="g2" style="margin-bottom:10px">
-      <div><label>Salario fijo mensual (neto)</label><input type="number" value="${S.inc.sal||''}" placeholder="0" oninput="pt({inc:{...S.inc,sal:+this.value}});rFlujo();hdrUp()"></div>
-      <div><label>Bono semestral (estimado)</label><input type="number" value="${S.inc.bv||''}" placeholder="0" oninput="pt({inc:{...S.inc,bv:+this.value}});rFlujo();hdrUp()"></div>
+      <div><label>Salario mensual (neto)</label><input type="number" value="${S.inc.sal||''}" placeholder="0" oninput="pt({inc:{...S.inc,sal:+this.value}});rFlujo();hdrUp()"></div>
+      <div><label>Bono semestral</label><input type="number" value="${S.inc.bv||''}" placeholder="0" oninput="pt({inc:{...S.inc,bv:+this.value}});rFlujo();hdrUp()"></div>
     </div>
     <div class="g2" style="margin-bottom:10px">
       <div><label>Bono/Compensación mensual</label><input type="number" value="${S.inc.bf||''}" placeholder="0" oninput="pt({inc:{...S.inc,bf:+this.value}});rFlujo();hdrUp()"></div>
-      <div><label>Día aprox. de pago del bono</label><input type="number" value="${S.inc.bfDate||''}" placeholder="15" min="1" max="31" oninput="pt({inc:{...S.inc,bfDate:+this.value}});rFlujo()"></div>
+      <div><label>Día aprox. de pago bono</label><input type="number" value="${S.inc.bfDate||''}" placeholder="15" min="1" max="31" oninput="pt({inc:{...S.inc,bfDate:+this.value}});rFlujo()"></div>
     </div>
-    <div style="font-size:10px;color:var(--muted);margin-bottom:10px">El bono mensual se suma al ingreso del mes pero se paga una sola vez. Pon el día aproximado para saber en qué quincena cae.</div>
     <div class="card card-grn" style="margin-bottom:0">
       <div class="row-b">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso mensual total</div><div class="stat" style="color:var(--sage)">${fx(mInc())}</div></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso mensual</div><div class="stat" style="color:var(--sage)">${fx(mInc())}</div></div>
         <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">1ra qna / 2da qna</div><div style="font-size:14px;font-weight:bold;color:var(--sky)">${fx(Math.round(S.inc.sal/2))} / ${fx(Math.round(S.inc.sal/2+(+S.inc.bf||0)))}</div></div>
       </div>
       ${S.inc.bfDate?`<div style="font-size:10px;color:var(--sage);margin-top:6px">💡 Bono mensual (${fx(S.inc.bf)}) cae ${S.inc.bfDate<=15?'en la 1ra quincena (día '+S.inc.bfDate+')':'en la 2da quincena (día '+S.inc.bfDate+')'}</div>`:''}
     </div>
   </div>
 
-  <!-- INGRESOS EXTRAS / ACTIVOS -->
   <div class="card">
-    <div class="ct">📈 Ingresos extras y activos</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Horas extra, freelance, inversiones, rentas, o cualquier ingreso adicional.</div>
+    <div class="ct">📈 Ingresos extras</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Horas extra, freelance, inversiones, o cualquier ingreso adicional.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
       <div><label>Concepto</label><input type="text" id="xn" placeholder="Horas extra, CETES..."></div>
       <div><label>Monto $</label><input type="number" id="xa" placeholder="0"></div>
@@ -1241,13 +1270,15 @@ function rFlujo(){try{
     <button class="btn btn-sage btn-sm" onclick="addExtra()">+ Agregar ingreso extra</button>
     ${S.extras.length>0?`<div style="margin-top:12px">
     ${S.extras.filter(x=>x.tipo==='recurrente').length>0?`<div style="font-size:10px;color:var(--sage);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Recurrentes</div>
-    ${S.extras.filter(x=>x.tipo==='recurrente').map(x=>{const mo=toMonthly(x.amt,x.freq||'mensual');return`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-sage">Recurrente</span>${freqName(x.freq||'mensual')?`<span class="badge bdg-sky">${freqName(x.freq)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(Math.round(mo))}/mes</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`;}).join('')}`:''} 
+    ${S.extras.filter(x=>x.tipo==='recurrente').map(x=>{const mo=toMonthly(x.amt,x.freq||'mensual');return`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-sage">Recurrente</span>${freqName(x.freq||'mensual')?`<span class="badge bdg-sky">${freqName(x.freq)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(Math.round(mo))}/mes</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`;}).join('')}`:''}
     ${S.extras.filter(x=>x.tipo!=='recurrente').length>0?`<div style="font-size:10px;color:var(--amber);margin:10px 0 6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Únicos</div>
     ${S.extras.filter(x=>x.tipo!=='recurrente').map(x=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-amber">Único</span>${x.date?`<span style="font-size:10px;color:var(--muted)">${fmtDate(x.date)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(x.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`).join('')}`:''}
     <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total extras/mes:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">+${fx(Math.round(tExtras()))}</span></div></div>`:''}
   </div>
+  `:''}
 
-  <!-- GASTOS FIJOS -->
+  ${flujoView==='gastos'?`
+  <!-- ═══ GASTOS FIJOS ═══ -->
   <div class="card">
     <div class="ct">${editExpId?'✏️ Editando gasto':'📋 Agregar gasto fijo'}</div>
     ${!editExpId?`<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Acceso rápido:</div>
@@ -1265,24 +1296,18 @@ function rFlujo(){try{
       ${freq==='mensual'||freq==='bimestral'?`<div class="g2" style="margin-bottom:10px">
         <div><label>Día de pago aprox.</label><input type="number" id="epd" placeholder="15" min="1" max="31" value="${ee&&ee.payDay?ee.payDay:''}"></div>
         ${freq==='bimestral'?`<div><label>¿Meses pares o nones?</label><select id="ebm"><option value="par"${ee&&ee.bimMeses==='par'?' selected':''}>Pares (feb, abr, jun...)</option><option value="non"${ee&&ee.bimMeses==='non'?' selected':''}>Nones (ene, mar, may...)</option></select></div>`:`<div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">${ee?freqLabel(ee.amt,freq):''}</div></div>`}
-      </div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">${freq==='semanal'?'Se paga cada semana — no necesita día específico. ≈4.33 pagos/mes.':'Se paga cada quincena — aplica en ambos ciclos.'}</div>`}
+      </div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:10px">${freq==='semanal'?'Se paga cada semana — ≈4.33 pagos/mes.':'Se paga cada quincena — aplica en ambos ciclos.'}</div>`}
     </div>
     ${editExpId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="addExp()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editExpId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addExp()">+ Agregar gasto</button>`}
     `;})()}
   </div>
 
-  <!-- RESUMEN GASTOS -->
-  <div class="g2" style="margin-bottom:13px">
-    ${kpi('📋 Gastos fijos',fx(tExp())+'/mes','var(--terra)',fx(Math.round(tExp()/2))+'/qna · '+S.exp.length+' conceptos')}
-    ${kpi('⛓️ Pagos deudas',fx(tDebtPay())+'/mes','var(--sky)',fx(Math.round(tDebtPay()/2))+'/qna · '+S.debts.length+' créditos')}
-  </div>
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
-  <!-- LISTA GASTOS -->
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
-
-  <!-- DISTRIBUCIÓN -->
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
+  `:''}
 
+  ${flujoView==='deudas'?`
   <!-- ═══ DEUDAS ═══ -->
   <div class="card">
     <div class="ct">${editDebtId?'✏️ Editando deuda':'⛓️ Registrar deuda'}</div>
@@ -1293,12 +1318,12 @@ function rFlujo(){try{
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Pago fijo ($)</label><input type="number" id="dm" placeholder="0" value="${ed?ed.pay:''}" oninput="prevDebtMo()"></div>
-      <div><label>Periodicidad del pago</label><select id="dpf" onchange="prevDebtMo();updDebtUnico()"><option value="unico"${df==='unico'?' selected':''}>Único (1 exhibición)</option><option value="semanal"${df==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${df==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${df==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${df==='bimestral'?' selected':''}>Bimestral</option></select></div>
+      <div><label>Periodicidad</label><select id="dpf" onchange="prevDebtMo();updDebtUnico()"><option value="unico"${df==='unico'?' selected':''}>Único (1 exhibición)</option><option value="semanal"${df==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${df==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${df==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${df==='bimestral'?' selected':''}>Bimestral</option></select></div>
     </div>
     <div id="debtMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;margin-bottom:10px">${ed?freqLabel(ed.pay,df):''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Próximo pago</label><input type="date" id="dpd" value="${ed&&ed.nextPay?ed.nextPay:(ed&&ed.payDay?calcNextPayISO(ed.payDay):'')}" oninput="if(document.getElementById('dpf')?.value==='unico'){document.getElementById('dliq').value=this.value}"></div>
-      <div><label>Fecha de liquidación</label><input type="date" id="dliq" value="${ed?ed.liqDate||'':''}"></div>
+      <div><label>Fecha liquidación</label><input type="date" id="dliq" value="${ed?ed.liqDate||'':''}"></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Nota / Etiqueta</label><input type="text" id="dnote" placeholder="CFE, Telmex..." value="${ed?ed.note||'':''}"></div>
@@ -1313,9 +1338,8 @@ function rFlujo(){try{
     `;})()}
   </div>
 
-  <!-- DEUDA KPIs -->
   <div class="g2" style="margin-bottom:13px">
-    ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?S.debts.length+' créditos':'¡Sin deudas!')}
+    ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?activeDebts.length+' activas':'¡Sin deudas!')}
     ${kpi('💸 Pagos/mes',fx(tDebtPay()),tDebtPay()>0?'var(--sky)':'var(--sage)',fx(Math.round(tDebtPay()/2))+'/qna')}
   </div>
 
@@ -1423,6 +1447,7 @@ function rFlujo(){try{
       return html;
     }catch(e){return'<div style="color:var(--terra)">Error: '+e.message+'</div>';}})()}
   </div>`:''}
+  `:''}
   `;
 }catch(e){document.getElementById('tab-flujo').innerHTML='<div class="card card-red"><div class="ct">Error en Ingresos y Gastos</div><div style="font-size:12px;color:var(--terra)">'+e.message+'</div></div>';console.error('rFlujo error:',e);}
 }
@@ -1457,7 +1482,7 @@ function addExp(){const n=document.getElementById('en')?.value.trim();const a=+d
   else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}]});toast('✓ Gasto registrado');}
   rFlujo();}
 function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
-function editExp(id){editExpId=id;rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function editExp(id){editExpId=id;flujoView='gastos';rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
 function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const t=document.getElementById('xt')?.value||'unico';if(!n||!a)return;
   const extra={id:Date.now(),name:n,amt:a,tipo:t};
   if(t==='recurrente'){extra.freq=document.getElementById('xf')?.value||'mensual';}
@@ -1473,7 +1498,7 @@ function rmDebt(id){
     ()=>{pt({debts:S.debts.filter(x=>x.id!==id)});editDebtId=null;toast('Deuda eliminada');rFlujo();}
   );
 }
-function editDebt(id){editDebtId=id;rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function editDebt(id){editDebtId=id;flujoView='deudas';rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
 function cancelEdit(){editDebtId=null;rFlujo();}
 function setDebtGroup(id,val){
   if(val==='__new'){const g=prompt('Nombre del nuevo grupo (ej: Tarjetas, MSI, Préstamos):');if(!g||!g.trim())return rFlujo();pt({debts:S.debts.map(d=>d.id===id?{...d,group:g.trim()}:d)});}
@@ -1754,15 +1779,15 @@ function rPlan(){
 
     <!-- PLAN DE ATAQUE -->
     <div class="card" style="${hasPending?'opacity:.5;pointer-events:none':''}">
-      <div class="ct">Plan de ataque — Orden de prioridad</div>
+      <div class="ct">Plan de ataque ${ib("bolanieve","Estrategia")}</div>
       ${hasPending?`<div style="font-size:12px;color:var(--terra);margin-bottom:12px;line-height:1.7">🔒 Función suspendida. Liquida tus pagos pendientes primero para ver tu plan de ataque actualizado.</div>`:`
       <div style="margin-bottom:13px">
         <div onclick="dStrat='snowball';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'};margin-bottom:8px">
-          <div style="font-weight:bold;font-size:15px;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve</div>
+          <div style="font-weight:bold;font-size:15px;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve ${ib("bolanieve","Bola de Nieve")}</div>
           <div style="font-size:12px;color:var(--muted);margin-top:4px">Primero la más pequeña.</div>
         </div>
         <div onclick="dStrat='avalanche';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='avalanche'?'var(--sage)':'var(--border)'};background:${dStrat==='avalanche'?'var(--sagedim2)':'var(--bg)'}">
-          <div style="font-weight:bold;font-size:15px;color:${dStrat==='avalanche'?'var(--sage2)':'var(--txt)'}">🏔️ Avalancha</div>
+          <div style="font-weight:bold;font-size:15px;color:${dStrat==='avalanche'?'var(--sage2)':'var(--txt)'}">🏔️ Avalancha ${ib("bolanieve","Estrategias de pago")}</div>
           <div style="font-size:12px;color:var(--muted);margin-top:4px">Primero la de mayor tasa.</div>
         </div>
       </div>
@@ -1990,7 +2015,7 @@ function rHabitos(){
 
   <!-- 3. AHORRO Y PLANIFICACIÓN -->
   <div class="card">
-    <div class="ct">🪙 Págate Primero — Regla de Babilonia</div>
+    <div class="ct">🪙 Págate Primero ${ib('pagateprimero','Págate Primero')}</div>
     <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto.</div>
     <div class="row-b" style="margin-bottom:9px"><span style="font-size:13px">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span><span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(Math.round(savAmt()/2))}/qna</span></div>
     <input type="range" min="1" max="30" value="${S.savPct}" style="width:100%;margin-bottom:5px"
@@ -2052,7 +2077,7 @@ function rHabitos(){
     const otherQ=ap.filter(e=>e.type==='other');
     const thisQ=ap.filter(e=>e.type==='this');
     const totalApartar=ap.reduce((a,e)=>a+e.half,0);
-    return'<div class="card card-sky"><div class="ct">💰 Plan de apartado quincenal</div>'
+    return'<div class="card card-sky"><div class="ct">💰 Plan de apartado '+ib('apartado','Apartado')+'</div>'
     +'<div style="font-size:11px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Tus gastos fijos mensuales de $500+ divididos en 2 quincenas. Aparta la mitad cada quincena para que el golpe no te descuadre.</div>'
     +(otherQ.length>0?'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Se pagan la otra quincena — aparta ahora</div>'
       +otherQ.map(e=>'<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(74,110,140,.15)"><div><div style="font-size:13px;color:var(--txt);font-weight:bold">'+e.name+'</div><div style="font-size:10px;color:var(--muted)">'+(e.cat||'')+' · día '+e.day+' · Total: '+fx(e.amt)+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--sky)">'+fx(e.half)+'</div><div style="font-size:9px;color:var(--muted)">apartar esta qna</div></div></div>').join(''):'')
@@ -2116,7 +2141,7 @@ function evaluateRetos(snap){
 let histView='sim';
 function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
 function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
-function project(mo,ov={}){const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};const hD=ov.delivery!==undefined?ov.delivery:aH('🚗 Delivery');const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');const hO=ov.online!==undefined?ov.online:aH('📦 Compras online');const hT=hD+hM+hO;const ex=ov.extraDebt||0;const bD=ov.bonusToDebt||false;const bS=(+S.inc.bv)||0;let dt=tDebt(),pt2=nw();const r=[{m:0,dt,pt:pt2,h:hT}];for(let m=1;m<=mo;m++){dt=Math.max(0,dt-(dpB+ex));if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);const out=expB+dpB+sav+hT+ex;const fr=inc-out;pt2+=sav+(fr>0?fr*0.5:fr);if(bD&&bS>0&&m%6===0)pt2+=bS*0.2;r.push({m,dt:Math.round(dt),pt:Math.round(pt2),h:Math.round(hT)});}return r;}
+function project(mo,ov={}){const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};const hD=ov.delivery!==undefined?ov.delivery:aH('🚗 Delivery');const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');const hO=ov.online!==undefined?ov.online:aH('📦 Compras online');const hT=hD+hM+hO;const ex=ov.extraDebt||0;const bD=ov.bonusToDebt||false;const bS=(+S.inc.bv)||0;let dt=tDebt(),saved=0;const r=[{m:0,dt,pt:nw(),h:hT}];for(let m=1;m<=mo;m++){const payment=Math.min(dt,dpB+ex);dt=Math.max(0,dt-payment);if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);saved+=sav;if(bD&&bS>0&&m%6===0)saved+=bS*0.2;const fr=inc-expB-payment-sav-hT;if(fr>0)saved+=fr*0.3;r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT)});}return r;}
 const ACHS=[{id:'ch1',e:'📊',n:'Primer Capítulo',d:'Subiste tu primer CSV',ck:()=>S.snapshots.length>=1},{id:'s3',e:'🔥',n:'Constancia',d:'3 quincenas seguidas',ck:()=>qStreak()>=3},{id:'s6',e:'🔥',n:'Medio Año',d:'6 quincenas seguidas',ck:()=>qStreak()>=6},{id:'s12',e:'👑',n:'Año Completo',d:'12 capítulos',ck:()=>S.snapshots.length>=12},{id:'i5',e:'🧊',n:'Regla de 48h',d:'5+ impulsos evitados',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).length>=5},{id:'i10',e:'🧊',n:'Autocontrol',d:'10+ impulsos evitados',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).length>=10},{id:'sv15',e:'💰',n:'Babilonio',d:'Ahorro al 15%+',ck:()=>S.savPct>=15},{id:'sv20',e:'💰',n:'Sabio de Babilonia',d:'Ahorro al 20%+',ck:()=>S.savPct>=20},{id:'sc50',e:'📈',n:'Medio Camino',d:'Score 50+',ck:()=>score()>=50},{id:'sc70',e:'📈',n:'En Forma',d:'Score 70+',ck:()=>score()>=70},{id:'sc80',e:'👑',n:'Padre Rico',d:'Score 80+',ck:()=>score()>=80},{id:'nwp',e:'🌟',n:'Patrimonio Positivo',d:'Patrimonio > $0',ck:()=>nw()>0},{id:'hd',e:'🐜',n:'Domador de Hormiga',d:'Hormiga bajó 20%',ck:()=>{if(S.snapshots.length<3)return false;const s=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));const f=Object.values(s[0].hormiga||{}).reduce((a,v)=>a+v.total,0);const l=Object.values(s[s.length-1].hormiga||{}).reduce((a,v)=>a+v.total,0);return f>0&&l<f*0.8;}}];
 function checkAch(){let nw2=[];ACHS.forEach(a=>{if(S.achievements.find(x=>x.id===a.id))return;if(a.ck()){S.achievements.push({id:a.id,at:new Date().toISOString()});nw2.push(a);}});if(nw2.length){sv();nw2.forEach(a=>toast('🏆 '+a.n));}}
 
@@ -2134,7 +2159,7 @@ function rHistoria(){
     const dA=aH('🚗 Delivery'),mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
     ct=`<div class="card card-sage"><div class="ct">🔮 ¿Qué Pasa Si...?</div><div style="font-size:12px;color:var(--txt2);line-height:1.7">Mueve los sliders y ve en tiempo real cómo tus decisiones impactan tu futuro a 12 meses.</div></div>
     ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Mi Quincena para calibrar los sliders con tus datos reales.</div></div>':''}
-    <div class="card" id="simSl"><div class="ct">Ajusta tus hábitos</div>
+    <div class="card" id="simSl"><div class="ct">Ajusta tus hábitos ${ib("simulador","Simulador")}</div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(mA)}/qna</span></div><input type="range" min="0" max="${Math.max(mA*2,3000)}" step="50" value="${mA}" style="width:100%" oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()"><div style="font-size:10px;color:var(--muted)">Tu promedio: ${fx(mA)}/qna</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🚗 Delivery</span><span id="slDV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(dA)}/qna</span></div><input type="range" min="0" max="${Math.max(dA*2,2000)}" step="50" value="${dA}" style="width:100%" oninput="document.getElementById('slDV').textContent=fx(+this.value)+'/qna';runSim()"><div style="font-size:10px;color:var(--muted)">Tu promedio: ${fx(dA)}/qna</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(oA)}/qna</span></div><input type="range" min="0" max="${Math.max(oA*2,4000)}" step="50" value="${oA}" style="width:100%" oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()"><div style="font-size:10px;color:var(--muted)">Tu promedio: ${fx(oA)}/qna</div></div>

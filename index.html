@@ -1703,7 +1703,7 @@ function rPlan(){
         <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
         ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
-        ${(()=>{const ck2=cycleKey();const ot=S.overtimeLog?.[ck2];if(!ot?.accepted)return'';const otEarned=ot.entries.reduce((a,e)=>a+Math.round(e.hours*ot.rate),0);return otEarned>0?'<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra</span><strong style="color:var(--sky)">+'+fx(otEarned)+'</strong></div>':'';})()}
+        ${showNext?(()=>{const ck2=cycleKey();const ot=S.overtimeLog?.[ck2];if(!ot?.accepted)return'';const otEarned=ot.entries.reduce((a,e)=>a+Math.round(e.hours*ot.rate),0);return otEarned>0?'<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra</span><strong style="color:var(--sky)">+'+fx(otEarned)+'</strong></div>':'';})():''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
           <strong style="color:${(incQ-appliedAmt2-checkedAmt)>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(incQ-appliedAmt2-checkedAmt))}</strong>
@@ -1712,12 +1712,11 @@ function rPlan(){
       </div>
     </div>
 
-    <!-- OVERTIME -->
-    ${(()=>{
+    <!-- OVERTIME (only next quincena) -->
+    ${showNext?(()=>{
       const ck2=cycleKey();
       const ot2=(S.overtimeLog||{})[ck2];
       if(ot2?.accepted){
-        // Mini dashboard
         const tH=ot2.entries.reduce((a,e)=>a+(+e.hours||0),0);
         const tM=Math.round(tH*ot2.rate);
         const p2=ot2.targetHrs>0?Math.min(100,Math.round(tH/ot2.targetHrs*100)):0;
@@ -1728,18 +1727,18 @@ function rPlan(){
           </div>
           <div class="pw" style="height:5px;margin-bottom:6px"><div class="pb" style="width:${p2}%;background:${p2>=100?'var(--sage)':'var(--sky)'}"></div></div>
           <div class="row-b"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(tM)} ganados</span><span style="font-size:11px;color:var(--muted)">Faltan ${fx(Math.max(0,Math.round(ot2.targetHrs*ot2.rate-tM)))}</span></div>
-          <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%" onclick="habitView='retos';go('habitos')">Registrar horas →</button>
+          <div class="row" style="gap:8px;margin-top:8px">
+            <button class="btn btn-ghost btn-sm" style="flex:1" onclick="habitView='retos';go('habitos')">Registrar horas →</button>
+            ${tH>0?`<button class="btn btn-ghost btn-sm" style="flex:1" onclick="exportOvertime()">📄 Exportar</button>`:''}
+          </div>
         </div>`;
       }
-      if(showNext){
-        return`<div class="card card-sky" style="text-align:center;padding:16px">
-          <div style="font-size:13px;color:var(--sky);font-weight:bold;margin-bottom:6px">⏰ ¿Necesitas cubrir un déficit?</div>
-          <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Calcula cuántas horas extra necesitas para salir tablas.</div>
-          <button class="btn btn-sky btn-sm" onclick="showOvertimeCalc()">Calcular horas extra</button>
-        </div>`;
-      }
-      return'';
-    })()}
+      return`<div class="card card-sky" style="text-align:center;padding:16px">
+        <div style="font-size:13px;color:var(--sky);font-weight:bold;margin-bottom:6px">⏰ ¿Necesitas cubrir un déficit?</div>
+        <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Calcula cuántas horas extra necesitas para salir tablas.</div>
+        <button class="btn btn-sky btn-sm" onclick="showOvertimeCalc()">Calcular horas extra</button>
+      </div>`;
+    })():''}
 
     <!-- PAGOS OBLIGATORIOS -->
     <div class="card">
@@ -2002,11 +2001,10 @@ function rHabitos(){
       +'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Registrar horas</div>'
       +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px"><div><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'"></div><div><label>De</label><input type="time" id="otFrom" value="18:00"></div><div><label>A</label><input type="time" id="otTo" value="20:00"></div></div>'
       +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
-      +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:10px" onclick="logOvertime()">⏰ Registrar horas</button>'
+      +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="logOvertime()">⏰ Registrar horas</button>'
+      +(ot.entries.length>0?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="exportOvertime()">📄 Exportar reporte .txt</button>':'')
       +(ot.entries.length>0?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Historial</div>'
-        +ot.entries.slice().reverse().map(e=>'<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px"><div><span style="color:var(--txt)">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span>'+(e.desc?' · '+e.desc:'')+'</div><div style="text-align:right"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong> <span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span></div></div>').join('')
-        +'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="exportOvertime()">📄 Exportar reporte .txt</button>'
-        +'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="exportOvertime()">📋 Exportar reporte .txt</button>':'')
+        +ot.entries.slice().reverse().map(e=>'<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);font-size:11px"><div><span style="color:var(--txt)">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span>'+(e.desc?' · '+e.desc:'')+'</div><div style="text-align:right"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong> <span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span></div></div>').join(''):'')
       +'</div>';
   }catch{return'';}})()}
   `:''}
@@ -2292,37 +2290,6 @@ function logOvertime(){
   if(existingExtra){existingExtra.amt=(+existingExtra.amt||0)+earned;}
   else{S.extras.push({id:Date.now(),name:'Horas extra ('+ck+')',amt:earned,tipo:'unico',date:new Date().toISOString().split('T')[0]});}
   sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rHabitos();
-}
-function exportOvertime(){
-  const ck=cycleKey();
-  const ot=(S.overtimeLog||{})[ck];
-  if(!ot||!ot.entries.length){toast('No hay horas registradas');return;}
-  const meses=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-  const to12=(t)=>{if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+String(m).padStart(2,'0')+' '+ampm;};
-  // Sort oldest first
-  const sorted=[...ot.entries].sort((a,b)=>a.date.localeCompare(b.date));
-  let totalHrs=0;
-  const lines=sorted.map(e=>{
-    const d=new Date(e.date+'T12:00');
-    const dd=String(d.getDate()).padStart(2,'0');
-    const mm=String(d.getMonth()+1).padStart(2,'0');
-    const mesNombre=meses[d.getMonth()];
-    totalHrs+=e.hours;
-    return mesNombre+' '+dd+' - '+to12(e.from)+' a '+to12(e.to)+' / '+e.hours.toFixed(1)+' hrs / '+(e.desc||'Sin descripción');
-  });
-  let txt='REPORTE DE HORAS EXTRA\n';
-  txt+='Periodo: '+ck+'\n';
-  txt+='Tarifa: $'+ot.rate+'/hr\n';
-  txt+='================================\n\n';
-  txt+=lines.join('\n');
-  txt+='\n\n================================\n';
-  txt+='Total: '+totalHrs.toFixed(1)+' horas = $'+Math.round(totalHrs*ot.rate)+'\n';
-  const blob=new Blob([txt],{type:'text/plain'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download='horas-extra-'+ck+'.txt';a.click();
-  URL.revokeObjectURL(url);
-  toast('📄 Reporte exportado');
 }
 function exportOvertime(){
   const ck=cycleKey();

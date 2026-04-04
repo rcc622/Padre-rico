@@ -361,21 +361,66 @@ function cycleKey(){
 function isPaid(type,id){
   const ck=cycleKey();
   const items=S.paidItems[ck]||{};
-  return !!items[type+'_'+id];
+  const v=items[type+'_'+id];
+  return !!v;
 }
 function isApplied(type,id){
   const ck=cycleKey();
   const items=S.paidItems[ck]||{};
-  return items[type+'_'+id]==='applied';
+  const v=items[type+'_'+id];
+  return v==='applied'||(typeof v==='object'&&v?.applied);
+}
+function getRealAmt(type,id){
+  const ck=cycleKey();
+  const items=S.paidItems[ck]||{};
+  const v=items[type+'_'+id];
+  if(typeof v==='object'&&v?.realAmt!==undefined)return v.realAmt;
+  return null;
 }
 function togglePaid(type,id){
   const ck=cycleKey();
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
   const cur=S.paidItems[ck][key];
-  if(cur==='applied'){toast('Este pago ya fue aplicado');return;}
-  if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');}
-  else{S.paidItems[ck][key]=Date.now();toast('✓ Marcado como pagado');}
+  if(cur==='applied'||typeof cur==='object'&&cur?.applied){toast('Este pago ya fue aplicado');return;}
+  if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');sv();rPlan();return;}
+  
+  // Check if this is a variable expense (weekly: súper, gasolina)
+  const exp=type==='exp'?S.exp.find(e=>e.id===id):null;
+  const isVariable=exp&&(exp.freq==='semanal'||/super|súper|gasol|mandado/i.test(exp.name||''));
+  
+  if(isVariable){
+    const budgeted=+exp.amt||0;
+    const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:14px">Presupuestado: <strong>'+fx(budgeted)+'</strong><br>¿Cuánto gastaste realmente?</div>'
+      +'<input type="number" id="realAmtInput" value="'+budgeted+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">'
+      +'<div id="realAmtDiff" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px"></div>';
+    showConfirm('💸 ¿Cuánto gastaste?',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="confirmRealAmt(\''+type+'\','+id+','+budgeted+')">✓ Registrar</button>';
+    setTimeout(()=>{
+      const inp=document.getElementById('realAmtInput');
+      if(inp)inp.oninput=function(){
+        const real=+this.value||0;
+        const diff=budgeted-real;
+        const el=document.getElementById('realAmtDiff');
+        if(el)el.innerHTML=diff>0?'<span style="color:var(--sage)">🎉 Ahorraste '+fx(diff)+'</span>':diff<0?'<span style="color:var(--terra)">⚠ Gastaste '+fx(Math.abs(diff))+' de más</span>':'Exacto al presupuesto';
+      };
+    },100);
+  }else{
+    S.paidItems[ck][key]=Date.now();toast('✓ Marcado como pagado');sv();rPlan();
+  }
+}
+function confirmRealAmt(type,id,budgeted){
+  const real=+(document.getElementById('realAmtInput')?.value)||0;
+  if(!real){toast('Ingresa el monto');return;}
+  const ck=cycleKey();
+  if(!S.paidItems[ck])S.paidItems[ck]={};
+  const key=type+'_'+id;
+  S.paidItems[ck][key]={at:Date.now(),realAmt:real,budgeted};
+  const diff=budgeted-real;
+  closeConfirm();
+  if(diff>0)toast('✓ Pagado · Ahorraste '+fx(diff));
+  else toast('✓ Pagado');
   sv();rPlan();
 }
 function pendingCount(){
@@ -516,9 +561,17 @@ function toggleRetoCheck(retoId,idx){
   if(!S.retoChecks)S.retoChecks={};
   const ck=cycleKey();
   const k=retoId+'_'+ck;
-  const checks=S.retoChecks[k]||[];
-  if(idx<checks.length){S.retoChecks[k]=checks.slice(0,idx);}
-  else{checks.push(new Date().toISOString().split('T')[0]);S.retoChecks[k]=checks;}
+  if(!S.retoChecks[k])S.retoChecks[k]=[];
+  let checks=S.retoChecks[k];
+  // Migrate old format (array of date strings) to new format
+  if(checks.length>0&&typeof checks[0]==='string'){
+    checks=checks.map((d,i)=>({idx:i,date:d}));
+    S.retoChecks[k]=checks;
+  }
+  const existing=checks.findIndex(c=>c.idx===idx);
+  if(existing>=0){checks.splice(existing,1);}
+  else{checks.push({idx,date:new Date().toISOString().split('T')[0]});}
+  S.retoChecks[k]=checks;
   sv();rHabitos();
 }
 function survivalSaved(){
@@ -917,12 +970,13 @@ function rDash(){
       ${activeS.map(sr=>{
         const m=allR.find(x=>x.id===sr.id);
         if(!m)return'';
-        const checks=S.retoChecks[sr.id+'_'+ck]||[];
+        const rawC=S.retoChecks[sr.id+'_'+ck]||[];
+        const nC=rawC.length;
         const totalN=m.steps||1;
-        const pctD=Math.min(100,Math.round(checks.length/totalN*100));
+        const pctD=Math.min(100,Math.round(nC/totalN*100));
         return`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
           <div class="row-b" style="margin-bottom:6px">
-            <div class="row" style="gap:8px"><span style="font-size:18px">${m.icon}</span><div><div style="font-weight:bold;color:var(--txt);font-size:13px">${m.name}</div><div style="font-size:10px;color:var(--muted)">${sr.completed?'🏆 Completado':checks.length+'/'+totalN+' '+trackLbl(m.track)+(totalN>1?'s':'')}</div></div></div>
+            <div class="row" style="gap:8px"><span style="font-size:18px">${m.icon}</span><div><div style="font-weight:bold;color:var(--txt);font-size:13px">${m.name}</div><div style="font-size:10px;color:var(--muted)">${sr.completed?'🏆 Completado':nC+'/'+totalN+' '+trackLbl(m.track)+(totalN>1?'s':'')}</div></div></div>
             <span style="font-size:14px;font-weight:bold;color:var(--sage)">+${fx(m.save)}</span>
           </div>
           ${!sr.completed?`<div class="pw" style="height:5px"><div class="pb" style="width:${pctD}%;background:${pctD>=100?'var(--sage)':'var(--amber)'}"></div></div>`:''}
@@ -946,6 +1000,7 @@ function rDash(){
 // ══ MI QUINCENA (análisis Nu + snapshots) ════════════
 let nuTxns=[];
 let nuDebit=[],nuCredit=[];
+let qnaFilter='all'; // 'all', '1ra', '2da'
 const HK={
   '🛒 Minisuper / OXXO':['OXXO','7-ELEVEN','7ELEVEN','EXTRA SUPER','BUEN PRECIO','MODELORAMA','DUNOSUSA','BARA ','CADENA COMERCIAL'],
   '🚗 Delivery':['UBER EATS','UBEREATS','RAPPI','DIDI FOOD','DIDIFOOD','CORNERSHOP','JUSTO'],
@@ -1056,10 +1111,26 @@ function rQuincena(){
   const hasAny=hasDebit||hasCredit;
   nuTxns=[...nuDebit,...nuCredit];
 
-  const hdAll=detectH(nuTxns),totHAll=hdAll.reduce((a,[,v])=>a+v.total,0),totAll=nuTxns.reduce((a,t)=>a+t.amt,0);
-  const hdDeb=hasDebit?detectH(nuDebit):[];const totDeb=nuDebit.reduce((a,t)=>a+t.amt,0);const totHDeb=hdDeb.reduce((a,[,v])=>a+v.total,0);
-  const hdCred=hasCredit?detectH(nuCredit):[];const totCred=nuCredit.reduce((a,t)=>a+t.amt,0);const totHCred=hdCred.reduce((a,[,v])=>a+v.total,0);
+  // Detect if CSV is monthly (>18 days span)
+  const pdsQ=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):(/^\d{4}-\d{2}-\d{2}$/.test(s)?s:'');};
+  const allDates=nuTxns.map(t=>pdsQ(t.date)).filter(d=>d&&!isNaN(new Date(d+'T12:00'))).sort();
+  const isMonthly=allDates.length>=2&&Math.ceil((new Date(allDates[allDates.length-1]+'T12:00')-new Date(allDates[0]+'T12:00'))/864e5)>18;
+
+  // Apply filter
+  const fDeb=hasDebit?filterByQna(nuDebit,qnaFilter):[];
+  const fCred=hasCredit?filterByQna(nuCredit,qnaFilter):[];
+  const fAll=[...fDeb,...fCred];
+
+  const hdAll=detectH(fAll),totHAll=hdAll.reduce((a,[,v])=>a+v.total,0),totAll=fAll.reduce((a,t)=>a+t.amt,0);
+  const hdDeb=fDeb.length?detectH(fDeb):[];const totDeb=fDeb.reduce((a,t)=>a+t.amt,0);const totHDeb=hdDeb.reduce((a,[,v])=>a+v.total,0);
+  const hdCred=fCred.length?detectH(fCred):[];const totCred=fCred.reduce((a,t)=>a+t.amt,0);const totHCred=hdCred.reduce((a,[,v])=>a+v.total,0);
   const lastSnap=S.snapshots.length?[...S.snapshots].sort((a,b)=>new Date(b.periodEnd||b.date)-new Date(a.periodEnd||a.date))[0]:null;
+
+  const qnaChips=isMonthly&&hasAny?`<div class="chips" style="margin-bottom:12px">
+    <button class="chip" style="${qnaFilter==='all'?'background:var(--sagedim);border-color:var(--sage);color:var(--sage);font-weight:bold':''}" onclick="qnaFilter='all';rQuincena()">📅 Mes completo (${nuTxns.length})</button>
+    <button class="chip" style="${qnaFilter==='1ra'?'background:var(--sagedim);border-color:var(--sage);color:var(--sage);font-weight:bold':''}" onclick="qnaFilter='1ra';rQuincena()">1ra Qna · 30→14 (${filterByQna(nuTxns,'1ra').length})</button>
+    <button class="chip" style="${qnaFilter==='2da'?'background:var(--sagedim);border-color:var(--sage);color:var(--sage);font-weight:bold':''}" onclick="qnaFilter='2da';rQuincena()">2da Qna · 15→29 (${filterByQna(nuTxns,'2da').length})</button>
+  </div>`:'';
 
   const renderAnalysis=(txns,hd,totH,totG,label,color)=>{
     if(!txns.length)return'';
@@ -1076,68 +1147,67 @@ function rQuincena(){
 
   document.getElementById('tab-quincena').innerHTML=`
   <div class="card card-sage">
-    <div class="ct">📊 Análisis de Estados de Cuenta</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Sube tus CSVs de Nu. Separar débito y crédito te da una radiografía más precisa: débito = gasto real, crédito = deuda nueva.</div>
+    <div class="ct">📊 Análisis de Estado de Cuenta</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Sube tu CSV de Nu (cuenta de débito) para analizar tus gastos, detectar hormiga y comparar quincenas.</div>
     ${S.snapshots.length>0?`<div style="margin-top:10px;font-size:11px;color:var(--sage)">📖 ${S.snapshots.length} capítulo${S.snapshots.length>1?'s':''} guardado${S.snapshots.length>1?'s':''}</div>`:''}
   </div>
 
-  <!-- UPLOAD ZONES -->
-  <div class="g2" style="margin-bottom:13px">
-    <div class="card" style="margin-bottom:0;text-align:center;padding:16px;${hasDebit?'border-color:var(--sage)':''}">
-      <div style="font-size:24px;margin-bottom:6px">${hasDebit?'✅':'💳'}</div>
-      <div style="font-size:13px;font-weight:bold;color:${hasDebit?'var(--sage)':'var(--txt)'};margin-bottom:4px">Débito</div>
-      ${hasDebit?`<div style="font-size:11px;color:var(--sage)">${nuDebit.length} transacciones · ${fx(totDeb)}</div><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="nuDebit=[];nuTxns=[...nuCredit];rQuincena()">✕ Quitar</button>`
-      :`<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Gasto real — dinero que ya salió</div>
-        <button class="btn btn-sage btn-sm" onclick="document.getElementById('fupD').click()">Subir CSV débito</button>
-        <input type="file" id="fupD" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'debit')">`}
-    </div>
-    <div class="card" style="margin-bottom:0;text-align:center;padding:16px;${hasCredit?'border-color:var(--sky)':''}">
-      <div style="font-size:24px;margin-bottom:6px">${hasCredit?'✅':'💳'}</div>
-      <div style="font-size:13px;font-weight:bold;color:${hasCredit?'var(--sky)':'var(--txt)'};margin-bottom:4px">Crédito</div>
-      ${hasCredit?`<div style="font-size:11px;color:var(--sky)">${nuCredit.length} transacciones · ${fx(totCred)}</div><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="nuCredit=[];nuTxns=[...nuDebit];rQuincena()">✕ Quitar</button>`
-      :`<div style="font-size:10px;color:var(--muted);margin-bottom:8px">Deuda nueva — compras a crédito</div>
-        <button class="btn btn-sage btn-sm" onclick="document.getElementById('fupC').click()">Subir CSV crédito</button>
-        <input type="file" id="fupC" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'credit')">`}
-    </div>
+  <!-- UPLOAD -->
+  ${hasAny?`
+  <div class="card" style="text-align:center;padding:16px;border-color:var(--sage)">
+    <div style="font-size:24px;margin-bottom:6px">✅</div>
+    <div style="font-size:13px;font-weight:bold;color:var(--sage);margin-bottom:4px">${fAll.length} transacciones cargadas</div>
+    <div style="font-size:11px;color:var(--muted)">Total: ${fx(totAll)}</div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="nuDebit=[];nuCredit=[];nuTxns=[];qnaFilter='all';rQuincena()">↺ Cargar otro archivo</button>
   </div>
+  `:`
+  <div class="card" style="text-align:center;padding:22px">
+    <div style="font-size:40px;margin-bottom:12px">📂</div>
+    <div style="font-size:15px;margin-bottom:6px;color:var(--txt)">Sube tu CSV de Nu</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Perfil → Exportar transacciones → CSV de tu cuenta</div>
+    <button class="btn btn-sage" onclick="document.getElementById('fupD').click()">Subir estado de cuenta</button>
+    <input type="file" id="fupD" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'debit')">
+    <div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--muted)" onclick="document.getElementById('fupC2').click()">¿También tienes CSV de TDC?</button>
+    <input type="file" id="fupC2" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'credit')"></div>
+  </div>
+  `}
 
   ${!hasAny?`
-  <div class="card"><div class="ct">¿Cómo descargo el CSV de Nu?</div><div style="font-size:13px;line-height:2.1;color:var(--txt2)"><div>1. Abre la app de Nu en tu celular</div><div>2. Toca tu foto de perfil (esquina superior)</div><div>3. Busca "Exportar transacciones" o "Historial"</div><div>4. Descarga el CSV y súbelo aquí</div><div style="margin-top:8px;font-size:11px;color:var(--amber)">💡 Nu tiene CSVs separados para tu cuenta (débito) y tu tarjeta (crédito).</div></div></div>
+  <div class="card"><div class="ct">¿Cómo descargo el CSV de Nu?</div><div style="font-size:13px;line-height:2.1;color:var(--txt2)"><div>1. Abre la app de Nu en tu celular</div><div>2. Toca tu foto de perfil (esquina superior)</div><div>3. Busca "Exportar transacciones" o "Historial"</div><div>4. Descarga el CSV de tu <strong>cuenta</strong></div><div style="margin-top:6px;font-size:11px;color:var(--muted)">💡 Si tu CSV cubre un mes completo, la app lo detecta y te deja filtrar por quincena.</div></div></div>
   `:`
+  <!-- QUINCENA FILTER -->
+  ${isMonthly&&hasAny?`<div class="card card-amber" style="padding:12px 16px">
+    <div style="font-size:12px;color:var(--amber);font-weight:bold;margin-bottom:6px">📅 CSV mensual detectado</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px;line-height:1.5">Tu estado de cuenta cubre más de 15 días. Selecciona la quincena a analizar:</div>
+    ${qnaChips}
+  </div>`:''}
+
   <!-- SAVE SNAPSHOT -->
   ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
-    <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo quincenal?</div>
-    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">${hasDebit&&hasCredit?'Se guardarán 2 capítulos: uno de débito y otro de crédito.':'Guarda las métricas para comparar con futuras quincenas.'}</div>
-    <button class="btn btn-sage" onclick="${hasDebit&&hasCredit?`saveSnapshot(nuDebit,'debit');saveSnapshot(nuCredit,'credit');`:`saveSnapshot(nuTxns,'${hasDebit?'debit':'credit'}');`}nuTxns._saved=true;rQuincena()">Guardar capítulo${hasDebit&&hasCredit?'s':''}</button>
-  </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo${hasDebit&&hasCredit?'s':''} guardado${hasDebit&&hasCredit?'s':''}</div></div>`}
+    <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo${qnaFilter!=='all'?' ('+qnaFilter+' qna)':''}?</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">${qnaFilter!=='all'?'Se guardarán solo las transacciones de la '+qnaFilter+' quincena.':'Guarda las métricas para comparar con futuras quincenas.'}</div>
+    <button class="btn btn-sage" onclick="saveSnapshot(filterByQna(fAll,qnaFilter),'debit');nuTxns._saved=true;rQuincena()">Guardar capítulo</button>
+  </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo guardado</div></div>`}
 
   <!-- RESUMEN COMBINADO -->
   ${hasDebit&&hasCredit?`
   <div class="card">
-    <div class="ct">📊 Resumen combinado</div>
+    <div class="ct">📊 Resumen${qnaFilter!=='all'?' — '+qnaFilter+' Qna':''}</div>
     <div class="g3" style="margin-bottom:0">
-      ${kpi('💸 Total',fx(totAll),'var(--terra)',nuTxns.length+' txns')}
-      ${kpi('💳 Débito',fx(totDeb),'var(--sage)',nuDebit.length+' txns')}
-      ${kpi('💳 Crédito',fx(totCred),'var(--sky)',nuCredit.length+' txns')}
+      ${kpi('💸 Total',fx(totAll),'var(--terra)',fAll.length+' txns')}
+      ${kpi('💳 Débito',fx(totDeb),'var(--sage)',fDeb.length+' txns')}
+      ${kpi('💳 Crédito',fx(totCred),'var(--sky)',fCred.length+' txns')}
     </div>
   </div>
-  ${totCred>0?`<div class="card card-red" style="padding:14px 18px">
-    <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Gastaste <strong>${fx(totCred)}</strong> a crédito este periodo — eso es deuda nueva. ${totCred>totDeb?'<strong>Tu gasto a crédito es mayor que tu gasto en débito.</strong>':''}</div>
+  ${totCred>0?`<div class="card card-sky" style="padding:14px 18px">
+    <div style="font-size:13px;color:var(--sky);line-height:1.7">💳 Gastaste <strong>${fx(totCred)}</strong> con tu tarjeta de crédito este periodo. ${totCred>totDeb?'Tu gasto con TDC es mayor que tu gasto en débito — asegúrate de pagarlo antes del corte.':'Si pagas el total cada mes, esto no es deuda sino gasto real.'}</div>
   </div>`:''}`:''}
 
-  <!-- ANÁLISIS DÉBITO -->
-  ${hasDebit?`<div style="margin-bottom:4px"><div style="font-size:10px;color:var(--sage);letter-spacing:2px;text-transform:uppercase;font-weight:bold;padding:8px 0">💳 ANÁLISIS DÉBITO — Gasto real</div></div>
-  <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Gastaste de tu cuenta</div><div class="stat" style="color:var(--terra)">${fx(totDeb)}</div><div style="font-size:10px;color:var(--muted)">${nuDebit.length} transacciones</div></div>
-  ${renderAnalysis(nuDebit,hdDeb,totHDeb,totDeb,'Débito','var(--terra)')}
-  `:''}
+  <!-- ANÁLISIS -->
+  <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Total gastado${qnaFilter!=='all'?' ('+qnaFilter+' qna)':''}</div><div class="stat" style="color:var(--terra)">${fx(totAll)}</div><div style="font-size:10px;color:var(--muted)">${fAll.length} transacciones</div></div>
+  ${renderAnalysis(fAll,hdAll,totHAll,totAll,'Periodo','var(--terra)')}
 
-  <!-- ANÁLISIS CRÉDITO -->
-  ${hasCredit?`<div style="margin-bottom:4px;margin-top:14px"><div style="font-size:10px;color:var(--sky);letter-spacing:2px;text-transform:uppercase;font-weight:bold;padding:8px 0">💳 ANÁLISIS CRÉDITO — Deuda nueva</div></div>
-  <div class="card" style="margin-bottom:0;text-align:center;padding:12px"><div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:4px">Generaste en deuda</div><div class="stat" style="color:var(--sky)">${fx(totCred)}</div><div style="font-size:10px;color:var(--muted)">${nuCredit.length} transacciones</div></div>
-  ${renderAnalysis(nuCredit,hdCred,totHCred,totCred,'Crédito','var(--sky)')}
-  `:''}
-
-  <!-- RADIOGRAFÍA MINISUPER (combined) -->
+  <!-- RADIOGRAFÍA MINISUPER (filtered) -->
   ${(()=>{
     const hd=hdAll;
     const mini=hd.find(([cat])=>cat.includes('Minisuper'));
@@ -1145,7 +1215,7 @@ function rQuincena(){
     const [,data]=mini;
     const periodDays=Math.max(1,(()=>{try{
       const pds2=(s)=>{if(!s)return'';const m2=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m2?m2[3]+'-'+m2[2].padStart(2,'0')+'-'+m2[1].padStart(2,'0'):(/^\d{4}-\d{2}-\d{2}$/.test(s)?s:'');};
-      const ds=nuTxns.map(t=>pds2(t.date)).filter(d3=>d3&&!isNaN(new Date(d3+'T12:00').getTime())).sort();
+      const ds=fAll.map(t=>pds2(t.date)).filter(d3=>d3&&!isNaN(new Date(d3+'T12:00').getTime())).sort();
       if(ds.length<2)return 15;
       const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);
       return isNaN(diff)||diff<=0?15:diff;
@@ -1194,12 +1264,22 @@ function rQuincena(){
     </div>`;
   })()}
 
-  <button class="btn btn-ghost" onclick="nuDebit=[];nuCredit=[];nuTxns=[];rQuincena()">↺ Cargar otros archivos</button>
+  <button class="btn btn-ghost" onclick="nuDebit=[];nuCredit=[];nuTxns=[];qnaFilter='all';rQuincena()">↺ Cargar otro archivo</button>
   `}`;
 }
 
 
-function onFileType(f,type){if(!f)return;const r=new FileReader();r.onload=e=>{const txns=parseNu(e.target.result);if(!txns.length){alert('No se pudieron leer transacciones.');return;}if(type==='debit'){nuDebit=txns;nuDebit._saved=false;}else{nuCredit=txns;nuCredit._saved=false;}nuTxns=[...nuDebit,...nuCredit];nuTxns._saved=false;toast('✓ '+txns.length+' transacciones de '+(type==='debit'?'débito':'crédito')+' leídas');rQuincena();};r.readAsText(f,'UTF-8');}
+function onFileType(f,type){if(!f)return;const r=new FileReader();r.onload=e=>{const txns=parseNu(e.target.result);if(!txns.length){alert('No se pudieron leer transacciones.');return;}if(type==='debit'){nuDebit=txns;nuDebit._saved=false;}else{nuCredit=txns;nuCredit._saved=false;}nuTxns=[...nuDebit,...nuCredit];nuTxns._saved=false;
+  // Detect if monthly (>18 days span)
+  const pds=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):s;};
+  const ds=txns.map(t=>pds(t.date)).filter(Boolean).sort();
+  if(ds.length>=2){const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);if(diff>18)qnaFilter='all';else qnaFilter='all';}
+  toast('✓ '+txns.length+' transacciones de '+(type==='debit'?'débito':'crédito')+' leídas'+(qnaFilter==='all'?'':' ('+qnaFilter+' qna)'));rQuincena();};r.readAsText(f,'UTF-8');}
+function filterByQna(txns,filter){
+  if(filter==='all')return txns;
+  const pds2=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?+m[1]:+s.split('-')[2];};
+  return txns.filter(t=>{const day=pds2(t.date);if(filter==='1ra')return day>=1&&day<=14||day>=30;if(filter==='2da')return day>=15&&day<=29;return true;});
+}
 function onFile(f){onFileType(f,'debit');}
 function onDrop(e){e.preventDefault();document.getElementById('dz')?.classList.remove('over');const f=e.dataTransfer.files[0];if(f)onFile(f);}
 
@@ -1524,17 +1604,20 @@ function applyPayments(){
   const items=S.paidItems[ck]||{};
   let appliedExp=0,appliedDebt=0,appliedAmt=0;
   for(const key in items){
-    if(items[key]==='applied'||key.startsWith('_'))continue;
+    const v=items[key];
+    if(v==='applied'||(typeof v==='object'&&v?.applied)||key.startsWith('_'))continue;
     const [type,idStr]=key.split('_');const id=+idStr;let amt=0;
+    const realAmt=typeof v==='object'?v.realAmt:null;
     if(type==='debt'){
       const d2=S.debts.find(x=>x.id===id);
       if(d2){amt=+d2.pay||0;if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);d2.bal=Math.max(0,(+d2.bal||0)-amt);appliedDebt++;}
-    }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');appliedExp++;}
-    else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;appliedExp++;}
+    }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual'));appliedExp++;}
+    else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
     else if(type==='imp'){amt=Math.round(S.impulsesBudget/2);appliedExp++;}
-    appliedAmt+=amt;items[key]='applied';
+    appliedAmt+=amt;
+    items[key]=typeof v==='object'?{...v,applied:true}:'applied';
   }
   items._appliedTotal=((+items._appliedTotal)||0)+appliedAmt;
   S.paidItems[ck]=items;sv();
@@ -1682,13 +1765,19 @@ function rPlan(){
     const mandatoryDeficit=mUnpaidT-(incQ-appliedAmt2-checkedAmt);
 
     const ri=(p,st)=>{const isT=!showNext&&p.day===passedDay;const col=st==='applied'?'var(--sage)':st==='selected'?'var(--amber)':p.type==='ahorro'?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';const cls=st!=='pending'?'paid-row':'';
+      const rAmt=getRealAmt(p.ptype,p.id);
+      const showReal=rAmt!==null&&Math.abs(rAmt-p.amt)>1;
+      const diff=rAmt!==null?p.amt-rAmt:0;
       return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
         <div class="row" style="gap:8px">
           ${!showNext?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:''}
           <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
           <span style="font-size:12px;color:var(--txt)">${p.name}</span>
         </div>
-        <span style="font-size:12px;color:${col};font-weight:bold">${fx(Math.round(p.amt))}</span>
+        <div style="text-align:right">
+          <span style="font-size:12px;color:${col};font-weight:bold">${fx(Math.round(showReal?rAmt:p.amt))}</span>
+          ${showReal?`<div style="font-size:9px;color:${diff>0?'var(--sage)':'var(--terra)'}">${diff>0?'↓'+fx(Math.round(diff)):'↑'+fx(Math.round(Math.abs(diff)))}</div>`:''}
+        </div>
       </div>`;};
 
     document.getElementById('tab-plan').innerHTML=`
@@ -1906,7 +1995,9 @@ function renderRetos(){
   }
 
   const totalPotSave=activeRetos.filter(r=>r.active||r.completed).reduce((a,r)=>{const m2=retos.find(x=>x.id===r.id);return a+(m2?.save||0);},0);
-  const getChecks=(rid)=>{const k=rid+'_'+ck;return S.retoChecks[k]||[];};
+  const getChecks=(rid)=>{const k=rid+'_'+ck;const raw=S.retoChecks[k]||[];return raw;};
+  const countChecks=(rid)=>{const c=getChecks(rid);return c.length;};
+  const isIdxDone=(rid,idx)=>{const c=getChecks(rid);if(!c.length)return false;if(typeof c[0]==='string')return idx<c.length;return c.some(x=>x.idx===idx);};
   const trackLabel=(t)=>t==='dia'?'día':t==='sem'?'semana':'quincena';
 
   return`<div class="card" style="border-left:3px solid ${isDeficit?'var(--amber)':'var(--sage)'}">
@@ -1917,12 +2008,12 @@ function renderRetos(){
     ${totalPotSave>0?'<div class="card '+(isDeficit?(totalPotSave>=deficit?'card-grn':'card-amber'):'card-grn')+'" style="margin-bottom:14px;padding:12px 16px"><div class="row-b"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">'+(isDeficit?'Ahorro potencial':'Potencial de crecimiento')+' '+ib('ahorroPotencial','Ahorro potencial')+'</div><div class="stat-sm" style="color:var(--sage)">'+fx(totalPotSave)+'</div></div>'+(isDeficit&&deficit>0?'<div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Déficit</div><div class="stat-sm" style="color:var(--terra)">'+fx(deficit)+'</div></div>':'')+'</div>'+(isDeficit&&deficit>0?'<div class="pw" style="margin-top:8px"><div class="pb" style="width:'+Math.min(100,totalPotSave/deficit*100).toFixed(0)+'%;background:'+(totalPotSave>=deficit?'var(--sage)':'var(--amber)')+'"></div></div><div style="font-size:10px;color:var(--muted);margin-top:4px">'+(totalPotSave>=deficit?'✅ Tus retos cubren el déficit':'Necesitas '+fx(deficit-totalPotSave)+' más.')+'</div>':'')+'</div>':''}
     ${retos.map(r=>{
       const sr=activeRetos.find(x=>x.id===r.id);const isA=sr?.active&&!sr?.completed;const isC=sr?.completed;
-      const checks=getChecks(r.id);const totalN=r.steps||1;const pctD=isA?Math.min(100,Math.round(checks.length/totalN*100)):0;
+      const checks=getChecks(r.id);const totalN=r.steps||1;const nChecked=countChecks(r.id);const pctD=isA?Math.min(100,Math.round(nChecked/totalN*100)):0;
       const cCls=isC?'card-grn':isA?'':'card-sage';const aBrd=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':'';
       return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
         +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+r.icon+'</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+r.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:var(--sage)">+'+fx(r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
-        +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+checks.length+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{
-                  const done=idx<checks.length;
+        +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+nChecked+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{
+                  const done=isIdxDone(r.id,idx);
                   const actAt=sr?.activatedAt||Date.now();
                   const baseD=new Date(actAt);baseD.setHours(0,0,0,0);
                   let dateLbl='';
@@ -1947,7 +2038,7 @@ function renderRetos(){
                   const isToday=r.track==='dia'&&new Date(baseD.getTime()+idx*864e5).toDateString()===new Date().toDateString();
                   const todayBorder=isToday&&!done?'border-color:var(--amber);box-shadow:0 0 0 2px rgba(160,112,48,.2);':'';
                   return'<button style="min-width:44px;height:44px;border-radius:10px;border:2px solid '+(done?'var(--sage)':'var(--border)')+';background:'+(done?'var(--sagedim)':'var(--bg)')+';color:'+(done?'var(--sage)':'var(--muted)')+';font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:2px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+todayBorder+'" onclick="event.stopPropagation();toggleRetoCheck(\''+r.id+'\','+idx+')">'+(done?'<span style=\"font-size:14px\">✓</span>':'')+'<span>'+dateLbl+'</span></button>';
-                }).join('')+'</div>'+(checks.length>=totalN?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival(\''+r.id+'\')">🏆 ¡Reto completado!</button>':'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival(\''+r.id+'\')">Desactivar reto</button>')+'</div>':'')
+                }).join('')+'</div>'+(nChecked>=totalN?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival(\''+r.id+'\')">🏆 ¡Reto completado!</button>':'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival(\''+r.id+'\')">Desactivar reto</button>')+'</div>':'')
         +(!isA&&!isC?'<div style="font-size:10px;color:var(--muted);margin-top:6px">Toca para activar</div>':'')
         +(isC?'<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +'+fx(r.save)+' liberados</div>':'')
         +'</div>';

@@ -489,6 +489,15 @@ function genSurvivalRetos(deficit){
   const retos=[];
   const lastSnap=lastHormiga();
   const hormiga=lastSnap?.hormiga||{};
+  // Calculate quincena days
+  const td=new Date();td.setHours(0,0,0,0);
+  const dd=td.getDate(),mm=td.getMonth(),yy=td.getFullYear();
+  let qS,qE;
+  if(dd>=15&&dd<=29){qS=new Date(yy,mm,15);qE=new Date(yy,mm,29);}
+  else if(dd>=30){qS=new Date(yy,mm,30);qE=new Date(yy,mm+1,14);}
+  else{qS=new Date(yy,mm-1,Math.min(30,new Date(yy,mm,0).getDate()));qE=new Date(yy,mm,14);}
+  const qnaDays=Math.round((qE-qS)/864e5)+1;
+  
   const dData=hormiga['🚗 Delivery'];
   const mData=hormiga['🛒 Minisuper / OXXO'];
   const oData=hormiga['📦 Compras online'];
@@ -506,8 +515,8 @@ function genSurvivalRetos(deficit){
   if(dData&&dData.total>200)retos.push({id:'surv_delivery',icon:'🚗',name:'Cero delivery esta quincena',desc:'Gastaste '+fx(dData.total)+' en delivery. Cocina en casa.',save:Math.round(dData.total/2),diff:2,track:'qna',steps:1});
   if(mData&&mData.total>300)retos.push({id:'surv_mini',icon:'🏪',name:'Minisuper solo 2 veces',desc:'Gastaste '+fx(mData.total)+' en OXXO/minisuper. Limita a 2 visitas máximo.',save:Math.round(mData.total*0.6),diff:2,track:'qna',steps:1});
   if(oData&&oData.total>500)retos.push({id:'surv_online',icon:'📦',name:'Congelar compras online',desc:'Gastaste '+fx(oData.total)+' en Amazon/ML. Cero compras online esta quincena.',save:Math.round(oData.total*0.8),diff:3,track:'qna',steps:1});
-  if(cData&&cData.total>150)retos.push({id:'surv_cafe',icon:'☕',name:'Café de casa',desc:'Gastaste '+fx(cData.total)+' en cafeterías. Lleva tu café de casa.',save:Math.round(cData.total*0.7),diff:1,track:'dia',steps:15});
-  if(rData&&rData.total>400)retos.push({id:'surv_rest',icon:'🍔',name:'Cocinar más, comer fuera menos',desc:'Gastaste '+fx(rData.total)+' en restaurantes. Máximo 1 salida esta quincena.',save:Math.round(rData.total*0.5),diff:2,track:'sem',steps:2});
+  if(cData&&cData.total>150)retos.push({id:'surv_cafe',icon:'☕',name:'Café de casa',desc:'Gastaste '+fx(cData.total)+' en cafeterías. Lleva tu café de casa.',save:Math.round(cData.total*0.7),diff:1,track:'dia',steps:qnaDays});
+  if(rData&&rData.total>400)retos.push({id:'surv_rest',icon:'🍔',name:'Cocinar más, comer fuera menos',desc:'Gastaste '+fx(rData.total)+' en restaurantes. Cocina en casa y marca cada día que lo logres.',save:Math.round(rData.total*0.5),diff:2,track:'dia',steps:qnaDays});
 
   // Expense-based retos with real numbers
   if(superWeekly>0){
@@ -525,7 +534,7 @@ function genSurvivalRetos(deficit){
 
   // Always-available retos
   retos.push({id:'surv_nocompras',icon:'🚫',name:'Semana sin gastar',desc:'Intenta pasar 7 días sin compras no esenciales. Marca cada día que lo logres.',save:Math.round(Math.max(deficit*0.2,300)),diff:3,track:'dia',steps:7});
-  retos.push({id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Prepara tu comida en casa y evita comprar en la calle. Marca cada día.',save:Math.round(Math.max(deficit*0.12,250)),diff:2,track:'dia',steps:10});
+  retos.push({id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Prepara tu comida en casa y evita comprar en la calle. Marca cada día.',save:Math.round(Math.max(deficit*0.12,250)),diff:2,track:'dia',steps:qnaDays});
 
   // Detect online shopping pattern from debts
   const onlineDebts=S.debts.filter(db=>/ml |mercado|amazon|amz|compra.*cred/i.test((db.name||'')+(db.note||'')));
@@ -2053,7 +2062,8 @@ function renderRetos(){
       {id:'pos_ahorro',icon:'🏦',name:'Duplicar tu ahorro',desc:'Mueve '+fx(Math.round(savQ))+' extra a tu cuenta de ahorro.',save:Math.round(savQ),diff:1,track:'qna',steps:1},
       {id:'pos_emergencia',icon:'🛡️',name:'Fondo de emergencia',desc:'Destina '+fx(Math.round(disponible*0.3))+' a tu fondo de emergencia.',save:Math.round(disponible*0.3),diff:1,track:'qna',steps:1},
       {id:'surv_nocompras',icon:'🚫',name:'Semana sin gastar',desc:'Intenta pasar 7 días sin compras no esenciales.',save:Math.round(Math.max(disponible*0.15,300)),diff:3,track:'dia',steps:7},
-      {id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Lleva lunch de casa. Cada día que comes fuera son ~$100-150.',save:Math.round(Math.max(disponible*0.1,250)),diff:2,track:'dia',steps:10},
+      {id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Prepara tu comida en casa y evita comprar en la calle. Marca cada día.',save:Math.round(Math.max(disponible*0.1,250)),diff:2,track:'dia',steps:Math.round((cEnd-cStart)/864e5)+1},
+      {id:'surv_rest',icon:'🍔',name:'Cocinar más, comer fuera menos',desc:'Cocina en casa y marca cada día que lo logres. Máximo 1 salida esta qna.',save:Math.round(Math.max(disponible*0.08,200)),diff:2,track:'dia',steps:Math.round((cEnd-cStart)/864e5)+1},
     ];
     const sE=S.exp.find(e=>/super|súper|despensa/i.test(e.name||''));const sW=sE?(+sE.amt||0):500;
     const gE=S.exp.find(e=>/gasol/i.test(e.name||''));const gW=gE?(+gE.amt||0):700;

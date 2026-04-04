@@ -268,7 +268,7 @@ button:active{transform:scale(.97)}
 const SK='prv5';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
-  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[]};
+  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{}};
 
 function migrate(){
   // Try loading v4 data first
@@ -418,6 +418,34 @@ function confirmRealAmt(type,id,budgeted){
   const key=type+'_'+id;
   S.paidItems[ck][key]={at:Date.now(),realAmt:real,budgeted};
   const diff=budgeted-real;
+  
+  // Auto-check corresponding weekly reto
+  if(type==='exp'){
+    const exp=S.exp.find(e=>e.id===id);
+    if(exp&&exp.freq==='semanal'){
+      const name=(exp.name||'').toLowerCase();
+      let retoId=null;
+      if(/super|súper|despensa|mandado/i.test(name))retoId='surv_super';
+      else if(/gasol/i.test(name))retoId='surv_gas';
+      if(retoId){
+        const sr=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck&&r.active&&!r.completed);
+        if(sr){
+          // Determine which week (idx) based on how many of this expense are already paid
+          const sameExpPaid=Object.entries(S.paidItems[ck]||{}).filter(([k2])=>k2.startsWith('exp_')&&S.exp.find(e2=>e2.id===+k2.split('_')[1]&&e2.name===exp.name)).length;
+          const weekIdx=Math.max(0,sameExpPaid-1);
+          if(!S.retoChecks)S.retoChecks={};
+          const rk=retoId+'_'+ck;
+          if(!S.retoChecks[rk])S.retoChecks[rk]=[];
+          const already=S.retoChecks[rk].find(c=>c.idx===weekIdx);
+          if(!already){
+            const saved=diff>0;
+            S.retoChecks[rk].push({idx:weekIdx,date:new Date().toISOString().split('T')[0],pass:saved||real<=budgeted,realAmt:real,budgeted});
+          }
+        }
+      }
+    }
+  }
+  
   closeConfirm();
   if(diff>0)toast('✓ Pagado · Ahorraste '+fx(diff));
   else toast('✓ Pagado');
@@ -563,16 +591,55 @@ function toggleRetoCheck(retoId,idx){
   const k=retoId+'_'+ck;
   if(!S.retoChecks[k])S.retoChecks[k]=[];
   let checks=S.retoChecks[k];
-  // Migrate old format (array of date strings) to new format
-  if(checks.length>0&&typeof checks[0]==='string'){
-    checks=checks.map((d,i)=>({idx:i,date:d}));
-    S.retoChecks[k]=checks;
-  }
+  // Migrate old format
+  if(checks.length>0&&typeof checks[0]==='string'){checks=checks.map((d,i)=>({idx:i,date:d}));S.retoChecks[k]=checks;}
+  
   const existing=checks.findIndex(c=>c.idx===idx);
-  if(existing>=0){checks.splice(existing,1);}
-  else{checks.push({idx,date:new Date().toISOString().split('T')[0]});}
-  S.retoChecks[k]=checks;
-  sv();rHabitos();
+  // If already checked, allow unchecking
+  if(existing>=0){checks.splice(existing,1);S.retoChecks[k]=checks;sv();rHabitos();return;}
+  
+  // For daily retos (nocompras, lunch, etc), show pass/fail modal
+  const allR=genSurvivalRetos(1000);
+  const reto=allR.find(x=>x.id===retoId);
+  const isDailyBehavior=reto&&(reto.track==='dia');
+  
+  if(isDailyBehavior){
+    const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:16px;text-align:center;line-height:1.7"><strong>'+reto.name+'</strong><br>¿Cumpliste hoy?</div>'
+      +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="markRetoPass(\''+retoId+'\','+idx+')">✅ Sí, cumplí</button>'
+      +'<button class="btn btn-red" style="width:100%;padding:14px" onclick="markRetoFail(\''+retoId+'\','+idx+')">❌ No, gasté</button>';
+    showConfirm('📋 Registro del día',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
+  }else{
+    // Weekly/quincenal: just toggle
+    checks.push({idx,date:new Date().toISOString().split('T')[0],pass:true});
+    S.retoChecks[k]=checks;sv();rHabitos();
+  }
+}
+function markRetoPass(retoId,idx){
+  const ck=cycleKey();const k=retoId+'_'+ck;
+  if(!S.retoChecks[k])S.retoChecks[k]=[];
+  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:true});
+  sv();closeConfirm();toast('✅ ¡Día cumplido!');rHabitos();
+}
+function markRetoFail(retoId,idx){
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">¿Cuánto gastaste en lo no esencial hoy?</div>'
+    +'<input type="number" id="retoFailAmt" placeholder="0" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--terra);font-family:Georgia,serif" onclick="this.select()">'
+    +'<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:6px">Este gasto se sumará a tus impulsos del periodo.</div>';
+  showConfirm('💸 ¿Cuánto gastaste?',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Cancelar</button><button class="btn btn-red" onclick="confirmRetoFail(\''+retoId+'\','+idx+')">Registrar gasto</button>';
+}
+function confirmRetoFail(retoId,idx){
+  const amt=+(document.getElementById('retoFailAmt')?.value)||0;
+  const ck=cycleKey();const k=retoId+'_'+ck;
+  if(!S.retoChecks[k])S.retoChecks[k]=[];
+  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:false,spent:amt});
+  // Track as impulse spending
+  if(!S.impulseSpent)S.impulseSpent={};
+  if(!S.impulseSpent[ck])S.impulseSpent[ck]=0;
+  S.impulseSpent[ck]+=amt;
+  sv();closeConfirm();toast('❌ Registrado: '+fx(amt)+' en impulsos');rHabitos();
 }
 function survivalSaved(){
   const ck=cycleKey();
@@ -1997,7 +2064,7 @@ function renderRetos(){
   const totalPotSave=activeRetos.filter(r=>r.active||r.completed).reduce((a,r)=>{const m2=retos.find(x=>x.id===r.id);return a+(m2?.save||0);},0);
   const getChecks=(rid)=>{const k=rid+'_'+ck;const raw=S.retoChecks[k]||[];return raw;};
   const countChecks=(rid)=>{const c=getChecks(rid);return c.length;};
-  const isIdxDone=(rid,idx)=>{const c=getChecks(rid);if(!c.length)return false;if(typeof c[0]==='string')return idx<c.length;return c.some(x=>x.idx===idx);};
+  const isIdxDone=(rid,idx)=>{const c=getChecks(rid);if(!c.length)return null;if(typeof c[0]==='string')return idx<c.length?{pass:true}:null;const found=c.find(x=>x.idx===idx);return found||null;};
   const trackLabel=(t)=>t==='dia'?'día':t==='sem'?'semana':'quincena';
 
   return`<div class="card" style="border-left:3px solid ${isDeficit?'var(--amber)':'var(--sage)'}">
@@ -2013,31 +2080,36 @@ function renderRetos(){
       return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
         +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+r.icon+'</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+r.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:var(--sage)">+'+fx(r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
         +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+nChecked+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{
-                  const done=isIdxDone(r.id,idx);
-                  const actAt=sr?.activatedAt||Date.now();
-                  const baseD=new Date(actAt);baseD.setHours(0,0,0,0);
+                  const chk=isIdxDone(r.id,idx);
+                  const done=!!chk;
+                  const pass=chk?.pass!==false;
+                  const spent=chk?.spent||0;
+                  // Dates based on cycle, not activation
+                  const today4=new Date();today4.setHours(0,0,0,0);
+                  const d4=today4.getDate(),m4=today4.getMonth(),y4=today4.getFullYear();
+                  let cS4,cE4;
+                  if(d4>=15&&d4<=29){cS4=new Date(y4,m4,15);cE4=new Date(y4,m4,29);}
+                  else if(d4>=30){cS4=new Date(y4,m4,30);cE4=new Date(y4,m4+1,14);}
+                  else{cS4=new Date(y4,m4-1,Math.min(30,new Date(y4,m4,0).getDate()));cE4=new Date(y4,m4,14);}
                   let dateLbl='';
                   const shortM=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
                   if(r.track==='dia'){
-                    const dd=new Date(baseD.getTime()+idx*864e5);
+                    const dd=new Date(cS4.getTime()+idx*864e5);
                     dateLbl=dd.getDate()+' '+shortM[dd.getMonth()];
                   }else if(r.track==='sem'){
-                    const wStart=new Date(baseD.getTime()+idx*7*864e5);
-                    const wEnd=new Date(wStart.getTime()+6*864e5);
+                    const wStart=new Date(cS4.getTime()+idx*7*864e5);
+                    const wEnd=new Date(Math.min(wStart.getTime()+6*864e5,cE4.getTime()));
                     dateLbl=wStart.getDate()+'-'+wEnd.getDate()+' '+shortM[wEnd.getMonth()];
                   }else{
-                    // Quincenal — show cycle range
-                    const today3=new Date();today3.setHours(0,0,0,0);
-                    const dd3=today3.getDate(),mm3=today3.getMonth(),yy3=today3.getFullYear();
-                    let qS,qE;
-                    if(dd3>=15&&dd3<=29){qS=new Date(yy3,mm3,15);qE=new Date(yy3,mm3,29);}
-                    else if(dd3>=30){qS=new Date(yy3,mm3,30);qE=new Date(yy3,mm3+1,14);}
-                    else{qS=new Date(yy3,mm3-1,30);qE=new Date(yy3,mm3,14);}
-                    dateLbl=qS.getDate()+' '+shortM[qS.getMonth()]+' - '+qE.getDate()+' '+shortM[qE.getMonth()];
+                    dateLbl=cS4.getDate()+' '+shortM[cS4.getMonth()]+' - '+cE4.getDate()+' '+shortM[cE4.getMonth()];
                   }
-                  const isToday=r.track==='dia'&&new Date(baseD.getTime()+idx*864e5).toDateString()===new Date().toDateString();
+                  const isToday=r.track==='dia'&&new Date(cS4.getTime()+idx*864e5).toDateString()===today4.toDateString();
                   const todayBorder=isToday&&!done?'border-color:var(--amber);box-shadow:0 0 0 2px rgba(160,112,48,.2);':'';
-                  return'<button style="min-width:44px;height:44px;border-radius:10px;border:2px solid '+(done?'var(--sage)':'var(--border)')+';background:'+(done?'var(--sagedim)':'var(--bg)')+';color:'+(done?'var(--sage)':'var(--muted)')+';font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:2px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+todayBorder+'" onclick="event.stopPropagation();toggleRetoCheck(\''+r.id+'\','+idx+')">'+(done?'<span style=\"font-size:14px\">✓</span>':'')+'<span>'+dateLbl+'</span></button>';
+                  const btnBorder=done?(pass?'var(--sage)':'var(--terra)'):'var(--border)';
+                  const btnBg=done?(pass?'var(--sagedim)':'var(--terradim)'):'var(--bg)';
+                  const btnColor=done?(pass?'var(--sage)':'var(--terra)'):'var(--muted)';
+                  const icon=done?(pass?'✓':'✕'):'';
+                  return'<button style="min-width:44px;height:44px;border-radius:10px;border:2px solid '+btnBorder+';background:'+btnBg+';color:'+btnColor+';font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:2px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+todayBorder+'" onclick="event.stopPropagation();toggleRetoCheck(\''+r.id+'\','+idx+')">'+(done?'<span style=\"font-size:14px\">'+icon+'</span>':'')+'<span>'+dateLbl+'</span>'+(spent>0?'<span style=\"font-size:8px;color:var(--terra)\">'+fx(spent)+'</span>':'')+'</button>';
                 }).join('')+'</div>'+(nChecked>=totalN?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival(\''+r.id+'\')">🏆 ¡Reto completado!</button>':'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival(\''+r.id+'\')">Desactivar reto</button>')+'</div>':'')
         +(!isA&&!isC?'<div style="font-size:10px;color:var(--muted);margin-top:6px">Toca para activar</div>':'')
         +(isC?'<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +'+fx(r.save)+' liberados</div>':'')
@@ -2183,15 +2255,19 @@ function rHabitos(){
       oninput="pt({impulsesBudget:+this.value});document.getElementById('impBdg').textContent=fx(+this.value)+'/quincena'">
     <div id="impBdg" style="font-size:11px;color:var(--sage);text-align:right">${fx(S.impulsesBudget)}/quincena</div>
     ${(()=>{
+      const ck3=cycleKey();
+      const retoSpent=(S.impulseSpent||{})[ck3]||0;
       const lastSnap2=lastHormiga();
-      if(!lastSnap2)return'<div style="font-size:11px;color:var(--muted);margin-top:8px">Sube un CSV en Mi Quincena para ver cuánto gastas vs tu presupuesto.</div>';
-      const impulseTotal=(lastSnap2.hormiga['📦 Compras online']?.total||0)+(lastSnap2.hormiga['🛒 Minisuper / OXXO']?.total||0)+(lastSnap2.hormiga['🚗 Delivery']?.total||0);
-      const pct=S.impulsesBudget>0?(impulseTotal/S.impulsesBudget*100):0;
+      const csvImpulse=lastSnap2?((lastSnap2.hormiga['📦 Compras online']?.total||0)+(lastSnap2.hormiga['🛒 Minisuper / OXXO']?.total||0)+(lastSnap2.hormiga['🚗 Delivery']?.total||0)):0;
+      const totalImpulse=retoSpent+(csvImpulse||0);
+      const pct=S.impulsesBudget>0?(totalImpulse/S.impulsesBudget*100):0;
       const col=pct<60?'var(--sage)':pct<80?'var(--amber)':'var(--terra)';
+      if(!retoSpent&&!csvImpulse)return'<div style="font-size:11px;color:var(--muted);margin-top:8px">Registra tus gastos no esenciales en los retos diarios para llevar el control aquí.</div>';
       return`<div style="margin-top:12px">
-        <div class="row-b" style="margin-bottom:4px"><span style="font-size:11px;color:var(--muted)">Último periodo: impulsos detectados</span><span style="font-size:12px;font-weight:bold;color:${col}">${fx(impulseTotal)} (${pct.toFixed(0)}%)</span></div>
+        <div class="row-b" style="margin-bottom:4px"><span style="font-size:11px;color:var(--muted)">Impulsos esta qna</span><span style="font-size:12px;font-weight:bold;color:${col}">${fx(totalImpulse)} / ${fx(S.impulsesBudget)} (${pct.toFixed(0)}%)</span></div>
         <div class="pw"><div class="pb" style="width:${Math.min(100,pct)}%;background:${col}"></div></div>
-        ${pct>100?`<div style="font-size:11px;color:var(--terra);margin-top:6px">⚠️ Te pasaste ${fx(impulseTotal-S.impulsesBudget)} del presupuesto</div>`:''}
+        ${retoSpent>0?`<div style="font-size:10px;color:var(--muted);margin-top:4px">📋 De retos: ${fx(retoSpent)}${csvImpulse>0?' · CSV: '+fx(csvImpulse):''}</div>`:''}
+        ${pct>100?`<div style="font-size:11px;color:var(--terra);margin-top:4px">⚠️ Te pasaste ${fx(totalImpulse-S.impulsesBudget)} del presupuesto</div>`:''}
       </div>`;
     })()}
   </div>

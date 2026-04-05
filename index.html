@@ -293,10 +293,39 @@ function migrate(){
 function ld(){
   try{
     const d=localStorage.getItem(SK);
-    if(d){S={...S,...JSON.parse(d)};return;}
+    if(d){S={...S,...JSON.parse(d)};fixOvertimeExtraDates();return;}
     // No v5 found — try migrate from v4
     migrate();
   }catch{}
+}
+function fixOvertimeExtraDates(){
+  // Fix overtime extras that have wrong dates (should be next payday, not date of entry)
+  let changed=false;
+  S.extras.forEach(x=>{
+    // Match "Horas extra (YEAR-MONTH-QNA)" from overtime calculator
+    const m=x.name.match(/^Horas extra \((\d+)-(\d+)-(1ra|2da)\)$/);
+    if(m){
+      const yr=+m[1],mo=+m[2],qna=m[3];
+      let correctDate;
+      if(qna==='1ra'){correctDate=new Date(yr,mo,15);}  // next payday = 15th
+      else{correctDate=new Date(yr,mo,0);}  // next payday = last day of month
+      const iso=correctDate.toISOString().split('T')[0];
+      if(x.date!==iso){x.date=iso;changed=true;}
+      return;
+    }
+    // Match manual "Hora Extra" or similar — move to next payday based on date
+    if(/hora.?extra/i.test(x.name)&&x.tipo==='unico'&&x.date){
+      const xd=new Date(x.date+'T12:00');
+      const dd=xd.getDate(),mm=xd.getMonth(),yy=xd.getFullYear();
+      let nxtPay;
+      if(dd>=15&&dd<=29){nxtPay=new Date(yy,mm+1,0);}  // last day of month
+      else if(dd>=30){nxtPay=new Date(yy,mm+1,15);}
+      else{nxtPay=new Date(yy,mm,15);}
+      const iso2=nxtPay.toISOString().split('T')[0];
+      if(x.date!==iso2){x.date=iso2;changed=true;}
+    }
+  });
+  if(changed)sv();
 }
 const sv=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch{}};
 const pt=(o)=>{S={...S,...o};sv()};
@@ -679,23 +708,24 @@ function markRetoFail(retoId,idx){
   const allR2=genSurvivalRetos(1000);
   const r2=allR2.find(x=>x.id===retoId);
   const periodLbl=r2?.track==='dia'?'hoy':r2?.track==='sem'?'esta semana':'esta quincena';
-  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">¿Cuánto gastaste de más '+periodLbl+'?</div>'
-    +'<input type="number" id="retoFailAmt" placeholder="0" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--terra);font-family:Georgia,serif" onclick="this.select()">'
-    +'<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:6px">Este gasto se sumará a tus impulsos del periodo.</div>';
-  showConfirm('💸 ¿Cuánto gastaste?',body,null);
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">¿Cuánto gastaste '+periodLbl+'?</div>'
+    +'<input type="number" id="retoFailAmt" placeholder="0" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--terra);font-family:Georgia,serif;margin-bottom:10px" onclick="this.select()">'
+    +'<input type="text" id="retoFailNote" placeholder="¿En qué? (ej: OXXO, Uber Eats)" style="width:100%;font-size:13px;text-align:center;color:var(--txt);font-family:Georgia,serif;padding:8px;border:1px solid var(--border);border-radius:8px">'
+    +'<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:6px">Se registrará en tu Plan de Acción.</div>';
+  showConfirm('💸 Gasto no planeado',body,null);
   const row=document.getElementById('confirmModal').querySelector('.row');
-  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Cancelar</button><button class="btn btn-red" onclick="confirmRetoFail(\''+retoId+'\','+idx+')">Registrar gasto</button>';
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Cancelar</button><button class="btn btn-red" onclick="confirmRetoFail(\''+retoId+'\','+idx+')">Registrar</button>';
 }
 function confirmRetoFail(retoId,idx){
   const amt=+(document.getElementById('retoFailAmt')?.value)||0;
+  const note=(document.getElementById('retoFailNote')?.value||'').trim();
   const ck=cycleKey();const k=retoId+'_'+ck;
   if(!S.retoChecks[k])S.retoChecks[k]=[];
-  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:false,spent:amt});
-  // Track cumulative impulse spending
+  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:false,spent:amt,note});
   if(!S.impulseSpent)S.impulseSpent={};
   if(!S.impulseSpent[ck])S.impulseSpent[ck]=0;
   S.impulseSpent[ck]+=amt;
-  sv();closeConfirm();toast('❌ Registrado: '+fx(amt)+' en impulsos');rHabitos();
+  sv();closeConfirm();toast('❌ Registrado: '+(note||'impulso')+' '+fx(amt));rHabitos();
 }
 function confirmRetoExpense(retoId,idx,expId,budgeted){
   const real=+(document.getElementById('retoExpAmt')?.value)||0;
@@ -1857,17 +1887,18 @@ function rPlan(){
   const impulseItems=[];
   if(!showNext){
     const ck2=cycleKey();
-    const retoNames={'surv_nocompras':'🚫 Sin compras','surv_lunch':'🍱 Lunch','surv_rest':'🍔 Comer fuera','pos_extra':'💰 Extra','pos_ahorro':'🏦 Ahorro','pos_emergencia':'🛡️ Emergencia'};
+    const retoIcons={'surv_nocompras':'🚫','surv_lunch':'🍱','surv_rest':'🍔','pos_extra':'💰','pos_ahorro':'🏦','pos_emergencia':'🛡️'};
     Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
       if(!k.endsWith('_'+ck2))return;
       const rid=k.replace('_'+ck2,'');
-      // Skip super/gas — those sync with fixed expenses
       if(/surv_super|surv_gas/.test(rid))return;
       checks.forEach(c=>{
         if(c.pass===false&&c.spent>0){
           const numId=Date.parse(c.date+'T12:00')+c.idx;
-          const label=retoNames[rid]||rid;
-          impulseItems.push({id:numId,name:label+(c.date?' · '+fmtDate(c.date):''),amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate()});
+          const icon=retoIcons[rid]||'🚫';
+          const fallbacks={'surv_nocompras':'Gasto impulso','surv_lunch':'Comida fuera','surv_rest':'Comida fuera'};
+          const desc=c.note||(fallbacks[rid]||'Impulso');
+          impulseItems.push({id:numId,name:icon+' '+desc,amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate()});
         }
       });
     });
@@ -2622,11 +2653,24 @@ function logOvertime(){
   if(!S.overtimeLog)S.overtimeLog={};
   if(!S.overtimeLog[ck])S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:0,rate:172};
   S.overtimeLog[ck].entries.push({date:dateVal,from,to,hours:Math.round(hours*10)/10,desc});
-  // Also add as extra income
+  // Also add as extra income — paid on NEXT quincena payday
   const earned=Math.round(hours*S.overtimeLog[ck].rate);
+  // Calculate next payday
+  const td=new Date();td.setHours(0,0,0,0);
+  const dd=td.getDate(),mm=td.getMonth(),yy=td.getFullYear();
+  let nextPayDate;
+  if(dd>=15&&dd<=29){
+    // Currently 2da qna → next payday is last day of this month
+    nextPayDate=new Date(yy,mm+1,0);
+  }else{
+    // Currently 1ra qna → next payday is 15th
+    if(dd>=30)nextPayDate=new Date(yy,mm+1,15);
+    else nextPayDate=new Date(yy,mm,15);
+  }
+  const nextPayISO=nextPayDate.toISOString().split('T')[0];
   const existingExtra=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
-  if(existingExtra){existingExtra.amt=(+existingExtra.amt||0)+earned;}
-  else{S.extras.push({id:Date.now(),name:'Horas extra ('+ck+')',amt:earned,tipo:'unico',date:new Date().toISOString().split('T')[0]});}
+  if(existingExtra){existingExtra.amt=(+existingExtra.amt||0)+earned;existingExtra.date=nextPayISO;}
+  else{S.extras.push({id:Date.now(),name:'Horas extra ('+ck+')',amt:earned,tipo:'unico',date:nextPayISO});}
   sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rHabitos();
 }
 function delOtEntry(idx){

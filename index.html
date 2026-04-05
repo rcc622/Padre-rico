@@ -465,10 +465,23 @@ function confirmRealAmt(type,id,budgeted){
   else toast('✓ Pagado');
   sv();rPlan();
 }
+function toggleImpulseItem(itemId){
+  const ck=cycleKey();
+  if(!S.impulseItems||!S.impulseItems[ck])return;
+  const it=S.impulseItems[ck].find(x=>x.id===itemId);
+  if(!it)return;
+  if(it.applied==='done'){toast('Ya fue aplicado');return;}
+  if(it.applied==='selected'){it.applied=false;}
+  else{it.applied='selected';}
+  sv();rPlan();
+}
 function pendingCount(){
   const ck=cycleKey();
   const items=S.paidItems[ck]||{};
-  return Object.entries(items).filter(([k,v])=>!k.startsWith('_')&&v!=='applied').length;
+  let count=Object.entries(items).filter(([k,v])=>!k.startsWith('_')&&v!=='applied'&&!(typeof v==='object'&&v?.applied)).length;
+  // Also count selected impulse items
+  if(S.impulseItems&&S.impulseItems[ck]){count+=S.impulseItems[ck].filter(it=>it.applied==='selected').length;}
+  return count;
 }
 function appliedCount(){
   const ck=cycleKey();
@@ -664,6 +677,14 @@ function confirmRetoFail(retoId,idx){
   if(!S.impulseSpent)S.impulseSpent={};
   if(!S.impulseSpent[ck])S.impulseSpent[ck]=0;
   S.impulseSpent[ck]+=amt;
+  // Track individual item for Plan de Acción
+  if(amt>0){
+    if(!S.impulseItems)S.impulseItems={};
+    if(!S.impulseItems[ck])S.impulseItems[ck]=[];
+    const allR3=genSurvivalRetos(1000);
+    const r3=allR3.find(x=>x.id===retoId);
+    S.impulseItems[ck].push({id:Date.now(),date:new Date().toISOString().split('T')[0],amt,reto:r3?.name||retoId,applied:false});
+  }
   sv();closeConfirm();toast('❌ Registrado: '+fx(amt)+' en impulsos');rHabitos();
 }
 function survivalSaved(){
@@ -1707,13 +1728,34 @@ function applyPayments(){
     else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
-    else if(type==='imp'){amt=Math.round(S.impulsesBudget/2);appliedExp++;}
+    else if(type==='imp'){
+      // Find impulse amount from retoChecks
+      const ck3=cycleKey();
+      Object.entries(S.retoChecks||{}).forEach(([k2,checks2])=>{
+        if(!k2.endsWith('_'+ck3))return;
+        checks2.forEach(c2=>{
+          if(c2.pass===false&&c2.spent>0){
+            const numId2=Date.parse(c2.date+'T12:00')+c2.idx;
+            if(numId2===id)amt=c2.spent;
+          }
+        });
+      });
+      appliedExp++;
+    }
     appliedAmt+=amt;
     items[key]=typeof v==='object'?{...v,applied:true}:'applied';
   }
   items._appliedTotal=((+items._appliedTotal)||0)+appliedAmt;
-  S.paidItems[ck]=items;sv();
-  const total=appliedExp+appliedDebt;
+  S.paidItems[ck]=items;
+  // Also apply selected impulse items
+  let impulseApplied=0;
+  if(S.impulseItems&&S.impulseItems[ck]){
+    S.impulseItems[ck].forEach(it=>{
+      if(it.applied==='selected'){it.applied='done';impulseApplied++;}
+    });
+  }
+  sv();
+  const total=appliedExp+appliedDebt+impulseApplied;
   if(total>0){toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':''));rPlan();rFlujo();hdrUp();}
   else{toast('No hay pagos seleccionados');}
 }
@@ -1786,6 +1828,23 @@ function rPlan(){
   const aptQ=expSavePlan.reduce((a,e)=>a+e.half,0);
   const totalSavQ=savGoalQ+aptQ;
 
+  // ── IMPULSE SPENDING (from reto failures) ──
+  const impulseItems=[];
+  if(!showNext){
+    const ck2=cycleKey();
+    Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
+      if(!k.endsWith('_'+ck2))return;
+      checks.forEach(c=>{
+        if(c.pass===false&&c.spent>0){
+          const rid=k.replace('_'+ck2,'');
+          // Use date+idx as unique numeric ID
+          const numId=Date.parse(c.date+'T12:00')+c.idx;
+          impulseItems.push({id:numId,name:'🚫 Impulso'+(c.date?' · '+fmtDate(c.date):''),amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate()});
+        }
+      });
+    });
+  }
+
   // ── BUDGET (FIXED) ──
   const disponible=incQ-expQ-savQ-totalSavQ-debtPayQ;
 
@@ -1796,6 +1855,7 @@ function rPlan(){
     debtDetail.forEach(e=>{if(isApplied('debt',e.id))appliedAmt2+=e.amt;else if(isPaid('debt',e.id))checkedAmt+=e.amt;});
     S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{if(isApplied('sav',g.id))appliedAmt2+=savGoalPerQ(g);else if(isPaid('sav',g.id))checkedAmt+=savGoalPerQ(g);});
     expSavePlan.forEach(e=>{if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
+    impulseItems.forEach(e=>{if(isApplied('imp',e.id))appliedAmt2+=e.amt;else if(isPaid('imp',e.id))checkedAmt+=e.amt;});
   }
 
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:(+b.rate||0)-(+a.rate||0));
@@ -1890,6 +1950,7 @@ function rPlan(){
         <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
         ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
+        ${(()=>{const impT=impulseItems.reduce((a,p)=>a+p.amt,0);return impT>0?'<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos ('+impulseItems.length+')</span><strong style="color:var(--terra)">−'+fx(Math.round(impT))+'</strong></div>':'';})()}
         ${showNext?(()=>{const ck2=cycleKey();const ot=S.overtimeLog?.[ck2];if(!ot?.accepted)return'';const otEarned=ot.entries.reduce((a,e)=>a+Math.round(e.hours*ot.rate),0);return otEarned>0?'<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra</span><strong style="color:var(--sky)">+'+fx(otEarned)+'</strong></div>':'';})():''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
@@ -1933,6 +1994,21 @@ function rPlan(){
       ${mUnpaid.length>0?`<div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes (${mUnpaid.length})</div>${mUnpaid.map(p=>ri(p,'pending')).join('')}<div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--border)"><span style="font-size:12px;color:var(--terra);font-weight:bold">Total pendiente:</span><span style="font-size:14px;color:var(--terra);font-weight:bold">${fx(Math.round(mUnpaidT))}</span></div>`:'<div style="text-align:center;padding:14px 0"><span style="font-size:24px">✅</span><div style="font-size:14px;color:var(--sage);font-weight:bold;margin-top:6px">¡Todo al corriente!</div></div>'}
       ${mSelected.length>0?`<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">☑ Seleccionados (${mSelected.length})</div>${mSelected.map(p=>ri(p,'selected')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--amber)"><span style="font-size:11px;color:var(--amber);font-style:italic">Seleccionado:</span><span style="font-size:11px;color:var(--amber);font-weight:bold;font-style:italic">${fx(Math.round(mSelectedT))}</span></div>`:''}
       ${mApplied.length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:14px 0 6px">✅ Pagados (${mApplied.length})</div>${mApplied.map(p=>ri(p,'applied')).join('')}<div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px dashed var(--sage)"><span style="font-size:11px;color:var(--sage)">Pagado:</span><span style="font-size:11px;color:var(--sage);font-weight:bold">${fx(Math.round(mAppliedT))}</span></div>`:''}
+      ${(()=>{
+        if(showNext||!impulseItems.length)return'';
+        const impPending=impulseItems.filter(p=>!isPaid('imp',p.id)&&!isApplied('imp',p.id));
+        const impSelected=impulseItems.filter(p=>isPaid('imp',p.id)&&!isApplied('imp',p.id));
+        const impApplied=impulseItems.filter(p=>isApplied('imp',p.id));
+        const impTotal=impulseItems.reduce((a,p)=>a+p.amt,0);
+        return`<div style="margin-top:10px;padding-top:10px;border-top:2px dashed var(--terra)">
+          <div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">🚫 Gastos impulso (${impulseItems.length})</div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:8px">Gastos reportados en tus retos. Selecciona y aplica para registrarlos.</div>
+          ${impPending.map(p=>ri(p,'pending')).join('')}
+          ${impSelected.map(p=>ri(p,'selected')).join('')}
+          ${impApplied.map(p=>ri(p,'applied')).join('')}
+          <div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px solid var(--terra)"><span style="font-size:10px;color:var(--terra)">Total impulsos:</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(impTotal))}</span></div>
+        </div>`;
+      })()}
     </div>
 
     <!-- AHORROS OPCIONAL -->
@@ -2126,9 +2202,20 @@ function renderRetos(){
                     const dd=new Date(cS4.getTime()+idx*864e5);
                     dateLbl=dd.getDate()+' '+shortM[dd.getMonth()];
                   }else if(r.track==='sem'){
-                    const wStart=new Date(cS4.getTime()+idx*7*864e5);
-                    const wEnd=new Date(Math.min(wStart.getTime()+6*864e5,cE4.getTime()));
-                    dateLbl=wStart.getDate()+'-'+wEnd.getDate()+' '+shortM[wEnd.getMonth()];
+                    // For super/gas: use Sun-Sat calendar weeks
+                    const isCalWeek=/surv_super|surv_gas/.test(r.id);
+                    if(isCalWeek){
+                      // Find Sunday of the week containing cycle start
+                      const sunOfCycleStart=new Date(cS4);sunOfCycleStart.setDate(cS4.getDate()-cS4.getDay());
+                      const wStart=new Date(sunOfCycleStart.getTime()+idx*7*864e5);
+                      const wEnd=new Date(wStart.getTime()+6*864e5);
+                      const dayNames=['dom','lun','mar','mié','jue','vie','sáb'];
+                      dateLbl=dayNames[wStart.getDay()]+' '+wStart.getDate()+' - '+dayNames[wEnd.getDay()]+' '+wEnd.getDate()+' '+shortM[wEnd.getMonth()];
+                    }else{
+                      const wStart=new Date(cS4.getTime()+idx*7*864e5);
+                      const wEnd=new Date(Math.min(wStart.getTime()+6*864e5,cE4.getTime()));
+                      dateLbl=wStart.getDate()+'-'+wEnd.getDate()+' '+shortM[wEnd.getMonth()];
+                    }
                   }else{
                     dateLbl=cS4.getDate()+' '+shortM[cS4.getMonth()]+' - '+cE4.getDate()+' '+shortM[cE4.getMonth()];
                   }

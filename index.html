@@ -466,22 +466,13 @@ function confirmRealAmt(type,id,budgeted){
   sv();rPlan();
 }
 function toggleImpulseItem(itemId){
-  const ck=cycleKey();
-  if(!S.impulseItems||!S.impulseItems[ck])return;
-  const it=S.impulseItems[ck].find(x=>x.id===itemId);
-  if(!it)return;
-  if(it.applied==='done'){toast('Ya fue aplicado');return;}
-  if(it.applied==='selected'){it.applied=false;}
-  else{it.applied='selected';}
-  sv();rPlan();
+  // Impulse items use standard paidItems flow with ptype 'imp'
+  togglePaid('imp',itemId);
 }
 function pendingCount(){
   const ck=cycleKey();
   const items=S.paidItems[ck]||{};
-  let count=Object.entries(items).filter(([k,v])=>!k.startsWith('_')&&v!=='applied'&&!(typeof v==='object'&&v?.applied)).length;
-  // Also count selected impulse items
-  if(S.impulseItems&&S.impulseItems[ck]){count+=S.impulseItems[ck].filter(it=>it.applied==='selected').length;}
-  return count;
+  return Object.entries(items).filter(([k,v])=>!k.startsWith('_')&&v!=='applied'&&!(typeof v==='object'&&v?.applied)).length;
 }
 function appliedCount(){
   const ck=cycleKey();
@@ -638,18 +629,45 @@ function toggleRetoCheck(retoId,idx){
   const allR=genSurvivalRetos(1000);
   const reto=allR.find(x=>x.id===retoId);
   
-  if(reto){
-    const trackLbl2=reto.track==='dia'?'hoy':reto.track==='sem'?'esta semana':'esta quincena';
-    const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:16px;text-align:center;line-height:1.7"><strong>'+reto.name+'</strong><br>¿Cumpliste '+trackLbl2+'?</div>'
-      +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="markRetoPass(\''+retoId+'\','+idx+')">✅ Sí, cumplí</button>'
-      +'<button class="btn btn-red" style="width:100%;padding:14px" onclick="markRetoFail(\''+retoId+'\','+idx+')">❌ No, gasté</button>';
-    showConfirm('📋 Registro',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
-    if(row)row.innerHTML='<button class="btn btn-ghost" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
-  }else{
+  if(!reto){
     checks.push({idx,date:new Date().toISOString().split('T')[0],pass:true});
-    S.retoChecks[k]=checks;sv();rHabitos();
+    S.retoChecks[k]=checks;sv();rHabitos();return;
   }
+  
+  // Special flow for super/gas: ask amount and sync with fixed expense
+  const isExpenseReto=/surv_super|surv_gas/.test(retoId);
+  if(isExpenseReto){
+    const isSuper=retoId==='surv_super';
+    const expMatch=S.exp.find(e=>isSuper?/super|súper|despensa|mandado/i.test(e.name||''):/gasol/i.test(e.name||''));
+    const budgeted=expMatch?(+expMatch.amt||0):0;
+    const label=isSuper?'súper':'gasolina';
+    const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:14px;text-align:center;line-height:1.7"><strong>'+reto.name+'</strong></div>'
+      +'<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;text-align:center">Presupuesto semanal de '+label+': <strong>'+fx(budgeted)+'</strong><br>¿Cuánto gastaste realmente esta semana?</div>'
+      +'<input type="number" id="retoExpAmt" value="'+budgeted+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">'
+      +'<div id="retoExpDiff" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px"></div>';
+    showConfirm('💸 Gasto de '+label,body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="confirmRetoExpense(\''+retoId+'\','+idx+','+(expMatch?expMatch.id:0)+','+budgeted+')">✓ Registrar</button>';
+    setTimeout(()=>{
+      const inp=document.getElementById('retoExpAmt');
+      if(inp)inp.oninput=function(){
+        const real=+this.value||0;const diff=budgeted-real;
+        const el=document.getElementById('retoExpDiff');
+        if(el)el.innerHTML=diff>0?'<span style="color:var(--sage)">🎉 Ahorraste '+fx(diff)+'</span>':diff<0?'<span style="color:var(--terra)">⚠ Gastaste '+fx(Math.abs(diff))+' de más</span>':'Exacto al presupuesto';
+        this.style.color=diff>=0?'var(--sage)':'var(--terra)';
+      };
+    },100);
+    return;
+  }
+  
+  // Normal retos: pass/fail modal
+  const trackLbl2=reto.track==='dia'?'hoy':reto.track==='sem'?'esta semana':'esta quincena';
+  const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:16px;text-align:center;line-height:1.7"><strong>'+reto.name+'</strong><br>¿Cumpliste '+trackLbl2+'?</div>'
+    +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="markRetoPass(\''+retoId+'\','+idx+')">✅ Sí, cumplí</button>'
+    +'<button class="btn btn-red" style="width:100%;padding:14px" onclick="markRetoFail(\''+retoId+'\','+idx+')">❌ No, gasté</button>';
+  showConfirm('📋 Registro',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
 }
 function markRetoPass(retoId,idx){
   const ck=cycleKey();const k=retoId+'_'+ck;
@@ -673,19 +691,31 @@ function confirmRetoFail(retoId,idx){
   const ck=cycleKey();const k=retoId+'_'+ck;
   if(!S.retoChecks[k])S.retoChecks[k]=[];
   S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:false,spent:amt});
-  // Track as impulse spending
+  // Track cumulative impulse spending
   if(!S.impulseSpent)S.impulseSpent={};
   if(!S.impulseSpent[ck])S.impulseSpent[ck]=0;
   S.impulseSpent[ck]+=amt;
-  // Track individual item for Plan de Acción
-  if(amt>0){
-    if(!S.impulseItems)S.impulseItems={};
-    if(!S.impulseItems[ck])S.impulseItems[ck]=[];
-    const allR3=genSurvivalRetos(1000);
-    const r3=allR3.find(x=>x.id===retoId);
-    S.impulseItems[ck].push({id:Date.now(),date:new Date().toISOString().split('T')[0],amt,reto:r3?.name||retoId,applied:false});
-  }
   sv();closeConfirm();toast('❌ Registrado: '+fx(amt)+' en impulsos');rHabitos();
+}
+function confirmRetoExpense(retoId,idx,expId,budgeted){
+  const real=+(document.getElementById('retoExpAmt')?.value)||0;
+  if(!real&&real!==0){toast('Ingresa el monto');return;}
+  const ck=cycleKey();const k=retoId+'_'+ck;
+  const passed=real<=budgeted;
+  const diff=budgeted-real;
+  // Record reto check
+  if(!S.retoChecks[k])S.retoChecks[k]=[];
+  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:passed,spent:real,realAmt:real,budgeted});
+  // Sync with fixed expense payment
+  if(expId){
+    if(!S.paidItems[ck])S.paidItems[ck]={};
+    S.paidItems[ck]['exp_'+expId]={at:Date.now(),realAmt:real,budgeted};
+  }
+  sv();closeConfirm();
+  if(passed&&diff>0)toast('✅ ¡Ahorraste '+fx(diff)+'!');
+  else if(passed)toast('✅ Exacto al presupuesto');
+  else toast('⚠ Gastaste '+fx(Math.abs(diff))+' de más');
+  rHabitos();
 }
 function survivalSaved(){
   const ck=cycleKey();
@@ -1729,10 +1759,12 @@ function applyPayments(){
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
     else if(type==='imp'){
-      // Find impulse amount from retoChecks
+      // Find impulse amount from retoChecks (skip super/gas — those are fixed expenses)
       const ck3=cycleKey();
       Object.entries(S.retoChecks||{}).forEach(([k2,checks2])=>{
         if(!k2.endsWith('_'+ck3))return;
+        const rid2=k2.replace('_'+ck3,'');
+        if(/surv_super|surv_gas/.test(rid2))return;
         checks2.forEach(c2=>{
           if(c2.pass===false&&c2.spent>0){
             const numId2=Date.parse(c2.date+'T12:00')+c2.idx;
@@ -1747,15 +1779,8 @@ function applyPayments(){
   }
   items._appliedTotal=((+items._appliedTotal)||0)+appliedAmt;
   S.paidItems[ck]=items;
-  // Also apply selected impulse items
-  let impulseApplied=0;
-  if(S.impulseItems&&S.impulseItems[ck]){
-    S.impulseItems[ck].forEach(it=>{
-      if(it.applied==='selected'){it.applied='done';impulseApplied++;}
-    });
-  }
   sv();
-  const total=appliedExp+appliedDebt+impulseApplied;
+  const total=appliedExp+appliedDebt;
   if(total>0){toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':''));rPlan();rFlujo();hdrUp();}
   else{toast('No hay pagos seleccionados');}
 }
@@ -1832,14 +1857,17 @@ function rPlan(){
   const impulseItems=[];
   if(!showNext){
     const ck2=cycleKey();
+    const retoNames={'surv_nocompras':'🚫 Sin compras','surv_lunch':'🍱 Lunch','surv_rest':'🍔 Comer fuera','pos_extra':'💰 Extra','pos_ahorro':'🏦 Ahorro','pos_emergencia':'🛡️ Emergencia'};
     Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
       if(!k.endsWith('_'+ck2))return;
+      const rid=k.replace('_'+ck2,'');
+      // Skip super/gas — those sync with fixed expenses
+      if(/surv_super|surv_gas/.test(rid))return;
       checks.forEach(c=>{
         if(c.pass===false&&c.spent>0){
-          const rid=k.replace('_'+ck2,'');
-          // Use date+idx as unique numeric ID
           const numId=Date.parse(c.date+'T12:00')+c.idx;
-          impulseItems.push({id:numId,name:'🚫 Impulso'+(c.date?' · '+fmtDate(c.date):''),amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate()});
+          const label=retoNames[rid]||rid;
+          impulseItems.push({id:numId,name:label+(c.date?' · '+fmtDate(c.date):''),amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate()});
         }
       });
     });

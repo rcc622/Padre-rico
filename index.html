@@ -618,9 +618,17 @@ function completeSurvival(retoId){
       +(topDebt?'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToDebt('+topDebt.id+')">⛓️ Abonar a deuda: '+topDebt.name+'</button>':'')
       +(savGoal?'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoToGoal('+savGoal.id+')">🎯 Abonar a meta: '+savGoal.name+'</button>':'')
       +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="applyRetoAsExtra()">📈 Registrar como ingreso extra</button>'
-      +'<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm();rHabitos();">Dejarlo como flujo libre</button>';
+      +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="closeConfirm();rHabitos();">Dejarlo como flujo libre</button>'
+      +'<div style="border-top:1px dashed var(--border);margin-top:8px;padding-top:10px"><button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="exportData()">📤 Exportar respaldo de datos</button></div>';
     showConfirm('🏆 ¡Reto completado!',body,()=>{});
-  }else{toast('🏆 ¡Reto completado!');rHabitos();}
+  }else{
+    const body2='<div style="font-size:13px;color:var(--txt2);line-height:1.7;margin-bottom:14px;text-align:center">¡Felicidades! Completaste el reto de esta quincena.</div>'
+      +'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:8px" onclick="closeConfirm();rHabitos()">Continuar</button>'
+      +'<div style="border-top:1px dashed var(--border);margin-top:4px;padding-top:10px"><button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="exportData()">📤 Exportar respaldo de datos</button></div>';
+    showConfirm('🏆 ¡Reto completado!',body2,null);
+    const row2=document.getElementById('confirmModal').querySelector('.row');
+    if(row2)row2.innerHTML='';
+  }
 }
 function _getRetoAmt(){return +(document.getElementById('retoRealAmt')?.value)||0;}
 function applyRetoToDebt(debtId){

@@ -1860,7 +1860,7 @@ function rPlan(){
   // ── EXPENSES ──
   let expQ=0;const expDetail=[];
   S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
-    if(f==='semanal'){const w=+e.amt||0;expQ+=w*2;expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:1});expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:2,paidType:'expw2'});}
+    if(f==='semanal'){const w=+e.amt||0;const wOff=ct==='2da'?2:0;expQ+=w*2;expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:1+wOff});expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:2+wOff,paidType:'expw2'});}
     else if(f==='quincenal'){expQ+=(+e.amt||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
     else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
     else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}

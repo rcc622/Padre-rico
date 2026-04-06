@@ -1914,8 +1914,11 @@ function rPlan(){
     debtDetail.forEach(e=>{if(isApplied('debt',e.id))appliedAmt2+=e.amt;else if(isPaid('debt',e.id))checkedAmt+=e.amt;});
     S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{if(isApplied('sav',g.id))appliedAmt2+=savGoalPerQ(g);else if(isPaid('sav',g.id))checkedAmt+=savGoalPerQ(g);});
     expSavePlan.forEach(e=>{if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
+    // Impulse items: applied → counted in appliedAmt2, selected → in checkedAmt
     impulseItems.forEach(e=>{if(isApplied('imp',e.id))appliedAmt2+=e.amt;else if(isPaid('imp',e.id))checkedAmt+=e.amt;});
   }
+  const impPendingTotal=impulseItems.filter(p=>!isPaid('imp',p.id)&&!isApplied('imp',p.id)).reduce((a,p)=>a+p.amt,0);
+  const impAllTotal=impulseItems.reduce((a,p)=>a+p.amt,0);
 
   const sorted=[...S.debts].sort((a,b)=>dStrat==='snowball'?a.bal-b.bal:(+b.rate||0)-(+a.rate||0));
   const todayDay=today.getDate();
@@ -2009,11 +2012,11 @@ function rPlan(){
         <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
         ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
-        ${(()=>{const impT=impulseItems.reduce((a,p)=>a+p.amt,0);return impT>0?'<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos ('+impulseItems.length+')</span><strong style="color:var(--terra)">−'+fx(Math.round(impT))+'</strong></div>':'';})()}
+        ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes (${impulseItems.filter(p=>!isPaid('imp',p.id)&&!isApplied('imp',p.id)).length})</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
         ${showNext?(()=>{const ck2=cycleKey();const ot=S.overtimeLog?.[ck2];if(!ot?.accepted)return'';const otEarned=ot.entries.reduce((a,e)=>a+Math.round(e.hours*ot.rate),0);return otEarned>0?'<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra</span><strong style="color:var(--sky)">+'+fx(otEarned)+'</strong></div>':'';})():''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
-          <strong style="color:${(incQ-appliedAmt2-checkedAmt)>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(incQ-appliedAmt2-checkedAmt))}</strong>
+          <strong style="color:${(incQ-appliedAmt2-checkedAmt-impPendingTotal)>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(incQ-appliedAmt2-checkedAmt-impPendingTotal))}</strong>
         </div>
         ${checkedAmt>0?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
       </div>

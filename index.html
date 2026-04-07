@@ -387,6 +387,16 @@ function cycleKey(){
   if(d>=30)return y+'-'+(m+1)+'-1ra';
   return y+'-'+m+'-1ra';
 }
+function calcImpulseSpent(ck){
+  let total=0;
+  Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
+    if(!k.endsWith('_'+ck))return;
+    const rid=k.replace('_'+ck,'');
+    if(/surv_super|surv_gas/.test(rid))return;
+    checks.forEach(c=>{if(c.pass===false&&(+c.spent||0)>0)total+=(+c.spent);});
+  });
+  return total;
+}
 function isPaid(type,id){
   const ck=cycleKey();
   const items=S.paidItems[ck]||{};
@@ -740,9 +750,6 @@ function confirmRetoFail(retoId,idx){
   const ck=cycleKey();const k=retoId+'_'+ck;
   if(!S.retoChecks[k])S.retoChecks[k]=[];
   S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:false,spent:amt,note});
-  if(!S.impulseSpent)S.impulseSpent={};
-  if(!S.impulseSpent[ck])S.impulseSpent[ck]=0;
-  S.impulseSpent[ck]+=amt;
   sv();closeConfirm();toast('❌ Registrado: '+(note||'impulso')+' '+fx(amt));rHabitos();
 }
 function confirmRetoExpense(retoId,idx,expId,budgeted){
@@ -1928,8 +1935,8 @@ function rPlan(){
   // ── CHECKED & APPLIED TRACKING ──
   let checkedAmt=0,appliedAmt2=0;
   if(!showNext){
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';if(isApplied(pt2,e.id))appliedAmt2+=e.amt;else if(isPaid(pt2,e.id))checkedAmt+=e.amt;});
-    debtDetail.forEach(e=>{if(isApplied('debt',e.id))appliedAmt2+=e.amt;else if(isPaid('debt',e.id))checkedAmt+=e.amt;});
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(isApplied(pt2,e.id))appliedAmt2+=v;else if(isPaid(pt2,e.id))checkedAmt+=v;});
+    debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(isApplied('debt',e.id))appliedAmt2+=v;else if(isPaid('debt',e.id))checkedAmt+=v;});
     S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{if(isApplied('sav',g.id))appliedAmt2+=savGoalPerQ(g);else if(isPaid('sav',g.id))checkedAmt+=savGoalPerQ(g);});
     expSavePlan.forEach(e=>{if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
     // Impulse items: applied → counted in appliedAmt2, selected → in checkedAmt
@@ -1942,7 +1949,7 @@ function rPlan(){
   const todayDay=today.getDate();
 
   // ── SUB-NAV ──
-  const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
+  const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia'],['hrsxtra','⏱️ Hrs Xtra']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
 
   // ── TOGGLE ──
   const toggle=`<div class="card" style="padding:10px 18px">
@@ -1975,9 +1982,10 @@ function rPlan(){
     const mUnpaid=mandatory.filter(p=>!p.paid);
     const mSelected=mandatory.filter(p=>p.paid&&!isApplied(p.ptype,p.id));
     const mApplied=mandatory.filter(p=>p.paid&&isApplied(p.ptype,p.id));
+    const realOr=p=>{const r=getRealAmt(p.ptype,p.id);return r!==null?r:p.amt;};
     const mUnpaidT=mUnpaid.reduce((a,p)=>a+p.amt,0);
-    const mSelectedT=mSelected.reduce((a,p)=>a+p.amt,0);
-    const mAppliedT=mApplied.reduce((a,p)=>a+p.amt,0);
+    const mSelectedT=mSelected.reduce((a,p)=>a+realOr(p),0);
+    const mAppliedT=mApplied.reduce((a,p)=>a+realOr(p),0);
 
     // Optional splits
     const oUnpaid=optional.filter(p=>!p.paid);
@@ -2055,7 +2063,7 @@ function rPlan(){
           <div class="pw" style="height:5px;margin-bottom:6px"><div class="pb" style="width:${p2}%;background:${p2>=100?'var(--sage)':'var(--sky)'}"></div></div>
           <div class="row-b"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(tM)} ganados</span><span style="font-size:11px;color:var(--muted)">Faltan ${fx(Math.max(0,Math.round(ot2.targetHrs*ot2.rate-tM)))}</span></div>
           <div class="row" style="gap:8px;margin-top:8px">
-            <button class="btn btn-ghost btn-sm" style="flex:1" onclick="habitView='retos';go('habitos')">Registrar horas →</button>
+            <button class="btn btn-ghost btn-sm" style="flex:1" onclick="planView='hrsxtra';rPlan()">Registrar horas →</button>
             ${tH>0?`<button class="btn btn-ghost btn-sm" style="flex:1" onclick="exportOvertime()">📄 Exportar</button>`:''}
           </div>
         </div>`;
@@ -2192,6 +2200,68 @@ function rPlan(){
         </div>`;
       }).join('')}
     </div>`;
+    return;
+  }
+
+  // ════════════════════════════
+  // VIEW: HORAS EXTRA
+  // ════════════════════════════
+  if(planView==='hrsxtra'){
+    const ck=cycleKey();
+    const ot=(S.overtimeLog||{})[ck];
+    let otContent='';
+    if(ot?.accepted){
+      const totalHrs=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
+      const totalMoney=Math.round(totalHrs*ot.rate);
+      const pct=ot.targetHrs>0?Math.min(100,Math.round(totalHrs/ot.targetHrs*100)):0;
+      const targetMoney=Math.round(ot.targetHrs*ot.rate);
+      const paidItems2=S.paidItems[ck]||{};
+      let currentApplied=0;
+      for(const key in paidItems2){if(key.startsWith('_'))continue;if(paidItems2[key]==='applied'){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)currentApplied+=toMonthly(+e.amt||0,e.freq||'mensual');}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)currentApplied+=(+db.pay||0);}}}
+      const originalPendingThis=ot.pendingThis||0;
+      const newPendingThis=Math.max(0,originalPendingThis-currentApplied);
+      const currentDeficit=Math.max(0,newPendingThis+(ot.nextTotal||0)-(S.inc.sal/2));
+      const surplus=targetMoney-currentDeficit;
+      const deficitChanged=Math.abs(currentDeficit-(ot.deficit||0))>100;
+
+      otContent='<div class="card" style="border:2px solid var(--sky);background:rgba(74,110,140,.04)"><div class="ct">⏰ Horas Extra — Esta quincena</div>'
+        +'<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;line-height:1.6">Comprometido: <strong>'+ot.targetHrs.toFixed(1)+'h</strong> = '+fx(targetMoney)+'</div>'
+        +(deficitChanged?'<div style="font-size:11px;color:var(--sage);margin-bottom:8px;padding:8px;background:var(--sagedim);border-radius:6px;line-height:1.6">'
+          +'💡 Tu déficit actual bajó a <strong>'+fx(Math.round(currentDeficit))+'</strong> (era '+fx(Math.round(ot.deficit||0))+'). '
+          +(surplus>0?'Con tus '+ot.targetHrs.toFixed(1)+'h tendrás <strong style="color:var(--sage)">+'+fx(Math.round(surplus))+'</strong>.':'')
+          +'</div>':'')
+        +'<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--sky);font-weight:bold">'+totalHrs.toFixed(1)+' / '+ot.targetHrs.toFixed(1)+' horas</span><span style="font-size:11px;color:var(--muted)">'+pct+'%</span></div>'
+        +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'
+        +'<div class="row-b" style="margin-bottom:12px"><span style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(totalMoney)+' ganados</span><span style="font-size:11px;color:var(--muted)">Faltan '+fx(Math.max(0,targetMoney-totalMoney))+'</span></div>'
+        +'</div>';
+
+      otContent+='<div class="card"><div class="ct">📝 Registrar horas</div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px"><div><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'"></div><div><label>De</label><input type="time" id="otFrom" value="18:00"></div><div><label>A</label><input type="time" id="otTo" value="20:00"></div></div>'
+        +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
+        +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="logOvertime()">⏰ Registrar horas</button>'
+        +(ot.entries.length>0?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="exportOvertime()">📄 Exportar reporte .txt</button>':'')
+        +'</div>';
+
+      if(ot.entries.length>0){
+        otContent+='<div class="card"><div class="ct">📋 Historial</div>'
+          +ot.entries.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.from||'').localeCompare(b.from||'')).map((e,idx)=>{
+            const eidx=ot.entries.indexOf(e);
+            return'<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:11px">'
+              +'<div class="row-b"><div><span style="color:var(--txt);font-weight:bold">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span></div><div class="row" style="gap:6px"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong><span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:9px" onclick="editOtEntry('+eidx+')">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="delOtEntry('+eidx+')">✕</button></div></div>'
+              +(e.desc?'<div style="color:var(--muted);font-size:10px;margin-top:3px;line-height:1.5">'+e.desc+'</div>':'')
+            +'</div>';}).join('')
+          +'</div>';
+      }
+    }else{
+      otContent='<div class="card" style="text-align:center;padding:30px 18px"><div style="font-size:32px;margin-bottom:12px">⏰</div>'
+        +'<div style="font-size:14px;color:var(--txt);font-weight:bold;margin-bottom:8px">No hay horas extra activas</div>'
+        +'<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:14px">Activa el calculador cuando necesites cubrir un déficit de la próxima quincena.</div>'
+        +'<button class="btn btn-sky btn-sm" onclick="showOvertimeCalc()">Calcular horas extra</button></div>';
+    }
+
+    document.getElementById('tab-plan').innerHTML=`
+    ${subNav}
+    ${otContent}`;
     return;
   }
 
@@ -2334,49 +2404,6 @@ function rHabitos(){
   ${habitView==='retos'?`
   ${renderRetos()}
 
-  <!-- OVERTIME RETO -->
-  ${(()=>{try{
-    const ck=cycleKey();
-    const ot=(S.overtimeLog||{})[ck];
-    if(!ot?.accepted)return'';
-    const totalHrs=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
-    const totalMoney=Math.round(totalHrs*ot.rate);
-    const pct=ot.targetHrs>0?Math.min(100,Math.round(totalHrs/ot.targetHrs*100)):0;
-    const targetMoney=Math.round(ot.targetHrs*ot.rate);
-    // Dynamic: recalculate current pending this qna
-    const paidItems2=S.paidItems[ck]||{};
-    let currentApplied=0;
-    for(const key in paidItems2){if(key.startsWith('_'))continue;if(paidItems2[key]==='applied'){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)currentApplied+=toMonthly(+e.amt||0,e.freq||'mensual');}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)currentApplied+=(+db.pay||0);}}}
-    const originalPendingThis=ot.pendingThis||0;
-    const newPendingThis=Math.max(0,originalPendingThis-currentApplied);
-    const currentDeficit=Math.max(0,newPendingThis+(ot.nextTotal||0)-(S.inc.sal/2));
-    const surplus=targetMoney-currentDeficit;
-    const deficitChanged=Math.abs(currentDeficit-(ot.deficit||0))>100;
-
-    return'<div class="card" style="border:2px solid var(--sky);background:rgba(74,110,140,.04)"><div class="ct">⏰ Reto: Horas Extra</div>'
-      +'<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;line-height:1.6">Comprometido: <strong>'+ot.targetHrs.toFixed(1)+'h</strong> = '+fx(targetMoney)+'</div>'
-      +(deficitChanged?'<div style="font-size:11px;color:var(--sage);margin-bottom:8px;padding:8px;background:var(--sagedim);border-radius:6px;line-height:1.6">'
-        +'💡 Tu déficit actual bajó a <strong>'+fx(Math.round(currentDeficit))+'</strong> (era '+fx(Math.round(ot.deficit||0))+'). '
-        +(surplus>0?'Con tus '+ot.targetHrs.toFixed(1)+'h comprometidas tendrás un saldo positivo de <strong style="color:var(--sage)">+'+fx(Math.round(surplus))+'</strong>.':'')
-        +'</div>':'')
-      +'<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--sky);font-weight:bold">'+totalHrs.toFixed(1)+' / '+ot.targetHrs.toFixed(1)+' horas</span><span style="font-size:11px;color:var(--muted)">'+pct+'%</span></div>'
-      +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'
-      +'<div class="row-b" style="margin-bottom:12px"><span style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(totalMoney)+' ganados</span><span style="font-size:11px;color:var(--muted)">Faltan '+fx(Math.max(0,targetMoney-totalMoney))+'</span></div>'
-      +'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Registrar horas</div>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px"><div><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'"></div><div><label>De</label><input type="time" id="otFrom" value="18:00"></div><div><label>A</label><input type="time" id="otTo" value="20:00"></div></div>'
-      +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
-      +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="logOvertime()">⏰ Registrar horas</button>'
-      +(ot.entries.length>0?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="exportOvertime()">📄 Exportar reporte .txt</button>':'')
-      +(ot.entries.length>0?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Historial</div>'
-        +ot.entries.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.from||'').localeCompare(b.from||'')).map((e,idx)=>{
-          const eidx=ot.entries.indexOf(e);
-          return'<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:11px">'
-            +'<div class="row-b"><div><span style="color:var(--txt)">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span></div><div class="row" style="gap:6px"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong><span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:9px" onclick="editOtEntry('+eidx+')">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="delOtEntry('+eidx+')">✕</button></div></div>'
-            +(e.desc?'<div style="color:var(--muted);font-size:10px;margin-top:2px">'+e.desc+'</div>':'')
-          +'</div>';}).join(''):'')
-      +'</div>';
-  }catch{return'';}})()}
-
   <div class="card" style="border-color:rgba(160,112,48,.25);background:rgba(160,112,48,.02)">
     <div class="ct">🚫 Crear hábito a eliminar</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Registra un gasto recurrente que quieres dejar (alcohol, cigarro, comida chatarra). Cada día que resistas, se acumula el ahorro.</div>
@@ -2451,7 +2478,19 @@ function rHabitos(){
     <div id="impBdg" style="font-size:11px;color:var(--sage);text-align:right">${fx(S.impulsesBudget)}/quincena</div>
     ${(()=>{
       const ck3=cycleKey();
-      const retoSpent=(S.impulseSpent||{})[ck3]||0;
+      // Calculate from retoChecks directly, excluding super/gas
+      let retoSpent=0;
+      const breakdown=[];
+      Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
+        if(!k.endsWith('_'+ck3))return;
+        const rid=k.replace('_'+ck3,'');
+        if(/surv_super|surv_gas/.test(rid))return;
+        let rTotal=0;
+        const retoIcons2={'surv_nocompras':'🚫','surv_lunch':'🍱','surv_rest':'🍔','surv_delivery':'🚗','surv_mini':'🏪','surv_online':'📦','surv_cafe':'☕','surv_notiendas':'🛍️'};
+        const retoLabels2={'surv_nocompras':'Sin compras','surv_lunch':'Lunch','surv_rest':'Comer fuera','surv_delivery':'Delivery','surv_mini':'Minisuper','surv_online':'Online','surv_cafe':'Café','surv_notiendas':'Tiendas'};
+        checks.forEach(c=>{if(c.pass===false&&(+c.spent||0)>0){rTotal+=(+c.spent);retoSpent+=(+c.spent);}});
+        if(rTotal>0)breakdown.push({icon:retoIcons2[rid]||'📋',label:retoLabels2[rid]||rid,total:rTotal});
+      });
       const lastSnap2=lastHormiga();
       const csvImpulse=lastSnap2?((lastSnap2.hormiga['📦 Compras online']?.total||0)+(lastSnap2.hormiga['🛒 Minisuper / OXXO']?.total||0)+(lastSnap2.hormiga['🚗 Delivery']?.total||0)):0;
       const totalImpulse=retoSpent+(csvImpulse||0);
@@ -2462,7 +2501,7 @@ function rHabitos(){
       if(!retoSpent&&!csvImpulse)return'<div style="font-size:11px;color:var(--muted);margin-top:8px">Registra tus gastos no esenciales en los retos diarios para llevar el control aquí.</div>';
       return'<div style="margin-top:12px;padding:12px;border:1px solid '+(withinBudget?'var(--sage)':'var(--terra)')+';border-radius:10px;background:'+(withinBudget?'rgba(78,124,106,.04)':'rgba(184,92,74,.04)')+'"><div class="row-b" style="margin-bottom:6px"><span style="font-size:12px;font-weight:bold;color:'+(withinBudget?'var(--sage)':'var(--terra)')+'">'+(withinBudget?'✅ Dentro del presupuesto':'❌ Presupuesto rebasado')+'</span><span style="font-size:12px;font-weight:bold;color:'+col+'">'+fx(totalImpulse)+' / '+fx(budget)+'</span></div>'
         +'<div class="pw"><div class="pb" style="width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div>'
-        +(retoSpent>0?'<div style="font-size:10px;color:var(--muted);margin-top:6px">📋 Retos: '+fx(retoSpent)+(csvImpulse>0?' · CSV: '+fx(csvImpulse):'')+'</div>':'')
+        +(breakdown.length>0?'<div style="margin-top:8px;font-size:10px;color:var(--muted)">'+breakdown.map(b=>b.icon+' '+b.label+': <strong style="color:var(--terra)">'+fx(b.total)+'</strong>').join(' · ')+(csvImpulse>0?' · 📊 CSV: <strong>'+fx(csvImpulse)+'</strong>':'')+'</div>':'')
         +(withinBudget&&budget-totalImpulse>0?'<div style="font-size:11px;color:var(--sage);margin-top:4px">Te quedan '+fx(budget-totalImpulse)+' de margen</div>':'')
         +(!withinBudget?'<div style="font-size:11px;color:var(--terra);margin-top:4px">⚠️ Te pasaste '+fx(totalImpulse-budget)+'</div>':'')
         +'</div>';
@@ -2693,7 +2732,7 @@ function logOvertime(){
   const existingExtra=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
   if(existingExtra){existingExtra.amt=(+existingExtra.amt||0)+earned;existingExtra.date=nextPayISO;}
   else{S.extras.push({id:Date.now(),name:'Horas extra ('+ck+')',amt:earned,tipo:'unico',date:nextPayISO});}
-  sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rHabitos();
+  sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rPlan();
 }
 function delOtEntry(idx){
   const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
@@ -2702,7 +2741,7 @@ function delOtEntry(idx){
   // Remove from extras
   const ext=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
   if(ext)ext.amt=Math.max(0,(+ext.amt||0)-earned);
-  ot.entries.splice(idx,1);sv();toast('Registro eliminado');rHabitos();
+  ot.entries.splice(idx,1);sv();toast('Registro eliminado');rPlan();
 }
 function editOtEntry(idx){
   const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
@@ -2730,7 +2769,7 @@ function saveOtEntry(idx){
   const ext=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
   if(ext)ext.amt=Math.max(0,(+ext.amt||0)-oldEarned+newEarned);
   e.date=nd;e.from=nf;e.to=nt;e.hours=hrs;e.desc=ndesc;
-  sv();closeConfirm();toast('✏️ Registro actualizado');rHabitos();
+  sv();closeConfirm();toast('✏️ Registro actualizado');rPlan();
 }
 function exportOvertime(){
   const ck=cycleKey();

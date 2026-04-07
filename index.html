@@ -438,8 +438,8 @@ function togglePaid(type,id){
   if(cur==='applied'||typeof cur==='object'&&cur?.applied){toast('Este pago ya fue aplicado');return;}
   if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');sv();rPlan();return;}
   
-  // Check if this is a variable expense (weekly: súper, gasolina)
-  const exp=type==='exp'?S.exp.find(e=>e.id===id):null;
+  // Check if this is a variable expense (weekly: súper, gasolina) — both Sem 1 (exp) and Sem 2 (expw2)
+  const exp=(type==='exp'||type==='expw2')?S.exp.find(e=>e.id===id):null;
   const isVariable=exp&&(exp.freq==='semanal'||/super|súper|gasol|mandado/i.test(exp.name||''));
   
   if(isVariable){
@@ -473,7 +473,7 @@ function confirmRealAmt(type,id,budgeted){
   const diff=budgeted-real;
   
   // Auto-check corresponding weekly reto
-  if(type==='exp'){
+  if(type==='exp'||type==='expw2'){
     const exp=S.exp.find(e=>e.id===id);
     if(exp&&exp.freq==='semanal'){
       const name=(exp.name||'').toLowerCase();
@@ -483,17 +483,15 @@ function confirmRealAmt(type,id,budgeted){
       if(retoId){
         const sr=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck&&r.active&&!r.completed);
         if(sr){
-          // Determine which week (idx) based on how many of this expense are already paid
-          const sameExpPaid=Object.entries(S.paidItems[ck]||{}).filter(([k2])=>k2.startsWith('exp_')&&S.exp.find(e2=>e2.id===+k2.split('_')[1]&&e2.name===exp.name)).length;
-          const weekIdx=Math.max(0,sameExpPaid-1);
+          // Sem 1 (exp) = idx 0, Sem 2 (expw2) = idx 1
+          const weekIdx=type==='expw2'?1:0;
           if(!S.retoChecks)S.retoChecks={};
           const rk=retoId+'_'+ck;
           if(!S.retoChecks[rk])S.retoChecks[rk]=[];
-          const already=S.retoChecks[rk].find(c=>c.idx===weekIdx);
-          if(!already){
-            const saved=diff>0;
-            S.retoChecks[rk].push({idx:weekIdx,date:new Date().toISOString().split('T')[0],pass:saved||real<=budgeted,realAmt:real,budgeted});
-          }
+          // Remove any existing entry for this idx (overwrite)
+          S.retoChecks[rk]=S.retoChecks[rk].filter(c=>c.idx!==weekIdx);
+          const saved=diff>0;
+          S.retoChecks[rk].push({idx:weekIdx,date:new Date().toISOString().split('T')[0],pass:saved||real<=budgeted,realAmt:real,budgeted});
         }
       }
     }
@@ -698,7 +696,11 @@ function toggleRetoCheck(retoId,idx){
     const expMatch=S.exp.find(e=>isSuper?/super|súper|despensa|mandado/i.test(e.name||''):/gasol/i.test(e.name||''));
     const budgeted=expMatch?(+expMatch.amt||0):0;
     const label=isSuper?'súper':'gasolina';
-    const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:14px;text-align:center;line-height:1.7"><strong>'+reto.name+'</strong></div>'
+    // Label week as Sem 1/2 (1ra qna) or Sem 3/4 (2da qna)
+    const ctd=new Date();
+    const wOff2=ctd.getDate()>=15&&ctd.getDate()<=29?2:0;
+    const semLbl=(idx+1+wOff2);
+    const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:14px;text-align:center;line-height:1.7"><strong>'+reto.name+' — Sem '+semLbl+'</strong></div>'
       +'<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;text-align:center">Presupuesto semanal de '+label+': <strong>'+fx(budgeted)+'</strong><br>¿Cuánto gastaste realmente esta semana?</div>'
       +'<input type="number" id="retoExpAmt" value="'+budgeted+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">'
       +'<div id="retoExpDiff" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px"></div>';
@@ -758,13 +760,15 @@ function confirmRetoExpense(retoId,idx,expId,budgeted){
   const ck=cycleKey();const k=retoId+'_'+ck;
   const passed=real<=budgeted;
   const diff=budgeted-real;
-  // Record reto check
+  // Record reto check (dedup by idx)
   if(!S.retoChecks[k])S.retoChecks[k]=[];
+  S.retoChecks[k]=S.retoChecks[k].filter(c=>c.idx!==idx);
   S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:passed,spent:real,realAmt:real,budgeted});
-  // Sync with fixed expense payment
+  // Sync with fixed expense payment — Sem 1 (idx 0) → exp_, Sem 2 (idx 1) → expw2_
   if(expId){
     if(!S.paidItems[ck])S.paidItems[ck]={};
-    S.paidItems[ck]['exp_'+expId]={at:Date.now(),realAmt:real,budgeted};
+    const ptype=idx===1?'expw2':'exp';
+    S.paidItems[ck][ptype+'_'+expId]={at:Date.now(),realAmt:real,budgeted};
   }
   sv();closeConfirm();
   if(passed&&diff>0)toast('✅ ¡Ahorraste '+fx(diff)+'!');

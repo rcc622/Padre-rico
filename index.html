@@ -2789,9 +2789,27 @@ function addCustomHabit(){
 function checkCustomHabit(id,date){
   const h=(S.customHabits||[]).find(x=>x.id===id);if(!h)return;
   const d=date||new Date().toISOString().split('T')[0];
-  if(h.checks.includes(d)){h.checks=h.checks.filter(x=>x!==d);}
-  else{h.checks.push(d);}
-  sv();rHabitos();
+  const already=h.checks.includes(d);
+  if(already){
+    // Undo with confirm
+    showConfirm('¿Desmarcar día?','Vas a quitar la marca de cumplido para este día.',()=>{
+      h.checks=h.checks.filter(x=>x!==d);sv();rHabitos();
+    });
+    return;
+  }
+  // Ask if completed
+  const dt=new Date(d+'T12:00');
+  const fmt=dt.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+  showConfirm('¿Cumpliste el '+fmt+'?','<strong>'+h.name+'</strong><br><br>¿Lograste evitarlo este día?',null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button>'
+    +'<button class="btn btn-red btn-sm" onclick="markCustomHabit('+h.id+',\''+d+'\',false)">No cumplí</button>'
+    +'<button class="btn btn-sage btn-sm" onclick="markCustomHabit('+h.id+',\''+d+'\',true)">Sí cumplí</button>';
+}
+function markCustomHabit(id,date,ok){
+  const h=(S.customHabits||[]).find(x=>x.id===id);if(!h){closeConfirm();return;}
+  if(ok&&!h.checks.includes(date))h.checks.push(date);
+  sv();closeConfirm();toast(ok?'✓ Día cumplido':'Registrado como fallado');rHabitos();
 }
 function removeCustomHabit(id){
   showConfirm('¿Eliminar hábito?','Se borrará el historial de este hábito.',()=>{
@@ -3264,7 +3282,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-otfix';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-otfix2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

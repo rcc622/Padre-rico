@@ -293,39 +293,21 @@ function migrate(){
 function ld(){
   try{
     const d=localStorage.getItem(SK);
-    if(d){S={...S,...JSON.parse(d)};fixOvertimeExtraDates();return;}
+    if(d){S={...S,...JSON.parse(d)};cleanupOvertimeExtras();return;}
     // No v5 found — try migrate from v4
     migrate();
   }catch{}
 }
-function fixOvertimeExtraDates(){
-  // Fix overtime extras that have wrong dates (should be next payday, not date of entry)
-  let changed=false;
-  S.extras.forEach(x=>{
-    // Match "Horas extra (YEAR-MONTH-QNA)" from overtime calculator
-    const m=x.name.match(/^Horas extra \((\d+)-(\d+)-(1ra|2da)\)$/);
-    if(m){
-      const yr=+m[1],mo=+m[2],qna=m[3];
-      let correctDate;
-      if(qna==='1ra'){correctDate=new Date(yr,mo,15);}  // next payday = 15th
-      else{correctDate=new Date(yr,mo,0);}  // next payday = last day of month
-      const iso=correctDate.toISOString().split('T')[0];
-      if(x.date!==iso){x.date=iso;changed=true;}
-      return;
-    }
-    // Match manual "Hora Extra" or similar — move to next payday based on date
-    if(/hora.?extra/i.test(x.name)&&x.tipo==='unico'&&x.date){
-      const xd=new Date(x.date+'T12:00');
-      const dd=xd.getDate(),mm=xd.getMonth(),yy=xd.getFullYear();
-      let nxtPay;
-      if(dd>=15&&dd<=29){nxtPay=new Date(yy,mm+1,0);}  // last day of month
-      else if(dd>=30){nxtPay=new Date(yy,mm+1,15);}
-      else{nxtPay=new Date(yy,mm,15);}
-      const iso2=nxtPay.toISOString().split('T')[0];
-      if(x.date!==iso2){x.date=iso2;changed=true;}
-    }
-  });
-  if(changed)sv();
+function cleanupOvertimeExtras(){
+  // ONE-SHOT migration: remove orphan extras that were auto-created by the old
+  // overtime calculator (format: "Horas extra (YEAR-MONTH-QNA)"). The Hrs Xtra
+  // section is now a pure log/minuta — the user adds extras manually if desired.
+  // Gated by S.otCleanupV1 so it only runs once per device.
+  if(S.otCleanupV1)return;
+  const before=S.extras.length;
+  S.extras=S.extras.filter(x=>!/^Horas extra \(\d+-\d+-(1ra|2da)\)$/.test(x.name||''));
+  S.otCleanupV1=true;
+  if(S.extras.length!==before)sv();else sv();
 }
 const sv=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch{}};
 const pt=(o)=>{S={...S,...o};sv()};
@@ -2718,33 +2700,14 @@ function logOvertime(){
   if(!S.overtimeLog)S.overtimeLog={};
   if(!S.overtimeLog[ck])S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:0,rate:172};
   S.overtimeLog[ck].entries.push({date:dateVal,from,to,hours:Math.round(hours*10)/10,desc});
-  // Also add as extra income — paid on NEXT quincena payday
+  // Hrs Xtra es solo minuta — NO se aplica como ingreso extra automáticamente.
+  // El usuario lo agrega manualmente desde "Ingresos y Gastos" si así lo desea.
   const earned=Math.round(hours*S.overtimeLog[ck].rate);
-  // Calculate next payday
-  const td=new Date();td.setHours(0,0,0,0);
-  const dd=td.getDate(),mm=td.getMonth(),yy=td.getFullYear();
-  let nextPayDate;
-  if(dd>=15&&dd<=29){
-    // Currently 2da qna → next payday is last day of this month
-    nextPayDate=new Date(yy,mm+1,0);
-  }else{
-    // Currently 1ra qna → next payday is 15th
-    if(dd>=30)nextPayDate=new Date(yy,mm+1,15);
-    else nextPayDate=new Date(yy,mm,15);
-  }
-  const nextPayISO=nextPayDate.toISOString().split('T')[0];
-  const existingExtra=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
-  if(existingExtra){existingExtra.amt=(+existingExtra.amt||0)+earned;existingExtra.date=nextPayISO;}
-  else{S.extras.push({id:Date.now(),name:'Horas extra ('+ck+')',amt:earned,tipo:'unico',date:nextPayISO});}
   sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rPlan();
 }
 function delOtEntry(idx){
   const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
   const e=ot.entries[idx];if(!e)return;
-  const earned=Math.round(e.hours*ot.rate);
-  // Remove from extras
-  const ext=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
-  if(ext)ext.amt=Math.max(0,(+ext.amt||0)-earned);
   ot.entries.splice(idx,1);sv();toast('Registro eliminado');rPlan();
 }
 function editOtEntry(idx){
@@ -2760,7 +2723,6 @@ function editOtEntry(idx){
 function saveOtEntry(idx){
   const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
   const e=ot.entries[idx];if(!e)return;
-  const oldEarned=Math.round(e.hours*ot.rate);
   const nd=document.getElementById('oeDate')?.value||e.date;
   const nf=document.getElementById('oeFrom')?.value||e.from;
   const nt=document.getElementById('oeTo')?.value||e.to;
@@ -2768,10 +2730,6 @@ function saveOtEntry(idx){
   const[fh,fm]=nf.split(':').map(Number);const[th,tm]=nt.split(':').map(Number);
   let hrs=(th+tm/60)-(fh+fm/60);if(hrs<=0)hrs+=24;
   hrs=Math.round(hrs*10)/10;
-  const newEarned=Math.round(hrs*ot.rate);
-  // Update extras
-  const ext=S.extras.find(x=>x.name==='Horas extra ('+ck+')');
-  if(ext)ext.amt=Math.max(0,(+ext.amt||0)-oldEarned+newEarned);
   e.date=nd;e.from=nf;e.to=nt;e.hours=hrs;e.desc=ndesc;
   sv();closeConfirm();toast('✏️ Registro actualizado');rPlan();
 }
@@ -3306,7 +3264,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-otfix';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

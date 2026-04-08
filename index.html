@@ -240,7 +240,7 @@ button:active{transform:scale(.97)}
   </header>
   <nav class="nav">
     <button class="nb act" onclick="go('dash')">🏛️ Inicio</button>
-    <button class="nb" onclick="go('quincena')">📊 Mi Quincena</button>
+    <button class="nb" onclick="go('quincena')">📊 Cierre Qna</button>
     <button class="nb" onclick="go('flujo')">💰 Ingresos y Gastos</button>
     <button class="nb" onclick="go('plan')">🎯 Plan de Acción</button>
     <button class="nb" onclick="go('habitos')">🧠 Mis Hábitos</button>
@@ -1244,6 +1244,27 @@ function detectH(txns){
   txns.forEach(t=>{const d=t.desc.toUpperCase();for(const[cat,keys]of Object.entries(HK)){if(keys.some(k=>d.includes(k))){if(!r[cat])r[cat]={total:0,count:0};r[cat].total+=t.amt;r[cat].count++;break;}}});
   return Object.entries(r).sort((a,b)=>b[1].total-a[1].total);
 }
+// Clasificador hormiga/impulso/servicio para CSV
+// Hormiga: goteo pequeño frecuente (OXXO, café, delivery barato)
+// Impulso: emocional esporádico mediano-grande (Amazon, ML, Shein, videojuegos)
+// Servicio: suscripciones/fijos recurrentes
+const IMPULSO_KEYS=['AMAZON','MERCADO LIBRE','MERCADOLIBRE','SHEIN','TEMU','WISH','ALIEXPRESS','LINIO','ML ','STEAM','PLAYSTATION','XBOX','NINTENDO','GOOGLE PLAY','APPLE STORE','APPLE.COM/BILL','LIVERPOOL','PALACIO','COPPEL','ELEKTRA','BEST BUY','SUBURBIA','OLD NAVY','ZARA','H&M','PULL','BERSHKA','ADIDAS','NIKE','COSTCO','SAMS'];
+const SERVICIO_KEYS=['NETFLIX','SPOTIFY','DISNEY','HBO','YOUTUBE PREMIUM','AMAZON PRIME','PARAMOUNT','CRUNCHYROLL','TELCEL','AT&T','TOTALPLAY','IZZI','MEGACABLE','CFE','AGUA','GAS NATURAL','IENOVA','TELMEX'];
+function classifyBucket(desc){
+  const d=(desc||'').toUpperCase();
+  if(SERVICIO_KEYS.some(k=>d.includes(k)))return'servicio';
+  if(IMPULSO_KEYS.some(k=>d.includes(k)))return'impulso';
+  // Transporte no es ni hormiga ni impulso
+  if(/UBER(?! EATS)|DIDI(?! FOOD)|CABIFY|GASOLINA|PEMEX|OXXO GAS|G500/.test(d))return'transporte';
+  // Si está en HK y no cayó en impulso/servicio/transporte → hormiga
+  for(const keys of Object.values(HK)){if(keys.some(k=>d.includes(k)))return'hormiga';}
+  return'otro';
+}
+function bucketTotals(txns){
+  const r={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
+  txns.forEach(t=>{r[classifyBucket(t.desc)]+=t.amt;});
+  return r;
+}
 
 function saveSnapshot(txns,source){
   source=source||'combined';
@@ -1287,6 +1308,7 @@ function saveSnapshot(txns,source){
     creditTxns:nuCredit.length,
     hormigaDebit:Object.fromEntries(detectH(nuDebit)),
     hormigaCredit:Object.fromEntries(detectH(nuCredit)),
+    buckets:bucketTotals(txns),
   };
   pt({snapshots:[...S.snapshots,snap]});
   toast('📊 Capítulo quincenal guardado');
@@ -1390,6 +1412,44 @@ function rQuincena(){
     ${qnaChips}
   </div>`:''}
 
+  <!-- BUCKETS + DIARIOS COMPARISON -->
+  ${(()=>{
+    const buckets=bucketTotals(fAll);
+    const totalBuck=Object.values(buckets).reduce((a,b)=>a+b,0);
+    if(totalBuck===0)return'';
+    const bars=[
+      {k:'hormiga',l:'🐜 Hormiga',c:'var(--amber)',d:'Goteo diario (OXXO, café, delivery)'},
+      {k:'impulso',l:'⚡ Impulso',c:'var(--terra)',d:'Compras emocionales (Amazon, ML, tiendas)'},
+      {k:'servicio',l:'📺 Servicios',c:'var(--sky)',d:'Suscripciones y fijos recurrentes'},
+      {k:'transporte',l:'🚗 Transporte',c:'var(--sage)',d:'Uber, gasolina, traslados'},
+      {k:'otro',l:'📦 Otro',c:'var(--muted)',d:'Sin clasificar'}
+    ].filter(b=>buckets[b.k]>0);
+    const maxB=Math.max(...bars.map(b=>buckets[b.k]),1);
+    // Diarios comparison — same window as filtered CSV
+    const pds3=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):(/^\d{4}-\d{2}-\d{2}$/.test(s)?s:'');};
+    const csvDates=fAll.map(t=>pds3(t.date)).filter(Boolean).sort();
+    const dStart=csvDates[0],dEnd=csvDates[csvDates.length-1];
+    const diariosInRange=dStart&&dEnd?(S.gastosDiarios||[]).filter(g=>g.date>=dStart&&g.date<=dEnd):[];
+    const totalDiarios=diariosInRange.reduce((a,g)=>a+(+g.amt||0),0);
+    // Only compare hormiga+impulso+otro buckets (things you'd log in Diarios), not servicios/transporte
+    const compBuckets=(buckets.hormiga||0)+(buckets.impulso||0)+(buckets.otro||0);
+    const diff=compBuckets-totalDiarios;
+    return`<div class="card">
+      <div class="ct">🔍 Distribución por tipo</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Cómo se reparte tu gasto real del CSV. Hormiga + Impulso es lo que normalmente registrarías en Diarios.</div>
+      ${bars.map(b=>{const v=buckets[b.k];const pct=(v/maxB*100).toFixed(0);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:3px"><div><span style="font-size:12px;color:var(--txt);font-weight:bold">${b.l}</span><div style="font-size:9px;color:var(--muted)">${b.d}</div></div><span style="font-size:13px;color:${b.c};font-weight:bold">${fx(Math.round(v))}</span></div><div class="pw"><div class="pb" style="width:${pct}%;background:${b.c}"></div></div></div>`;}).join('')}
+    </div>
+    <div class="card" style="border:1px dashed var(--sky);background:rgba(74,110,140,.03)">
+      <div class="ct">📓 Diarios vs CSV (reconciliación)</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Comparativa entre lo que registraste manualmente en Diarios y lo que el CSV detectó en el mismo rango de fechas (${dStart||'?'} → ${dEnd||'?'}).</div>
+      <div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">📓 Tu bitácora de Diarios</span><strong style="color:var(--sage);font-size:13px">${fx(Math.round(totalDiarios))}</strong></div>
+      <div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">📊 CSV (hormiga+impulso+otro)</span><strong style="color:var(--sky);font-size:13px">${fx(Math.round(compBuckets))}</strong></div>
+      <div class="row-b" style="padding:10px 0"><span style="font-size:12px;font-weight:bold;color:var(--txt)">Diferencia</span><strong style="font-size:15px;color:${Math.abs(diff)<50?'var(--sage)':diff>0?'var(--terra)':'var(--amber)'}">${diff>=0?'+':''}${fx(Math.round(diff))}</strong></div>
+      ${Math.abs(diff)<50?'<div style="font-size:11px;color:var(--sage);line-height:1.5">✅ Tu bitácora coincide con tu banco. Disciplina sólida.</div>':diff>0?'<div style="font-size:11px;color:var(--terra);line-height:1.5">⚠️ El CSV detectó <strong>'+fx(Math.round(diff))+'</strong> más que tus Diarios. Hay fugas que no estás anotando — revisa el detalle abajo para identificarlas.</div>':'<div style="font-size:11px;color:var(--amber);line-height:1.5">Registraste más en Diarios que lo que el CSV ve. Puede ser que pagaste en efectivo o con otra cuenta.</div>'}
+      <div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">🔒 Esta comparación es solo informativa. El CSV <strong>nunca</strong> modifica tus Diarios, Plan de Acción ni Deudas automáticamente.</div>
+    </div>`;
+  })()}
+
   <!-- SAVE SNAPSHOT -->
   ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
     <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo${qnaFilter!=='all'?' ('+qnaFilter+' qna)':''}?</div>
@@ -1477,12 +1537,20 @@ function rQuincena(){
 }
 
 
-function onFileType(f,type){if(!f)return;const r=new FileReader();r.onload=e=>{const txns=parseNu(e.target.result);if(!txns.length){alert('No se pudieron leer transacciones.');return;}if(type==='debit'){nuDebit=txns;nuDebit._saved=false;}else{nuCredit=txns;nuCredit._saved=false;}nuTxns=[...nuDebit,...nuCredit];nuTxns._saved=false;
-  // Detect if monthly (>18 days span)
+function onFileType(f,type){if(!f)return;
+  showConfirm('💾 Respaldo antes de analizar',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Antes de leer el CSV te recomiendo exportar un respaldo. El análisis <strong>nunca</strong> modifica tu Plan de Acción, diarios ni deudas — solo muestra lo que detecta y te deja decidir. Pero el respaldo es tu red de seguridad.</div>',
+    ()=>{_doFileRead(f,type);});
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
+    +'<button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Respaldar</button>'
+    +'<button class="btn btn-sage btn-sm" onclick="execConfirm()">Continuar</button>';
+}
+function _doFileRead(f,type){const r=new FileReader();r.onload=e=>{const txns=parseNu(e.target.result);if(!txns.length){alert('No se pudieron leer transacciones.');return;}if(type==='debit'){nuDebit=txns;nuDebit._saved=false;}else{nuCredit=txns;nuCredit._saved=false;}nuTxns=[...nuDebit,...nuCredit];nuTxns._saved=false;
   const pds=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):s;};
   const ds=txns.map(t=>pds(t.date)).filter(Boolean).sort();
   if(ds.length>=2){const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);if(diff>18)qnaFilter='all';else qnaFilter='all';}
-  toast('✓ '+txns.length+' transacciones de '+(type==='debit'?'débito':'crédito')+' leídas'+(qnaFilter==='all'?'':' ('+qnaFilter+' qna)'));rQuincena();};r.readAsText(f,'UTF-8');}
+  toast('✓ '+txns.length+' transacciones de '+(type==='debit'?'débito':'crédito')+' leídas');rQuincena();};r.readAsText(f,'UTF-8');}
 function filterByQna(txns,filter){
   if(filter==='all')return txns;
   const pds2=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?+m[1]:+s.split('-')[2];};
@@ -1664,6 +1732,12 @@ function rFlujo(){try{
   </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
 
   ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}</div>`:''}
+
+  ${cycleList.length>0?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
+    <div class="ct">📖 Cerrar quincena manualmente</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">¿Prefieres no subir el CSV? Puedes cerrar la quincena solo con tu bitácora de Diarios y crear el capítulo en Mi Historia. Opcional — también puedes seguir subiendo el CSV desde Cierre Qna si quieres auditar tus registros.</div>
+    <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${cycleList.length} registros · ${fx(Math.round(totalQ))})</button>
+  </div>`:''}
   `;})():''}
 
   ${flujoView==='deudas'?`
@@ -1874,6 +1948,49 @@ function rmDiario(id){
 function setDiarioBudget(){
   const v=+(document.getElementById('gdBudget')?.value)||0;
   pt({gastoDiarioBudget:v});toast('Presupuesto actualizado');rFlujo();
+}
+function cerrarQnaDiarios(){
+  const list=diariosThisCycle();
+  if(!list.length){toast('No hay registros en esta quincena');return;}
+  const w=getCycleWindow();
+  const totalG=list.reduce((a,g)=>a+(+g.amt||0),0);
+  // Map diario categories to buckets
+  const diarioToBucket={snack:'hormiga',bebida:'hormiga',minisuper:'hormiga',delivery:'hormiga',impulso:'impulso',transporte:'transporte',otro:'otro'};
+  const buckets={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
+  const catBreakdown={};
+  list.forEach(g=>{
+    const b=diarioToBucket[g.cat]||'otro';
+    buckets[b]+=(+g.amt||0);
+    const lbl=diarioCat(g.cat).n;
+    if(!catBreakdown[lbl])catBreakdown[lbl]={total:0,count:0};
+    catBreakdown[lbl].total+=(+g.amt||0);
+    catBreakdown[lbl].count++;
+  });
+  const totalH=buckets.hormiga;
+  showConfirm('📖 Crear capítulo con Diarios',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de esta quincena por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
+    ()=>{
+      const snap={
+        id:Date.now()+Math.floor(Math.random()*1000),
+        date:new Date().toISOString().split('T')[0],
+        source:'diarios',
+        periodStart:w.start.toISOString().split('T')[0],
+        periodEnd:w.end.toISOString().split('T')[0],
+        totalGasto:totalG,
+        totalTxns:list.length,
+        hormiga:catBreakdown,
+        topCommerces:[],
+        topByAmt:list.slice().sort((a,b)=>b.amt-a.amt).slice(0,10).map(g=>({desc:g.name.slice(0,30),amt:g.amt})),
+        score:score(),
+        patrimonio:nw(),
+        deudaTotal:tDebt(),
+        debitTotal:totalG,creditTotal:0,debitTxns:list.length,creditTxns:0,
+        hormigaDebit:catBreakdown,hormigaCredit:{},
+        buckets
+      };
+      pt({snapshots:[...S.snapshots,snap]});
+      closeConfirm();toast('📖 Capítulo creado desde Diarios');
+    });
 }
 function updDebtUnico(){
   const sel=document.getElementById('dpf');if(!sel)return;
@@ -2587,45 +2704,10 @@ function rHabitos(){
     }).join('')}
   </div>`:''}
 
-  <div class="card">
-    <div class="ct">🛍️ Presupuesto de Impulsos</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.7">Define cuánto es OK gastar en compras no esenciales cada quincena.</div>
-    <div class="row-b" style="margin-bottom:9px">
-      <span style="font-size:13px">Presupuesto: <strong style="color:var(--sage)">${fx(S.impulsesBudget)}</strong>/quincena</span>
-    </div>
-    <input type="range" min="500" max="5000" step="100" value="${S.impulsesBudget}" style="width:100%;margin-bottom:5px"
-      oninput="pt({impulsesBudget:+this.value});document.getElementById('impBdg').textContent=fx(+this.value)+'/quincena'">
-    <div id="impBdg" style="font-size:11px;color:var(--sage);text-align:right">${fx(S.impulsesBudget)}/quincena</div>
-    ${(()=>{
-      const ck3=cycleKey();
-      // Calculate from retoChecks directly, excluding super/gas
-      let retoSpent=0;
-      const breakdown=[];
-      Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
-        if(!k.endsWith('_'+ck3))return;
-        const rid=k.replace('_'+ck3,'');
-        if(/surv_super|surv_gas/.test(rid))return;
-        let rTotal=0;
-        const retoIcons2={'surv_nocompras':'🚫','surv_lunch':'🍱','surv_rest':'🍔','surv_delivery':'🚗','surv_mini':'🏪','surv_online':'📦','surv_cafe':'☕','surv_notiendas':'🛍️'};
-        const retoLabels2={'surv_nocompras':'Sin compras','surv_lunch':'Lunch','surv_rest':'Comer fuera','surv_delivery':'Delivery','surv_mini':'Minisuper','surv_online':'Online','surv_cafe':'Café','surv_notiendas':'Tiendas'};
-        checks.forEach(c=>{if(c.pass===false&&(+c.spent||0)>0){rTotal+=(+c.spent);retoSpent+=(+c.spent);}});
-        if(rTotal>0)breakdown.push({icon:retoIcons2[rid]||'📋',label:retoLabels2[rid]||rid,total:rTotal});
-      });
-      const lastSnap2=lastHormiga();
-      const csvImpulse=lastSnap2?((lastSnap2.hormiga['📦 Compras online']?.total||0)+(lastSnap2.hormiga['🛒 Minisuper / OXXO']?.total||0)+(lastSnap2.hormiga['🚗 Delivery']?.total||0)):0;
-      const totalImpulse=retoSpent+(csvImpulse||0);
-      const budget=S.impulsesBudget||2000;
-      const pct=budget>0?(totalImpulse/budget*100):0;
-      const col=pct<60?'var(--sage)':pct<80?'var(--amber)':'var(--terra)';
-      const withinBudget=totalImpulse<=budget;
-      if(!retoSpent&&!csvImpulse)return'<div style="font-size:11px;color:var(--muted);margin-top:8px">Registra tus gastos no esenciales en los retos diarios para llevar el control aquí.</div>';
-      return'<div style="margin-top:12px;padding:12px;border:1px solid '+(withinBudget?'var(--sage)':'var(--terra)')+';border-radius:10px;background:'+(withinBudget?'rgba(78,124,106,.04)':'rgba(184,92,74,.04)')+'"><div class="row-b" style="margin-bottom:6px"><span style="font-size:12px;font-weight:bold;color:'+(withinBudget?'var(--sage)':'var(--terra)')+'">'+(withinBudget?'✅ Dentro del presupuesto':'❌ Presupuesto rebasado')+'</span><span style="font-size:12px;font-weight:bold;color:'+col+'">'+fx(totalImpulse)+' / '+fx(budget)+'</span></div>'
-        +'<div class="pw"><div class="pb" style="width:'+Math.min(100,pct)+'%;background:'+col+'"></div></div>'
-        +(breakdown.length>0?'<div style="margin-top:8px;font-size:10px;color:var(--muted)">'+breakdown.map(b=>b.icon+' '+b.label+': <strong style="color:var(--terra)">'+fx(b.total)+'</strong>').join(' · ')+(csvImpulse>0?' · 📊 CSV: <strong>'+fx(csvImpulse)+'</strong>':'')+'</div>':'')
-        +(withinBudget&&budget-totalImpulse>0?'<div style="font-size:11px;color:var(--sage);margin-top:4px">Te quedan '+fx(budget-totalImpulse)+' de margen</div>':'')
-        +(!withinBudget?'<div style="font-size:11px;color:var(--terra);margin-top:4px">⚠️ Te pasaste '+fx(totalImpulse-budget)+'</div>':'')
-        +'</div>';
-    })()}
+  <div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
+    <div class="ct">🛍️ Sobre el presupuesto</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.8">El presupuesto de compras no esenciales ahora vive en <strong>Ingresos y Gastos → 🛒 Diarios</strong>. Un solo techo quincenal cubre tanto los antojitos diarios (chicles, cocas, OXXO) como los impulsos grandes que decidas comprar tras las 48h de espera.</div>
+    <button class="btn btn-sage btn-sm" style="margin-top:10px" onclick="flujoView='diarios';go('flujo')">Ir a Diarios →</button>
   </div>
 
   ${totalSaved>0?`<div class="card card-grn" style="text-align:center">
@@ -3017,9 +3099,49 @@ function addWait(){
   rHabitos();
 }
 function resolveWait(id,bought){
-  pt({waitList:S.waitList.map(w=>w.id===id?{...w,resolved:true,bought}:w)});
-  toast(bought?'Compra registrada':'🎉 ¡Impulso evitado!');
-  rHabitos();
+  if(!bought){
+    pt({waitList:S.waitList.map(w=>w.id===id?{...w,resolved:true,bought:false}:w)});
+    toast('🎉 ¡Impulso evitado!');rHabitos();return;
+  }
+  const w=S.waitList.find(x=>x.id===id);if(!w)return;
+  showConfirm('¿Cómo lo pagaste?',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)"><strong>'+w.name+'</strong> · '+fx(w.price)+'<br><br>Elige el destino:</div>'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-top:10px"><strong>Débito:</strong> sale hoy de tu cuenta → se registra en 🛒 Diarios como impulso.<br><strong>Crédito:</strong> pago diferido → se registra en ⛓️ Deudas como pago único agendado.</div>',null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
+    +'<button class="btn btn-sage btn-sm" onclick="waitToDiario('+id+')">💰 Débito</button>'
+    +'<button class="btn btn-sky btn-sm" onclick="waitToCredit('+id+')">💳 Crédito</button>';
+}
+function waitToDiario(id){
+  const w=S.waitList.find(x=>x.id===id);if(!w){closeConfirm();return;}
+  const today=new Date().toISOString().split('T')[0];
+  pt({
+    waitList:S.waitList.map(x=>x.id===id?{...x,resolved:true,bought:true,destino:'debito'}:x),
+    gastosDiarios:[...(S.gastosDiarios||[]),{id:Date.now(),name:w.name,amt:w.price,cat:'impulso',date:today,fromWait:id}]
+  });
+  closeConfirm();toast('🛒 Registrado en Diarios como impulso');rHabitos();
+}
+function waitToCredit(id){
+  const w=S.waitList.find(x=>x.id===id);if(!w){closeConfirm();return;}
+  // Ask for corte date
+  const today=new Date().toISOString().split('T')[0];
+  showConfirm('💳 Fecha del cargo',
+    '<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px"><strong>'+w.name+'</strong> · '+fx(w.price)+'<br>¿En qué fecha se va a cargar a tu tarjeta?</div>'
+    +'<input type="date" id="wtcDate" value="'+today+'" style="width:100%;padding:10px;font-family:Georgia,serif;border:1px solid var(--border);border-radius:8px">'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px">Tip: usa la fecha de corte de tu TDC para que aparezca en Plan de Acción cuando toque pagarlo.</div>',null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
+    +'<button class="btn btn-sage btn-sm" onclick="_finishWaitToCredit('+id+')">Registrar</button>';
+}
+function _finishWaitToCredit(id){
+  const w=S.waitList.find(x=>x.id===id);if(!w){closeConfirm();return;}
+  const dt=document.getElementById('wtcDate')?.value||new Date().toISOString().split('T')[0];
+  const pd=new Date(dt+'T12:00').getDate();
+  pt({
+    waitList:S.waitList.map(x=>x.id===id?{...x,resolved:true,bought:true,destino:'credito'}:x),
+    debts:[...S.debts,{id:Date.now(),name:w.name,bal:w.price,pay:w.price,freq:'unico',rate:0,payDay:pd,nextPay:dt,liqDate:dt,note:'Impulso '+(w.store||''),curPay:0,totalPays:0,group:'',fromWait:id}]
+  });
+  closeConfirm();toast('💳 Registrado en Deudas como pago único');rHabitos();
 }
 function startReto(idx){
   const el=document.getElementById('_rdata');if(!el)return;
@@ -3101,7 +3223,7 @@ function rHistoria(){
     const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return Math.round(v.reduce((a,b)=>a+b,0)/v.length);};
     const dA=aH('🚗 Delivery'),mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
     ct=`<div class="card card-sage"><div class="ct">🔮 ¿Qué Pasa Si...?</div><div style="font-size:12px;color:var(--txt2);line-height:1.7">Mueve los sliders y ve en tiempo real cómo tus decisiones impactan tu futuro a 12 meses.</div></div>
-    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Mi Quincena para calibrar los sliders con tus datos reales.</div></div>':''}
+    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Cierre Qna para calibrar los sliders con tus datos reales.</div></div>':''}
     <div class="card" id="simSl"><div class="ct">Ajusta tus hábitos ${ib("simulador","Simulador")}</div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(mA)}/qna</span></div><input type="range" min="0" max="${Math.max(mA*2,3000)}" step="50" value="${mA}" style="width:100%" oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()"><div style="font-size:10px;color:var(--muted)">Tu promedio: ${fx(mA)}/qna</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🚗 Delivery</span><span id="slDV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(dA)}/qna</span></div><input type="range" min="0" max="${Math.max(dA*2,2000)}" step="50" value="${dA}" style="width:100%" oninput="document.getElementById('slDV').textContent=fx(+this.value)+'/qna';runSim()"><div style="font-size:10px;color:var(--muted)">Tu promedio: ${fx(dA)}/qna</div></div>
@@ -3199,7 +3321,7 @@ function rHistoria(){
   // ═══ TIMELINE ═══
   if(histView==='timeline'){
     if(snaps.length===0){
-      ct=`<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:10px">📖</div><div style="color:var(--muted)">Ve a Mi Quincena y sube tu primer CSV.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="go('quincena')">Ir</button></div>`;
+      ct=`<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:10px">📖</div><div style="color:var(--muted)">Ve a Cierre Qna y sube tu primer CSV.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="go('quincena')">Ir</button></div>`;
     }else{
       // Group snapshots by overlapping period
       if(!window._snapSrcView)window._snapSrcView={};
@@ -3416,7 +3538,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-diarios1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-cierre1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

@@ -645,7 +645,7 @@ function completeSurvival(retoId){
     const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:14px">El ahorro estimado era <strong>'+fx(theoretical)+'</strong>.<br>¿Cuánto ahorraste realmente?</div>'
       +'<div style="margin-bottom:14px"><label style="font-size:11px;color:var(--muted)">Ahorro real ($)</label><input type="number" id="retoRealAmt" value="'+theoretical+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
       +'<div style="font-size:10px;color:var(--muted);margin-bottom:14px;text-align:center;line-height:1.6">Se registrará como ingreso extra de esta quincena.<br>Después podrás dirigirlo a deudas o metas desde el Plan de Acción.</div>'
-      +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="applyRetoAsExtra()">✅ Registrar ahorro</button>'
+      +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="applyRetoAsExtra(\''+retoId+'\')">✅ Registrar ahorro</button>'
       +'<div style="border-top:1px dashed var(--border);margin-top:8px;padding-top:10px"><button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="exportData()">📤 Exportar respaldo</button></div>';
     showConfirm('🏆 ¡Reto completado!',body,null);
     const row=document.getElementById('confirmModal').querySelector('.row');
@@ -672,8 +672,13 @@ function applyRetoToGoal(goalId){
   if(g){g.saved=(+g.saved||0)+amt;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt,auto:false,note:'Reto completado'}];if(g.saved>=g.target)g.done=true;sv();}
   closeConfirm();toast('✅ '+fx(amt)+' abonado a meta');rHabitos();
 }
-function applyRetoAsExtra(){
+function applyRetoAsExtra(retoId){
   const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
+  if(retoId){
+    const ck=cycleKey();
+    const sr=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===ck);
+    if(sr)sr.realSave=amt;
+  }
   const extra={id:Date.now(),name:'Ahorro de reto',amt,tipo:'unico',date:new Date().toISOString().split('T')[0]};
   pt({extras:[...S.extras,extra]});
   closeConfirm();toast('✅ '+fx(amt)+' registrado como ingreso extra');rHabitos();
@@ -2574,7 +2579,7 @@ function renderRetos(){
       const checks=getChecks(r.id);const totalN=r.steps||1;const nChecked=countChecks(r.id);const pctD=isA?Math.min(100,Math.round(nChecked/totalN*100)):0;
       const cCls=isC?'card-grn':isA?'':'card-sage';const aBrd=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':'';
       return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
-        +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+r.icon+'</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+r.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:var(--sage)">+'+fx(r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
+        +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+r.icon+'</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+r.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:var(--sage)">+'+fx((isC&&sr&&sr.realSave)?sr.realSave:r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
         +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+nChecked+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{
                   const chk=isIdxDone(r.id,idx);
                   const done=!!chk;
@@ -2619,7 +2624,7 @@ function renderRetos(){
                   return'<button style="min-width:44px;height:44px;border-radius:10px;border:2px solid '+btnBorder+';background:'+btnBg+';color:'+btnColor+';font-size:9px;font-weight:bold;cursor:pointer;font-family:Georgia,serif;padding:2px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;'+todayBorder+'" onclick="event.stopPropagation();toggleRetoCheck(\''+r.id+'\','+idx+')">'+(done?'<span style=\"font-size:14px\">'+icon+'</span>':'')+'<span>'+dateLbl+'</span>'+(spent>0?'<span style=\"font-size:8px;color:var(--terra)\">'+fx(spent)+'</span>':'')+'</button>';
                 }).join('')+'</div>'+(nChecked>=totalN?'<button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="event.stopPropagation();completeSurvival(\''+r.id+'\')">🏆 ¡Reto completado!</button>':'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%;color:var(--muted);font-size:10px" onclick="event.stopPropagation();activateSurvival(\''+r.id+'\')">Desactivar reto</button>')+'</div>':'')
         +(!isA&&!isC?'<div style="font-size:10px;color:var(--muted);margin-top:6px">Toca para activar</div>':'')
-        +(isC?'<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +'+fx(r.save)+' liberados</div>':'')
+        +(isC?'<div style="font-size:11px;color:var(--sage);margin-top:6px">🏆 Completado · +'+fx((sr&&sr.realSave)?sr.realSave:r.save)+' liberados</div>':'')
         +'</div>';
     }).join('')}
 

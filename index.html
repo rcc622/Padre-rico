@@ -1401,11 +1401,11 @@ let qnaFilter='all'; // 'all', '1ra', '2da'
 const HK={
   '🛒 Minisuper / OXXO':['OXXO','7-ELEVEN','7ELEVEN','EXTRA SUPER','BUEN PRECIO','MODELORAMA','DUNOSUSA','BARA ','CADENA COMERCIAL'],
   '🚗 Delivery':['UBER EATS','UBEREATS','RAPPI','DIDI FOOD','DIDIFOOD','CORNERSHOP','JUSTO'],
-  '📦 Compras online':['AMAZON','MERCADO LIBRE','MERCADOLIBRE','SHEIN','TEMU','WISH','ALIEXPRESS','LINIO','ML '],
+  '📦 Compras online':['AMAZON','MERCADO LIBRE','MERCADOLIBRE','SHEIN','TEMU','WISH','ALIEXPRESS','LINIO',' ML '],
   '📺 Suscripciones':['NETFLIX','SPOTIFY','DISNEY','HBO','APPLE.COM','YOUTUBE PREMIUM','AMAZON PRIME','PARAMOUNT','CRUNCHYROLL'],
-  '💊 Farmacias':['FARMACIA','FARMACIAS','BENAVIDES','SIMILARES','FARMAHORRO','GUADALAJARA'],
-  '🍔 Restaurantes':['RESTAURANTE','RESTAURANT','TACOS','POLLO','PIZZA','SUSHI','BURGER','WINGS','CARL','LITTLE CAESARS','DOMINOS','SUBWAY','MCDONALDS'],
-  '☕ Cafeterías':['STARBUCKS','ITALIAN COFFEE','CIELITO','CAFE','COFFEE','ANDATTI'],
+  '💊 Farmacias':['FARMACIA','FARMACIAS','BENAVIDES','SIMILARES','FARMAHORRO','FARMACIA GUADALAJARA'],
+  '🍔 Restaurantes':['RESTAURANTE','RESTAURANT','TAQUERIA','TACOS EL','PIZZERIA','PIZZA HUT','DOMINOS','PAPA JOHN','SUSHI','BURGER KING','KFC','WINGSTOP','CARLS JR','LITTLE CAESARS','SUBWAY','MCDONALD','VIPS','TOKS','SANBORNS','APPLEBEES','CHILIS'],
+  '☕ Cafeterías':['STARBUCKS','ITALIAN COFFEE','CIELITO','CAFETERIA','COFFEE','ANDATTI','PUNTA DEL CIELO','CIELITO QUERIDO'],
   '🎮 Entretenimiento':['STEAM','PLAYSTATION','XBOX','NINTENDO','CINEPOLIS','CINEMEX','GOOGLE PLAY','APPLE STORE'],
 };
 
@@ -1497,7 +1497,38 @@ function parseNu(txt){
 
 function detectH(txns){
   const r={};
-  txns.forEach(t=>{const d=t.desc.toUpperCase();for(const[cat,keys]of Object.entries(HK)){if(keys.some(k=>d.includes(k))){if(!r[cat]){r[cat]={total:0,count:0,txns:[]};}r[cat].total+=t.amt;r[cat].count++;r[cat].txns.push({desc:t.desc.slice(0,40),amt:t.amt,date:t.date||''});break;}}});
+  txns.forEach(t=>{
+    const desc=t.desc||'';
+    // FIX: First check user-defined rules (overrides automatic HK matching)
+    try{
+      const userCat=applyUserCategory(desc);
+      if(userCat){
+        const catInfo=getUserCatInfo(userCat);
+        // X_ categories are excluded from hormiga entirely (fijo, ahorro, deuda, transfer, ignorar)
+        if(catInfo&&catInfo.exclude)return;
+        // H_ categories: use the user's label as hormiga category
+        if(catInfo&&catInfo.hormiga){
+          const catLabel=catInfo.label;
+          if(!r[catLabel])r[catLabel]={total:0,count:0,txns:[]};
+          r[catLabel].total+=t.amt;
+          r[catLabel].count++;
+          r[catLabel].txns.push({desc:desc.slice(0,40),amt:t.amt,date:t.date||''});
+          return;
+        }
+      }
+    }catch(e){}
+    // Fallback: automatic HK matching
+    const d=desc.toUpperCase();
+    for(const[cat,keys]of Object.entries(HK)){
+      if(keys.some(k=>d.includes(k))){
+        if(!r[cat])r[cat]={total:0,count:0,txns:[]};
+        r[cat].total+=t.amt;
+        r[cat].count++;
+        r[cat].txns.push({desc:desc.slice(0,40),amt:t.amt,date:t.date||''});
+        break;
+      }
+    }
+  });
   return Object.entries(r).sort((a,b)=>b[1].total-a[1].total);
 }
 // Clasificador hormiga/impulso/servicio para CSV
@@ -1740,6 +1771,20 @@ function _removeCategorization(){
     window._pendingCat=null;
     toast('🗑 Regla eliminada');
     try{rQuincena();}catch(e){}
+  }catch(e){}
+}
+
+// FIX 3: Remove rule directly from rules management list
+function _confirmRemoveRule(key){
+  try{
+    const info=getUserCatInfo(S.userCategories[key]);
+    const lbl=info?info.label:'esta regla';
+    showConfirm('¿Eliminar regla?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a eliminar la regla:<br><br><strong>'+key+'</strong><br>→ '+lbl+'<br><br>Los próximos CSVs que subas ya no aplicarán esta categoría automáticamente.</div>',()=>{
+      delete S.userCategories[key];
+      sv();
+      toast('🗑 Regla eliminada');
+      rQuincena();
+    });
   }catch(e){}
 }
 
@@ -2171,6 +2216,42 @@ function rQuincena(){
       ${reconcileBtn}
     </div>`;
   }catch(e){return'<!-- err top sangradores: '+e.message+' -->';}})()}
+
+  <!-- FIX 3 · GESTIONAR REGLAS DE CATEGORIZACIÓN -->
+  ${(()=>{try{
+    const rules=Object.entries(S.userCategories||{});
+    if(!rules.length)return'';
+    return`<div class="card" style="border-left:3px solid var(--sky)">
+      <div class="row-b" style="cursor:pointer" onclick="window._rulesOpen=!window._rulesOpen;rQuincena()">
+        <div class="ct" style="margin-bottom:0">✏️ Reglas de categorización (${rules.length})</div>
+        <span style="font-size:16px;color:var(--muted)">${window._rulesOpen?'▾':'▸'}</span>
+      </div>
+      ${window._rulesOpen?`
+      <div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:10px;line-height:1.6">Estas son las reglas que has creado. Cada regla se aplica automáticamente cuando aparece un cargo similar. Puedes editarlas o eliminarlas.</div>
+      <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+        ${rules.map(([key,catId])=>{
+          const info=getUserCatInfo(catId);
+          const lbl=info?info.label:catId;
+          const color=info?.exclude?'var(--terra)':'var(--sage)';
+          const safeKey=key.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+          return`<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
+            <div class="row-b" style="margin-bottom:4px">
+              <div style="flex:1;min-width:0;margin-right:8px">
+                <div style="font-size:12px;font-weight:bold;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${key}</div>
+                <div style="font-size:11px;color:${color};margin-top:2px">→ ${lbl}</div>
+              </div>
+              <div class="row" style="gap:4px;flex-shrink:0">
+                <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px" onclick="showCategorizeModal('${safeKey}')">✏️</button>
+                <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px;color:var(--terra)" onclick="_confirmRemoveRule('${safeKey}')">🗑</button>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+      <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.6;font-style:italic">💡 Las reglas se aplican al próximo CSV que proceses. Los capítulos ya guardados no se re-categorizan automáticamente.</div>
+      `:''}
+    </div>`;
+  }catch(e){return'';}})()}
 
   <!-- SAVE SNAPSHOT -->
   ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">

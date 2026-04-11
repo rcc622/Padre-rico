@@ -2331,6 +2331,9 @@ function saveSnapshot(txns,source){
     // ETAPA 3: full fidelity fields (stripped on year rollover)
     allTxns,
     top10General,
+    // FASE 1 BARRAS · desglose por categoría (gastos fijos) y grupo (deudas)
+    expByCat:(()=>{const m={};(S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';const mo=toMonthly(+e.amt||0,e.freq||'mensual');m[k]=(m[k]||0)+mo;});return m;})(),
+    debtByGroup:(()=>{const m={};(S.debts||[]).forEach(d=>{if((+d.bal||0)<=0)return;const k=(d.group||d.name||'Sin grupo').trim()||'Sin grupo';m[k]=(m[k]||0)+(+d.bal||0);});return m;})(),
   };
   pt({snapshots:[...S.snapshots,snap]});
   // LOAD NEXT TRIGGER: tell user when the next chapter will be ready
@@ -4327,6 +4330,7 @@ function evaluateRetos(snap){
 
 // ══ MI HISTORIA (simulador + gráficas + logros + timeline) ══════
 let histView='sim';
+let histPeriod='quinc'; // quinc|mes|trim|sem|anual — Evolución aggregation
 let simPeriod=12; // 1, 2, 6, or 12 months
 function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
 function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
@@ -4584,56 +4588,156 @@ function rHistoria(){
     <div class="card" id="simImp"></div>`;
   }
 
-  // ═══ EVOLUCIÓN ═══
+  // ═══ EVOLUCIÓN ═══ (FASE 1 BARRAS: selector global + gráficas mixtas)
   if(histView==='evo'){
-    const cs=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
-    if(cs.length<2){ct=`<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">Necesitas al menos 2 capítulos. Llevas ${cs.length}.</div></div>`;}
+    const csRaw=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
+    if(csRaw.length<2){ct=`<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">Necesitas al menos 2 capítulos. Llevas ${csRaw.length}.</div></div>`;}
     else{
-      const fmtV=(v,isScore)=>isScore?v.toString():fx(v);
-      const mkC=(title,vals,color,isScore)=>{
-        if(!vals.length)return'';
-        const last=vals[vals.length-1],first=vals[0],diff=last-first;
-        const mn=Math.min(...vals),mx2=Math.max(...vals);
-        const rn=mx2-mn||1;
-        const w=360,h=180,pl=60,pr=14,pt2=20,pb2=26;
-        const cw=w-pl-pr,ch=h-pt2-pb2;
-        const toX=(i)=>pl+(vals.length>1?i/(vals.length-1):0.5)*cw;
-        const toY=(v)=>pt2+(1-(v-mn)/rn)*ch;
-        // Y-axis: 3-5 ticks
-        const steps=Math.min(4,Math.max(2,vals.length));
-        const yTicks=[];for(let i=0;i<=steps;i++){const v=mn+rn*i/steps;yTicks.push(Math.round(v));}
-        const diffLabel=isScore?(diff>=0?'+':'')+diff:(diff>=0?'+':'')+fx(diff);
-        return`<div class="card"><div class="row-b"><div class="ct" style="margin-bottom:0">${title}</div><div style="font-size:12px;font-weight:bold;color:${diff>=0?'var(--sage)':'var(--terra)'}">${diffLabel}</div></div><svg viewBox="0 0 ${w} ${h}" style="width:100%;display:block">${yTicks.map(v=>`<line x1="${pl}" y1="${toY(v)}" x2="${pl+cw}" y2="${toY(v)}" stroke="#e8e3de" stroke-width=".5" ${v!==yTicks[0]&&v!==yTicks[yTicks.length-1]?'stroke-dasharray="4,3"':''}/><text x="${pl-8}" y="${toY(v)+3}" text-anchor="end" font-size="8" font-family="Georgia,serif" fill="#9A9590">${fmtV(v,isScore)}</text>`).join('')}${(()=>{const pts=vals.map((v,i)=>toX(i)+','+toY(v));return'<polygon points="'+pl+','+toY(mn)+' '+pts.join(' ')+' '+(pl+cw)+','+toY(mn)+'" fill="'+color+'" opacity=".08"/><polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linejoin="round"/>';})()}${vals.map((v,i)=>`<circle cx="${toX(i)}" cy="${toY(v)}" r="4" fill="${color}"/><text x="${toX(i)}" y="${toY(v)-10}" text-anchor="middle" font-size="8" font-weight="bold" font-family="Georgia,serif" fill="#5C5650">${fmtV(v,isScore)}</text>`).join('')}${vals.map((_,i)=>`<text x="${toX(i)}" y="${h-6}" text-anchor="middle" font-size="9" font-family="Georgia,serif" fill="#9A9590">C${i+1}</text>`).join('')}</svg></div>`;
-      };
-    ct=`<div class="card card-sage"><div class="ct">📈 Evolución Financiera</div><div style="font-size:12px;color:var(--txt2)">Tus números quincena a quincena.</div></div>`+mkC('📊 Patrimonio Neto',cs.map(s=>s.patrimonio),'#4E7C6A')+mkC('⛓️ Deuda Total',cs.map(s=>s.deudaTotal),'#B85C4A')+mkC('🐜 Gastos Hormiga',cs.map(s=>Object.values(s.hormiga||{}).reduce((a,v)=>a+v.total,0)),'#A07030')+mkC('📈 Score',cs.map(s=>s.score),'#4A6E8C',true);
-      // FRENTE 5: Prestige stars card
-      try{
-        const stars=calcPrestigeStars();
-        if(stars>0){
-          ct+='<div class="card" style="border-left:3px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.06) 0%,rgba(160,112,48,.02) 100%)"><div class="ct">⭐ Estrellas de Prestigio</div><div style="text-align:center;font-size:36px;margin:10px 0">'+'⭐'.repeat(Math.min(stars,10))+'</div><div style="font-size:11px;color:var(--txt2);line-height:1.65;text-align:center">Has mantenido tu score ≥80 durante <strong>'+(stars*3)+' quincenas</strong> acumuladas. Cada 3 quincenas seguidas en verde = 1 estrella. Nunca se pierden.</div></div>';
+      // Period aggregation config
+      const periodSz={quinc:1,mes:2,trim:6,sem:12,anual:24}[histPeriod]||1;
+      const periodLabels={quinc:'Quincenal',mes:'Mensual',trim:'Trimestral',sem:'Semestral',anual:'Anual'};
+      // Aggregate snapshots into periods
+      const aggSnaps=(()=>{
+        if(periodSz===1)return csRaw.map((s,i)=>({...s,_label:'C'+(i+1)}));
+        const out=[];
+        for(let i=0;i+periodSz<=csRaw.length;i+=periodSz){
+          const chunk=csRaw.slice(i,i+periodSz);
+          const last=chunk[chunk.length-1];
+          // Sum hormiga totals across chunk
+          const horm={};
+          chunk.forEach(s=>Object.entries(s.hormiga||{}).forEach(([k,v])=>{
+            if(!horm[k])horm[k]={total:0};
+            horm[k].total+=(v&&v.total)||0;
+          }));
+          // Sum expByCat across chunk (flows)
+          const exp={};
+          chunk.forEach(s=>Object.entries(s.expByCat||{}).forEach(([k,v])=>{
+            exp[k]=(exp[k]||0)+(+v||0);
+          }));
+          // Debt balance: point-in-time, take LAST
+          const debt=last.debtByGroup||{};
+          out.push({periodEnd:last.periodEnd||last.date,patrimonio:last.patrimonio,deudaTotal:last.deudaTotal,score:last.score,hormiga:horm,expByCat:exp,debtByGroup:debt,_label:'P'+(out.length+1)});
         }
-      }catch(e){}
-      // FRENTE 5: Year-vs-Year comparison if ≥1 year of data
-      try{
-        const now2=new Date();
-        const oneYearAgo=new Date(now2.getTime()-365*864e5);
-        const recent=cs.filter(sn=>new Date(sn.periodEnd||sn.date)>=new Date(now2.getTime()-60*864e5));
-        const yearAgo=cs.filter(sn=>{const d=new Date(sn.periodEnd||sn.date);return d>=new Date(oneYearAgo.getTime()-30*864e5)&&d<=new Date(oneYearAgo.getTime()+30*864e5);});
-        if(recent.length&&yearAgo.length){
-          const avgR=(arr,f)=>arr.reduce((a,s)=>a+f(s),0)/arr.length;
-          const patR=avgR(recent,s=>+s.patrimonio||0),patY=avgR(yearAgo,s=>+s.patrimonio||0);
-          const debtR=avgR(recent,s=>+s.deudaTotal||0),debtY=avgR(yearAgo,s=>+s.deudaTotal||0);
-          const hormR=avgR(recent,s=>Object.values(s.hormiga||{}).reduce((a,v)=>a+v.total,0));
-          const hormY=avgR(yearAgo,s=>Object.values(s.hormiga||{}).reduce((a,v)=>a+v.total,0));
-          const patDiff=patR-patY,debtDiff=debtR-debtY,hormDiff=hormR-hormY;
-          const arrow=(n,inverse)=>{const good=inverse?n<0:n>0;return'<span style="color:'+(good?'var(--sage)':'var(--terra)')+';font-weight:bold">'+(n>=0?'+':'')+fx(Math.round(n))+' '+(good?'✓':'⚠')+'</span>';};
-          ct+='<div class="card" style="border-left:3px solid var(--sky)"><div class="ct">📅 Un año después</div><div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Tus números hoy vs hace ~1 año. Estos datos solo aparecen cuando llevas suficiente historia.</div>'
-            +'<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">📊 Patrimonio</span>'+arrow(patDiff,false)+'</div>'
-            +'<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">⛓️ Deuda</span>'+arrow(debtDiff,true)+'</div>'
-            +'<div class="row-b" style="padding:8px 0"><span style="font-size:12px;color:var(--txt2)">🐜 Hormiga</span>'+arrow(hormDiff,true)+'</div>'
-            +'<div style="font-size:10px;color:var(--muted);line-height:1.6;margin-top:10px;font-style:italic">"Nuestros actos sabios nos acompañan a lo largo de toda la vida para servirnos y ayudarnos." — Arkad</div></div>';
-        }
-      }catch(e){}
+        return out;
+      })();
+      // Period selector (global)
+      const selector='<div class="card card-sage"><div class="ct">📈 Evolución Financiera</div><div style="font-size:12px;color:var(--txt2);margin-bottom:10px">Cómo se reparte tu dinero a lo largo del tiempo.</div><div class="chips">'+Object.entries(periodLabels).map(([k,l])=>'<button class="chip" style="'+(histPeriod===k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':'')+'" onclick="histPeriod=\''+k+'\';rHistoria()">'+l+'</button>').join('')+'</div></div>';
+      // Edge cases: not enough data for selected period
+      if(aggSnaps.length===0){
+        ct=selector+'<div class="card" style="text-align:center;padding:24px"><div style="font-size:22px;margin-bottom:8px">⏳</div><div style="color:var(--muted);font-size:12px;line-height:1.6">Necesitas <strong>'+periodSz+' capítulos</strong> para formar un periodo '+periodLabels[histPeriod].toLowerCase()+'.<br>Llevas '+csRaw.length+'. Te faltan '+Math.max(0,periodSz-csRaw.length)+'.<br><br>Cambia a un periodo más corto arriba ☝️</div></div>';
+      } else if(aggSnaps.length<2){
+        ct=selector+'<div class="card" style="text-align:center;padding:24px"><div style="font-size:22px;margin-bottom:8px">📊</div><div style="color:var(--muted);font-size:12px;line-height:1.6">Solo tienes <strong>1 periodo '+periodLabels[histPeriod].toLowerCase()+'</strong> completo. Necesitas al menos 2 para ver tendencia.<br>Cambia a un periodo más corto arriba ☝️</div></div>';
+      } else {
+        const fmtV=(v,isScore)=>isScore?v.toString():fx(v);
+        // Line chart (Patrimonio + Score) — accepts custom labels
+        const mkC=(title,vals,color,isScore,labels,upIsGood)=>{
+          if(!vals.length)return'';
+          const last=vals[vals.length-1],first=vals[0],diff=last-first;
+          const mn=Math.min(...vals),mx2=Math.max(...vals);
+          const rn=mx2-mn||1;
+          const w=360,h=180,pl=60,pr=14,pt2=20,pb2=26;
+          const cw=w-pl-pr,ch=h-pt2-pb2;
+          const toX=(i)=>pl+(vals.length>1?i/(vals.length-1):0.5)*cw;
+          const toY=(v)=>pt2+(1-(v-mn)/rn)*ch;
+          const steps=Math.min(4,Math.max(2,vals.length));
+          const yTicks=[];for(let i=0;i<=steps;i++){const v=mn+rn*i/steps;yTicks.push(Math.round(v));}
+          const diffLabel=isScore?(diff>=0?'+':'')+diff:(diff>=0?'+':'')+fx(diff);
+          const good=upIsGood!==false?diff>=0:diff<=0;
+          const lbls=labels||vals.map((_,i)=>'C'+(i+1));
+          return`<div class="card"><div class="row-b"><div class="ct" style="margin-bottom:0">${title}</div><div style="font-size:12px;font-weight:bold;color:${good?'var(--sage)':'var(--terra)'}">${diffLabel}</div></div><svg viewBox="0 0 ${w} ${h}" style="width:100%;display:block">${yTicks.map(v=>`<line x1="${pl}" y1="${toY(v)}" x2="${pl+cw}" y2="${toY(v)}" stroke="#e8e3de" stroke-width=".5" ${v!==yTicks[0]&&v!==yTicks[yTicks.length-1]?'stroke-dasharray="4,3"':''}/><text x="${pl-8}" y="${toY(v)+3}" text-anchor="end" font-size="8" font-family="Georgia,serif" fill="#9A9590">${fmtV(v,isScore)}</text>`).join('')}${(()=>{const pts=vals.map((v,i)=>toX(i)+','+toY(v));return'<polygon points="'+pl+','+toY(mn)+' '+pts.join(' ')+' '+(pl+cw)+','+toY(mn)+'" fill="'+color+'" opacity=".08"/><polyline points="'+pts.join(' ')+'" fill="none" stroke="'+color+'" stroke-width="2.5" stroke-linejoin="round"/>';})()}${vals.map((v,i)=>`<circle cx="${toX(i)}" cy="${toY(v)}" r="4" fill="${color}"/><text x="${toX(i)}" y="${toY(v)-10}" text-anchor="middle" font-size="8" font-weight="bold" font-family="Georgia,serif" fill="#5C5650">${fmtV(v,isScore)}</text>`).join('')}${vals.map((_,i)=>`<text x="${toX(i)}" y="${h-6}" text-anchor="middle" font-size="9" font-family="Georgia,serif" fill="#9A9590">${lbls[i]||''}</text>`).join('')}</svg></div>`;
+        };
+        // Mixed chart: stacked bars by category across time + total trend line
+        const mkMixed=(title,periods,getCats)=>{
+          if(!periods.length)return'';
+          const palette=['#4E7C6A','#B85C4A','#A07030','#4A6E8C','#8A6E9E','#9A9590'];
+          // Gather category totals across all periods to pick top 5
+          const catTotals={};
+          periods.forEach(p=>{const c=getCats(p)||{};Object.entries(c).forEach(([k,v])=>{catTotals[k]=(catTotals[k]||0)+(+v||0);});});
+          const sortedCats=Object.entries(catTotals).filter(([_,v])=>v>0).sort((a,b)=>b[1]-a[1]);
+          if(!sortedCats.length){
+            return '<div class="card"><div class="ct">'+title+'</div><div style="color:var(--muted);font-size:11px;padding:16px;text-align:center;line-height:1.6">Sin desglose todavía.<br><span style="font-size:10px">Los próximos capítulos guardarán el detalle automáticamente.</span></div></div>';
+          }
+          const topN=sortedCats.slice(0,5).map(([k])=>k);
+          const hasOthers=sortedCats.length>5;
+          const seriesNames=[...topN];
+          if(hasOthers)seriesNames.push('Otros');
+          // Build data per period
+          const data=periods.map(p=>{
+            const c=getCats(p)||{};
+            const row={};let tot=0;
+            topN.forEach(k=>{const v=+c[k]||0;row[k]=v;tot+=v;});
+            if(hasOthers){let o=0;Object.entries(c).forEach(([k,v])=>{if(!topN.includes(k))o+=(+v||0);});row['Otros']=o;tot+=o;}
+            return {label:p._label,row,total:tot};
+          });
+          const maxTot=Math.max(...data.map(d=>d.total),1);
+          const w=360,h=220,pl=56,pr=14,pt2=24,pb2=36;
+          const cw=w-pl-pr,ch=h-pt2-pb2;
+          const nBars=data.length;
+          const gap=Math.max(4,Math.min(12,cw/(nBars*3)));
+          const bw=Math.max(10,(cw-gap*(nBars+1))/nBars);
+          const toY=v=>pt2+(1-v/maxTot)*ch;
+          const yTicks=[];for(let i=0;i<=4;i++)yTicks.push(Math.round(maxTot*i/4));
+          const diff=data.length>1?data[data.length-1].total-data[0].total:0;
+          let bars='';const linePts=[];
+          data.forEach((d,i)=>{
+            const x=pl+gap+i*(bw+gap);
+            let yCursor=toY(0);
+            seriesNames.forEach((name,si)=>{
+              const v=d.row[name]||0;
+              if(v<=0)return;
+              const segH=(v/maxTot)*ch;
+              yCursor-=segH;
+              bars+='<rect x="'+x+'" y="'+yCursor+'" width="'+bw+'" height="'+segH+'" fill="'+palette[si%palette.length]+'" rx="1"/>';
+            });
+            linePts.push({x:x+bw/2,y:toY(d.total),tot:d.total});
+          });
+          const lineStr=linePts.map(p=>p.x+','+p.y).join(' ');
+          const linePath='<polyline points="'+lineStr+'" fill="none" stroke="#2C2824" stroke-width="2" stroke-linejoin="round"/>';
+          const lineDots=linePts.map(p=>'<circle cx="'+p.x+'" cy="'+p.y+'" r="3.5" fill="#fff" stroke="#2C2824" stroke-width="1.5"/><text x="'+p.x+'" y="'+(p.y-8)+'" text-anchor="middle" font-size="8" font-weight="bold" font-family="Georgia,serif" fill="#2C2824">'+fx(p.tot)+'</text>').join('');
+          const maxY=Math.max(...yTicks);
+          const yAxis=yTicks.map(v=>'<line x1="'+pl+'" y1="'+toY(v)+'" x2="'+(pl+cw)+'" y2="'+toY(v)+'" stroke="#e8e3de" stroke-width=".5" '+(v!==0&&v!==maxY?'stroke-dasharray="4,3"':'')+'/><text x="'+(pl-6)+'" y="'+(toY(v)+3)+'" text-anchor="end" font-size="8" font-family="Georgia,serif" fill="#9A9590">'+fx(v)+'</text>').join('');
+          const xLabels=data.map((d,i)=>{const x=pl+gap+i*(bw+gap)+bw/2;return '<text x="'+x+'" y="'+(h-16)+'" text-anchor="middle" font-size="9" font-family="Georgia,serif" fill="#9A9590">'+d.label+'</text>';}).join('');
+          const legend=seriesNames.map((n,i)=>'<span style="display:inline-flex;align-items:center;gap:4px;margin:3px 8px 3px 0;font-size:10px;color:var(--txt2)"><span style="display:inline-block;width:10px;height:10px;background:'+palette[i%palette.length]+';border-radius:2px;flex-shrink:0"></span>'+n+'</span>').join('');
+          const diffLabel=(diff>=0?'+':'')+fx(diff);
+          // For these metrics (deuda, hormiga, fijos), going UP is BAD
+          return '<div class="card"><div class="row-b"><div class="ct" style="margin-bottom:0">'+title+'</div><div style="font-size:12px;font-weight:bold;color:'+(diff<=0?'var(--sage)':'var(--terra)')+'">'+diffLabel+'</div></div><svg viewBox="0 0 '+w+' '+h+'" style="width:100%;display:block">'+yAxis+bars+linePath+lineDots+xLabels+'</svg><div style="margin-top:6px;line-height:1.9;display:flex;flex-wrap:wrap">'+legend+'</div></div>';
+        };
+        const labels=aggSnaps.map(s=>s._label);
+        ct=selector
+          +mkC('📊 Patrimonio Neto',aggSnaps.map(s=>s.patrimonio||0),'#4E7C6A',false,labels,true)
+          +mkMixed('⛓️ Deuda por Grupo',aggSnaps,s=>s.debtByGroup||{})
+          +mkMixed('🐜 Hormiga por Categoría',aggSnaps,s=>{const o={};Object.entries(s.hormiga||{}).forEach(([k,v])=>{o[k]=(v&&v.total)||0;});return o;})
+          +mkMixed('📋 Gastos Fijos por Categoría',aggSnaps,s=>s.expByCat||{})
+          +mkC('📈 Score',aggSnaps.map(s=>s.score||0),'#4A6E8C',true,labels,true);
+        // FRENTE 5: Prestige stars card
+        try{
+          const stars=calcPrestigeStars();
+          if(stars>0){
+            ct+='<div class="card" style="border-left:3px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.06) 0%,rgba(160,112,48,.02) 100%)"><div class="ct">⭐ Estrellas de Prestigio</div><div style="text-align:center;font-size:36px;margin:10px 0">'+'⭐'.repeat(Math.min(stars,10))+'</div><div style="font-size:11px;color:var(--txt2);line-height:1.65;text-align:center">Has mantenido tu score ≥80 durante <strong>'+(stars*3)+' quincenas</strong> acumuladas. Cada 3 quincenas seguidas en verde = 1 estrella. Nunca se pierden.</div></div>';
+          }
+        }catch(e){}
+        // FRENTE 5: Year-vs-Year comparison if ≥1 year of data
+        try{
+          const now2=new Date();
+          const oneYearAgo=new Date(now2.getTime()-365*864e5);
+          const recent=csRaw.filter(sn=>new Date(sn.periodEnd||sn.date)>=new Date(now2.getTime()-60*864e5));
+          const yearAgo=csRaw.filter(sn=>{const d=new Date(sn.periodEnd||sn.date);return d>=new Date(oneYearAgo.getTime()-30*864e5)&&d<=new Date(oneYearAgo.getTime()+30*864e5);});
+          if(recent.length&&yearAgo.length){
+            const avgR=(arr,f)=>arr.reduce((a,s)=>a+f(s),0)/arr.length;
+            const patR=avgR(recent,s=>+s.patrimonio||0),patY=avgR(yearAgo,s=>+s.patrimonio||0);
+            const debtR=avgR(recent,s=>+s.deudaTotal||0),debtY=avgR(yearAgo,s=>+s.deudaTotal||0);
+            const hormR=avgR(recent,s=>Object.values(s.hormiga||{}).reduce((a,v)=>a+v.total,0));
+            const hormY=avgR(yearAgo,s=>Object.values(s.hormiga||{}).reduce((a,v)=>a+v.total,0));
+            const patDiff=patR-patY,debtDiff=debtR-debtY,hormDiff=hormR-hormY;
+            const arrow=(n,inverse)=>{const good=inverse?n<0:n>0;return'<span style="color:'+(good?'var(--sage)':'var(--terra)')+';font-weight:bold">'+(n>=0?'+':'')+fx(Math.round(n))+' '+(good?'✓':'⚠')+'</span>';};
+            ct+='<div class="card" style="border-left:3px solid var(--sky)"><div class="ct">📅 Un año después</div><div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Tus números hoy vs hace ~1 año. Estos datos solo aparecen cuando llevas suficiente historia.</div>'
+              +'<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">📊 Patrimonio</span>'+arrow(patDiff,false)+'</div>'
+              +'<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">⛓️ Deuda</span>'+arrow(debtDiff,true)+'</div>'
+              +'<div class="row-b" style="padding:8px 0"><span style="font-size:12px;color:var(--txt2)">🐜 Hormiga</span>'+arrow(hormDiff,true)+'</div>'
+              +'<div style="font-size:10px;color:var(--muted);line-height:1.6;margin-top:10px;font-style:italic">"Nuestros actos sabios nos acompañan a lo largo de toda la vida para servirnos y ayudarnos." — Arkad</div></div>';
+          }
+        }catch(e){}
+      }
     }
   }
 

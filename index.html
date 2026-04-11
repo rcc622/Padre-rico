@@ -274,7 +274,7 @@ const SK='prv5';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{}};
+  gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{},habitoFormado:{}};
 
 function migrate(){
   // Try loading v4 data first
@@ -644,43 +644,235 @@ function activateSurvival(retoId){
   S.survivalRetos.push({id:retoId,cycle:ck,active:true,completed:false,activatedAt:Date.now()});
   sv();rHabitos();toast('🎯 Reto de supervivencia activado');
 }
+// ══ ETAPA 1 · 6-B · COMPLETAR RETO CON CONFIRMACIÓN SEGURA ══
+// Step 1: Preview modal — shows summary + editable amount + checks review.
+// NOTHING is marked as completed until user explicitly confirms.
 function completeSurvival(retoId){
   const ck=cycleKey();
   const r=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===ck);
-  if(!r)return;
+  if(!r||r.completed)return;
   const allR=genSurvivalRetos(1000);
   const match=allR.find(x=>x.id===retoId);
   const theoretical=match?.save||0;
-  r.completed=true;r.completedAt=Date.now();sv();
-  
-  // LOAD NEXT TRIGGER: next reto suggestion (shared across both branches)
+  const checks=S.retoChecks[retoId+'_'+ck]||[];
+  const totalSteps=match?.steps||1;
+  const passedN=checks.filter(c=>c&&c.pass!==false).length;
+  const failedN=checks.filter(c=>c&&c.pass===false).length;
   const nextReto=getNextSuggestedReto(retoId);
-  const nextRetoHtml=nextReto?'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;margin-top:4px">👉 Tu siguiente reto sugerido</div>'
-    +'<div style="padding:10px 12px;background:var(--bg2);border-radius:6px;border:1px dashed var(--border);margin-bottom:12px">'
+  const nextRetoHtml=nextReto?'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;margin-top:14px">👉 Tu siguiente reto sugerido</div>'
+    +'<div style="padding:10px 12px;background:var(--bg2);border-radius:6px;border:1px dashed var(--border);margin-bottom:6px">'
     +'<div class="row" style="gap:10px;align-items:center"><span style="font-size:22px">'+nextReto.icon+'</span><div style="flex:1"><div style="font-size:12px;font-weight:bold;color:var(--txt)">'+nextReto.name+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Ahorro estimado: <strong style="color:var(--sage)">'+fx(nextReto.save||0)+'</strong></div></div></div>'
     +'</div>':'';
-  
+
+  let body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">Antes de marcar como completado revisa los datos. Una vez confirmado, el reto se moverá a tu archivo en Mi Historia.</div>';
+  // Summary card
+  body+='<div style="background:var(--sagedim);border-left:3px solid var(--sage);padding:12px 14px;border-radius:6px;margin-bottom:12px">'
+    +'<div style="font-size:10px;color:var(--sage2);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold">📊 Resumen</div>'
+    +'<div class="row-b" style="font-size:12px;padding:2px 0"><span style="color:var(--txt2)">Cumpliste</span><strong style="color:var(--sage)">'+passedN+' de '+totalSteps+' '+(match?.track==='dia'?'días':match?.track==='sem'?'semanas':'quincenas')+'</strong></div>'
+    +(failedN>0?'<div class="row-b" style="font-size:12px;padding:2px 0"><span style="color:var(--txt2)">Fallaste</span><strong style="color:var(--terra)">'+failedN+'</strong></div>':'')
+    +'<div class="row-b" style="font-size:12px;padding:2px 0"><span style="color:var(--txt2)">Ahorro estimado</span><strong style="color:var(--sage)">'+fx(theoretical)+'</strong></div>'
+    +'</div>';
+  // Editable real amount
   if(theoretical>0){
-    const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:14px">El ahorro estimado era <strong>'+fx(theoretical)+'</strong>.<br>¿Cuánto ahorraste realmente?</div>'
-      +'<div style="margin-bottom:14px"><label style="font-size:11px;color:var(--muted)">Ahorro real ($)</label><input type="number" id="retoRealAmt" value="'+theoretical+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
-      +'<div style="font-size:10px;color:var(--muted);margin-bottom:14px;text-align:center;line-height:1.6">Se registrará como ingreso extra de esta quincena.<br>Después podrás dirigirlo a deudas o metas desde el Plan de Acción.</div>'
-      +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="applyRetoAsExtra(\''+retoId+'\')">✅ Registrar ahorro</button>'
-      +nextRetoHtml
-      +'<div style="border-top:1px dashed var(--border);margin-top:8px;padding-top:10px"><button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="exportData()">📤 Exportar respaldo</button></div>';
-    showConfirm('🏆 ¡Reto completado!',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
-    if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Cerrar sin registrar</button>';
-  }else{
-    const body2='<div style="font-size:13px;color:var(--txt2);line-height:1.7;margin-bottom:14px;text-align:center">¡Felicidades! Completaste el reto de esta quincena.</div>'
-      +nextRetoHtml
-      +'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:8px" onclick="closeConfirm();rHabitos()">Continuar</button>'
-      +'<div style="border-top:1px dashed var(--border);margin-top:4px;padding-top:10px"><button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="exportData()">📤 Exportar respaldo</button></div>';
-    showConfirm('🏆 ¡Reto completado!',body2,null);
-    const row2=document.getElementById('confirmModal').querySelector('.row');
-    if(row2)row2.innerHTML='';
+    body+='<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Ahorro real que quieres registrar ($)</label><input type="number" id="retoRealAmt" value="'+theoretical+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>';
+    body+='<div style="font-size:10px;color:var(--muted);margin-bottom:12px;text-align:center;line-height:1.6">Se registrará como ingreso extra. Después podrás dirigirlo a deudas o metas desde el Plan de Acción.</div>';
   }
+  // Warning banner
+  body+='<div style="background:rgba(160,112,48,.08);border-left:3px solid var(--amber);padding:10px 12px;border-radius:6px;font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:4px">'
+    +'⚠️ <strong>¿Seguro que terminaste?</strong> Al confirmar, el reto se archiva en Mi Historia. Si te falta algo, cancela y revisa los checkpoints primero.'
+    +'</div>'
+    +nextRetoHtml;
+  showConfirm('🏆 ¿Completar este reto?',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();rHabitos()">Cancelar</button>'
+    +'<button class="btn btn-sage btn-sm" onclick="_confirmCompleteReto(\''+retoId+'\')">✓ Sí, completar</button>';
+}
+
+// Step 2: User confirmed — NOW mark as completed and apply the savings
+function _confirmCompleteReto(retoId){
+  try{
+    const ck=cycleKey();
+    const r=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===ck);
+    if(!r)return;
+    const allR=genSurvivalRetos(1000);
+    const match=allR.find(x=>x.id===retoId);
+    const theoretical=match?.save||0;
+    // Mark as completed NOW
+    r.completed=true;
+    r.completedAt=Date.now();
+    // Capture real amount if the input was present
+    const realAmt=+(document.getElementById('retoRealAmt')?.value)||0;
+    if(realAmt>0){
+      r.realSave=realAmt;
+      // Register as extra income
+      const extra={id:Date.now(),name:'Ahorro de reto · '+(match?.name||retoId),amt:realAmt,tipo:'unico',date:new Date().toISOString().split('T')[0]};
+      S.extras=[...S.extras,extra];
+    }
+    sv();
+    closeConfirm();
+    if(realAmt>0)toast('🏆 Reto completado · '+fx(realAmt)+' registrado');
+    else toast('🏆 Reto completado y archivado');
+    rHabitos();
+    // ETAPA 2: Offer to declare as formed habit if not already
+    setTimeout(()=>{try{_offerDeclareHabito(retoId);}catch(e){}},600);
+  }catch(e){toast('Error al completar reto');}
 }
 function _getRetoAmt(){return +(document.getElementById('retoRealAmt')?.value)||0;}
+
+// ══ ETAPA 1 · 6-B · EDICIÓN RETROACTIVA DE RETOS COMPLETADOS ══
+function _editCompletedReto(retoId,cycle){
+  try{
+    const r=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===cycle);
+    if(!r)return;
+    const allR=genSurvivalRetos(1000);
+    const info=allR.find(x=>x.id===retoId)||{name:retoId,icon:'🎯',save:0};
+    const curAmt=(+r.realSave)||0;
+    const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Corrige el monto real ahorrado en este reto. El cambio se aplica directo, sin mover el reto de su archivo.</div>'
+      +'<div style="background:var(--sagedim);border-left:3px solid var(--sage);padding:10px 12px;border-radius:6px;margin-bottom:12px">'
+      +'<div class="row" style="gap:10px;align-items:center"><span style="font-size:22px">'+info.icon+'</span><div><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+info.name+'</div><div style="font-size:10px;color:var(--muted)">Ciclo '+cycle+'</div></div></div>'
+      +'</div>'
+      +'<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Ahorro real ($)</label><input type="number" id="_editRetoAmt" value="'+curAmt+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
+      +'<div style="font-size:10px;color:var(--muted);text-align:center;font-style:italic">Nota: esto NO modifica el ingreso extra que ya quedó registrado en su momento. Solo actualiza el número del archivo.</div>';
+    showConfirm('✏️ Editar monto registrado',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
+      +'<button class="btn btn-sage btn-sm" onclick="_saveEditedReto(\''+retoId+'\',\''+cycle+'\')">💾 Guardar</button>';
+  }catch(e){toast('Error al editar');}
+}
+
+function _saveEditedReto(retoId,cycle){
+  try{
+    const r=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===cycle);
+    if(!r){closeConfirm();return;}
+    const newAmt=+(document.getElementById('_editRetoAmt')?.value)||0;
+    r.realSave=newAmt;
+    sv();
+    closeConfirm();
+    toast('✅ Monto actualizado a '+fx(newAmt));
+    rHistoria();
+  }catch(e){toast('Error al guardar');}
+}
+
+function _reactivateCompletedReto(retoId,cycle){
+  try{
+    const r=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===cycle);
+    if(!r)return;
+    const allR=genSurvivalRetos(1000);
+    const info=allR.find(x=>x.id===retoId)||{name:retoId,icon:'🎯'};
+    const body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Vas a reactivar este reto:</div>'
+      +'<div style="background:var(--bg2);border:1px dashed var(--border);padding:10px 12px;border-radius:6px;margin-bottom:12px">'
+      +'<div class="row" style="gap:10px;align-items:center"><span style="font-size:22px">'+info.icon+'</span><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+info.name+'</div></div>'
+      +'</div>'
+      +'<div style="background:rgba(184,92,74,.08);border-left:3px solid var(--terra);padding:10px 12px;border-radius:6px;font-size:11px;color:var(--txt2);line-height:1.6">'
+      +'⚠️ <strong>Al reactivar:</strong><br>'
+      +'• El reto vuelve a aparecer en la lista activa de Mis Hábitos<br>'
+      +'• Se borra el monto ahorrado que tenías registrado<br>'
+      +'• Los checkpoints del ciclo se conservan para que puedas corregirlos<br>'
+      +'• El ingreso extra que ya registraste en su momento NO se elimina (tendrías que borrarlo manualmente desde Ingresos y Gastos si quieres)'
+      +'</div>';
+    showConfirm('↩️ ¿Reactivar reto?',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
+      +'<button class="btn btn-red btn-sm" onclick="_confirmReactivateReto(\''+retoId+'\',\''+cycle+'\')">↩️ Sí, reactivar</button>';
+  }catch(e){toast('Error');}
+}
+
+function _confirmReactivateReto(retoId,cycle){
+  try{
+    const r=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===cycle);
+    if(!r){closeConfirm();return;}
+    r.completed=false;
+    delete r.completedAt;
+    delete r.realSave;
+    r.active=true;
+    sv();
+    closeConfirm();
+    toast('↩️ Reto reactivado · Revísalo en Mis Hábitos');
+    rHistoria();
+  }catch(e){toast('Error al reactivar');}
+}
+
+// ══ ETAPA 2 · 6-B · SISTEMA HÁBITO FORMADO ══
+// Count how many times user has completed a specific reto (across all cycles)
+function _countRetoCompletions(retoId){
+  return(S.survivalRetos||[]).filter(r=>r.id===retoId&&r.completed).length;
+}
+
+// Check if a reto is declared as formed habit
+function _isHabitoFormado(retoId){
+  return!!(S.habitoFormado&&S.habitoFormado[retoId]);
+}
+
+// Offer modal: "You completed this reto X times. Is it a formed habit?"
+function _offerDeclareHabito(retoId){
+  try{
+    if(_isHabitoFormado(retoId))return; // already declared
+    const count=_countRetoCompletions(retoId);
+    if(count<1)return; // nothing to declare yet
+    const allR=genSurvivalRetos(1000);
+    const info=allR.find(x=>x.id===retoId)||{name:retoId,icon:'🎯'};
+    const body='<div style="text-align:center;padding:4px 0 12px">'
+      +'<div style="font-size:50px;margin-bottom:6px">'+info.icon+'</div>'
+      +'<div style="font-size:15px;font-weight:bold;color:var(--txt);font-family:Georgia,serif">'+info.name+'</div>'
+      +'<div style="font-size:11px;color:var(--sage);margin-top:4px">Completado '+count+' '+(count===1?'vez':'veces')+'</div>'
+      +'</div>'
+      +'<div style="background:var(--sagedim);border-left:3px solid var(--sage);padding:12px 14px;border-radius:6px;margin-bottom:12px;font-size:11px;color:var(--txt2);line-height:1.65;font-style:italic">"Cuantas más veces repitamos un acto, más fácil se vuelve. Así es como se forman los hábitos que construyen el destino." — Arkad</div>'
+      +'<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:10px">¿Ya sientes que esta disciplina es <strong>parte de ti</strong>? ¿Ya no necesitas recordarte activarlo cada quincena?</div>'
+      +'<div style="background:rgba(160,112,48,.06);border-left:3px solid var(--amber);padding:10px 12px;border-radius:6px;font-size:11px;color:var(--txt2);line-height:1.6">'
+      +'💡 <strong>Si lo declaras hábito formado:</strong><br>'
+      +'• Desaparece de la lista de retos activos<br>'
+      +'• Se archiva con una corona 👑 en Mi Historia<br>'
+      +'• Si más adelante detecto recaída en tu CSV, la app te ofrecerá reactivarlo (próximamente)'
+      +'</div>';
+    showConfirm('👑 ¿Declarar hábito formado?',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();rHabitos()">Todavía no</button>'
+      +'<button class="btn btn-sage btn-sm" onclick="_confirmDeclareHabito(\''+retoId+'\')">👑 Sí, es parte de mí</button>';
+  }catch(e){}
+}
+
+function _confirmDeclareHabito(retoId){
+  try{
+    if(!S.habitoFormado)S.habitoFormado={};
+    S.habitoFormado[retoId]={
+      declaredAt:new Date().toISOString().split('T')[0],
+      completionsAtDeclaration:_countRetoCompletions(retoId),
+      recaidas:[]
+    };
+    sv();
+    closeConfirm();
+    toast('👑 Hábito formado · "Ahora es parte de ti" — Arkad');
+    rHabitos();
+  }catch(e){toast('Error al declarar hábito');}
+}
+
+// Undeclare (only from the Mi Historia archive, for mistakes)
+function _undeclareHabito(retoId){
+  try{
+    const allR=genSurvivalRetos(1000);
+    const info=allR.find(x=>x.id===retoId)||{name:retoId,icon:'🎯'};
+    const body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Vas a quitar el estado de hábito formado de:</div>'
+      +'<div style="background:var(--bg2);border:1px dashed var(--border);padding:10px 12px;border-radius:6px;margin-bottom:12px">'
+      +'<div class="row" style="gap:10px;align-items:center"><span style="font-size:22px">'+info.icon+'</span><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+info.name+'</div></div>'
+      +'</div>'
+      +'<div style="font-size:11px;color:var(--txt2);line-height:1.6">El reto volverá a aparecer en la lista de retos disponibles de Mis Hábitos. Tus completaciones pasadas se conservan.</div>';
+    showConfirm('🔓 ¿Quitar hábito formado?',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
+      +'<button class="btn btn-red btn-sm" onclick="_confirmUndeclareHabito(\''+retoId+'\')">🔓 Sí, quitar</button>';
+  }catch(e){}
+}
+
+function _confirmUndeclareHabito(retoId){
+  try{
+    if(S.habitoFormado&&S.habitoFormado[retoId])delete S.habitoFormado[retoId];
+    sv();
+    closeConfirm();
+    toast('🔓 Hábito retirado · El reto vuelve a estar disponible');
+    rHistoria();
+  }catch(e){}
+}
+
 function applyRetoToDebt(debtId){
   const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
   const d=S.debts.find(x=>x.id===debtId);
@@ -1538,6 +1730,15 @@ function detectH(txns){
 const IMPULSO_KEYS=['AMAZON','MERCADO LIBRE','MERCADOLIBRE','SHEIN','TEMU','WISH','ALIEXPRESS','LINIO','ML ','STEAM','PLAYSTATION','XBOX','NINTENDO','GOOGLE PLAY','APPLE STORE','APPLE.COM/BILL','LIVERPOOL','PALACIO','COPPEL','ELEKTRA','BEST BUY','SUBURBIA','OLD NAVY','ZARA','H&M','PULL','BERSHKA','ADIDAS','NIKE','COSTCO','SAMS'];
 const SERVICIO_KEYS=['NETFLIX','SPOTIFY','DISNEY','HBO','YOUTUBE PREMIUM','AMAZON PRIME','PARAMOUNT','CRUNCHYROLL','TELCEL','AT&T','TOTALPLAY','IZZI','MEGACABLE','CFE','AGUA','GAS NATURAL','IENOVA','TELMEX'];
 function classifyBucket(desc){
+  // FIX: respect user-defined categories first (same as detectH)
+  try{
+    const userCat=applyUserCategory(desc);
+    if(userCat){
+      const catInfo=getUserCatInfo(userCat);
+      if(catInfo&&catInfo.exclude)return'excluido'; // fijo, ahorro, deuda, transfer, ignorar
+      if(catInfo&&catInfo.hormiga)return'hormiga'; // user-tagged hormiga (incluye carro, salud, etc)
+    }
+  }catch(e){}
   const d=(desc||'').toUpperCase();
   if(SERVICIO_KEYS.some(k=>d.includes(k)))return'servicio';
   if(IMPULSO_KEYS.some(k=>d.includes(k)))return'impulso';
@@ -1548,8 +1749,8 @@ function classifyBucket(desc){
   return'otro';
 }
 function bucketTotals(txns){
-  const r={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
-  txns.forEach(t=>{r[classifyBucket(t.desc)]+=t.amt;});
+  const r={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0,excluido:0};
+  txns.forEach(t=>{const b=classifyBucket(t.desc);if(r[b]!==undefined)r[b]+=t.amt;});
   return r;
 }
 
@@ -1975,6 +2176,108 @@ function _maybeTriggerCompression(newSnap){
   }catch(e){}
 }
 
+// ══ ETAPA 3 · 6-B · DETECTOR DE RECAÍDAS ══
+// Map reto IDs to the hormiga category they protect against
+const RETO_TO_HORMIGA_CAT={
+  'surv_delivery':'🚗 Delivery',
+  'surv_mini':'🛒 Minisuper / OXXO',
+  'surv_online':'📦 Compras online',
+  'surv_cafe':'☕ Cafeterías',
+  'surv_rest':'🍔 Restaurantes',
+  'surv_notiendas':'📦 Compras online',
+  // surv_super, surv_gas, surv_nocompras, surv_lunch, surv_diezmo, surv_lista_mercado, surv_nada_credito don't map cleanly to hormiga cats
+};
+
+// Sum hormiga total for a specific category in a snapshot
+function _hormigaForCat(snap,catLabel){
+  try{
+    const h=snap.hormiga||{};
+    if(h[catLabel])return h[catLabel].total||0;
+    return 0;
+  }catch(e){return 0;}
+}
+
+// Detect if a formed habit shows regression in the latest snapshot
+// Returns array of {retoId, info, currentAmt, thresholdAmt}
+function _detectRecaidas(newSnap){
+  const alerts=[];
+  try{
+    if(!S.habitoFormado||!Object.keys(S.habitoFormado).length)return alerts;
+    const catalog=genSurvivalRetos(1000);
+    Object.keys(S.habitoFormado).forEach(retoId=>{
+      const catLabel=RETO_TO_HORMIGA_CAT[retoId];
+      if(!catLabel)return; // no mapping, skip
+      const info=catalog.find(x=>x.id===retoId)||{name:retoId,icon:'🎯'};
+      const currentAmt=_hormigaForCat(newSnap,catLabel);
+      // Threshold: any meaningful spending in that category counts as possible relapse
+      // (since the habit was declared to eliminate/reduce it)
+      const threshold=300; // MXN — ignore tiny incidental charges
+      if(currentAmt>=threshold){
+        // Check if this same category is already low in recent history to avoid false positives
+        const prevSnaps=(S.snapshots||[]).filter(s=>s.id!==newSnap.id).slice(-3);
+        const prevAvg=prevSnaps.length?prevSnaps.reduce((a,s)=>a+_hormigaForCat(s,catLabel),0)/prevSnaps.length:0;
+        // Only alert if current is significantly higher than recent average OR if it's a sudden spike from zero
+        if(currentAmt>=threshold&&(prevAvg<threshold||currentAmt>prevAvg*1.5)){
+          alerts.push({retoId,info,catLabel,currentAmt,prevAvg:Math.round(prevAvg)});
+        }
+      }
+    });
+  }catch(e){}
+  return alerts;
+}
+
+// Show modal for a detected relapse — user decides if it's a real relapse or not
+function _showRecaidaAlert(alert){
+  try{
+    const hf=S.habitoFormado[alert.retoId]||{};
+    const recaidasCount=(hf.recaidas||[]).length;
+    const body='<div style="text-align:center;padding:4px 0 12px">'
+      +'<div style="font-size:46px;margin-bottom:6px">'+alert.info.icon+'</div>'
+      +'<div style="font-size:14px;font-weight:bold;color:var(--txt);font-family:Georgia,serif">'+alert.info.name+'</div>'
+      +'<div style="font-size:11px;color:var(--amber);margin-top:4px">👑 Hábito formado</div>'
+      +'</div>'
+      +'<div style="background:rgba(160,112,48,.08);border-left:3px solid var(--amber);padding:12px 14px;border-radius:6px;margin-bottom:12px">'
+      +'<div style="font-size:11px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:6px">⚠️ Posible recaída detectada</div>'
+      +'<div style="font-size:12px;color:var(--txt2);line-height:1.65">Detecté <strong style="color:var(--terra)">'+fx(alert.currentAmt)+'</strong> en <strong>'+alert.catLabel+'</strong> en tu CSV más reciente.</div>'
+      +(alert.prevAvg>0?'<div style="font-size:10px;color:var(--muted);margin-top:4px">Promedio reciente: '+fx(alert.prevAvg)+'</div>':'')
+      +'</div>'
+      +'<div style="background:var(--sagedim);border-left:3px solid var(--sage);padding:10px 12px;border-radius:6px;font-size:11px;color:var(--txt2);line-height:1.65;font-style:italic;margin-bottom:12px">"Los ricos caen muchas veces, pero se levantan una más." — Robert Kiyosaki</div>'
+      +'<div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:4px">¿Fue un gasto excepcional o estás retomando el hábito viejo?</div>'
+      +(recaidasCount>0?'<div style="font-size:10px;color:var(--muted);margin-top:8px;font-style:italic">Ya habías tenido '+recaidasCount+' '+(recaidasCount===1?'recaída previa':'recaídas previas')+' en este hábito.</div>':'');
+    showConfirm('⚠️ '+alert.info.name,body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="_dismissRecaida(\''+alert.retoId+'\','+alert.currentAmt+')">Fue excepcional</button>'
+      +'<button class="btn btn-amber btn-sm" onclick="_reactivateFromRecaida(\''+alert.retoId+'\','+alert.currentAmt+')">↩️ Reactivar reto</button>';
+  }catch(e){}
+}
+
+// User says "it was an exception" — log it but keep habit intact
+function _dismissRecaida(retoId,amt){
+  try{
+    if(!S.habitoFormado||!S.habitoFormado[retoId])return closeConfirm();
+    if(!S.habitoFormado[retoId].recaidas)S.habitoFormado[retoId].recaidas=[];
+    S.habitoFormado[retoId].recaidas.push({date:new Date().toISOString().split('T')[0],amt,dismissed:true});
+    sv();
+    closeConfirm();
+    toast('Anotado. El hábito sigue marcado como formado.');
+  }catch(e){closeConfirm();}
+}
+
+// User confirms relapse — undeclare habit, reactivate reto
+function _reactivateFromRecaida(retoId,amt){
+  try{
+    if(!S.habitoFormado||!S.habitoFormado[retoId])return closeConfirm();
+    // Log recaída
+    if(!S.habitoFormado[retoId].recaidas)S.habitoFormado[retoId].recaidas=[];
+    S.habitoFormado[retoId].recaidas.push({date:new Date().toISOString().split('T')[0],amt,dismissed:false,reactivated:true});
+    // Remove from habitoFormado
+    delete S.habitoFormado[retoId];
+    sv();
+    closeConfirm();
+    toast('↩️ Reto disponible de nuevo · Actívalo desde Mis Hábitos');
+  }catch(e){closeConfirm();}
+}
+
 function saveSnapshot(txns,source){
   source=source||'combined';
   const hd=detectH(txns);
@@ -2041,6 +2344,11 @@ function saveSnapshot(txns,source){
   setTimeout(()=>{try{checkFugaCritica(txns);}catch(e){}},1200);
   // ETAPA 4: maybe trigger year compression
   try{_maybeTriggerCompression(snap);}catch(e){}
+  // ETAPA 3 · F7: detect relapses in formed habits
+  setTimeout(()=>{try{
+    const alerts=_detectRecaidas(snap);
+    if(alerts.length>0)_showRecaidaAlert(alerts[0]);
+  }catch(e){}},2000);
   return snap;
 }
 
@@ -2159,8 +2467,9 @@ function rQuincena(){
     const dStart=csvDates[0],dEnd=csvDates[csvDates.length-1];
     const diariosInRange=dStart&&dEnd?(S.gastosDiarios||[]).filter(g=>g.date>=dStart&&g.date<=dEnd):[];
     const totalDiarios=diariosInRange.reduce((a,g)=>a+(+g.amt||0),0);
-    // Only compare hormiga+impulso+otro buckets (things you'd log in Diarios), not servicios/transporte
+    // Only compare hormiga+impulso+otro buckets (things you'd log in Diarios), not servicios/transporte/excluido
     const compBuckets=(buckets.hormiga||0)+(buckets.impulso||0)+(buckets.otro||0);
+    const excludedTotal=buckets.excluido||0;
     const diff=compBuckets-totalDiarios;
     return`<div class="card">
       <div class="ct">🔍 Distribución por tipo</div>
@@ -2172,8 +2481,10 @@ function rQuincena(){
       <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Comparativa entre lo que registraste manualmente en Diarios y lo que el CSV detectó en el mismo rango de fechas (${dStart||'?'} → ${dEnd||'?'}).</div>
       <div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">📓 Tu bitácora de Diarios</span><strong style="color:var(--sage);font-size:13px">${fx(Math.round(totalDiarios))}</strong></div>
       <div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--txt2)">📊 CSV (hormiga+impulso+otro)</span><strong style="color:var(--sky);font-size:13px">${fx(Math.round(compBuckets))}</strong></div>
-      <div class="row-b" style="padding:10px 0"><span style="font-size:12px;font-weight:bold;color:var(--txt)">Diferencia</span><strong style="font-size:15px;color:${Math.abs(diff)<50?'var(--sage)':diff>0?'var(--terra)':'var(--amber)'}">${diff>=0?'+':''}${fx(Math.round(diff))}</strong></div>
-      ${Math.abs(diff)<50?'<div style="font-size:11px;color:var(--sage);line-height:1.5">✅ Tu bitácora coincide con tu banco. Disciplina sólida.</div>':diff>0?'<div style="font-size:11px;color:var(--terra);line-height:1.5">⚠️ El CSV detectó <strong>'+fx(Math.round(diff))+'</strong> más que tus Diarios. Hay fugas que no estás anotando — revisa el detalle abajo para identificarlas.</div>':'<div style="font-size:11px;color:var(--amber);line-height:1.5">Registraste más en Diarios que lo que el CSV ve. Puede ser que pagaste en efectivo o con otra cuenta.</div>'}
+      ${excludedTotal>0?`<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border)"><span style="font-size:10px;color:var(--muted)">✂️ Descontado por tus reglas (fijos/ahorro/deudas/transfers)</span><strong style="color:var(--muted);font-size:11px">−${fx(Math.round(excludedTotal))}</strong></div>`:''}
+      <div class="row-b" style="padding:10px 0"><span style="font-size:12px;font-weight:bold;color:var(--txt)">Diferencia real</span><strong style="font-size:15px;color:${Math.abs(diff)<50?'var(--sage)':diff>0?'var(--terra)':'var(--amber)'}">${diff>=0?'+':''}${fx(Math.round(diff))}</strong></div>
+      ${Math.abs(diff)<50?'<div style="font-size:11px;color:var(--sage);line-height:1.5">✅ Tu bitácora coincide con tu banco. Disciplina sólida.</div>':diff>0?'<div style="font-size:11px;color:var(--terra);line-height:1.5">⚠️ Hay <strong>'+fx(Math.round(diff))+'</strong> de consumo que no anotaste en Diarios. Son fugas reales — revisa el detalle de hormiga/impulso para identificarlas.</div>':'<div style="font-size:11px;color:var(--amber);line-height:1.5">Registraste más en Diarios que lo que el CSV ve. Puede ser efectivo u otra cuenta.</div>'}
+      ${excludedTotal>0?`<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">💡 Ya descontamos <strong>${fx(Math.round(excludedTotal))}</strong> de transacciones marcadas como fijos, ahorro, deudas o transferencias propias (según tus reglas). Por eso la diferencia es más realista.</div>`:''}
       <div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">🔒 Esta comparación es solo informativa. El CSV <strong>nunca</strong> modifica tus Diarios, Plan de Acción ni Deudas automáticamente.</div>
     </div>`;
   })()}
@@ -3367,8 +3678,29 @@ function renderRetos(){
       ?'Tu quincena tiene un <strong style="color:var(--terra)">déficit de '+fx(deficit)+'</strong>. Activa retos para recortar gastos.'
       :'Tu presupuesto está <strong style="color:var(--sage)">en verde</strong> con '+fx(Math.round(disponible))+' libres. Activa retos para optimizar.'}</div>
     ${totalPotSave>0?'<div class="card '+(isDeficit?(totalPotSave>=deficit?'card-grn':'card-amber'):'card-grn')+'" style="margin-bottom:14px;padding:12px 16px"><div class="row-b"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:3px">'+(isDeficit?'Ahorro potencial':'Potencial de crecimiento')+' '+ib('ahorroPotencial','Ahorro potencial')+'</div><div class="stat-sm" style="color:var(--sage)">'+fx(totalPotSave)+'</div></div>'+(isDeficit&&deficit>0?'<div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px">Déficit</div><div class="stat-sm" style="color:var(--terra)">'+fx(deficit)+'</div></div>':'')+'</div>'+(isDeficit&&deficit>0?'<div class="pw" style="margin-top:8px"><div class="pb" style="width:'+Math.min(100,totalPotSave/deficit*100).toFixed(0)+'%;background:'+(totalPotSave>=deficit?'var(--sage)':'var(--amber)')+'"></div></div><div style="font-size:10px;color:var(--muted);margin-top:4px">'+(totalPotSave>=deficit?'✅ Tus retos cubren el déficit':'Necesitas '+fx(deficit-totalPotSave)+' más.')+'</div>':'')+'</div>':''}
-    ${retos.map(r=>{
-      const sr=activeRetos.find(x=>x.id===r.id);const isA=sr?.active&&!sr?.completed;const isC=sr?.completed;
+    ${(()=>{
+      // ETAPA 1 · Tarjeta de stats de retos completados (all-time)
+      const allCompleted=(S.survivalRetos||[]).filter(r=>r.completed);
+      if(!allCompleted.length)return'';
+      const totalSaved=allCompleted.reduce((a,r)=>a+((+r.realSave)||0),0);
+      return'<div class="card" style="border-left:3px solid var(--sage);background:linear-gradient(135deg,rgba(78,124,106,.05) 0%,rgba(78,124,106,.02) 100%);margin-bottom:14px;padding:12px 14px">'
+        +'<div class="row-b" style="align-items:center">'
+        +'<div><div style="font-size:10px;color:var(--sage2);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:3px">🏆 Retos completados</div>'
+        +'<div style="font-size:18px;color:var(--sage);font-weight:bold">'+allCompleted.length+'</div>'
+        +(totalSaved>0?'<div style="font-size:10px;color:var(--muted);margin-top:2px">Total ahorrado: <strong style="color:var(--sage)">'+fx(totalSaved)+'</strong></div>':'')
+        +'</div>'
+        +'<button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--sage);padding:6px 10px" onclick="go(\'historia\');setTimeout(()=>{histView=\'retos\';rHistoria();},80)">Ver archivo →</button>'
+        +'</div></div>';
+    })()}
+    ${retos.filter(r=>{
+      // Hide retos already marked as completed in this cycle
+      const sr=activeRetos.find(x=>x.id===r.id);
+      if(sr?.completed)return false;
+      // Hide retos declared as formed habit (Etapa 2)
+      if(_isHabitoFormado(r.id))return false;
+      return true;
+    }).map(r=>{
+      const sr=activeRetos.find(x=>x.id===r.id);const isA=sr?.active&&!sr?.completed;const isC=false;
       const checks=getChecks(r.id);const totalN=r.steps||1;const nChecked=countChecks(r.id);const pctD=isA?Math.min(100,Math.round(nChecked/totalN*100)):0;
       const cCls=isC?'card-grn':isA?'':'card-sage';const aBrd=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':'';
       return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
@@ -4224,7 +4556,7 @@ function rHistoria(){
   const streak=qStreak();
   checkAch();
   // Sub-nav
-  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['logros','🏆 Logros'],['timeline','📖 Timeline'],['liq','🏁 Liquidadas']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
+  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['logros','🏆 Logros'],['retos','🎯 Retos'],['timeline','📖 Timeline'],['liq','🏁 Liquidadas']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
   let ct='';
 
   // ═══ SIMULADOR ═══
@@ -4439,6 +4771,77 @@ function rHistoria(){
           </div>
         </div>`;
       }).join('')}</div>`;
+    }
+  }
+
+  // ══ ETAPA 1 · 6-B · ARCHIVO DE RETOS COMPLETADOS ══
+  if(histView==='retos'){
+    const allCompleted=(S.survivalRetos||[]).filter(r=>r.completed).sort((a,b)=>(b.completedAt||0)-(a.completedAt||0));
+    const totalSaved=allCompleted.reduce((a,r)=>a+((+r.realSave)||0),0);
+    const catalog=genSurvivalRetos(1000);
+    const getInfo=(rid)=>catalog.find(x=>x.id===rid)||{name:rid,icon:'🎯',save:0};
+    // ETAPA 2: formed habits
+    const habitosIds=Object.keys(S.habitoFormado||{});
+    const hasHabits=habitosIds.length>0;
+    const hasCompleted=allCompleted.length>0;
+    if(!hasHabits&&!hasCompleted){
+      ct=`<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:10px">🎯</div><div style="color:var(--muted);font-size:13px;line-height:1.7">Aún no has completado ningún reto.<br><br>Cuando completes uno, se archivará aquí con su fecha y ahorro real.</div></div>`;
+    }else{
+      ct=`<div class="card card-sage">
+        <div class="ct">🎯 Retos y hábitos</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.7">Tu archivo completo: los retos que completaste y los hábitos que ya son parte de ti.</div>
+      </div>
+      <div class="g2" style="margin-bottom:13px">
+        ${kpi('🏆 Completados',allCompleted.length,'var(--sage)','retos de por vida')}
+        ${kpi('💰 Ahorrado',fx(totalSaved),'var(--sage)','total acumulado')}
+      </div>`;
+      // ETAPA 2: Hábitos Formados section
+      if(hasHabits){
+        ct+='<div class="card" style="border-left:3px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.06) 0%,rgba(160,112,48,.02) 100%);margin-bottom:14px"><div class="ct">👑 Hábitos formados</div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Estos retos ya no aparecen en tu lista activa porque los declaraste parte de ti. Si te confundiste, puedes retirarlos.</div>';
+        habitosIds.forEach(hId=>{
+          const info=getInfo(hId);
+          const hData=S.habitoFormado[hId];
+          const decDate=hData.declaredAt?new Date(hData.declaredAt+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}):'—';
+          const totalComp=_countRetoCompletions(hId);
+          ct+='<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
+            +'<div class="row-b" style="margin-bottom:6px">'
+            +'<div class="row" style="gap:10px;align-items:center;flex:1;min-width:0"><span style="font-size:24px;flex-shrink:0">'+info.icon+'</span><div style="flex:1;min-width:0"><div style="font-weight:bold;color:var(--txt);font-size:13px">'+info.name+' <span style="color:var(--amber);font-size:14px">👑</span></div><div style="font-size:10px;color:var(--muted);margin-top:2px">Declarado hábito el '+decDate+' · '+totalComp+' '+(totalComp===1?'completación':'completaciones')+'</div></div></div>'
+            +'</div>'
+            +'<button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="_undeclareHabito(\''+hId+'\')">🔓 Retirar estado de hábito</button>'
+            +'</div>';
+        });
+        ct+='</div>';
+      }
+      // Completed retos (archive)
+      if(hasCompleted){
+        ct+='<div class="card" style="margin-bottom:10px"><div class="ct">📜 Retos completados por ciclo</div><div style="font-size:11px;color:var(--muted);line-height:1.6">Historial de cada vez que completaste un reto.</div></div>';
+        ct+=allCompleted.map(r=>{
+          const info=getInfo(r.id);
+          const dt=r.completedAt?new Date(r.completedAt).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}):'—';
+          const realAmt=(+r.realSave)||0;
+          const cycleLbl=r.cycle||'—';
+          const isHabit=_isHabitoFormado(r.id);
+          return`<div class="card" style="border-left:3px solid var(--sage);margin-bottom:10px;padding:14px">
+            <div class="row-b" style="margin-bottom:6px">
+              <div class="row" style="gap:10px;align-items:center;flex:1;min-width:0">
+                <span style="font-size:28px;flex-shrink:0">${info.icon}</span>
+                <div style="flex:1;min-width:0">
+                  <div style="font-weight:bold;color:var(--txt);font-size:13px">${info.name}${isHabit?' <span style="color:var(--amber)">👑</span>':''}</div>
+                  <div style="font-size:10px;color:var(--muted);margin-top:2px">Completado ${dt} · Ciclo ${cycleLbl}</div>
+                </div>
+              </div>
+              <div style="text-align:right;flex-shrink:0;padding-left:8px">
+                <div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(realAmt)}</div>
+                <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">ahorrado</div>
+              </div>
+            </div>
+            <div class="row" style="gap:6px;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">
+              <button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="_editCompletedReto('${r.id}','${r.cycle}')">✏️ Editar monto</button>
+              <button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px;color:var(--terra)" onclick="_reactivateCompletedReto('${r.id}','${r.cycle}')">↩️ Reactivar</button>
+            </div>
+          </div>`;
+        }).join('');
+      }
     }
   }
 

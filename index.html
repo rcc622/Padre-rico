@@ -274,7 +274,7 @@ const SK='prv5';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{}};
+  gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{}};
 
 function migrate(){
   // Try loading v4 data first
@@ -1409,6 +1409,73 @@ const HK={
   '🎮 Entretenimiento':['STEAM','PLAYSTATION','XBOX','NINTENDO','CINEPOLIS','CINEMEX','GOOGLE PLAY','APPLE STORE'],
 };
 
+// ══ ETAPA 2 · 6-A · CATEGORIZACIÓN MANUAL ══
+// User-defined category catalog. Keys prefixed with 'H_' count as hormiga, 'X_' means exclude from Top Sangradores
+const USER_CATS=[
+  // Hormiga categories (included in Top Sangradores, counted in fuga analysis)
+  {id:'H_minisuper',label:'🛒 Minisuper / OXXO',hormiga:true},
+  {id:'H_delivery',label:'🚗 Delivery',hormiga:true},
+  {id:'H_online',label:'📦 Compras online',hormiga:true},
+  {id:'H_restaurante',label:'🍔 Restaurantes',hormiga:true},
+  {id:'H_cafe',label:'☕ Cafeterías',hormiga:true},
+  {id:'H_farmacia',label:'💊 Farmacias',hormiga:true},
+  {id:'H_entreten',label:'🎮 Entretenimiento',hormiga:true},
+  // New user categories (hormiga)
+  {id:'H_carro',label:'🔧 Mantenimiento del carro',hormiga:true},
+  {id:'H_salud',label:'🏥 Salud',hormiga:true},
+  {id:'H_educacion',label:'📚 Educación',hormiga:true},
+  {id:'H_regalo',label:'🎁 Regalo',hormiga:true},
+  {id:'H_otro',label:'❓ Otro (contar)',hormiga:true},
+  // Excluded categories (NOT in Top Sangradores, ignored in analysis)
+  {id:'X_fijo',label:'🏠 Fijo (renta, servicios)',hormiga:false,exclude:true},
+  {id:'X_ahorro',label:'💾 Ahorro / Cajita',hormiga:false,exclude:true},
+  {id:'X_deuda',label:'💳 Pago de deuda',hormiga:false,exclude:true},
+  {id:'X_transfer',label:'🔄 Transferencia propia',hormiga:false,exclude:true},
+  {id:'X_ignorar',label:'🚫 Ignorar siempre',hormiga:false,exclude:true},
+];
+
+// Normalize merchant name for rule matching (similar to normalizeMerchant but simpler)
+function _catKey(desc){
+  if(!desc)return'';
+  return desc.toUpperCase().trim().replace(/\s+/g,' ').replace(/\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/g,'').replace(/#\s*\d+/g,'').trim().slice(0,32);
+}
+
+// Apply user rule to a transaction — returns catId or null if no rule
+function applyUserCategory(desc){
+  if(!S.userCategories)return null;
+  const key=_catKey(desc);
+  if(!key)return null;
+  // Exact match first
+  if(S.userCategories[key])return S.userCategories[key];
+  // Partial match: check if any stored rule key is a substring of this desc (or vice versa)
+  for(const[ruleKey,catId]of Object.entries(S.userCategories)){
+    if(ruleKey.length>=6&&(key.includes(ruleKey)||ruleKey.includes(key)))return catId;
+  }
+  return null;
+}
+
+// Save a user rule: desc → catId. Returns normalized key used
+function setUserCategory(desc,catId){
+  if(!S.userCategories)S.userCategories={};
+  const key=_catKey(desc);
+  if(!key)return null;
+  S.userCategories[key]=catId;
+  sv();
+  return key;
+}
+
+// Remove user rule
+function removeUserCategory(desc){
+  if(!S.userCategories)return;
+  const key=_catKey(desc);
+  if(key&&S.userCategories[key]){delete S.userCategories[key];sv();}
+}
+
+// Get catalog entry by id
+function getUserCatInfo(catId){
+  return USER_CATS.find(c=>c.id===catId)||null;
+}
+
 function parseNu(txt){
   const lines=txt.trim().split(/\r?\n/);if(lines.length<2)return[];
   const sep=lines[0].includes(';')?';':',';
@@ -1430,7 +1497,7 @@ function parseNu(txt){
 
 function detectH(txns){
   const r={};
-  txns.forEach(t=>{const d=t.desc.toUpperCase();for(const[cat,keys]of Object.entries(HK)){if(keys.some(k=>d.includes(k))){if(!r[cat])r[cat]={total:0,count:0};r[cat].total+=t.amt;r[cat].count++;break;}}});
+  txns.forEach(t=>{const d=t.desc.toUpperCase();for(const[cat,keys]of Object.entries(HK)){if(keys.some(k=>d.includes(k))){if(!r[cat]){r[cat]={total:0,count:0,txns:[]};}r[cat].total+=t.amt;r[cat].count++;r[cat].txns.push({desc:t.desc.slice(0,40),amt:t.amt,date:t.date||''});break;}}});
   return Object.entries(r).sort((a,b)=>b[1].total-a[1].total);
 }
 // Clasificador hormiga/impulso/servicio para CSV
@@ -1473,9 +1540,15 @@ function normalizeMerchant(desc){
 function getTopSangradores(txns){
   const agg={};
   txns.forEach(t=>{
+    // ETAPA 2: check if user marked this as excluded (fijo, ahorro, deuda, transfer, ignorar)
+    const userCat=applyUserCategory(t.desc);
+    if(userCat){
+      const catInfo=getUserCatInfo(userCat);
+      if(catInfo&&catInfo.exclude)return; // skip this txn entirely
+    }
     const k=normalizeMerchant(t.desc);
     if(!k)return;
-    if(!agg[k])agg[k]={name:k,total:0,count:0};
+    if(!agg[k])agg[k]={name:k,total:0,count:0,origDesc:t.desc};
     agg[k].total+=t.amt;
     agg[k].count++;
   });
@@ -1571,6 +1644,105 @@ function _applyReconcileChecked(){
 }
 
 // Check if hormiga exceeds 15% of income — show alert if so
+// ══ ETAPA 1 · 6-B DETALLE CLICKEABLE DE CATEGORÍA HORMIGA ══
+window._hdCurrent=null;
+function showHormigaDetail(idx){
+  try{
+    if(!window._hdCurrent||!window._hdCurrent[idx])return;
+    const[cat,data]=window._hdCurrent[idx];
+    const txns=data.txns||[];
+    const total=data.total||0;
+    const count=data.count||0;
+    let body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Estas son las transacciones que la app clasificó automáticamente en esta categoría. Si alguna no pertenece aquí, en la siguiente etapa podrás recategorizarla.</div>';
+    if(!txns.length){
+      body+='<div style="padding:20px;text-align:center;color:var(--muted);font-size:12px;background:var(--bg2);border-radius:6px">Este capítulo se guardó antes de la Etapa 1, por lo que no tiene el detalle de transacciones individuales.<br><br>Los capítulos nuevos que guardes sí tendrán este detalle.</div>';
+    }else{
+      body+='<div class="row-b" style="padding:10px 12px;background:var(--sagedim);border-radius:6px;margin-bottom:10px"><span style="font-size:11px;color:var(--sage2);font-weight:bold">Total: '+count+' transacciones</span><span style="font-size:14px;color:var(--sage);font-weight:bold">'+fx(total)+'</span></div>';
+      body+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:0">';
+      // Sort by amount desc for easier inspection
+      const sorted=[...txns].sort((a,b)=>b.amt-a.amt);
+      sorted.forEach(t=>{
+        const dt=t.date||'';
+        const safeDesc=(t.desc||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+        body+='<div style="padding:10px 12px;border-bottom:1px solid var(--border)">'
+          +'<div class="row-b" style="margin-bottom:2px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+(t.desc||'—')+'</span><span style="font-size:13px;color:var(--terra);font-weight:bold;flex-shrink:0;margin-left:8px">'+fx(t.amt)+'</span></div>'
+          +'<div class="row-b" style="margin-top:4px">'
+          +(dt?'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>':'<div></div>')
+          +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(\''+safeDesc+'\')">✏️ Recategorizar</button>'
+          +'</div>'
+          +'</div>';
+      });
+      body+='</div>';
+    }
+    showConfirm(cat,body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
+  }catch(e){toast('Error al mostrar detalle');}
+}
+
+// ══ ETAPA 2 · 6-A · MODAL DE CATEGORIZACIÓN ══
+window._pendingCat=null;
+
+function showCategorizeModal(desc,currentCat){
+  window._pendingCat={desc:desc};
+  const short=(desc||'').slice(0,40);
+  const current=currentCat||applyUserCategory(desc);
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio detectado:</div>';
+  body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:14px;word-break:break-word">'+short+'</div>';
+  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.6">Elige la categoría correcta. Esta regla se guardará y se aplicará automáticamente la próxima vez que aparezca un cargo similar.</div>';
+  // Hormiga categories
+  body+='<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🐜 Categorías de gasto</div>';
+  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
+  USER_CATS.filter(c=>c.hormiga).forEach(c=>{
+    const isCur=current===c.id;
+    body+='<button class="btn btn-sm" style="padding:7px 10px;font-size:11px;border:1px solid '+(isCur?'var(--sage)':'var(--border)')+';background:'+(isCur?'var(--sagedim)':'var(--bg)')+';color:'+(isCur?'var(--sage)':'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+c.id+'\')">'+c.label+'</button>';
+  });
+  body+='</div>';
+  // Excluded categories
+  body+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:12px">🚫 Excluir del ranking</div>';
+  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
+  USER_CATS.filter(c=>c.exclude).forEach(c=>{
+    const isCur=current===c.id;
+    body+='<button class="btn btn-sm" style="padding:7px 10px;font-size:11px;border:1px solid '+(isCur?'var(--terra)':'var(--border)')+';background:'+(isCur?'rgba(184,92,74,.08)':'var(--bg)')+';color:'+(isCur?'var(--terra)':'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+c.id+'\')">'+c.label+'</button>';
+  });
+  body+='</div>';
+  // Remove rule button if one exists
+  if(current){
+    body+='<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:12px">'
+      +'<button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="_removeCategorization()">🗑 Quitar regla actual</button>'
+      +'</div>';
+  }
+  showConfirm('✏️ Categorizar gasto',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();window._pendingCat=null">Cancelar</button>';
+}
+
+function _applyCategorization(catId){
+  try{
+    if(!window._pendingCat||!window._pendingCat.desc)return;
+    const desc=window._pendingCat.desc;
+    setUserCategory(desc,catId);
+    const info=getUserCatInfo(catId);
+    const lbl=info?info.label:catId;
+    closeConfirm();
+    window._pendingCat=null;
+    toast('✅ Regla guardada: '+lbl);
+    // Refresh current view
+    try{rQuincena();}catch(e){}
+  }catch(e){toast('Error al categorizar');}
+}
+
+function _removeCategorization(){
+  try{
+    if(!window._pendingCat||!window._pendingCat.desc)return;
+    removeUserCategory(window._pendingCat.desc);
+    closeConfirm();
+    window._pendingCat=null;
+    toast('🗑 Regla eliminada');
+    try{rQuincena();}catch(e){}
+  }catch(e){}
+}
+
 function checkFugaCritica(txns){
   try{
     const hormigaDetected=detectH(txns);
@@ -1603,6 +1775,161 @@ function checkFugaCritica(txns){
   }catch(e){}
 }
 
+// ══ ETAPA 4 · 6-D · MOTOR DE COMPRESIÓN ANUAL ══
+// State tracker for rejection handling (per Q2: retry twice, then 2MB threshold)
+if(!S._compressionRejections)S._compressionRejections=0;
+
+// Calculate current state size in bytes
+function _getStateSize(){
+  try{return JSON.stringify(S).length;}catch(e){return 0;}
+}
+
+// Check if a snapshot belongs to a given year
+function _snapYear(snap){
+  try{
+    const d=snap.periodEnd||snap.date||'';
+    if(/^\d{4}/.test(d))return+d.slice(0,4);
+  }catch(e){}
+  return null;
+}
+
+// Detect if this is the first snapshot of a new year (triggers compression prompt)
+function _isFirstSnapOfNewYear(newSnap){
+  try{
+    const newYear=_snapYear(newSnap);
+    if(!newYear)return false;
+    const currentYear=new Date().getFullYear();
+    if(newYear!==currentYear)return false;
+    // Check if there are existing snapshots from previous years AND none yet from current year
+    const existing=(S.snapshots||[]).filter(s=>s.id!==newSnap.id);
+    const hasOlder=existing.some(s=>{const y=_snapYear(s);return y&&y<currentYear;});
+    const hasCurrent=existing.some(s=>_snapYear(s)===currentYear);
+    return hasOlder&&!hasCurrent;
+  }catch(e){return false;}
+}
+
+// Compress snapshots from years before targetYear: strip allTxns but keep hormiga.txns and top10General
+function compressOldSnapshots(targetYear){
+  try{
+    let compressed=0,bytesSaved=0;
+    const before=_getStateSize();
+    S.snapshots=(S.snapshots||[]).map(snap=>{
+      const y=_snapYear(snap);
+      if(!y||y>=targetYear)return snap; // keep as-is
+      if(snap._compressed)return snap; // already compressed
+      // Strip heavy fields but preserve hormiga.txns (key for historical drill-down)
+      const stripped={...snap};
+      delete stripped.allTxns;
+      // Keep top10General, keep hormiga with txns (lightweight by design)
+      stripped._compressed=true;
+      stripped._compressedAt=new Date().toISOString().split('T')[0];
+      compressed++;
+      return stripped;
+    });
+    const after=_getStateSize();
+    bytesSaved=before-after;
+    sv();
+    return{compressed,bytesSaved};
+  }catch(e){return{compressed:0,bytesSaved:0,error:e.message};}
+}
+
+// Modal warning — shown before compression, with auto-backup option
+function showCompressionWarning(targetYear){
+  const prevYear=targetYear-1;
+  const oldCount=(S.snapshots||[]).filter(s=>{const y=_snapYear(s);return y&&y<targetYear&&!s._compressed;}).length;
+  if(!oldCount){return;} // nothing to compress
+  const curSize=_getStateSize();
+  const curKB=Math.round(curSize/1024);
+  const body='<div style="text-align:center;padding:4px 0 12px">'
+    +'<div style="font-size:46px;margin-bottom:6px">🗄️</div>'
+    +'<div style="font-size:15px;font-weight:bold;color:var(--sky);margin-bottom:4px;font-family:Georgia,serif">Optimización de Memoria</div>'
+    +'<div style="font-size:11px;color:var(--muted)">Estás entrando a '+targetYear+'</div>'
+    +'</div>'
+    +'<div style="background:rgba(74,110,140,.06);border-left:3px solid var(--sky);padding:12px 14px;border-radius:6px;margin-bottom:12px;font-size:12px;color:var(--txt2);line-height:1.65">'
+    +'Tienes <strong>'+oldCount+' capítulo'+(oldCount>1?'s':'')+'</strong> de '+prevYear+' y años anteriores. '
+    +'Para dejar espacio a '+targetYear+' y que la app siga rápida, puedo comprimir esos capítulos viejos.'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--txt2);line-height:1.7;margin-bottom:10px"><strong>Lo que se conserva (siempre):</strong></div>'
+    +'<ul style="font-size:11px;color:var(--txt2);line-height:1.7;margin:0 0 12px 18px;padding:0">'
+    +'<li>🐜 Gastos hormiga con detalle de transacciones</li>'
+    +'<li>💰 Top 10 transacciones más grandes del año</li>'
+    +'<li>📊 Score, patrimonio, deuda total</li>'
+    +'<li>📈 Gráficas de evolución histórica</li>'
+    +'</ul>'
+    +'<div style="font-size:11px;color:var(--txt2);line-height:1.7;margin-bottom:10px"><strong>Lo que se pierde:</strong></div>'
+    +'<ul style="font-size:11px;color:var(--muted);line-height:1.7;margin:0 0 14px 18px;padding:0">'
+    +'<li>Transacciones individuales que NO son hormiga y NO están en el top 10</li>'
+    +'</ul>'
+    +'<div style="background:rgba(160,112,48,.08);border-left:3px solid var(--amber);padding:10px 12px;border-radius:6px;font-size:11px;color:var(--txt2);line-height:1.65;margin-bottom:8px">'
+    +'⚠️ <strong>Esta acción no se puede deshacer.</strong> Antes de comprimir, descarga un backup completo con el botón de abajo.'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.6">Estado actual: '+curKB+' KB</div>';
+  showConfirm('🗄️ ¿Optimizar memoria?',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="_compressionReject()">No, ahora no</button>'
+    +'<button class="btn btn-sky btn-sm" onclick="_compressionBackupAndRun('+targetYear+')">📤 Backup + Comprimir</button>';
+}
+
+// Auto-backup then compress (the safe path, per Q4 decision)
+function _compressionBackupAndRun(targetYear){
+  try{
+    // 1) Auto-export full backup first
+    const backup=JSON.stringify(S,null,2);
+    const blob=new Blob([backup],{type:'application/json'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='padre-rico-backup-completo-'+(targetYear-1)+'.json';
+    a.click();
+    // 2) Compress after short delay to let download fire
+    setTimeout(()=>{
+      try{
+        const result=compressOldSnapshots(targetYear);
+        S._compressionRejections=0; // reset counter on successful compression
+        sv();
+        closeConfirm();
+        const savedKB=Math.round(result.bytesSaved/1024);
+        toast('✅ '+result.compressed+' capítulos comprimidos · '+savedKB+' KB liberados');
+      }catch(e){closeConfirm();toast('Error al comprimir');}
+    },500);
+  }catch(e){closeConfirm();toast('Error al exportar backup');}
+}
+
+// Handle rejection (per Q2 hybrid: retry first, escalate to 2MB threshold after 2 rejections)
+function _compressionReject(){
+  S._compressionRejections=(S._compressionRejections||0)+1;
+  sv();
+  closeConfirm();
+  if(S._compressionRejections>=2){
+    toast('🤝 Entendido. Solo volveré a preguntar si la app pasa de 2 MB.');
+  }else{
+    toast('Ok, te vuelvo a preguntar después.');
+  }
+}
+
+// Main entry point: called after saveSnapshot. Decides whether to show warning.
+function _maybeTriggerCompression(newSnap){
+  try{
+    const currentYear=new Date().getFullYear();
+    const oldCount=(S.snapshots||[]).filter(s=>{const y=_snapYear(s);return y&&y<currentYear&&!s._compressed;}).length;
+    if(!oldCount)return; // nothing to compress
+    // Condition A: first snapshot of new year → always ask
+    if(_isFirstSnapOfNewYear(newSnap)){
+      setTimeout(()=>showCompressionWarning(currentYear),1500);
+      return;
+    }
+    // Condition B: user rejected ≥2 times → only ask when state exceeds 2 MB
+    if((S._compressionRejections||0)>=2){
+      const size=_getStateSize();
+      if(size>2097152){ // 2 MB
+        setTimeout(()=>showCompressionWarning(currentYear),1500);
+      }
+    }else if((S._compressionRejections||0)===1){
+      // Condition C: if user rejected once before, re-ask at next snapshot save
+      setTimeout(()=>showCompressionWarning(currentYear),1500);
+    }
+  }catch(e){}
+}
+
 function saveSnapshot(txns,source){
   source=source||'combined';
   const hd=detectH(txns);
@@ -1623,6 +1950,13 @@ function saveSnapshot(txns,source){
   // Frequency by merchant
   const freqC={};txns.forEach(t=>{const k=t.desc.slice(0,28).toUpperCase();freqC[k]=(freqC[k]||0)+1;});
   const topFreq=Object.entries(freqC).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,count])=>({name,count}));
+
+  // ══ ETAPA 3 · 6-C · PERSISTENCIA COMPLETA ══
+  // Full transaction list (trimmed descs) for current year snapshots.
+  // Will be stripped by compressOldSnapshots when year rolls over.
+  const allTxns=txns.map(t=>({desc:(t.desc||'').slice(0,40),amt:t.amt,date:parseDateStr(t.date)||''}));
+  // Top 10 biggest transactions of the entire period (preserved even after compression per Q3 decision)
+  const top10General=[...txns].sort((a,b)=>b.amt-a.amt).slice(0,10).map(t=>({desc:(t.desc||'').slice(0,40),amt:t.amt,date:parseDateStr(t.date)||''}));
 
   const snap={
     id:Date.now()+Math.floor(Math.random()*1000),
@@ -1646,6 +1980,9 @@ function saveSnapshot(txns,source){
     hormigaDebit:Object.fromEntries(detectH(nuDebit)),
     hormigaCredit:Object.fromEntries(detectH(nuCredit)),
     buckets:bucketTotals(txns),
+    // ETAPA 3: full fidelity fields (stripped on year rollover)
+    allTxns,
+    top10General,
   };
   pt({snapshots:[...S.snapshots,snap]});
   // LOAD NEXT TRIGGER: tell user when the next chapter will be ready
@@ -1657,6 +1994,8 @@ function saveSnapshot(txns,source){
   evaluateRetos(snap);
   // FRENTE 1-C: check for critical leak (deferred to not collide with toast)
   setTimeout(()=>{try{checkFugaCritica(txns);}catch(e){}},1200);
+  // ETAPA 4: maybe trigger year compression
+  try{_maybeTriggerCompression(snap);}catch(e){}
   return snap;
 }
 
@@ -1714,7 +2053,7 @@ function rQuincena(){
       ${kpi('🐜 Hormiga',fx(totH),'var(--amber)',(totG>0?(totH/totG*100).toFixed(1):0)+'%')}
     </div>
     ${hd.length>0?`<div class="card"><div class="ct">🐜 Hormiga — ${label}</div>
-    ${hd.map(([cat,data])=>`<div class="hi"><div><div style="font-weight:bold;margin-bottom:2px;color:var(--txt)">${cat}</div><div style="font-size:11px;color:var(--muted)">${data.count} txns · Prom. ${fx(data.total/data.count)}</div></div><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:16px">${fx(data.total)}</div><div style="font-size:10px;color:var(--muted)">${fx(data.total*26)}/año</div></div></div>`).join('')}
+    ${(()=>{window._hdCurrent=hd;return hd.map(([cat,data],idx)=>`<div class="hi" style="cursor:pointer" onclick="showHormigaDetail(${idx})"><div><div style="font-weight:bold;margin-bottom:2px;color:var(--txt)">${cat} <span style="font-size:10px;color:var(--muted);font-weight:normal">▸</span></div><div style="font-size:11px;color:var(--muted)">${data.count} txns · Prom. ${fx(data.total/data.count)}</div></div><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:16px">${fx(data.total)}</div><div style="font-size:10px;color:var(--muted)">${fx(data.total*26)}/año</div></div></div>`).join('');})()}
     </div>`:''}
     <div class="card"><div class="ct">Top gastos — ${label}</div>${[...txns].sort((a,b)=>b.amt-a.amt).slice(0,10).map((t,i)=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row"><span style="color:var(--muted);min-width:20px">${i+1}</span><span style="color:var(--txt)">${t.desc.slice(0,36)}</span></div><span style="color:var(--terra);font-weight:bold">${fx(t.amt)}</span></div>`).join('')}</div>`;
   };
@@ -1813,13 +2152,20 @@ function rQuincena(){
         const pct=(s.total/maxTotal*100).toFixed(0);
         const medal=['🥇','🥈','🥉','4️⃣','5️⃣'][idx];
         const avg=s.count>0?s.total/s.count:0;
+        const curCat=applyUserCategory(s.origDesc||s.name);
+        const curCatInfo=curCat?getUserCatInfo(curCat):null;
+        const catLabel=curCatInfo?curCatInfo.label:'';
+        const safeDesc=(s.origDesc||s.name).replace(/'/g,"\\'").replace(/"/g,'&quot;');
         return`<div style="padding:8px 0;${idx<sangradores.length-1?'border-bottom:1px solid var(--border);':''}">
           <div class="row-b" style="margin-bottom:4px">
-            <div class="row" style="gap:8px;align-items:center"><span style="font-size:16px">${medal}</span><strong style="font-size:12px;color:var(--txt)">${s.name}</strong></div>
-            <span style="font-size:13px;color:var(--terra);font-weight:bold">${fx(Math.round(s.total))}</span>
+            <div class="row" style="gap:8px;align-items:center;flex:1;min-width:0"><span style="font-size:16px;flex-shrink:0">${medal}</span><strong style="font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis">${s.name}</strong></div>
+            <div class="row" style="gap:6px;align-items:center;flex-shrink:0">
+              <span style="font-size:13px;color:var(--terra);font-weight:bold">${fx(Math.round(s.total))}</span>
+              <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px" onclick="showCategorizeModal('${safeDesc}')">✏️</button>
+            </div>
           </div>
           <div class="pw" style="margin-bottom:4px;height:4px"><div class="pb" style="width:${pct}%;background:var(--terra)"></div></div>
-          <div style="font-size:10px;color:var(--muted)">${s.count} compra${s.count!==1?'s':''} · promedio ${fx(Math.round(avg))} c/u</div>
+          <div class="row-b" style="font-size:10px;color:var(--muted)"><span>${s.count} compra${s.count!==1?'s':''} · promedio ${fx(Math.round(avg))} c/u</span>${catLabel?`<span style="color:var(--sage);font-weight:bold">${catLabel}</span>`:''}</div>
         </div>`;
       }).join('')}
       ${reconcileBtn}

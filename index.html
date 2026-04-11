@@ -2257,7 +2257,7 @@ function rQuincena(){
   ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
     <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo${qnaFilter!=='all'?' ('+qnaFilter+' qna)':''}?</div>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">${qnaFilter!=='all'?'Se guardarán solo las transacciones de la '+qnaFilter+' quincena.':'Guarda las métricas para comparar con futuras quincenas.'}</div>
-    <button class="btn btn-sage" onclick="saveSnapshot(filterByQna(fAll,qnaFilter),'debit');nuTxns._saved=true;rQuincena()">Guardar capítulo</button>
+    <button class="btn btn-sage" onclick="saveSnapshot(filterByQna([...nuDebit,...nuCredit],qnaFilter),'debit');nuTxns._saved=true;rQuincena()">Guardar capítulo</button>
   </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo guardado</div></div>`}
 
   <!-- RESUMEN COMBINADO -->

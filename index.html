@@ -1612,26 +1612,37 @@ const HK={
 // ══ ETAPA 2 · 6-A · CATEGORIZACIÓN MANUAL ══
 // User-defined category catalog. Keys prefixed with 'H_' count as hormiga, 'X_' means exclude from Top Sangradores
 const USER_CATS=[
-  // Hormiga categories (included in Top Sangradores, counted in fuga analysis)
-  {id:'H_minisuper',label:'🛒 Minisuper / OXXO',hormiga:true},
-  {id:'H_delivery',label:'🚗 Delivery',hormiga:true},
-  {id:'H_online',label:'📦 Compras online',hormiga:true},
-  {id:'H_restaurante',label:'🍔 Restaurantes',hormiga:true},
-  {id:'H_cafe',label:'☕ Cafeterías',hormiga:true},
-  {id:'H_farmacia',label:'💊 Farmacias',hormiga:true},
-  {id:'H_entreten',label:'🎮 Entretenimiento',hormiga:true},
-  // New user categories (hormiga)
-  {id:'H_carro',label:'🔧 Mantenimiento del carro',hormiga:true},
-  {id:'H_salud',label:'🏥 Salud',hormiga:true},
-  {id:'H_educacion',label:'📚 Educación',hormiga:true},
-  {id:'H_regalo',label:'🎁 Regalo',hormiga:true},
-  {id:'H_otro',label:'❓ Otro (contar)',hormiga:true},
-  // Excluded categories (NOT in Top Sangradores, ignored in analysis)
-  {id:'X_fijo',label:'🏠 Fijo (renta, servicios)',hormiga:false,exclude:true},
-  {id:'X_ahorro',label:'💾 Ahorro / Cajita',hormiga:false,exclude:true},
-  {id:'X_deuda',label:'💳 Pago de deuda',hormiga:false,exclude:true},
-  {id:'X_transfer',label:'🔄 Transferencia propia',hormiga:false,exclude:true},
-  {id:'X_ignorar',label:'🚫 Ignorar siempre',hormiga:false,exclude:true},
+  // ── HORMIGA · gasto pequeño habitual (cuenta en hormiga charts)
+  {id:'H_minisuper',label:'🛒 Minisuper / OXXO',group:'hormiga',hormiga:true},
+  {id:'H_delivery',label:'🚗 Delivery',group:'hormiga',hormiga:true},
+  {id:'H_online',label:'📦 Compras online',group:'hormiga',hormiga:true},
+  {id:'H_restaurante',label:'🍔 Restaurantes',group:'hormiga',hormiga:true},
+  {id:'H_cafe',label:'☕ Cafeterías',group:'hormiga',hormiga:true},
+  {id:'H_farmacia',label:'💊 Farmacias',group:'hormiga',hormiga:true},
+  {id:'H_entreten',label:'🎮 Entretenimiento',group:'hormiga',hormiga:true},
+  {id:'H_carro',label:'🔧 Mantenimiento del carro',group:'hormiga',hormiga:true},
+  {id:'H_salud',label:'🏥 Salud rutinaria',group:'hormiga',hormiga:true},
+  {id:'H_educacion',label:'📚 Educación',group:'hormiga',hormiga:true},
+  {id:'H_regalo',label:'🎁 Regalo',group:'hormiga',hormiga:true},
+  {id:'H_otro',label:'❓ Otro (contar)',group:'hormiga',hormiga:true},
+  // ── IMPULSO · emocional, esporádico (cuenta en su propio bucket, NO en hormiga)
+  {id:'I_online',label:'📦 Compra online (impulso)',group:'impulso'},
+  {id:'I_entret',label:'🎮 Entretenimiento (impulso)',group:'impulso'},
+  {id:'I_antojo',label:'🍰 Antojo grande',group:'impulso'},
+  {id:'I_otro',label:'❓ Otro impulso',group:'impulso'},
+  // ── EMERGENCIA · no planeado pero necesario (su propio bucket)
+  {id:'E_carro',label:'🚨 Carro (emergencia)',group:'emergencia'},
+  {id:'E_salud',label:'🚨 Salud (emergencia)',group:'emergencia'},
+  {id:'E_hogar',label:'🚨 Hogar (emergencia)',group:'emergencia'},
+  {id:'E_familia',label:'🚨 Familia (emergencia)',group:'emergencia'},
+  {id:'E_otra',label:'🚨 Otra emergencia',group:'emergencia'},
+  // ── LINKEABLES · pago de algo planeado en Plan de Acción
+  {id:'X_fijo',label:'🏠 Fijo (renta, servicios)',group:'fijo',exclude:true,linkable:'exp'},
+  {id:'X_deuda',label:'💳 Pago de deuda',group:'deuda',exclude:true,linkable:'debts'},
+  // ── EXCLUIDOS sin linking
+  {id:'X_ahorro',label:'💾 Ahorro / Cajita',group:'otros',exclude:true},
+  {id:'X_transfer',label:'🔄 Transferencia propia',group:'otros',exclude:true},
+  {id:'X_ignorar',label:'🚫 Ignorar siempre',group:'otros',exclude:true},
 ];
 
 // Normalize merchant name for rule matching (similar to normalizeMerchant but simpler)
@@ -1640,7 +1651,7 @@ function _catKey(desc){
   return desc.toUpperCase().trim().replace(/\s+/g,' ').replace(/\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/g,'').replace(/#\s*\d+/g,'').trim().slice(0,32);
 }
 
-// Apply user rule to a transaction — returns catId or null if no rule
+// Apply user rule to a transaction — returns catId (with optional ":targetId" suffix) or null
 function applyUserCategory(desc){
   if(!S.userCategories)return null;
   const key=_catKey(desc);
@@ -1671,9 +1682,35 @@ function removeUserCategory(desc){
   if(key&&S.userCategories[key]){delete S.userCategories[key];sv();}
 }
 
-// Get catalog entry by id
+// Get catalog entry by id (strips ":targetId" suffix if present)
 function getUserCatInfo(catId){
-  return USER_CATS.find(c=>c.id===catId)||null;
+  if(!catId)return null;
+  const baseId=String(catId).split(':')[0];
+  return USER_CATS.find(c=>c.id===baseId)||null;
+}
+
+// Extract target id from a linked catId like "X_fijo:12345" — returns "12345" or null
+function getCatTarget(catId){
+  if(!catId)return null;
+  const parts=String(catId).split(':');
+  return parts.length>1?parts[1]:null;
+}
+
+// Get human-readable label for a categorization, including linked target if applicable
+function getCatDisplayLabel(catId){
+  const info=getUserCatInfo(catId);
+  if(!info)return null;
+  const targetId=getCatTarget(catId);
+  if(targetId){
+    if(info.linkable==='exp'){
+      const exp=(S.exp||[]).find(e=>String(e.id)===String(targetId));
+      if(exp)return info.label.replace(/\s*\([^)]*\)\s*$/,'')+' → '+exp.name;
+    } else if(info.linkable==='debts'){
+      const dbt=(S.debts||[]).find(d=>String(d.id)===String(targetId));
+      if(dbt)return info.label+' → '+(dbt.group||dbt.name);
+    }
+  }
+  return info.label;
 }
 
 function parseNu(txt){
@@ -1704,8 +1741,10 @@ function detectH(txns){
       const userCat=applyUserCategory(desc);
       if(userCat){
         const catInfo=getUserCatInfo(userCat);
-        // X_ categories are excluded from hormiga entirely (fijo, ahorro, deuda, transfer, ignorar)
+        // Excluded categories: skip from hormiga
         if(catInfo&&catInfo.exclude)return;
+        // Non-hormiga groups (impulso, emergencia): also skip from hormiga aggregate
+        if(catInfo&&catInfo.group&&catInfo.group!=='hormiga')return;
         // H_ categories: use the user's label as hormiga category
         if(catInfo&&catInfo.hormiga){
           const catLabel=catInfo.label;
@@ -1730,6 +1769,35 @@ function detectH(txns){
     }
   });
   return Object.entries(r).sort((a,b)=>b[1].total-a[1].total);
+}
+
+// FASE NIVEL 1: detecta impulso y emergencia agregados por subcategoría
+// Estructura paralela a detectH pero solo para grupos no-hormiga
+function detectImpulsoEmergencia(txns){
+  const imp={},eme={};
+  txns.forEach(t=>{
+    try{
+      const userCat=applyUserCategory(t.desc||'');
+      if(!userCat)return;
+      const info=getUserCatInfo(userCat);
+      if(!info||info.exclude)return;
+      const target=imp; // not used directly; switch below
+      if(info.group==='impulso'){
+        const k=info.label;
+        if(!imp[k])imp[k]={total:0,count:0,txns:[]};
+        imp[k].total+=t.amt;
+        imp[k].count++;
+        imp[k].txns.push({desc:(t.desc||'').slice(0,40),amt:t.amt,date:t.date||''});
+      } else if(info.group==='emergencia'){
+        const k=info.label;
+        if(!eme[k])eme[k]={total:0,count:0,txns:[]};
+        eme[k].total+=t.amt;
+        eme[k].count++;
+        eme[k].txns.push({desc:(t.desc||'').slice(0,40),amt:t.amt,date:t.date||''});
+      }
+    }catch(e){}
+  });
+  return{impulso:imp,emergencia:eme};
 }
 // Clasificador hormiga/impulso/servicio para CSV
 // Hormiga: goteo pequeño frecuente (OXXO, café, delivery barato)
@@ -1927,25 +1995,87 @@ function showCategorizeModal(desc,currentCat){
   window._pendingCat={desc:desc};
   const short=(desc||'').slice(0,40);
   const current=currentCat||applyUserCategory(desc);
+  const curBase=current?String(current).split(':')[0]:null;
+  const curTarget=current?getCatTarget(current):null;
+  // Helper to render a button
+  const btn=(c,bgColor,brColor,txtColor)=>{
+    const isCur=curBase===c.id&&!curTarget;
+    return '<button class="btn btn-sm" style="padding:6px 9px;font-size:11px;border:1px solid '+(isCur?brColor:'var(--border)')+';background:'+(isCur?bgColor:'var(--bg)')+';color:'+(isCur?txtColor:'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+c.id+'\')">'+c.label+'</button>';
+  };
+  // Helper for linked button (Fijo→exp, Deuda→deuda)
+  const linkBtn=(catId,targetId,label,bgColor,brColor,txtColor)=>{
+    const fullId=catId+':'+targetId;
+    const isCur=curBase===catId&&String(curTarget)===String(targetId);
+    return '<button class="btn btn-sm" style="padding:6px 9px;font-size:11px;border:1px solid '+(isCur?brColor:'var(--border)')+';background:'+(isCur?bgColor:'var(--bg)')+';color:'+(isCur?txtColor:'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+fullId+'\')">'+label+'</button>';
+  };
   let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio detectado:</div>';
   body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:14px;word-break:break-word">'+short+'</div>';
-  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.6">Elige la categoría correcta. Esta regla se guardará y se aplicará automáticamente la próxima vez que aparezca un cargo similar.</div>';
-  // Hormiga categories
-  body+='<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🐜 Categorías de gasto</div>';
-  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
-  USER_CATS.filter(c=>c.hormiga).forEach(c=>{
-    const isCur=current===c.id;
-    body+='<button class="btn btn-sm" style="padding:7px 10px;font-size:11px;border:1px solid '+(isCur?'var(--sage)':'var(--border)')+';background:'+(isCur?'var(--sagedim)':'var(--bg)')+';color:'+(isCur?'var(--sage)':'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+c.id+'\')">'+c.label+'</button>';
-  });
+  if(current){
+    const lbl=getCatDisplayLabel(current)||'?';
+    body+='<div style="font-size:10px;color:var(--sage);background:var(--sagedim);padding:6px 10px;border-radius:6px;margin-bottom:12px"><strong>Actual:</strong> '+lbl+'</div>';
+  }
+  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Elige la categoría correcta. La regla se guarda y aplica a todos los cargos similares.</div>';
+
+  // ── HORMIGA ──
+  body+='<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🐜 Hormiga · gasto habitual</div>';
+  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">';
+  USER_CATS.filter(c=>c.group==='hormiga').forEach(c=>{body+=btn(c,'var(--sagedim)','var(--sage)','var(--sage)');});
   body+='</div>';
-  // Excluded categories
-  body+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:12px">🚫 Excluir del ranking</div>';
-  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
-  USER_CATS.filter(c=>c.exclude).forEach(c=>{
-    const isCur=current===c.id;
-    body+='<button class="btn btn-sm" style="padding:7px 10px;font-size:11px;border:1px solid '+(isCur?'var(--terra)':'var(--border)')+';background:'+(isCur?'rgba(184,92,74,.08)':'var(--bg)')+';color:'+(isCur?'var(--terra)':'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+c.id+'\')">'+c.label+'</button>';
-  });
+
+  // ── IMPULSO ──
+  body+='<div style="font-size:10px;color:#A07030;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:6px">💥 Impulso · gasto emocional esporádico</div>';
+  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">';
+  USER_CATS.filter(c=>c.group==='impulso').forEach(c=>{body+=btn(c,'rgba(160,112,48,.12)','#A07030','#A07030');});
   body+='</div>';
+
+  // ── EMERGENCIA ──
+  body+='<div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:6px">🚨 Emergencia · no planeado pero necesario</div>';
+  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">';
+  USER_CATS.filter(c=>c.group==='emergencia').forEach(c=>{body+=btn(c,'rgba(184,92,74,.10)','var(--terra)','var(--terra)');});
+  body+='</div>';
+
+  // ── LINKEABLES · Fijo (S.exp) ──
+  body+='<div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🔗 Pago de Gasto Fijo · linkear a Plan de Acción</div>';
+  if(!(S.exp||[]).length){
+    body+='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;font-style:italic">No tienes gastos fijos en Plan de Acción todavía.</div>';
+  } else {
+    body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">';
+    (S.exp||[]).forEach(e=>{
+      const lbl='🏠 '+(e.name||'?');
+      body+=linkBtn('X_fijo',e.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+    });
+    // Generic fallback
+    body+=btn({id:'X_fijo',label:'🏠 Otro fijo (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+    body+='</div>';
+  }
+
+  // ── LINKEABLES · Deuda (S.debts) ──
+  body+='<div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🔗 Pago de Deuda · linkear a Plan de Acción</div>';
+  // Group debts by .group field, fallback to .name
+  const debtList=(S.debts||[]).filter(d=>(+d.bal||0)>0||d.freq==='unico');
+  if(!debtList.length){
+    body+='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;font-style:italic">No tienes deudas activas en Plan de Acción.</div>';
+  } else {
+    // Deduplicate by group/name
+    const seen={};
+    body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">';
+    debtList.forEach(d=>{
+      const key=d.group||d.name||'?';
+      if(seen[key])return;
+      seen[key]=true;
+      const lbl='💳 '+key;
+      body+=linkBtn('X_deuda',d.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+    });
+    body+=btn({id:'X_deuda',label:'💳 Otra deuda (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+    body+='</div>';
+  }
+
+  // ── OTROS EXCLUIDOS ──
+  body+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🚫 Otros excluidos</div>';
+  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
+  USER_CATS.filter(c=>c.group==='otros').forEach(c=>{body+=btn(c,'rgba(154,149,144,.12)','var(--muted)','var(--muted)');});
+  body+='</div>';
+
   // Remove rule button if one exists
   if(current){
     body+='<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:12px">'
@@ -2344,6 +2474,9 @@ function saveSnapshot(txns,source){
     // FASE 1 BARRAS · desglose por categoría (gastos fijos) y grupo (deudas)
     expByCat:(()=>{const m={};(S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';const mo=toMonthly(+e.amt||0,e.freq||'mensual');m[k]=(m[k]||0)+mo;});return m;})(),
     debtByGroup:(()=>{const m={};(S.debts||[]).forEach(d=>{if((+d.bal||0)<=0)return;const k=(d.group||d.name||'Sin grupo').trim()||'Sin grupo';m[k]=(m[k]||0)+(+d.bal||0);});return m;})(),
+    // FASE NIVEL 1 · impulso y emergencia separados de hormiga
+    impulso:detectImpulsoEmergencia(txns).impulso,
+    emergencia:detectImpulsoEmergencia(txns).emergencia,
   };
   pt({snapshots:[...S.snapshots,snap]});
   // LOAD NEXT TRIGGER: tell user when the next chapter will be ready
@@ -2393,8 +2526,10 @@ function recalcAllSnapshots(){
       const hormiga={};hd.forEach(([cat,data])=>hormiga[cat]=data);
       // Re-calcular buckets
       const buckets=bucketTotals(snap.allTxns);
+      // Re-detectar impulso y emergencia (Nivel 1)
+      const ie=detectImpulsoEmergencia(snap.allTxns);
       recalced++;
-      return{...snap,hormiga,buckets,expByCat:curExpByCat,debtByGroup:curDebtByGroup,_recalcedAt:new Date().toISOString()};
+      return{...snap,hormiga,buckets,impulso:ie.impulso,emergencia:ie.emergencia,expByCat:curExpByCat,debtByGroup:curDebtByGroup,_recalcedAt:new Date().toISOString()};
     });
     pt({snapshots:newSnaps});
     toast('✅ '+recalced+' capítulos recalculados'+(skipped?' ('+skipped+' sin datos)':''));
@@ -4852,12 +4987,17 @@ function rHistoria(){
         });
         // Compute current category for each group
         const enriched=Object.values(groups).map(g=>{
-          let label='Sin categorizar',isUser=false,exclude=false;
+          let label='Sin categorizar',isUser=false,exclude=false,grp=null;
           try{
             const userCat=applyUserCategory(g.desc);
             if(userCat){
               const info=getUserCatInfo(userCat);
-              if(info){label=info.label;isUser=true;exclude=!!info.exclude;}
+              if(info){
+                label=getCatDisplayLabel(userCat)||info.label;
+                isUser=true;
+                exclude=!!info.exclude;
+                grp=info.group;
+              }
             }
           }catch(e){}
           if(label==='Sin categorizar'){
@@ -4866,7 +5006,7 @@ function rHistoria(){
               if(keys.some(k=>d.includes(k))){label=cat;break;}
             }
           }
-          return{...g,_cat:label,_isUser:isUser,_exclude:exclude};
+          return{...g,_cat:label,_isUser:isUser,_exclude:exclude,_group:grp};
         });
         // Stats
         const totalCat=enriched.filter(t=>t._cat!=='Sin categorizar').length;
@@ -4897,12 +5037,18 @@ function rHistoria(){
           filtered.forEach((g,i)=>{
             const safeDesc=(g.desc||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
             const isUncat=g._cat==='Sin categorizar';
-            const catColor=isUncat?'var(--terra)':(g._exclude?'var(--muted)':'var(--sage)');
-            const catBg=isUncat?'rgba(184,92,74,.08)':(g._exclude?'rgba(154,149,144,.12)':'var(--sagedim)');
+            // Color by group
+            let catColor,catBg;
+            if(isUncat){catColor='var(--terra)';catBg='rgba(184,92,74,.08)';}
+            else if(g._group==='emergencia'){catColor='var(--terra)';catBg='rgba(184,92,74,.10)';}
+            else if(g._group==='impulso'){catColor='#A07030';catBg='rgba(160,112,48,.12)';}
+            else if(g._group==='fijo'||g._group==='deuda'){catColor='var(--sky)';catBg='rgba(74,110,140,.10)';}
+            else if(g._exclude){catColor='var(--muted)';catBg='rgba(154,149,144,.12)';}
+            else {catColor='var(--sage)';catBg='var(--sagedim)';}
             const borderBot=i<filtered.length-1?'border-bottom:1px solid var(--border);':'';
             html+='<div onclick="showCategorizeModal(\''+safeDesc+'\')" style="padding:11px 14px;'+borderBot+'cursor:pointer;active:opacity:.7">';
             html+='<div class="row-b" style="margin-bottom:4px;gap:8px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(g.desc||'—').slice(0,38)+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(g.total)+'</span></div>';
-            html+='<div class="row-b" style="gap:8px"><div class="row" style="gap:6px;align-items:center;flex:1;min-width:0"><span style="font-size:9px;padding:2px 7px;border-radius:10px;background:'+catBg+';color:'+catColor+';font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">'+g._cat+(g._isUser?' ✓':'')+'</span>'+(g.count>1?'<span style="font-size:9px;color:var(--muted)">×'+g.count+'</span>':'')+'</div><span style="font-size:9px;color:var(--muted);flex-shrink:0">✏️ tocar</span></div>';
+            html+='<div class="row-b" style="gap:8px"><div class="row" style="gap:6px;align-items:center;flex:1;min-width:0"><span style="font-size:9px;padding:2px 7px;border-radius:10px;background:'+catBg+';color:'+catColor+';font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px">'+g._cat+(g._isUser?' ✓':'')+'</span>'+(g.count>1?'<span style="font-size:9px;color:var(--muted)">×'+g.count+'</span>':'')+'</div><span style="font-size:9px;color:var(--muted);flex-shrink:0">✏️ tocar</span></div>';
             html+='</div>';
           });
         }
@@ -5284,7 +5430,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-bars3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-cats1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

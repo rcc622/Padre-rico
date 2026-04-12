@@ -1856,11 +1856,45 @@ function getTopSangradores(txns){
     }
     const k=normalizeMerchant(t.desc);
     if(!k)return;
-    if(!agg[k])agg[k]={name:k,total:0,count:0,origDesc:t.desc};
+    if(!agg[k])agg[k]={name:k,total:0,count:0,origDesc:t.desc,txns:[]};
     agg[k].total+=t.amt;
     agg[k].count++;
+    agg[k].txns.push({desc:t.desc,amt:t.amt,date:t.date||''});
   });
   return Object.values(agg).sort((a,b)=>b.total-a.total).slice(0,5);
+}
+
+// FASE NIVEL 1 · ver desglose de un sangrador (qué transacciones se agruparon dentro)
+window._sangraDetail=null;
+function showSangradorDetail(merchantKey){
+  try{
+    // Re-build the sangrador list to find the matching one
+    const all=[...nuDebit,...nuCredit];
+    const sangra=getTopSangradores(all).find(s=>s.name===merchantKey);
+    if(!sangra||!sangra.txns){toast('No encontré el detalle');return;}
+    const sorted=[...sangra.txns].sort((a,b)=>b.amt-a.amt);
+    let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio agrupado:</div>';
+    body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:12px">'+sangra.name+'</div>';
+    body+='<div class="row-b" style="padding:10px 12px;background:var(--sagedim);border-radius:6px;margin-bottom:12px"><span style="font-size:11px;color:var(--sage2);font-weight:bold">'+sangra.count+' transaccion'+(sangra.count!==1?'es':'')+'</span><span style="font-size:14px;color:var(--terra);font-weight:bold">'+fx(Math.round(sangra.total))+'</span></div>';
+    body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Verifica que todas estas pertenezcan al mismo comercio. Si una está mal agrupada, tócala para recategorizarla aparte.</div>';
+    body+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">';
+    sorted.forEach((t,i)=>{
+      const safeDesc=(t.desc||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      const dt=t.date||'';
+      const borderBot=i<sorted.length-1?'border-bottom:1px solid var(--border);':'';
+      body+='<div style="padding:10px 12px;'+borderBot+'">'
+        +'<div class="row-b" style="margin-bottom:2px;gap:8px"><span style="font-size:11px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(t.desc||'—')+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(t.amt)+'</span></div>'
+        +'<div class="row-b" style="margin-top:4px">'
+        +(dt?'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>':'<div></div>')
+        +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(\''+safeDesc+'\')">✏️ Recategorizar</button>'
+        +'</div>'
+        +'</div>';
+    });
+    body+='</div>';
+    showConfirm('🔍 Desglose de '+sangra.name.slice(0,20),body,null);
+    const row=document.getElementById('confirmModal').querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
+  }catch(e){toast('Error: '+e.message);}
 }
 
 // Detect which txns in the CSV look like payments of fixed expenses from S.exp
@@ -2737,12 +2771,14 @@ function rQuincena(){
         const curCatInfo=curCat?getUserCatInfo(curCat):null;
         const catLabel=curCatInfo?curCatInfo.label:'';
         const safeDesc=(s.origDesc||s.name).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+        const safeKey=s.name.replace(/'/g,"\\'").replace(/"/g,'&quot;');
         return`<div style="padding:8px 0;${idx<sangradores.length-1?'border-bottom:1px solid var(--border);':''}">
           <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px;align-items:center;flex:1;min-width:0"><span style="font-size:16px;flex-shrink:0">${medal}</span><strong style="font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis">${s.name}</strong></div>
-            <div class="row" style="gap:6px;align-items:center;flex-shrink:0">
+            <div class="row" style="gap:4px;align-items:center;flex-shrink:0">
               <span style="font-size:13px;color:var(--terra);font-weight:bold">${fx(Math.round(s.total))}</span>
-              <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px" onclick="showCategorizeModal('${safeDesc}')">✏️</button>
+              <button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="showSangradorDetail('${safeKey}')" title="Ver desglose">🔍</button>
+              <button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="showCategorizeModal('${safeDesc}')" title="Categorizar">✏️</button>
             </div>
           </div>
           <div class="pw" style="margin-bottom:4px;height:4px"><div class="pb" style="width:${pct}%;background:var(--terra)"></div></div>
@@ -5457,7 +5493,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-cats2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-cats3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

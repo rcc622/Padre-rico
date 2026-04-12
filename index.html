@@ -1848,11 +1848,17 @@ function normalizeMerchant(desc){
 function getTopSangradores(txns){
   const agg={};
   txns.forEach(t=>{
-    // ETAPA 2: check if user marked this as excluded (fijo, ahorro, deuda, transfer, ignorar)
+    // Sangradores = solo gastos hormiga sin identificar. Excluir todo lo demás:
+    // - Excluidos manualmente (fijo, deuda, ahorro, transfer, ignorar)
+    // - Categorizados como impulso/emergencia (ya están identificados)
+    // - Solo dejar pasar: hormiga categorizada o sin categorizar
     const userCat=applyUserCategory(t.desc);
     if(userCat){
       const catInfo=getUserCatInfo(userCat);
-      if(catInfo&&catInfo.exclude)return; // skip this txn entirely
+      if(catInfo){
+        if(catInfo.exclude)return; // fijo, deuda, ahorro, transfer, ignorar
+        if(catInfo.group&&catInfo.group!=='hormiga')return; // impulso, emergencia
+      }
     }
     const k=normalizeMerchant(t.desc);
     if(!k)return;
@@ -1882,8 +1888,24 @@ function showSangradorDetail(merchantKey){
       const safeDesc=(t.desc||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
       const dt=t.date||'';
       const borderBot=i<sorted.length-1?'border-bottom:1px solid var(--border);':'';
+      // Show current category if any
+      const cur=applyUserCategory(t.desc);
+      let curLbl='',curColor='var(--muted)';
+      if(cur){
+        const lbl=getCatDisplayLabel(cur);
+        const info=getUserCatInfo(cur);
+        if(lbl){
+          curLbl=lbl;
+          if(info&&info.group==='emergencia')curColor='var(--terra)';
+          else if(info&&info.group==='impulso')curColor='#A07030';
+          else if(info&&(info.group==='fijo'||info.group==='deuda'))curColor='var(--sky)';
+          else if(info&&info.exclude)curColor='var(--muted)';
+          else curColor='var(--sage)';
+        }
+      }
       body+='<div style="padding:10px 12px;'+borderBot+'">'
         +'<div class="row-b" style="margin-bottom:2px;gap:8px"><span style="font-size:11px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(t.desc||'—')+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(t.amt)+'</span></div>'
+        +(curLbl?'<div style="font-size:9px;color:'+curColor+';font-weight:bold;margin:3px 0">✓ '+curLbl+'</div>':'')
         +'<div class="row-b" style="margin-top:4px">'
         +(dt?'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>':'<div></div>')
         +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(\''+safeDesc+'\')">✏️ Recategorizar</button>'
@@ -5493,7 +5515,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-cats3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-cats4';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

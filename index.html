@@ -1992,99 +1992,126 @@ function showHormigaDetail(idx){
 window._pendingCat=null;
 
 function showCategorizeModal(desc,currentCat){
-  window._pendingCat={desc:desc};
+  window._pendingCat={desc:desc,currentCat:currentCat||applyUserCategory(desc)};
+  _renderCatStep1();
+}
+
+// ── PASO 1: elegir tipo de gasto ──
+function _renderCatStep1(){
+  const pc=window._pendingCat;
+  if(!pc)return;
+  const desc=pc.desc;
   const short=(desc||'').slice(0,40);
-  const current=currentCat||applyUserCategory(desc);
-  const curBase=current?String(current).split(':')[0]:null;
-  const curTarget=current?getCatTarget(current):null;
-  // Helper to render a button
-  const btn=(c,bgColor,brColor,txtColor)=>{
-    const isCur=curBase===c.id&&!curTarget;
-    return '<button class="btn btn-sm" style="padding:6px 9px;font-size:11px;border:1px solid '+(isCur?brColor:'var(--border)')+';background:'+(isCur?bgColor:'var(--bg)')+';color:'+(isCur?txtColor:'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+c.id+'\')">'+c.label+'</button>';
-  };
-  // Helper for linked button (Fijo→exp, Deuda→deuda)
-  const linkBtn=(catId,targetId,label,bgColor,brColor,txtColor)=>{
-    const fullId=catId+':'+targetId;
-    const isCur=curBase===catId&&String(curTarget)===String(targetId);
-    return '<button class="btn btn-sm" style="padding:6px 9px;font-size:11px;border:1px solid '+(isCur?brColor:'var(--border)')+';background:'+(isCur?bgColor:'var(--bg)')+';color:'+(isCur?txtColor:'var(--txt)')+';border-radius:6px;cursor:pointer" onclick="_applyCategorization(\''+fullId+'\')">'+label+'</button>';
-  };
+  const current=pc.currentCat;
   let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio detectado:</div>';
   body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:14px;word-break:break-word">'+short+'</div>';
   if(current){
     const lbl=getCatDisplayLabel(current)||'?';
-    body+='<div style="font-size:10px;color:var(--sage);background:var(--sagedim);padding:6px 10px;border-radius:6px;margin-bottom:12px"><strong>Actual:</strong> '+lbl+'</div>';
+    body+='<div style="font-size:10px;color:var(--sage);background:var(--sagedim);padding:6px 10px;border-radius:6px;margin-bottom:14px"><strong>Actual:</strong> '+lbl+'</div>';
   }
-  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Elige la categoría correcta. La regla se guarda y aplica a todos los cargos similares.</div>';
-
-  // ── HORMIGA ──
-  body+='<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🐜 Hormiga · gasto habitual</div>';
-  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">';
-  USER_CATS.filter(c=>c.group==='hormiga').forEach(c=>{body+=btn(c,'var(--sagedim)','var(--sage)','var(--sage)');});
+  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5"><strong>Paso 1 de 2</strong> · ¿Qué tipo de gasto es?</div>';
+  // 6 type tiles in 2-col grid
+  const tiles=[
+    {grp:'hormiga',e:'🐜',n:'Hormiga',d:'Habitual, frecuente',c:'var(--sage)',bg:'var(--sagedim)'},
+    {grp:'impulso',e:'💥',n:'Impulso',d:'Emocional, esporádico',c:'#A07030',bg:'rgba(160,112,48,.12)'},
+    {grp:'emergencia',e:'🚨',n:'Emergencia',d:'No planeado, necesario',c:'var(--terra)',bg:'rgba(184,92,74,.10)'},
+    {grp:'fijo',e:'🏠',n:'Pago Fijo',d:'De Plan de Acción',c:'var(--sky)',bg:'rgba(74,110,140,.10)'},
+    {grp:'deuda',e:'💳',n:'Pago Deuda',d:'De Plan de Acción',c:'var(--sky)',bg:'rgba(74,110,140,.10)'},
+    {grp:'otros',e:'🚫',n:'Excluir',d:'Ahorro, transfer, ignorar',c:'var(--muted)',bg:'rgba(154,149,144,.12)'},
+  ];
+  body+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  tiles.forEach(t=>{
+    body+='<button class="btn" style="padding:14px 8px;border:1px solid var(--border);background:'+t.bg+';color:'+t.c+';border-radius:8px;cursor:pointer;text-align:center" onclick="_renderCatStep2(\''+t.grp+'\')">'
+      +'<div style="font-size:24px;line-height:1;margin-bottom:4px">'+t.e+'</div>'
+      +'<div style="font-size:12px;font-weight:bold;line-height:1.2">'+t.n+'</div>'
+      +'<div style="font-size:9px;opacity:.7;margin-top:3px;line-height:1.3">'+t.d+'</div>'
+      +'</button>';
+  });
   body+='</div>';
-
-  // ── IMPULSO ──
-  body+='<div style="font-size:10px;color:#A07030;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:6px">💥 Impulso · gasto emocional esporádico</div>';
-  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">';
-  USER_CATS.filter(c=>c.group==='impulso').forEach(c=>{body+=btn(c,'rgba(160,112,48,.12)','#A07030','#A07030');});
-  body+='</div>';
-
-  // ── EMERGENCIA ──
-  body+='<div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:6px">🚨 Emergencia · no planeado pero necesario</div>';
-  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">';
-  USER_CATS.filter(c=>c.group==='emergencia').forEach(c=>{body+=btn(c,'rgba(184,92,74,.10)','var(--terra)','var(--terra)');});
-  body+='</div>';
-
-  // ── LINKEABLES · Fijo (S.exp) ──
-  body+='<div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🔗 Pago de Gasto Fijo · linkear a Plan de Acción</div>';
-  if(!(S.exp||[]).length){
-    body+='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;font-style:italic">No tienes gastos fijos en Plan de Acción todavía.</div>';
-  } else {
-    body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">';
-    (S.exp||[]).forEach(e=>{
-      const lbl='🏠 '+(e.name||'?');
-      body+=linkBtn('X_fijo',e.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
-    });
-    // Generic fallback
-    body+=btn({id:'X_fijo',label:'🏠 Otro fijo (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
-    body+='</div>';
-  }
-
-  // ── LINKEABLES · Deuda (S.debts) ──
-  body+='<div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🔗 Pago de Deuda · linkear a Plan de Acción</div>';
-  // Group debts by .group field, fallback to .name
-  const debtList=(S.debts||[]).filter(d=>(+d.bal||0)>0||d.freq==='unico');
-  if(!debtList.length){
-    body+='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;font-style:italic">No tienes deudas activas en Plan de Acción.</div>';
-  } else {
-    // Deduplicate by group/name
-    const seen={};
-    body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">';
-    debtList.forEach(d=>{
-      const key=d.group||d.name||'?';
-      if(seen[key])return;
-      seen[key]=true;
-      const lbl='💳 '+key;
-      body+=linkBtn('X_deuda',d.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
-    });
-    body+=btn({id:'X_deuda',label:'💳 Otra deuda (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
-    body+='</div>';
-  }
-
-  // ── OTROS EXCLUIDOS ──
-  body+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold;margin-top:10px">🚫 Otros excluidos</div>';
-  body+='<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px">';
-  USER_CATS.filter(c=>c.group==='otros').forEach(c=>{body+=btn(c,'rgba(154,149,144,.12)','var(--muted)','var(--muted)');});
-  body+='</div>';
-
-  // Remove rule button if one exists
+  // Remove rule shortcut at bottom
   if(current){
-    body+='<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:12px">'
+    body+='<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:14px">'
       +'<button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="_removeCategorization()">🗑 Quitar regla actual</button>'
       +'</div>';
   }
   showConfirm('✏️ Categorizar gasto',body,null);
   const row=document.getElementById('confirmModal').querySelector('.row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();window._pendingCat=null">Cancelar</button>';
+}
+
+// ── PASO 2: elegir categoría específica del grupo ──
+function _renderCatStep2(group){
+  const pc=window._pendingCat;
+  if(!pc)return;
+  pc.group=group;
+  const desc=pc.desc;
+  const short=(desc||'').slice(0,40);
+  const current=pc.currentCat;
+  const curBase=current?String(current).split(':')[0]:null;
+  const curTarget=current?getCatTarget(current):null;
+  // Header
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio:</div>';
+  body+='<div style="font-size:12px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:8px 12px;border-radius:6px;margin-bottom:12px;word-break:break-word">'+short+'</div>';
+  // Group title
+  const grpInfo={
+    hormiga:{e:'🐜',n:'Hormiga · gasto habitual',c:'var(--sage)',bg:'var(--sagedim)'},
+    impulso:{e:'💥',n:'Impulso · emocional esporádico',c:'#A07030',bg:'rgba(160,112,48,.12)'},
+    emergencia:{e:'🚨',n:'Emergencia · no planeado',c:'var(--terra)',bg:'rgba(184,92,74,.10)'},
+    fijo:{e:'🏠',n:'Pago de Gasto Fijo',c:'var(--sky)',bg:'rgba(74,110,140,.10)'},
+    deuda:{e:'💳',n:'Pago de Deuda',c:'var(--sky)',bg:'rgba(74,110,140,.10)'},
+    otros:{e:'🚫',n:'Excluir del análisis',c:'var(--muted)',bg:'rgba(154,149,144,.12)'},
+  }[group]||{e:'?',n:'?',c:'var(--muted)',bg:'var(--bg2)'};
+  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5"><strong>Paso 2 de 2</strong> · Elige la categoría</div>';
+  body+='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:'+grpInfo.bg+';border-radius:6px;margin-bottom:12px"><span style="font-size:18px">'+grpInfo.e+'</span><span style="font-size:12px;font-weight:bold;color:'+grpInfo.c+'">'+grpInfo.n+'</span></div>';
+  // Render buttons depending on group
+  const btn=(c,bgColor,brColor,txtColor)=>{
+    const isCur=curBase===c.id&&!curTarget;
+    return '<button class="btn btn-sm" style="padding:8px 12px;font-size:12px;border:1px solid '+(isCur?brColor:'var(--border)')+';background:'+(isCur?bgColor:'var(--bg)')+';color:'+(isCur?txtColor:'var(--txt)')+';border-radius:6px;cursor:pointer;text-align:left" onclick="_applyCategorization(\''+c.id+'\')">'+c.label+'</button>';
+  };
+  const linkBtn=(catId,targetId,label,bgColor,brColor,txtColor)=>{
+    const fullId=catId+':'+targetId;
+    const isCur=curBase===catId&&String(curTarget)===String(targetId);
+    return '<button class="btn btn-sm" style="padding:8px 12px;font-size:12px;border:1px solid '+(isCur?brColor:'var(--border)')+';background:'+(isCur?bgColor:'var(--bg)')+';color:'+(isCur?txtColor:'var(--txt)')+';border-radius:6px;cursor:pointer;text-align:left" onclick="_applyCategorization(\''+fullId+'\')">'+label+'</button>';
+  };
+  body+='<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">';
+  if(group==='hormiga'){
+    USER_CATS.filter(c=>c.group==='hormiga').forEach(c=>{body+=btn(c,'var(--sagedim)','var(--sage)','var(--sage)');});
+  } else if(group==='impulso'){
+    USER_CATS.filter(c=>c.group==='impulso').forEach(c=>{body+=btn(c,'rgba(160,112,48,.12)','#A07030','#A07030');});
+  } else if(group==='emergencia'){
+    USER_CATS.filter(c=>c.group==='emergencia').forEach(c=>{body+=btn(c,'rgba(184,92,74,.10)','var(--terra)','var(--terra)');});
+  } else if(group==='fijo'){
+    if(!(S.exp||[]).length){
+      body+='<div style="font-size:11px;color:var(--muted);font-style:italic;padding:8px">No tienes gastos fijos en Plan de Acción todavía.</div>';
+    } else {
+      (S.exp||[]).forEach(e=>{
+        const lbl='🏠 '+(e.name||'?');
+        body+=linkBtn('X_fijo',e.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+      });
+    }
+    body+=btn({id:'X_fijo',label:'❓ Otro fijo (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+  } else if(group==='deuda'){
+    const debtList=(S.debts||[]).filter(d=>(+d.bal||0)>0||d.freq==='unico');
+    if(!debtList.length){
+      body+='<div style="font-size:11px;color:var(--muted);font-style:italic;padding:8px">No tienes deudas activas en Plan de Acción.</div>';
+    } else {
+      const seen={};
+      debtList.forEach(d=>{
+        const key=d.group||d.name||'?';
+        if(seen[key])return;
+        seen[key]=true;
+        const lbl='💳 '+key;
+        body+=linkBtn('X_deuda',d.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+      });
+    }
+    body+=btn({id:'X_deuda',label:'❓ Otra deuda (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+  } else if(group==='otros'){
+    USER_CATS.filter(c=>c.group==='otros').forEach(c=>{body+=btn(c,'rgba(154,149,144,.12)','var(--muted)','var(--muted)');});
+  }
+  body+='</div>';
+  showConfirm('✏️ Categorizar gasto',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="_renderCatStep1()">← Atrás</button><button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._pendingCat=null">Cancelar</button>';
 }
 
 function _applyCategorization(catId){
@@ -5430,7 +5457,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-cats1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-cats2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

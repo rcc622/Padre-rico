@@ -2363,6 +2363,56 @@ function saveSnapshot(txns,source){
   return snap;
 }
 
+// FASE 1 BARRAS · RECALC: Re-clasifica todos los snapshots con las reglas actuales
+// Usa allTxns (preservado en snapshots del año en curso) para re-correr detectH/buckets,
+// y rellena expByCat/debtByGroup desde el estado ACTUAL de S.exp/S.debts.
+// Útil cuando el usuario corrige reglas userCategories o cuando snapshots viejos no
+// tienen los campos nuevos (creados antes de V2_10).
+function recalcAllSnapshots(){
+  try{
+    const snaps=S.snapshots||[];
+    if(!snaps.length){toast('No hay capítulos para recalcular');return;}
+    let recalced=0,skipped=0;
+    // Snapshot of current state for refilling expByCat/debtByGroup
+    const curExpByCat=(()=>{const m={};(S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';const mo=toMonthly(+e.amt||0,e.freq||'mensual');m[k]=(m[k]||0)+mo;});return m;})();
+    const curDebtByGroup=(()=>{const m={};(S.debts||[]).forEach(d=>{if((+d.bal||0)<=0)return;const k=(d.group||d.name||'Sin grupo').trim()||'Sin grupo';m[k]=(m[k]||0)+(+d.bal||0);});return m;})();
+    const newSnaps=snaps.map(snap=>{
+      // Capítulos comprimidos (años anteriores) no tienen allTxns → no se pueden recalcular
+      if(!snap.allTxns||!snap.allTxns.length){
+        // Aún así rellenar expByCat/debtByGroup si faltan
+        const patched={...snap};
+        if(!patched.expByCat)patched.expByCat=curExpByCat;
+        if(!patched.debtByGroup)patched.debtByGroup=curDebtByGroup;
+        skipped++;
+        return patched;
+      }
+      // Re-correr clasificador hormiga sobre las txns originales
+      const hd=detectH(snap.allTxns);
+      const hormiga={};hd.forEach(([cat,data])=>hormiga[cat]=data);
+      // Re-calcular buckets
+      const buckets=bucketTotals(snap.allTxns);
+      recalced++;
+      return{...snap,hormiga,buckets,expByCat:curExpByCat,debtByGroup:curDebtByGroup,_recalcedAt:new Date().toISOString()};
+    });
+    pt({snapshots:newSnaps});
+    toast('✅ '+recalced+' capítulos recalculados'+(skipped?' ('+skipped+' sin datos)':''));
+    setTimeout(()=>{try{rHistoria();}catch(e){}},150);
+  }catch(e){toast('Error: '+e.message);}
+}
+
+function confirmRecalcSnapshots(){
+  const snaps=S.snapshots||[];
+  const withTxns=snaps.filter(s=>s.allTxns&&s.allTxns.length).length;
+  const withoutTxns=snaps.length-withTxns;
+  let body='<div style="font-size:12px;color:var(--txt2);line-height:1.7">';
+  body+='Esto va a re-clasificar las transacciones de tus capítulos usando las reglas actuales (incluyendo las que hayas creado manualmente con ✏️ Recategorizar).';
+  body+='<br><br><strong style="color:var(--sage)">'+withTxns+' capítulo'+(withTxns!==1?'s':'')+'</strong> se recalcularán.';
+  if(withoutTxns)body+='<br><strong style="color:var(--muted)">'+withoutTxns+' capítulo'+(withoutTxns!==1?'s':'')+'</strong> sin datos detallados (solo se rellenarán Deuda y Fijos).';
+  body+='<br><br><span style="color:var(--amber);font-size:11px">⚠️ Los gastos fijos y las deudas se rellenarán con tu <strong>estado actual</strong>, no con el del momento original. Para tu caso de 3 capítulos recientes esto no debería hacer diferencia.</span>';
+  body+='</div>';
+  showConfirm('🔄 Recalcular categorías',body,recalcAllSnapshots);
+}
+
 // Comparativa contra promedios históricos
 function compareSnap(current){
   if(S.snapshots.length<2)return null;
@@ -4642,7 +4692,7 @@ function rHistoria(){
         }
         return out;
       })();
-      const selector='<div class="card card-sage"><div class="ct">📈 Evolución Financiera</div><div style="font-size:12px;color:var(--txt2);margin-bottom:10px">Cómo se reparte tu dinero a lo largo del tiempo.</div><div class="chips">'+Object.entries(periodLabels).map(([k,l])=>'<button class="chip" style="'+(histPeriod===k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':'')+'" onclick="histPeriod=\''+k+'\';rHistoria()">'+l+'</button>').join('')+'</div></div>';
+      const selector='<div class="card card-sage"><div class="ct">📈 Evolución Financiera</div><div style="font-size:12px;color:var(--txt2);margin-bottom:10px">Cómo se reparte tu dinero a lo largo del tiempo.</div><div class="chips">'+Object.entries(periodLabels).map(([k,l])=>'<button class="chip" style="'+(histPeriod===k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':'')+'" onclick="histPeriod=\''+k+'\';rHistoria()">'+l+'</button>').join('')+'</div><div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:6px 10px;color:var(--muted);width:100%" onclick="confirmRecalcSnapshots()">🔄 Recalcular categorías de capítulos viejos</button></div></div>';
       // Edge cases: not enough data for selected period
       if(aggSnaps.length===0){
         ct=selector+'<div class="card" style="text-align:center;padding:24px"><div style="font-size:22px;margin-bottom:8px">⏳</div><div style="color:var(--muted);font-size:12px;line-height:1.6">Necesitas <strong>'+periodSz+' capítulos</strong> para formar un periodo '+periodLabels[histPeriod].toLowerCase()+'.<br>Llevas '+csRaw.length+'. Te faltan '+Math.max(0,periodSz-csRaw.length)+'.<br><br>Cambia a un periodo más corto arriba ☝️</div></div>';
@@ -5128,7 +5178,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-bars1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-bars2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

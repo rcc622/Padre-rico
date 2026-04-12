@@ -1969,6 +1969,7 @@ function _applyCategorization(catId){
     toast('✅ Regla guardada: '+lbl);
     // Refresh current view
     try{rQuincena();}catch(e){}
+    try{if(typeof histView!=='undefined'&&histView==='cats')rHistoria();}catch(e){}
   }catch(e){toast('Error al categorizar');}
 }
 
@@ -1980,6 +1981,7 @@ function _removeCategorization(){
     window._pendingCat=null;
     toast('🗑 Regla eliminada');
     try{rQuincena();}catch(e){}
+    try{if(typeof histView!=='undefined'&&histView==='cats')rHistoria();}catch(e){}
   }catch(e){}
 }
 
@@ -4389,6 +4391,8 @@ function evaluateRetos(snap){
 // ══ MI HISTORIA (simulador + gráficas + logros + timeline) ══════
 let histView='sim';
 let histPeriod='raw'; // raw|mes|trim|sem|anual — Evolución aggregation (raw = 1 capítulo, mensual o quincenal según cycleMode)
+let histCatsCh=null; // index of selected snapshot in cats view (null = most recent)
+let histCatsFilter='all'; // all|cat|uncat
 let simPeriod=12; // 1, 2, 6, or 12 months
 function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
 function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
@@ -4624,7 +4628,7 @@ function rHistoria(){
   const streak=qStreak();
   checkAch();
   // Sub-nav
-  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['logros','🏆 Logros'],['retos','🎯 Retos'],['timeline','📖 Timeline'],['liq','🏁 Liquidadas']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
+  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['cats','🏷️ Categorías'],['logros','🏆 Logros'],['retos','🎯 Retos'],['timeline','📖 Timeline'],['liq','🏁 Liquidadas']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
   let ct='';
 
   // ═══ SIMULADOR ═══
@@ -4809,6 +4813,108 @@ function rHistoria(){
           }
         }catch(e){}
       }
+    }
+  }
+
+  // ═══ CATEGORÍAS · revisión y categorización manual ═══
+  if(histView==='cats'){
+    const snaps=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
+    if(!snaps.length){
+      ct='<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">No hay capítulos guardados todavía.<br>Sube tu primer CSV en Cierre Qna.</div></div>';
+    } else {
+      // Default to most recent capítulo
+      let chIdx=histCatsCh;
+      if(chIdx===null||chIdx>=snaps.length||chIdx<0)chIdx=snaps.length-1;
+      const cap=snaps[chIdx];
+      const txns=cap.allTxns||[];
+      // Header card with cap selector
+      let html='<div class="card card-sage"><div class="ct">🏷️ Categorías</div><div style="font-size:12px;color:var(--txt2);margin-bottom:10px;line-height:1.6">Revisa cómo está categorizado cada comercio. Toca para corregir. Las reglas se aplican a todos los capítulos cuando le des <strong>"Guardar y aplicar"</strong>.</div>';
+      html+='<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Capítulo</div>';
+      html+='<div class="chips">';
+      snaps.forEach((s,i)=>{
+        const lbl='C'+(i+1);
+        const isCur=i===chIdx;
+        html+='<button class="chip" style="'+(isCur?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':'')+'" onclick="histCatsCh='+i+';rHistoria()">'+lbl+'</button>';
+      });
+      html+='</div></div>';
+
+      if(!txns.length){
+        html+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:22px;margin-bottom:8px">📦</div><div style="color:var(--muted);font-size:12px;line-height:1.6">Este capítulo no tiene transacciones detalladas.<br><span style="font-size:10px">Puede haber sido comprimido al cambiar de año.</span></div></div>';
+      } else {
+        // Group by merchant key (same normalization the rule system uses)
+        const groups={};
+        txns.forEach(t=>{
+          const key=_catKey(t.desc);
+          if(!key)return;
+          if(!groups[key]){groups[key]={key,desc:t.desc,total:0,count:0};}
+          groups[key].total+=t.amt;
+          groups[key].count++;
+        });
+        // Compute current category for each group
+        const enriched=Object.values(groups).map(g=>{
+          let label='Sin categorizar',isUser=false,exclude=false;
+          try{
+            const userCat=applyUserCategory(g.desc);
+            if(userCat){
+              const info=getUserCatInfo(userCat);
+              if(info){label=info.label;isUser=true;exclude=!!info.exclude;}
+            }
+          }catch(e){}
+          if(label==='Sin categorizar'){
+            const d=(g.desc||'').toUpperCase();
+            for(const[cat,keys]of Object.entries(HK)){
+              if(keys.some(k=>d.includes(k))){label=cat;break;}
+            }
+          }
+          return{...g,_cat:label,_isUser:isUser,_exclude:exclude};
+        });
+        // Stats
+        const totalCat=enriched.filter(t=>t._cat!=='Sin categorizar').length;
+        const totalUncat=enriched.length-totalCat;
+        // Apply filter
+        const filtered=enriched.filter(t=>{
+          if(histCatsFilter==='all')return true;
+          if(histCatsFilter==='cat')return t._cat!=='Sin categorizar';
+          if(histCatsFilter==='uncat')return t._cat==='Sin categorizar';
+          return true;
+        }).sort((a,b)=>b.total-a.total);
+
+        // Stats + filters card
+        html+='<div class="card" style="padding:12px 14px">';
+        html+='<div class="row-b" style="margin-bottom:10px;font-size:11px"><span style="color:var(--muted)">'+enriched.length+' comercios únicos</span><span style="color:var(--sage)">✓ '+totalCat+'</span><span style="color:var(--terra)">⚠ '+totalUncat+' sin cat</span></div>';
+        html+='<div class="chips">';
+        [['all','Todos'],['cat','Categorizados'],['uncat','Sin categoría']].forEach(([k,l])=>{
+          const isCur=histCatsFilter===k;
+          html+='<button class="chip" style="font-size:10px;padding:5px 10px;'+(isCur?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':'')+'" onclick="histCatsFilter=\''+k+'\';rHistoria()">'+l+'</button>';
+        });
+        html+='</div></div>';
+
+        // Merchant list
+        html+='<div class="card" style="padding:0;overflow:hidden">';
+        if(!filtered.length){
+          html+='<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">No hay comercios con este filtro.</div>';
+        } else {
+          filtered.forEach((g,i)=>{
+            const safeDesc=(g.desc||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+            const isUncat=g._cat==='Sin categorizar';
+            const catColor=isUncat?'var(--terra)':(g._exclude?'var(--muted)':'var(--sage)');
+            const catBg=isUncat?'rgba(184,92,74,.08)':(g._exclude?'rgba(154,149,144,.12)':'var(--sagedim)');
+            const borderBot=i<filtered.length-1?'border-bottom:1px solid var(--border);':'';
+            html+='<div onclick="showCategorizeModal(\''+safeDesc+'\')" style="padding:11px 14px;'+borderBot+'cursor:pointer;active:opacity:.7">';
+            html+='<div class="row-b" style="margin-bottom:4px;gap:8px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(g.desc||'—').slice(0,38)+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(g.total)+'</span></div>';
+            html+='<div class="row-b" style="gap:8px"><div class="row" style="gap:6px;align-items:center;flex:1;min-width:0"><span style="font-size:9px;padding:2px 7px;border-radius:10px;background:'+catBg+';color:'+catColor+';font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">'+g._cat+(g._isUser?' ✓':'')+'</span>'+(g.count>1?'<span style="font-size:9px;color:var(--muted)">×'+g.count+'</span>':'')+'</div><span style="font-size:9px;color:var(--muted);flex-shrink:0">✏️ tocar</span></div>';
+            html+='</div>';
+          });
+        }
+        html+='</div>';
+
+        // Sticky bottom save bar
+        html+='<div class="card" style="position:sticky;bottom:8px;margin-top:14px;background:var(--bg);box-shadow:0 -4px 12px rgba(0,0,0,.12);padding:12px;border:1px solid var(--border);z-index:10">';
+        html+='<div class="row" style="gap:8px"><button class="btn btn-ghost" style="flex:1;font-size:12px" onclick="histView=\'evo\';rHistoria()">💾 Guardar</button><button class="btn btn-sage" style="flex:1;font-size:12px" onclick="confirmRecalcSnapshots()">🔄 Guardar y aplicar</button></div>';
+        html+='<div style="font-size:9px;color:var(--muted);text-align:center;margin-top:8px;line-height:1.5">Las reglas se guardan en cada toque. <strong>"Aplicar"</strong> recalcula todos los capítulos viejos.</div>';
+        html+='</div>';
+      }
+      ct=html;
     }
   }
 
@@ -5178,7 +5284,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-bars2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-bars3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

@@ -274,7 +274,7 @@ const SK='prv5';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{},habitoFormado:{},
+  gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
 
 function migrate(){
@@ -398,6 +398,40 @@ function diariosThisCycle(){
     return d>=w.start&&d<=w.end;
   });
 }
+// Returns 2 or 3. Counts Saturdays inside the cycle window.
+// If ≥3 Saturdays OR user manually flagged this cycle as "larga", returns 3.
+function getWeeksInCycle(window){
+  const w=window||getCycleWindow();
+  let sats=0;
+  const d=new Date(w.start);
+  while(d<=w.end){if(d.getDay()===6)sats++;d.setDate(d.getDate()+1);}
+  let base=sats>=3?3:2;
+  // Manual override only applies to the current cycle (no window arg)
+  if(!window){
+    const manual=(S.longCycleOverrides||{})[cycleKey()];
+    if(manual)base=3;
+  }
+  return base;
+}
+function isLongCycleAuto(){
+  const w=getCycleWindow();
+  let sats=0;
+  const d=new Date(w.start);
+  while(d<=w.end){if(d.getDay()===6)sats++;d.setDate(d.getDate()+1);}
+  return sats>=3;
+}
+function toggleLongCycle(){
+  const ck=cycleKey();
+  if(!S.longCycleOverrides)S.longCycleOverrides={};
+  if(S.longCycleOverrides[ck]){
+    delete S.longCycleOverrides[ck];
+    toast('Quincena larga desactivada');
+  }else{
+    S.longCycleOverrides[ck]=true;
+    toast('✓ Marcada como quincena larga · Sem 3 disponible');
+  }
+  sv();rFlujo();rPlan();rHabitos();
+}
 function totalDiariosCycle(){return diariosThisCycle().reduce((a,g)=>a+(+g.amt||0),0);}
 function calcImpulseSpent(ck){
   let total=0;
@@ -450,8 +484,8 @@ function togglePaid(type,id){
   if(cur==='applied'||typeof cur==='object'&&cur?.applied){toast('Este pago ya fue aplicado');return;}
   if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');sv();rPlan();return;}
   
-  // Check if this is a variable expense (weekly: súper, gasolina) — both Sem 1 (exp) and Sem 2 (expw2)
-  const exp=(type==='exp'||type==='expw2')?S.exp.find(e=>e.id===id):null;
+  // Check if this is a variable expense (weekly: súper, gasolina) — Sem 1 (exp), Sem 2 (expw2), Sem 3 (expw3)
+  const exp=(type==='exp'||type==='expw2'||type==='expw3')?S.exp.find(e=>e.id===id):null;
   const isVariable=exp&&(exp.freq==='semanal'||/super|súper|gasol|mandado/i.test(exp.name||''));
   
   if(isVariable){
@@ -485,7 +519,7 @@ function confirmRealAmt(type,id,budgeted){
   const diff=budgeted-real;
   
   // Auto-check corresponding weekly reto
-  if(type==='exp'||type==='expw2'){
+  if(type==='exp'||type==='expw2'||type==='expw3'){
     const exp=S.exp.find(e=>e.id===id);
     if(exp&&exp.freq==='semanal'){
       const name=(exp.name||'').toLowerCase();
@@ -495,8 +529,8 @@ function confirmRealAmt(type,id,budgeted){
       if(retoId){
         const sr=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck&&r.active&&!r.completed);
         if(sr){
-          // Sem 1 (exp) = idx 0, Sem 2 (expw2) = idx 1
-          const weekIdx=type==='expw2'?1:0;
+          // Sem 1 (exp) = idx 0, Sem 2 (expw2) = idx 1, Sem 3 (expw3) = idx 2
+          const weekIdx=type==='expw3'?2:type==='expw2'?1:0;
           if(!S.retoChecks)S.retoChecks={};
           const rk=retoId+'_'+ck;
           if(!S.retoChecks[rk])S.retoChecks[rk]=[];
@@ -542,7 +576,7 @@ function paidTotal(){
     const [type,idStr]=key.split('_');
     const id=+idStr;
     if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)total+=(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual'));}
-    else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);} // week 2 of weekly expense
+    else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);} // week 2/3 of weekly expense
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)total+=savGoalPerQ(g);} // savings goal
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)total+=Math.round((+e.amt||0)/2);} // apartado
     else if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)total+=toMonthly(+d.pay||0,d.freq||'mensual');}
@@ -600,17 +634,18 @@ function genSurvivalRetos(deficit){
   if(rData&&rData.total>400)retos.push({id:'surv_rest',icon:'🍔',name:'Cocinar más, comer fuera menos',desc:'Gastaste '+fx(rData.total)+' en restaurantes. Cocina en casa y marca cada día que lo logres.',save:Math.round(rData.total*0.5),diff:2,track:'dia',steps:qnaDays});
 
   // Expense-based retos with real numbers
+  const weeksInC=getWeeksInCycle();
   if(superWeekly>0){
     const cut=Math.round(superWeekly*0.15);
-    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Tu súper es '+fx(superWeekly)+'/sem. Bájalo 15% a '+fx(superWeekly-cut)+'. Haz lista y NO compres nada fuera de ella.',save:cut*2,diff:1,track:'sem',steps:2});
+    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Tu súper es '+fx(superWeekly)+'/sem. Bájalo 15% a '+fx(superWeekly-cut)+'. Haz lista y NO compres nada fuera de ella.',save:cut*weeksInC,diff:1,track:'sem',steps:weeksInC});
   }else{
-    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Haz lista antes de ir y no compres NADA fuera de ella.',save:Math.min(300,Math.round(Math.max(deficit*0.03,150))),diff:1,track:'sem',steps:2});
+    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Haz lista antes de ir y no compres NADA fuera de ella.',save:Math.min(300,Math.round(Math.max(deficit*0.03,150))),diff:1,track:'sem',steps:weeksInC});
   }
   if(gasWeekly>0){
     const cut=Math.round(gasWeekly*0.2);
-    retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Tu gasolina es '+fx(gasWeekly)+'/sem. Bájalo 20% a '+fx(gasWeekly-cut)+'. Planea rutas y comparte rides.',save:cut*2,diff:2,track:'sem',steps:2});
+    retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Tu gasolina es '+fx(gasWeekly)+'/sem. Bájalo 20% a '+fx(gasWeekly-cut)+'. Planea rutas y comparte rides.',save:cut*weeksInC,diff:2,track:'sem',steps:weeksInC});
   }else{
-    retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Planea rutas, comparte rides, usa menos el coche.',save:Math.min(400,Math.round(Math.max(deficit*0.04,200))),diff:2,track:'sem',steps:2});
+    retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Planea rutas, comparte rides, usa menos el coche.',save:Math.min(400,Math.round(Math.max(deficit*0.04,200))),diff:2,track:'sem',steps:weeksInC});
   }
 
   // Always-available retos (capped at realistic amounts)
@@ -1011,10 +1046,10 @@ function confirmRetoExpense(retoId,idx,expId,budgeted){
   if(!S.retoChecks[k])S.retoChecks[k]=[];
   S.retoChecks[k]=S.retoChecks[k].filter(c=>c.idx!==idx);
   S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:passed,spent:real,realAmt:real,budgeted});
-  // Sync with fixed expense payment — Sem 1 (idx 0) → exp_, Sem 2 (idx 1) → expw2_
+  // Sync with fixed expense payment — Sem 1 (idx 0) → exp_, Sem 2 (idx 1) → expw2_, Sem 3 (idx 2) → expw3_
   if(expId){
     if(!S.paidItems[ck])S.paidItems[ck]={};
-    const ptype=idx===1?'expw2':'exp';
+    const ptype=idx===2?'expw3':idx===1?'expw2':'exp';
     S.paidItems[ck][ptype+'_'+expId]={at:Date.now(),realAmt:real,budgeted};
   }
   sv();closeConfirm();
@@ -2965,9 +3000,11 @@ const DIARIO_CATS=[
   {k:'transporte',n:'Transporte',e:'🚗'},
   {k:'minisuper',n:'Minisuper',e:'🛒'},
   {k:'impulso',n:'Impulso',e:'⚡'},
+  {k:'esencial',n:'Esencial (fuera de presup.)',e:'🧾'},
   {k:'otro',n:'Otro',e:'📦'}
 ];
-const diarioCat=k=>DIARIO_CATS.find(c=>c.k===k)||DIARIO_CATS[6];
+const diarioCat=k=>DIARIO_CATS.find(c=>c.k===k)||DIARIO_CATS[DIARIO_CATS.length-1];
+const isEsencial=g=>g&&g.cat==='esencial';
 const QUICK_EXP=[
   {n:'🏠 Renta',a:0,c:'Hogar / Renta'},{n:'🏫 Colegio / Escuela',a:0,c:'Educación / Escuelas'},
   {n:'🚗 Seguro Auto',a:0,c:'Seguro auto'},{n:'🏥 Seguro GM',a:0,c:'Seguro gastos médicos'},
@@ -3077,20 +3114,29 @@ function rFlujo(){try{
   ${flujoView==='diarios'?(()=>{
     const w=getCycleWindow();
     const cycleList=diariosThisCycle().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
-    const totalQ=cycleList.reduce((a,g)=>a+(+g.amt||0),0);
+    // Split: esenciales are excluded from budget tracking but still appear in the log
+    const esencialList=cycleList.filter(isEsencial);
+    const budgetList=cycleList.filter(g=>!isEsencial(g));
+    const totalEsen=esencialList.reduce((a,g)=>a+(+g.amt||0),0);
+    const totalQ=budgetList.reduce((a,g)=>a+(+g.amt||0),0); // counts against budget
+    const totalAll=totalQ+totalEsen; // real cash out (for "cerrar qna" button)
     const todayISO=new Date().toISOString().split('T')[0];
     const todayTotal=cycleList.filter(g=>g.date===todayISO).reduce((a,g)=>a+(+g.amt||0),0);
     const budget=+S.gastoDiarioBudget||0;
     const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
     const bColor=pctB<60?'var(--sage)':pctB<90?'var(--amber)':'var(--terra)';
-    // group by day
+    // group by day (all entries — esenciales render in the log too)
     const byDay={};
     cycleList.forEach(g=>{(byDay[g.date]=byDay[g.date]||[]).push(g);});
-    // category breakdown
+    // category breakdown — exclude esenciales from the budget-focused chart
     const byCat={};
-    cycleList.forEach(g=>{const k=g.cat||'otro';byCat[k]=(byCat[k]||0)+(+g.amt||0);});
+    budgetList.forEach(g=>{const k=g.cat||'otro';byCat[k]=(byCat[k]||0)+(+g.amt||0);});
     const maxCat=Math.max(...Object.values(byCat),1);
     const fmtD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===y.toISOString().split('T')[0])return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
+    // Long cycle detection
+    const longAuto=isLongCycleAuto();
+    const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
+    const isLong=longAuto||longManual;
     return `
   <!-- ═══ GASTOS DIARIOS ═══ -->
   <div class="card">
@@ -3098,13 +3144,21 @@ function rFlujo(){try{
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Compras del día a día que pagas a débito: OXXO, delivery, transporte, snacks. No son recurrentes ni se pagan después — salen ahora.</div>
     <div class="card card-grn" style="margin-bottom:12px">
       <div class="row-b" style="margin-bottom:${budget>0?'10px':'0'}">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Gastado esta quincena</div><div class="stat" style="color:${totalQ>budget&&budget>0?'var(--terra)':'var(--sage)'}">${fx(Math.round(totalQ))}</div></div>
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Gastado esta quincena</div><div class="stat" style="color:${totalQ>budget&&budget>0?'var(--terra)':'var(--sage)'}">${fx(Math.round(totalQ))}</div>${totalEsen>0?`<div style="font-size:10px;color:var(--muted);margin-top:3px">+ 🧾 Esenciales: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> <span style="opacity:.6">(fuera de presup.)</span></div>`:''}</div>
         <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Hoy</div><div style="font-size:18px;font-weight:bold;color:var(--txt)">${fx(Math.round(todayTotal))}</div></div>
       </div>
       ${budget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctB}%;background:${bColor}"></div></div><div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: ${fx(budget)}</span><span style="color:${bColor};font-weight:bold">${pctB}% usado · ${fx(Math.max(0,budget-totalQ))} restante</span></div>`:''}
     </div>
-    <details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);padding:6px 0">⚙️ ${budget>0?'Ajustar':'Poner'} presupuesto de quincena</summary>
+    <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);padding:6px 0">⚙️ ${budget>0?'Ajustar':'Poner'} presupuesto de quincena</summary>
       <div class="row" style="gap:8px;margin-top:8px"><input type="number" id="gdBudget" placeholder="0" value="${budget||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setDiarioBudget()">Guardar</button></div>
+    </details>
+    <details style="margin-bottom:12px"${isLong?' open':''}><summary style="cursor:pointer;font-size:11px;color:${isLong?'var(--amber)':'var(--muted)'};padding:6px 0;font-weight:${isLong?'bold':'normal'}">📅 Quincena larga (3 fines de semana)${isLong?' · ACTIVA':''}</summary>
+      <div style="font-size:11px;color:var(--muted);margin:8px 0;line-height:1.7">
+        Detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga (3+ sábados en el ciclo)':'No es larga por calendario (2 sábados)'}</strong>.<br>
+        ${longManual?'🟠 Activaste manualmente Sem 3 para esta quincena.':''}
+        ${!longAuto?'<br>Si tú sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (ej. te pagaron antes o compraste el sábado previo al payday), actívalo manual:':''}
+      </div>
+      <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
     </details>
     <div style="border-top:1px solid var(--border);padding-top:12px">
       <div style="font-size:11px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:8px">+ Registrar gasto</div>
@@ -3112,7 +3166,7 @@ function rFlujo(){try{
         <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..."></div>
         <div><label>Monto $</label><input type="number" id="gda" placeholder="0" inputmode="decimal"></div>
       </div>
-      <div style="margin-bottom:8px"><label>Categoría</label><div class="chips" id="gdCatChips">${DIARIO_CATS.map(c=>`<button type="button" class="chip" data-cat="${c.k}" style="${_diarioCat===c.k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${c.n}</button>`).join('')}</div></div>
+      <div style="margin-bottom:8px"><label>Categoría</label><div class="chips" id="gdCatChips">${DIARIO_CATS.map(c=>`<button type="button" class="chip" data-cat="${c.k}" style="${_diarioCat===c.k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${c.n}</button>`).join('')}</div><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso.</div></div>
       <div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="gdd" value="${todayISO}"></div>
       <button class="btn btn-sage" onclick="addDiario()">+ Agregar gasto diario</button>
     </div>
@@ -3123,17 +3177,17 @@ function rFlujo(){try{
       const dayTotal=byDay[dk].reduce((a,g)=>a+(+g.amt||0),0);
       return `<div style="margin-bottom:14px">
         <div class="row-b" style="padding:6px 8px;background:var(--sagedim);border-radius:6px;margin-bottom:6px"><span style="font-size:11px;color:var(--sage);font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${fmtD(dk)}</span><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(dayTotal))}</span></div>
-        ${byDay[dk].map(g=>{const c=diarioCat(g.cat);return`<div class="row-b" style="padding:8px 4px;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.name}</div><div style="font-size:10px;color:var(--muted)">${c.n}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:var(--terra);font-weight:bold;font-size:13px">-${fx(g.amt)}</span><button class="btn btn-red btn-sm" onclick="rmDiario(${g.id})">✕</button></div></div>`;}).join('')}
+        ${byDay[dk].map(g=>{const c=diarioCat(g.cat);const esen=isEsencial(g);return`<div class="row-b" style="padding:8px 4px;border-bottom:1px solid var(--border);${esen?'background:rgba(120,120,120,.04)':''}"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.name}${esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':''}</div><div style="font-size:10px;color:var(--muted)">${c.n}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:${esen?'var(--muted)':'var(--terra)'};font-weight:bold;font-size:13px">-${fx(g.amt)}</span><button class="btn btn-red btn-sm" onclick="rmDiario(${g.id})">✕</button></div></div>`;}).join('')}
       </div>`;
     }).join('')}
   </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
 
-  ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}</div>`:''}
+  ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
 
   ${cycleList.length>0?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
     <div class="ct">📖 Cerrar quincena manualmente</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">¿Prefieres no subir el CSV? Puedes cerrar la quincena solo con tu bitácora de Diarios y crear el capítulo en Mi Historia. Opcional — también puedes seguir subiendo el CSV desde Cierre Qna si quieres auditar tus registros.</div>
-    <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${cycleList.length} registros · ${fx(Math.round(totalQ))})</button>
+    <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${cycleList.length} registros · ${fx(Math.round(totalAll))})</button>
   </div>`:''}
   `;})():''}
 
@@ -3443,7 +3497,7 @@ function applyPayments(){
       const d2=S.debts.find(x=>x.id===id);
       if(d2){amt=+d2.pay||0;if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);d2.bal=Math.max(0,(+d2.bal||0)-amt);appliedDebt++;}
     }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual'));appliedExp++;}
-    else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
+    else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
     else if(type==='imp'){
@@ -3518,7 +3572,7 @@ function rPlan(){
   // ── EXPENSES ──
   let expQ=0;const expDetail=[];
   S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
-    if(f==='semanal'){const w=+e.amt||0;const wOff=ct==='2da'?2:0;expQ+=w*2;expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:1+wOff});expDetail.push({id:e.id,name:e.name,amt:w,day:0,freq:f,week:2+wOff,paidType:'expw2'});}
+    if(f==='semanal'){const w=+e.amt||0;const weeks=showNext?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;expQ+=w*weeks;for(let wi=0;wi<weeks;wi++){const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:0,freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
     else if(f==='quincenal'){expQ+=(+e.amt||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
     else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
     else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
@@ -3917,7 +3971,7 @@ function renderRetos(){
   const salQ=S.inc.sal/2;const bfDay=+(S.inc.bfDate)||0;const bfQ=dayInC(bfDay)?(+S.inc.bf||0):0;
   let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extQ+=(+x.amt||0);}});
   const incQ=salQ+bfQ+extQ;
-  let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*2;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
+  let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
   let debtQ=0;S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(db.nextPay){const np=new Date(db.nextPay+'T12:00');if(np>=cStart&&np<=cEnd)debtQ+=(+db.pay||0);}else if(f==='quincenal')debtQ+=(db.pay||0);else if(pd>0&&dayInC(pd))debtQ+=mo;else if(!pd)debtQ+=mo/2;});
   const savQ=savAmt()/2;
   const savGQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);
@@ -3945,8 +3999,9 @@ function renderRetos(){
     ];
     const sE=S.exp.find(e=>/super|súper|despensa/i.test(e.name||''));const sW=sE?(+sE.amt||0):500;
     const gE=S.exp.find(e=>/gasol/i.test(e.name||''));const gW=gE?(+gE.amt||0):700;
-    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Tu gasto semanal es ~'+fx(sW)+'. Bájalo 15% a '+fx(Math.round(sW*0.85))+'.',save:Math.round(sW*0.15*2),diff:1,track:'sem',steps:2});
-    retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Tu gasto es ~'+fx(gW)+'/sem. Reduce 20% a '+fx(Math.round(gW*0.8))+'.',save:Math.round(gW*0.2*2),diff:2,track:'sem',steps:2});
+    const weeksInC2=getWeeksInCycle();
+    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Tu gasto semanal es ~'+fx(sW)+'. Bájalo 15% a '+fx(Math.round(sW*0.85))+'.',save:Math.round(sW*0.15*weeksInC2),diff:1,track:'sem',steps:weeksInC2});
+    retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Tu gasto es ~'+fx(gW)+'/sem. Reduce 20% a '+fx(Math.round(gW*0.8))+'.',save:Math.round(gW*0.2*weeksInC2),diff:2,track:'sem',steps:weeksInC2});
   }
 
   const totalPotSave=activeRetos.filter(r=>r.active||r.completed).reduce((a,r)=>{const m2=retos.find(x=>x.id===r.id);return a+(m2?.save||0);},0);
@@ -4267,7 +4322,7 @@ function showOvertimeCalc(){
   else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
   else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
   function dayInC(pd){if(!pd)return false;const tds=[];for(let tm2=cStart.getMonth()-1;tm2<=cEnd.getMonth()+1;tm2++){const mx=new Date(cStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
-  S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')thisCycleTotal+=(+e.amt||0)*2;else if(f==='quincenal')thisCycleTotal+=(+e.amt||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
+  S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')thisCycleTotal+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')thisCycleTotal+=(+e.amt||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
   S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')thisCycleTotal+=(db.pay||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
   // Applied this cycle
   for(const key in paidItems){if(key.startsWith('_'))continue;if(paidItems[key]==='applied'){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)thisApplied+=toMonthly(+e.amt||0,e.freq||'mensual');}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)thisApplied+=(+db.pay||0);}}}
@@ -4280,7 +4335,7 @@ function showOvertimeCalc(){
   else{nStart=new Date(y,m,15);nEnd=new Date(y,m,29);}
   function dayInN(pd){if(!pd)return false;const tds=[];for(let tm2=nStart.getMonth()-1;tm2<=nEnd.getMonth()+1;tm2++){const mx=new Date(nStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(nStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=nStart&&td<=nEnd);}
   const salQ=S.inc.sal/2;
-  let nextExpQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')nextExpQ+=(+e.amt||0)*2;else if(f==='quincenal')nextExpQ+=(+e.amt||0);else if(pd>0&&dayInN(pd))nextExpQ+=mo;else if(!pd)nextExpQ+=mo/2;});
+  let nextExpQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')nextExpQ+=(+e.amt||0)*getWeeksInCycle({start:nStart,end:nEnd});else if(f==='quincenal')nextExpQ+=(+e.amt||0);else if(pd>0&&dayInN(pd))nextExpQ+=mo;else if(!pd)nextExpQ+=mo/2;});
   let nextDebtQ=0;S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')nextDebtQ+=(db.pay||0);else if(pd>0&&dayInN(pd))nextDebtQ+=mo;else if(!pd)nextDebtQ+=mo/2;});
   const savQ2=savAmt()/2;
   const nextTotal=nextExpQ+nextDebtQ+savQ2;
@@ -5515,7 +5570,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-cats4';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-sem3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

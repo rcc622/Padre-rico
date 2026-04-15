@@ -246,7 +246,7 @@ button:active{transform:scale(.97)}
   <nav class="nav">
     <button class="nb act" onclick="go('dash')">🏛️ Inicio</button>
     <button class="nb" onclick="go('quincena')">📊 Cierre Qna</button>
-    <button class="nb" onclick="go('flujo')">💰 Ingresos y Gastos</button>
+    <button class="nb" onclick="go('flujo')">💰 Ingresos, Gastos y Activos</button>
     <button class="nb" onclick="go('plan')">🎯 Plan de Acción</button>
     <button class="nb" onclick="go('habitos')">🧠 Mis Hábitos</button>
     <button class="nb" onclick="go('historia')">📖 Mi Historia</button>
@@ -275,6 +275,7 @@ let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
+  savStreak:0,savStreakBest:0,savCommits:{},
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
 
 function migrate(){
@@ -300,10 +301,21 @@ function migrate(){
 function ld(){
   try{
     const d=localStorage.getItem(SK);
-    if(d){S={...S,...JSON.parse(d)};cleanupOvertimeExtras();return;}
+    if(d){S={...S,...JSON.parse(d)};cleanupOvertimeExtras();initSavStreakFields();return;}
     // No v5 found — try migrate from v4
     migrate();
   }catch{}
+}
+function initSavStreakFields(){
+  // ONE-SHOT migration: initialize savings streak fields for users who already
+  // have data from before this feature existed. Gated by S.savStreakV1 so it
+  // only runs once per device (lesson from fixOvertimeExtraDates).
+  if(S.savStreakV1)return;
+  if(typeof S.savStreak!=='number')S.savStreak=0;
+  if(typeof S.savStreakBest!=='number')S.savStreakBest=0;
+  if(!S.savCommits||typeof S.savCommits!=='object')S.savCommits={};
+  S.savStreakV1=true;
+  sv();
 }
 function cleanupOvertimeExtras(){
   // ONE-SHOT migration: remove orphan extras that were auto-created by the old
@@ -330,7 +342,7 @@ function toast(msg){
 
 // ══ CONFIRM MODAL ════════════════════════════════════
 let _confirmCb=null;
-let editDebtId=null,editExpId=null;
+let editDebtId=null,editExpId=null,editAssetId=null;
 let dStrat='snowball',planQ='actual',planView='pagos',debtSort='prox';
 let flujoView='ingresos',debtView='plazos';
 let habitView='retos';
@@ -375,6 +387,19 @@ function cycleKey(){
   if(d>=15&&d<=29)return y+'-'+(m+1)+'-2da';
   if(d>=30)return y+'-'+(m+1)+'-1ra';
   return y+'-'+m+'-1ra';
+}
+// Returns the cycleKey immediately before the current one
+function prevCycleKey(){
+  const today=new Date();today.setHours(0,0,0,0);
+  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+  // Current cycle types:
+  //   d in [15..29] → current=2da of m+1, prev=1ra of m+1
+  //   d >= 30      → current=1ra of m+1, prev=2da of m (calendar month m)
+  //   d in [1..14] → current=1ra of m (prev cycle spans m-1 day 30 to m day 14), prev=2da of m-1
+  if(d>=15&&d<=29)return y+'-'+(m+1)+'-1ra';
+  if(d>=30)return y+'-'+(m+1)+'-2da';
+  // d in [1..14]: prev = 2da of m (month index m, label 2da)
+  return y+'-'+m+'-2da';
 }
 // Returns {start,end,type} for the cycle containing `ref` (default today)
 function getCycleWindow(ref){
@@ -1141,6 +1166,52 @@ const freqShort=(f)=>f==='semanal'?'sem':f==='quincenal'?'qna':f==='bimestral'?'
 const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bimestral'?'Bimestral':f==='unico'?'Pago único':'';
 const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
 const savAmt=()=>mInc()*S.savPct/100;
+// Quincenal savings amount (half of monthly plan)
+const savAmtQ=()=>Math.round(savAmt()/2);
+// Get commit for current cycle, returns null if none
+function curSavCommit(){return (S.savCommits||{})[cycleKey()]||null;}
+// Check if user has committed this cycle
+function hasSavCommittedThisCycle(){const c=curSavCommit();return c&&c.status==='committed';}
+// ══ FASE 3 · QUINCENA GRANDE (bono) ═══════════════════
+// Detects if the current cycle is the one that receives the monthly bono
+function isBonoQna(){
+  try{
+    const bfDate=+S.inc.bfDate||0;
+    const bf=+S.inc.bf||0;
+    if(!bf||!bfDate)return false;
+    const ck=cycleKey();
+    // If bfDate <= 14 → bono falls in 1ra qna (which is labeled -1ra in cycleKey for the next month)
+    // If bfDate 15-29 → bono falls in 2da qna (labeled -2da)
+    // If bfDate >= 30 → bono falls in 1ra qna of next month
+    const isInFirst=bfDate<=14||bfDate>=30;
+    return isInFirst?ck.endsWith('-1ra'):ck.endsWith('-2da');
+  }catch(e){return false;}
+}
+// Calculates the three strategic plays for the bono quincena
+function calcBonoPlays(){
+  const bf=+S.inc.bf||0;
+  const savBase=savAmtQ();
+  const activeDebts=S.debts.filter(d=>(+d.bal||0)>0&&(d.freq||'mensual')!=='unico');
+  // Pick top debt by current strategy
+  const sorted=[...activeDebts].sort((a,b)=>dStrat==='snowball'?(+a.bal||0)-(+b.bal||0):(+b.rate||0)-(+a.rate||0));
+  const topDebt=sorted[0]||null;
+  // Play A — Súper Ahorro: 50% of bono goes to savings
+  const playABoost=Math.round(bf*0.5);
+  const playATotal=savBase+playABoost;
+  // Play B — Asalto a la Deuda: 70% of bono attacks top debt
+  const playBExtra=Math.round(bf*0.7);
+  const playBNewBal=topDebt?Math.max(0,(+topDebt.bal||0)-playBExtra):0;
+  const playBMonthsSaved=topDebt&&topDebt.pay>0?Math.floor(playBExtra/(+topDebt.pay||1)):0;
+  // Play C — Balanceada: 35% savings + 35% debt
+  const playCSavBoost=Math.round(bf*0.35);
+  const playCDebtExtra=Math.round(bf*0.35);
+  const playCMonthsSaved=topDebt&&topDebt.pay>0?Math.floor(playCDebtExtra/(+topDebt.pay||1)):0;
+  return {bf,savBase,topDebt,
+    A:{boost:playABoost,total:playATotal},
+    B:{extra:playBExtra,newBal:playBNewBal,monthsSaved:playBMonthsSaved},
+    C:{savBoost:playCSavBoost,debtExtra:playCDebtExtra,monthsSaved:playCMonthsSaved}
+  };
+}
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+toMonthly(+d.pay||0,d.freq||'mensual'),0);
 const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
 const tDebt=()=>S.debts.reduce((a,d)=>a+(+d.bal||0),0);
@@ -1442,6 +1513,29 @@ function toggleHormigaDetail(){
 
 // ══ DASHBOARD ═══════════════════════════════════════
 function rDash(){
+  // Fase 2: auto-reset sav streak if user skipped a full cycle without committing
+  try{
+    if((S.savStreak||0)>0 && S.savCommits){
+      const ck=cycleKey();
+      const keys=Object.keys(S.savCommits);
+      if(keys.length>0){
+        // Find most recent commit
+        const sorted=keys.slice().sort((a,b)=>{
+          const da=S.savCommits[a].date||'';const db=S.savCommits[b].date||'';
+          return db.localeCompare(da);
+        });
+        const lastCk=sorted[0];
+        if(lastCk!==ck){
+          // Check if lastCk is the immediately previous cycle (ok) or older (reset)
+          const prev=prevCycleKey();
+          if(lastCk!==prev && lastCk!==ck){
+            // Gap detected — skipped at least one full cycle
+            S.savStreak=0;sv();
+          }
+        }
+      }
+    }
+  }catch(e){}
   const s=score(),sc=scCol(s),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
   const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
   const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
@@ -1464,6 +1558,39 @@ function rDash(){
   document.getElementById('tab-dash').innerHTML=`
   <!-- FRENTE 4 · SABIDURÍA DEL DÍA (Hooked: Hunt reward diario) -->
   ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:14px 16px;margin-bottom:13px;background:linear-gradient(135deg,rgba(78,124,106,.04) 0%,rgba(74,110,140,.02) 100%)"><div class="row" style="gap:12px;align-items:flex-start"><div style="font-size:30px;line-height:1;flex-shrink:0">${w.icon}</div><div style="flex:1;min-width:0"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px;font-weight:bold">💡 Sabiduría del día · ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.65">${w.text}</div></div></div></div>`;}catch(e){return'';}})()}
+
+  <!-- FASE 2 · PÁGATE A TI PRIMERO (Hooked: gatillo quincenal) -->
+  ${(()=>{try{
+    if(mInc()<=0)return '';
+    const c=curSavCommit();
+    const sug=savAmtQ();
+    const streak=S.savStreak||0;
+    const best=S.savStreakBest||0;
+    const streakLine=streak>0?'<div style="font-size:11px;color:var(--amber);margin-top:6px">🔥 Racha: <strong>'+streak+'</strong> quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+(best>streak?' · Mejor: '+best:'')+'</div>':'';
+    if(c&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept')){
+      // Already committed this cycle — show confirmed state
+      const asset=S.assets.find(a=>a.id===c.assetId);
+      const assetName=asset?asset.name:'tu activo';
+      const canCheck=c.status==='committed';
+      return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px"><div class="row-b"><div style="flex:1"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;font-weight:bold">✅ Ahorro apartado esta quincena</div><div style="font-size:16px;color:var(--sage);font-weight:bold">'+fx(c.amount)+' → '+assetName+'</div>'+streakLine+'</div></div>'+(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')+'</div>';
+    }
+    // Not yet committed — show action card
+    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div><div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'%</div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
+  }catch(e){return'';}})()}
+
+  <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en qna con bono) -->
+  ${(()=>{try{
+    if(!isBonoQna())return '';
+    const p=calcBonoPlays();
+    if(p.bf<=0)return '';
+    const topName=p.topDebt?p.topDebt.name:'';
+    const strategyLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
+    const playA='<div style="padding:14px;border:1px solid rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sage)">🪙 A · Súper Ahorro</div><div style="font-size:10px;color:var(--muted)">50% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Aparta <strong>'+fx(p.A.boost)+'</strong> extra al ahorro esta quincena además de tu base.</div><div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(78,124,106,.2)"><span style="font-size:10px;color:var(--muted)">Total a activos</span><strong style="color:var(--sage);font-size:15px">'+fx(p.A.total)+'</strong></div><div style="font-size:10px;color:var(--muted);margin-top:4px">Patrimonio sube '+fx(p.A.total)+' esta quincena</div></div>';
+    const playB=p.topDebt?'<div style="padding:14px;border:1px solid rgba(74,110,140,.3);border-radius:10px;background:rgba(74,110,140,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sky)">⚔️ B · Asalto a la Deuda</div><div style="font-size:10px;color:var(--muted)">70% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Pago extra de <strong>'+fx(p.B.extra)+'</strong> a <strong>'+topName+'</strong> (tu #1 según '+strategyLabel+').</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo actual</span><span>'+fx(p.topDebt.bal)+'</span></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo tras golpe</span><strong style="color:var(--sky)">'+fx(p.B.newBal)+'</strong></div>'+(p.B.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(74,110,140,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--sky);font-size:15px">'+p.B.monthsSaved+'</strong></div>':'<div style="font-size:10px;color:var(--muted);margin-top:6px">Impacto visible en el saldo, deadline sin cambio claro</div>')+'</div>':'';
+    const playC=p.topDebt?'<div style="padding:14px;border:1px solid rgba(160,112,48,.3);border-radius:10px;background:rgba(160,112,48,.05);margin-bottom:0"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--amber)">⚖️ C · Balanceada</div><div style="font-size:10px;color:var(--muted)">35% + 35%</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Mitad al ahorro, mitad a deuda. No es el extremo de ninguna pero avanzas en ambos frentes.</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">🪙 Extra a ahorro</span><strong style="color:var(--sage)">'+fx(p.C.savBoost)+'</strong></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">⚔️ Extra a '+topName+'</span><strong style="color:var(--sky)">'+fx(p.C.debtExtra)+'</strong></div>'+(p.C.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(160,112,48,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--amber);font-size:15px">'+p.C.monthsSaved+'</strong></div>':'')+'</div>':'';
+    const noDebts='<div style="padding:14px;border:1px dashed rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.03);font-size:12px;color:var(--txt2);line-height:1.6">Sin deudas activas — las jugadas B y C no aplican. Considera destinar <strong style="color:var(--sage)">todo</strong> el bono al ahorro esta quincena (patrimonio +<strong>'+fx(p.bf)+'</strong>). <br><br>⚠️ <em>Cuidado con la zona de tentación:</em> sin deudas, el mayor riesgo son los gastos hormiga. Revisa tus retos en Hábitos.</div>';
+    return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💎 Quincena Grande</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Esta quincena llega tu bono. Tienes <strong>tres jugadas</strong> para empujar tu deadline. Tú decides — la app no aplica nada automático.</div>'+playA+(p.topDebt?playB+playC:noDebts)+'<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div></div>';
+  }catch(e){return'';}})()}
   
   <!-- META -->
   <div class="card card-sage">
@@ -2603,6 +2730,8 @@ function saveSnapshot(txns,source){
     if(nx&&nx.days>0)toast('📊 Capítulo guardado · Próximo: '+nx.formatted+' ('+nx.days+'d)');
     else toast('📊 Capítulo quincenal guardado');
   }catch(e){toast('📊 Capítulo quincenal guardado');}
+  // Fase 2: si hay compromiso de ahorro activo este ciclo, preguntar si lo mantuvo
+  try{if(hasSavCommittedThisCycle())setTimeout(()=>openSavCloseCheck(),1400);}catch(e){}
   evaluateRetos(snap);
   // FRENTE 1-C: check for critical leak (deferred to not collide with toast)
   setTimeout(()=>{try{checkFugaCritica(txns);}catch(e){}},1200);
@@ -3025,7 +3154,7 @@ function rFlujo(){try{
   });
   const liqCount=S.debts.length-activeDebts.length;
 
-  const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['diarios','🛒 Diarios'],['deudas','⛓️ Deudas']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
+  const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['diarios','🛒 Diarios'],['deudas','⛓️ Deudas'],['activos','🏦 Activos']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
 
   // ── KPI RESUMEN ALWAYS ON TOP ──
   const flujoKPI=`<div style="margin-bottom:5px">${kpi('💰 Ingreso',fx(mInc()+tExtras())+'/mes','var(--sage)',fx(Math.round((mInc()+tExtras())/2))+'/qna')}</div>
@@ -3333,6 +3462,76 @@ function rFlujo(){try{
     }catch(e){return'<div style="color:var(--terra)">Error: '+e.message+'</div>';}})()}
   </div>`:''}
   `:''}
+
+  ${flujoView==='activos'?`
+  <!-- ═══ ACTIVOS ═══ -->
+  <div class="card card-grn" style="background:rgba(78,124,106,.06);border-color:rgba(78,124,106,.25)">
+    <div class="ct" style="color:var(--sage)">🏦 ¿Qué es un activo?</div>
+    <div style="font-size:12px;line-height:1.7;color:var(--txt2)">
+      <em style="color:var(--sage)">"Un activo pone dinero en tu bolsillo. Un pasivo lo saca."</em> — Robert Kiyosaki, <strong>Padre Rico Padre Pobre</strong>.
+      <br><br>
+      Para efectos de esta app, tus <strong style="color:var(--sage)">activos</strong> son los lugares donde guardas capital que puedes recuperar y que, idealmente, genera rendimiento:
+      <ul style="margin:8px 0 0 0;padding-left:18px;line-height:1.9">
+        <li>Inversiones (BMG, Cetes, fondos)</li>
+        <li>Cuentas de ahorro con rendimiento (Cajita Nu, Mercado Pago)</li>
+        <li>Efectivo apartado para emergencias</li>
+      </ul>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(78,124,106,.2);font-size:11px;color:var(--muted)">
+        ⚠️ <strong>No son activos</strong> para este tracker: tu coche, laptop, muebles — son pasivos depreciables. Tu salario tampoco — es ingreso, no capital.
+      </div>
+    </div>
+  </div>
+
+  <!-- REGISTRAR / EDITAR ACTIVO -->
+  <div class="card">
+    <div class="ct">${editAssetId?'✏️ Editando activo':'+ Registrar activo'}</div>
+    ${(()=>{const ea=editAssetId?S.assets.find(a=>a.id===editAssetId):null;return`
+    <div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="an" placeholder="Mercado Pago BMG, Cajita Nu..." value="${ea?ea.name:''}"></div>
+    <div style="margin-bottom:10px"><label>Saldo actual ($)</label><input type="number" id="av" placeholder="0" value="${ea?ea.val:''}"></div>
+    <div class="row-b" style="padding:10px 0;margin-bottom:10px;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)">
+      <div style="flex:1"><div style="font-size:12px;color:var(--txt)">¿Genera rendimiento?</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Activos como BMG, Cetes o Cajita pagan intereses</div></div>
+      <label class="switch"><input type="checkbox" id="ag" ${ea?.gen?'checked':''} onchange="document.getElementById('agIncWrap').style.display=this.checked?'block':'none'"><span class="slider"></span></label>
+    </div>
+    <div id="agIncWrap" style="display:${ea?.gen?'block':'none'};margin-bottom:10px"><label>Rendimiento mensual estimado ($)</label><input type="number" id="ai" placeholder="0" value="${ea?.inc||''}"></div>
+    ${editAssetId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="saveAsset()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editAssetId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addAsset()">+ Agregar activo</button>`}
+    `;})()}
+  </div>
+
+  ${S.assets.length>0?`
+  <!-- LISTA DE ACTIVOS -->
+  <div class="card">
+    <div class="ct">💎 Mis activos (${S.assets.length})</div>
+    <div class="card card-grn" style="margin-bottom:12px;padding:10px 14px;background:rgba(78,124,106,.08)">
+      <div class="row-b">
+        <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Total en activos</div><div class="stat" style="color:var(--sage)">${fx(tAss())}</div></div>
+        ${passInc()>0?`<div style="text-align:right"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Ingreso pasivo</div><div style="font-size:16px;font-weight:bold;color:var(--sage)">${fx(passInc())}/mes</div></div>`:''}
+      </div>
+    </div>
+    ${S.assets.map(a=>`
+      <div class="row-b" style="padding:12px 0;border-bottom:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:bold;color:var(--txt);display:flex;align-items:center;gap:6px">${a.gen?'<span style="font-size:11px">📈</span>':''}${a.name}</div>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">${a.gen&&a.inc?'+'+fx(a.inc)+'/mes pasivo':'Sin rendimiento registrado'}</div>
+        </div>
+        <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
+        <div class="row" style="gap:4px">
+          <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Actualizar saldo">🔄</button>
+          <button class="btn btn-ghost btn-sm" onclick="editAssetId=${a.id};rFlujo()" title="Editar">✏️</button>
+          <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
+        </div>
+      </div>
+    `).join('')}
+    <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;padding-top:10px;border-top:1px dashed var(--border)">
+      💡 Usa <strong>🔄</strong> para actualizar el saldo rápido cuando Mercado Pago o Cajita te paguen rendimiento. Tu patrimonio en Inicio se recalcula solo.
+    </div>
+  </div>
+  `:`
+  <div class="card" style="text-align:center;padding:20px 16px">
+    <div style="font-size:32px;margin-bottom:8px">🌱</div>
+    <div style="font-size:13px;color:var(--txt2);line-height:1.6">Aún no registras activos. Empieza con lo que ya tienes: ¿cuánto hay hoy en tu Cajita Nu o Mercado Pago? Ese es tu punto de partida.</div>
+  </div>
+  `}
+  `:''}
   `;
 }catch(e){document.getElementById('tab-flujo').innerHTML='<div class="card card-red"><div class="ct">Error en Ingresos y Gastos</div><div style="font-size:12px;color:var(--terra)">'+e.message+'</div></div>';console.error('rFlujo error:',e);}
 }
@@ -3441,6 +3640,8 @@ function cerrarQnaDiarios(){
       };
       pt({snapshots:[...S.snapshots,snap]});
       closeConfirm();toast('📖 Capítulo creado desde Diarios');
+      // Fase 2: si hay compromiso de ahorro activo este ciclo, preguntar si lo mantuvo
+      try{if(hasSavCommittedThisCycle())setTimeout(()=>openSavCloseCheck(),700);}catch(e){}
     });
 }
 function updDebtUnico(){
@@ -3459,6 +3660,131 @@ function updDebtUnico(){
   if(isU){const pd=document.getElementById('dpd'),lq=document.getElementById('dliq');if(pd&&lq&&pd.value)lq.value=pd.value;}
 }
 function addDebt(){const n=document.getElementById('dn')?.value.trim();const f=document.getElementById('dpf')?.value||'mensual';const pago=+(document.getElementById('dm')?.value)||0;let b=+(document.getElementById('db')?.value)||0;if(f==='unico')b=pago;if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;const liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,note:document.getElementById('dnote')?.value.trim()||'',curPay:f==='unico'?0:(+(document.getElementById('dcur')?.value)||0),totalPays:f==='unico'?0:(+(document.getElementById('dtot')?.value)||0),group:f==='unico'?'':(document.getElementById('dgrp')?.value.trim()||'')}]});toast(f==='unico'?'💳 Pago único registrado':'⛓️ Deuda registrada');rFlujo();}
+function addAsset(){
+  const n=document.getElementById('an')?.value.trim();
+  const v=+(document.getElementById('av')?.value)||0;
+  const gen=document.getElementById('ag')?.checked||false;
+  const inc=gen?(+(document.getElementById('ai')?.value)||0):0;
+  if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
+  pt({assets:[...S.assets,{id:Date.now(),name:n,val:v,gen,inc}]});
+  toast('🏦 Activo registrado');
+  rFlujo();hdrUp&&hdrUp();
+}
+function saveAsset(){
+  if(!editAssetId)return;
+  const n=document.getElementById('an')?.value.trim();
+  const v=+(document.getElementById('av')?.value)||0;
+  const gen=document.getElementById('ag')?.checked||false;
+  const inc=gen?(+(document.getElementById('ai')?.value)||0):0;
+  if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
+  pt({assets:S.assets.map(a=>a.id===editAssetId?{...a,name:n,val:v,gen,inc}:a)});
+  editAssetId=null;
+  toast('✓ Activo actualizado');
+  rFlujo();hdrUp&&hdrUp();
+}
+function delAsset(id){
+  const a=S.assets.find(x=>x.id===id);if(!a)return;
+  showConfirm('¿Eliminar el activo "'+a.name+'"?','Esto no afecta tu dinero real, solo deja de contarlo en tu patrimonio.',()=>{
+    pt({assets:S.assets.filter(x=>x.id!==id)});
+    if(editAssetId===id)editAssetId=null;
+    toast('Activo eliminado');rFlujo();hdrUp&&hdrUp();
+  });
+}
+function quickUpdAsset(id){
+  const a=S.assets.find(x=>x.id===id);if(!a)return;
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza el saldo actual de <strong style="color:var(--sage)">'+a.name+'</strong>. Úsalo cuando te paguen rendimiento o muevas dinero.</div>'
+    +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Saldo anterior</label><div style="font-size:14px;color:var(--txt2)">'+fx(a.val)+'</div></div>'
+    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Saldo actual ($)</label><input type="number" id="_quAssetVal" value="'+a.val+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>';
+  showConfirm('🔄 Actualizar saldo',body,()=>{
+    const nv=+(document.getElementById('_quAssetVal')?.value)||0;
+    if(nv<0){toast('⚠ Saldo inválido');return;}
+    const diff=nv-a.val;
+    pt({assets:S.assets.map(x=>x.id===id?{...x,val:nv}:x)});
+    const msg=diff>0?'📈 +'+fx(diff)+' · Nuevo saldo '+fx(nv):diff<0?'📉 '+fx(diff)+' · Nuevo saldo '+fx(nv):'Sin cambios';
+    toast(msg);rFlujo();hdrUp&&hdrUp();
+  });
+}
+// ══ SAVINGS STREAK (Fase 2 · Hooked) ════════════════════
+function openSavCommitModal(){
+  if(!S.assets||S.assets.length===0){
+    showInfo('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para apartar tu ahorro necesitas un destino real.<br><br>Ve a <strong>Ingresos, Gastos y Activos → 🏦 Activos</strong> y registra dónde guardas tu dinero (Mercado Pago, Cajita Nu, etc).<br><br>Cuando tengas al menos uno, regresa aquí y vuelve a intentar.</div>');
+    return;
+  }
+  const sug=savAmtQ();
+  const assetOptions=S.assets.map(a=>'<label class="row" style="gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_savAsset" value="'+a.id+'" style="margin:0"><div style="flex:1"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:10px;color:var(--muted)">Saldo actual: '+fx(a.val)+'</div></div></label>').join('');
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6"><em style="color:var(--sage)">"De cada 10 monedas que ganes, gasta sólo 9."</em> — Arkad. Primero págate a ti mismo.</div>'
+    +'<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Monto que apartaste ($)</label><input type="number" id="_savAmt" value="'+sug+'" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"><div style="font-size:10px;color:var(--muted);margin-top:4px;text-align:center">Sugerido: '+fx(sug)+' ('+S.savPct+'% de tu quincena)</div></div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">🏦 ¿A cuál activo lo mandaste?</div>'
+    +'<div style="max-height:240px;overflow-y:auto;margin-bottom:4px">'+assetOptions+'</div>';
+  showConfirm('🪙 Págate a ti primero',body,()=>{
+    const amt=+(document.getElementById('_savAmt')?.value)||0;
+    const assetRadio=document.querySelector('input[name="_savAsset"]:checked');
+    if(amt<=0){toast('⚠ Monto inválido');return;}
+    if(!assetRadio){toast('⚠ Elige el activo destino');return;}
+    const assetId=+assetRadio.value;
+    const asset=S.assets.find(a=>a.id===assetId);if(!asset)return;
+    // Update asset balance
+    const newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amt}:a);
+    // Record commit
+    const ck=cycleKey();
+    const newCommits={...(S.savCommits||{}),[ck]:{amount:amt,assetId,date:new Date().toISOString(),status:'committed'}};
+    // Increment streak
+    const newStreak=(S.savStreak||0)+1;
+    const newBest=Math.max(S.savStreakBest||0,newStreak);
+    pt({assets:newAssets,savCommits:newCommits,savStreak:newStreak,savStreakBest:newBest});
+    toast('🔥 Racha '+newStreak+' · '+fx(amt)+' → '+asset.name);
+    rDash();hdrUp&&hdrUp();
+  });
+}
+function openSavCloseCheck(){
+  const c=curSavCommit();if(!c||c.status!=='committed'){toast('No hay compromiso activo esta quincena');return;}
+  const asset=S.assets.find(a=>a.id===c.assetId);
+  const assetName=asset?asset.name:'tu activo';
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.7">Esta quincena te comprometiste con <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> a <strong>'+assetName+'</strong>.<br><br>¿Cómo te fue?</div>'
+    +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="closeSavCheck(\'intact\')">✅ Intacto · Racha sigue</button>'
+    +'<button class="btn btn-amber" style="width:100%;margin-bottom:8px;padding:14px;background:rgba(160,112,48,.15);color:var(--amber);border:1px solid rgba(160,112,48,.3)" onclick="closeSavCheck(\'emergency\')">🚨 Emergencia real</button>'
+    +'<button class="btn btn-ghost" style="width:100%;padding:14px;color:var(--terra)" onclick="closeSavCheck(\'broken\')">💔 Me rompí</button>';
+  showInfo('🪙 ¿Mantuviste el ahorro?',body);
+}
+function closeSavCheck(outcome){
+  closeConfirm&&closeConfirm();
+  const ck=cycleKey();
+  const c=(S.savCommits||{})[ck];if(!c)return;
+  if(outcome==='intact'){
+    const newCommits={...S.savCommits,[ck]:{...c,status:'intact',closedAt:new Date().toISOString()}};
+    pt({savCommits:newCommits});
+    toast('🔥 Racha '+(S.savStreak||0)+' confirmada · Fiel a ti mismo');
+    rDash();return;
+  }
+  if(outcome==='emergency'){
+    // Second modal: keep or reset streak?
+    const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.7">La vida pasa. Tú decides qué hacer con tu racha.</div>'
+      +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="closeSavEmerg(true)">🛡️ Mantener racha · Fue emergencia real</button>'
+      +'<button class="btn btn-ghost" style="width:100%;padding:14px" onclick="closeSavEmerg(false)">🔄 Reiniciar racha · Quiero empezar limpio</button>';
+    setTimeout(()=>showInfo('🚨 Emergencia · ¿Tu racha?',body),100);
+    return;
+  }
+  if(outcome==='broken'){
+    const newCommits={...S.savCommits,[ck]:{...c,status:'broken',closedAt:new Date().toISOString()}};
+    pt({savCommits:newCommits,savStreak:0});
+    toast('💔 Racha reiniciada · Mañana es otro día');
+    rDash();return;
+  }
+}
+function closeSavEmerg(keepStreak){
+  closeConfirm&&closeConfirm();
+  const ck=cycleKey();
+  const c=(S.savCommits||{})[ck];if(!c)return;
+  const newCommits={...S.savCommits,[ck]:{...c,status:keepStreak?'emergency-kept':'emergency-broken',closedAt:new Date().toISOString()}};
+  if(keepStreak){
+    pt({savCommits:newCommits});
+    toast('🛡️ Racha '+(S.savStreak||0)+' protegida');
+  }else{
+    pt({savCommits:newCommits,savStreak:0});
+    toast('🔄 Racha reiniciada con honestidad');
+  }
+  rDash();
+}
 function rmDebt(id){
   const d=S.debts.find(x=>x.id===id);
   if(!d){pt({debts:S.debts.filter(x=>x.id!==id)});return;}
@@ -5570,7 +5896,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-sem3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-bono1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

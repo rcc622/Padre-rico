@@ -765,20 +765,61 @@ function _confirmCompleteReto(retoId){
     const realAmt=+(document.getElementById('retoRealAmt')?.value)||0;
     if(realAmt>0){
       r.realSave=realAmt;
-      // Register as extra income
-      const extra={id:Date.now(),name:'Ahorro de reto · '+(match?.name||retoId),amt:realAmt,tipo:'unico',date:new Date().toISOString().split('T')[0]};
-      S.extras=[...S.extras,extra];
+      // FASE 4: NO crear ingreso extra automáticamente.
+      // Si es reto de ahorro explícito (Diezmo, pos_ahorro, etc), ofrecer el flujo Fase 2
+      // para registrar el depósito en un activo. Si es reto de no-gastar, solo se queda
+      // en stats (r.realSave) y badges/logros lo leerán de ahí.
     }
     sv();
     closeConfirm();
-    if(realAmt>0)toast('🏆 Reto completado · '+fx(realAmt)+' registrado');
+    if(realAmt>0)toast('🏆 Reto completado · '+fx(realAmt)+' ahorrado');
     else toast('🏆 Reto completado y archivado');
     rHabitos();
-    // ETAPA 2: Offer to declare as formed habit if not already
-    setTimeout(()=>{try{_offerDeclareHabito(retoId);}catch(e){}},600);
+    // FASE 4: Si es reto de ahorro explícito, ofrecer modal Fase 2 PRIMERO.
+    // Si no es de ahorro, ofrecer declaración de hábito formado.
+    // Los dos modales NO pueden coexistir (comparten confirmModal element).
+    if(realAmt>0&&_isRetoSavings(retoId)){
+      setTimeout(()=>{try{_offerSavingsDeposit(realAmt,match?.name||retoId,retoId);}catch(e){}},700);
+    }else{
+      setTimeout(()=>{try{_offerDeclareHabito(retoId);}catch(e){}},600);
+    }
   }catch(e){toast('Error al completar reto');}
 }
 function _getRetoAmt(){return +(document.getElementById('retoRealAmt')?.value)||0;}
+// FASE 4 · Clasifica si un reto es de "ahorro explícito" (mueve dinero real a cajita/activo)
+// vs "no-gastar" (solo evita gasto, no genera flujo de dinero a registrar).
+// Los de ahorro disparan el modal Fase 2 al completarse; los de no-gastar solo registran stat.
+function _isRetoSavings(retoId){
+  if(!retoId)return false;
+  const savingsIds=['surv_diezmo','pos_ahorro','pos_emergencia','pos_extra'];
+  return savingsIds.includes(retoId);
+}
+// Bridge: when a savings reto completes, offer to deposit the amount via Fase 2 flow
+function _offerSavingsDeposit(amt,retoName,retoId){
+  if(!amt||amt<=0)return;
+  const chainHabito=()=>{if(retoId)setTimeout(()=>{try{_offerDeclareHabito(retoId);}catch(e){}},500);};
+  if(!S.assets||S.assets.length===0){
+    showInfo('🏦 Reto de ahorro completado','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Completaste un reto de <strong>'+fx(amt)+'</strong> de ahorro real.<br><br>Para registrarlo en tu patrimonio, primero necesitas crear un activo (Mercado Pago, Cajita Nu, etc) en <strong>Ingresos, Gastos y Activos → 🏦 Activos</strong>.<br><br>Una vez creado, puedes registrar el depósito desde Inicio con <em>"Págate a ti primero"</em>.</div>');
+    chainHabito();
+    return;
+  }
+  const assetOptions=S.assets.map(a=>'<label class="row" style="gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_retoSavAsset" value="'+a.id+'" style="margin:0"><div style="flex:1"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:10px;color:var(--muted)">Saldo actual: '+fx(a.val)+'</div></div></label>').join('');
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.6">Completaste un reto de ahorro: <strong style="color:var(--sage)">'+retoName+'</strong> · <strong>'+fx(amt)+'</strong>.<br><br>¿A cuál activo lo depositaste?</div>'
+    +'<div style="max-height:240px;overflow-y:auto;margin-bottom:4px">'+assetOptions+'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:8px;text-align:center">O cierra esta ventana si no moviste dinero real.</div>';
+  showConfirm('🏦 ¿Depositar ahorro?',body,()=>{
+    const radio=document.querySelector('input[name="_retoSavAsset"]:checked');
+    if(!radio){toast('⚠ Elige el activo destino');return;}
+    const assetId=+radio.value;
+    const asset=S.assets.find(a=>a.id===assetId);if(!asset)return;
+    const newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amt}:a);
+    pt({assets:newAssets});
+    toast('🏦 '+fx(amt)+' → '+asset.name);
+    if(typeof rDash==='function')try{rDash();}catch(e){}
+    if(typeof hdrUp==='function')try{hdrUp();}catch(e){}
+    chainHabito();
+  });
+}
 
 // ══ ETAPA 1 · 6-B · EDICIÓN RETROACTIVA DE RETOS COMPLETADOS ══
 function _editCompletedReto(retoId,cycle){
@@ -947,18 +988,19 @@ function applyRetoToGoal(goalId){
   closeConfirm();toast('✅ '+fx(amt)+' abonado a meta');rHabitos();
 }
 function applyRetoAsExtra(retoId){
+  // FASE 4: ya no creamos ingresos extra desde retos. Esta función queda como no-op
+  // por compatibilidad — si algún botón viejo la llamara, redirige al flujo correcto.
   const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
   if(retoId){
     const ck=cycleKey();
     const sr=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===ck);
     if(sr)sr.realSave=amt;
+    sv();
   }
-  const extra={id:Date.now(),name:'Ahorro de reto',amt,tipo:'unico',date:new Date().toISOString().split('T')[0]};
-  pt({extras:[...S.extras,extra]});
   closeConfirm();
-  // LOAD NEXT TRIGGER: point user to Plan de Acción to direct the extra
-  toast('✅ '+fx(amt)+' registrado · Dirige el ahorro desde Plan de Acción');
+  toast('✅ '+fx(amt)+' registrado en stats');
   rHabitos();
+  if(_isRetoSavings(retoId))setTimeout(()=>{try{_offerSavingsDeposit(amt,'reto');}catch(e){}},700);
 }
 function toggleRetoCheck(retoId,idx){
   if(!S.retoChecks)S.retoChecks={};
@@ -4247,55 +4289,89 @@ function rPlan(){
   // ════════════════════════════
   if(planView==='hrsxtra'){
     const ck=cycleKey();
-    const ot=(S.overtimeLog||{})[ck];
+    // FASE 4 · Hrs Xtra robusta:
+    //   "active" = ot.accepted && !ot.paid (pendiente de cobro, sin importar el ciclo)
+    //   "history" = ot.paid===true (ya cobradas, colapsable)
+    // Esto resuelve el bug donde al cambiar de quincena el log "desaparecía"
+    const allOtKeys=Object.keys(S.overtimeLog||{});
+    const activeOts=allOtKeys.filter(k=>{const o=S.overtimeLog[k];return o&&o.accepted&&!o.paid;}).sort();
+    const paidOts=allOtKeys.filter(k=>{const o=S.overtimeLog[k];return o&&o.paid;}).sort().reverse();
     let otContent='';
-    if(ot?.accepted){
-      const totalHrs=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
-      const totalMoney=Math.round(totalHrs*ot.rate);
-      const pct=ot.targetHrs>0?Math.min(100,Math.round(totalHrs/ot.targetHrs*100)):0;
-      const targetMoney=Math.round(ot.targetHrs*ot.rate);
-      const paidItems2=S.paidItems[ck]||{};
-      let currentApplied=0;
-      for(const key in paidItems2){if(key.startsWith('_'))continue;if(paidItems2[key]==='applied'){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)currentApplied+=toMonthly(+e.amt||0,e.freq||'mensual');}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)currentApplied+=(+db.pay||0);}}}
-      const originalPendingThis=ot.pendingThis||0;
-      const newPendingThis=Math.max(0,originalPendingThis-currentApplied);
-      const currentDeficit=Math.max(0,newPendingThis+(ot.nextTotal||0)-(S.inc.sal/2));
-      const surplus=targetMoney-currentDeficit;
-      const deficitChanged=Math.abs(currentDeficit-(ot.deficit||0))>100;
-
-      otContent='<div class="card" style="border:2px solid var(--sky);background:rgba(74,110,140,.04)"><div class="ct">⏰ Horas Extra — Esta quincena</div>'
-        +'<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;line-height:1.6">Comprometido: <strong>'+ot.targetHrs.toFixed(1)+'h</strong> = '+fx(targetMoney)+'</div>'
-        +(deficitChanged?'<div style="font-size:11px;color:var(--sage);margin-bottom:8px;padding:8px;background:var(--sagedim);border-radius:6px;line-height:1.6">'
-          +'💡 Tu déficit actual bajó a <strong>'+fx(Math.round(currentDeficit))+'</strong> (era '+fx(Math.round(ot.deficit||0))+'). '
-          +(surplus>0?'Con tus '+ot.targetHrs.toFixed(1)+'h tendrás <strong style="color:var(--sage)">+'+fx(Math.round(surplus))+'</strong>.':'')
-          +'</div>':'')
-        +'<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--sky);font-weight:bold">'+totalHrs.toFixed(1)+' / '+ot.targetHrs.toFixed(1)+' horas</span><span style="font-size:11px;color:var(--muted)">'+pct+'%</span></div>'
-        +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'
-        +'<div class="row-b" style="margin-bottom:12px"><span style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(totalMoney)+' ganados</span><span style="font-size:11px;color:var(--muted)">Faltan '+fx(Math.max(0,targetMoney-totalMoney))+'</span></div>'
-        +'</div>';
-
-      otContent+='<div class="card"><div class="ct">📝 Registrar horas</div>'
-        +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px"><div><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'"></div><div><label>De</label><input type="time" id="otFrom" value="18:00"></div><div><label>A</label><input type="time" id="otTo" value="20:00"></div></div>'
-        +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
-        +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="logOvertime()">⏰ Registrar horas</button>'
-        +(ot.entries.length>0?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="exportOvertime()">📄 Exportar reporte .txt</button>':'')
-        +'</div>';
-
-      if(ot.entries.length>0){
-        otContent+='<div class="card"><div class="ct">📋 Historial</div>'
-          +ot.entries.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.from||'').localeCompare(b.from||'')).map((e,idx)=>{
-            const eidx=ot.entries.indexOf(e);
-            return'<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:11px">'
-              +'<div class="row-b"><div><span style="color:var(--txt);font-weight:bold">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span></div><div class="row" style="gap:6px"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong><span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:9px" onclick="editOtEntry('+eidx+')">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="delOtEntry('+eidx+')">✕</button></div></div>'
-              +(e.desc?'<div style="color:var(--muted);font-size:10px;margin-top:3px;line-height:1.5">'+e.desc+'</div>':'')
-            +'</div>';}).join('')
+    if(activeOts.length>0){
+      activeOts.forEach(otCk=>{
+        const ot=S.overtimeLog[otCk];
+        const isCurrentCycle=otCk===ck;
+        const totalHrs=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
+        const totalMoney=Math.round(totalHrs*ot.rate);
+        const pct=ot.targetHrs>0?Math.min(100,Math.round(totalHrs/ot.targetHrs*100)):0;
+        const targetMoney=Math.round(ot.targetHrs*ot.rate);
+        const cycleLabel=isCurrentCycle?'Esta quincena':'Quincena pasada · '+otCk;
+        const borderColor=isCurrentCycle?'var(--sky)':'var(--amber)';
+        const bgColor=isCurrentCycle?'rgba(74,110,140,.04)':'rgba(160,112,48,.05)';
+        otContent+='<div class="card" style="border:2px solid '+borderColor+';background:'+bgColor+'"><div class="ct">⏰ '+cycleLabel+'</div>'
+          +(!isCurrentCycle?'<div style="font-size:11px;color:var(--amber);margin-bottom:8px;padding:8px;background:rgba(160,112,48,.08);border-radius:6px;line-height:1.6">⚠️ Este log es de una quincena anterior. Sigue activo porque aún no marcas las horas como pagadas.</div>':'')
+          +'<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;line-height:1.6">Comprometido: <strong>'+ot.targetHrs.toFixed(1)+'h</strong> = '+fx(targetMoney)+'</div>'
+          +'<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--sky);font-weight:bold">'+totalHrs.toFixed(1)+' / '+ot.targetHrs.toFixed(1)+' horas</span><span style="font-size:11px;color:var(--muted)">'+pct+'%</span></div>'
+          +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'
+          +'<div class="row-b" style="margin-bottom:12px"><span style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(totalMoney)+' por cobrar</span><span style="font-size:11px;color:var(--muted)">Faltan '+fx(Math.max(0,targetMoney-totalMoney))+'</span></div>'
+          +(ot.entries.length>0?'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="markOtAsPaid(\''+otCk+'\')">💵 Ya me pagaron estas horas</button>':'')
           +'</div>';
-      }
+        // Form for adding hours (only for current cycle)
+        if(isCurrentCycle){
+          otContent+='<div class="card"><div class="ct">📝 Registrar horas</div>'
+            +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px"><div><label>Fecha</label><input type="date" id="otDate" value="'+new Date().toISOString().split('T')[0]+'"></div><div><label>De</label><input type="time" id="otFrom" value="18:00"></div><div><label>A</label><input type="time" id="otTo" value="20:00"></div></div>'
+            +'<div style="margin-bottom:8px"><label>¿Qué hiciste?</label><input type="text" id="otDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
+            +'<button class="btn btn-sky btn-sm" style="width:100%;margin-bottom:6px" onclick="logOvertime()">⏰ Registrar horas</button>'
+            +(ot.entries.length>0?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="exportOvertime()">📄 Exportar reporte .txt</button>':'')
+            +'</div>';
+        }
+        // Entry list per cycle
+        if(ot.entries.length>0){
+          otContent+='<div class="card"><div class="ct">📋 Detalle '+(isCurrentCycle?'':'· '+otCk)+'</div>'
+            +ot.entries.slice().sort((a,b)=>a.date.localeCompare(b.date)||(a.from||'').localeCompare(b.from||'')).map(e=>{
+              const eidx=ot.entries.indexOf(e);
+              return'<div style="padding:8px 0;border-bottom:1px solid var(--border);font-size:11px">'
+                +'<div class="row-b"><div><span style="color:var(--txt);font-weight:bold">'+fmtDate(e.date)+'</span> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span></div><div class="row" style="gap:6px"><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong><span style="color:var(--sage)">'+fx(Math.round(e.hours*ot.rate))+'</span>'
+                +(isCurrentCycle?'<button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:9px" onclick="editOtEntry('+eidx+')">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 6px;font-size:9px" onclick="delOtEntry('+eidx+',\''+otCk+'\')">✕</button>':'')
+                +'</div></div>'
+                +(e.desc?'<div style="color:var(--muted);font-size:10px;margin-top:3px;line-height:1.5">'+e.desc+'</div>':'')
+              +'</div>';}).join('')
+            +'</div>';
+        }
+      });
     }else{
-      otContent='<div class="card" style="text-align:center;padding:30px 18px"><div style="font-size:32px;margin-bottom:12px">⏰</div>'
+      otContent+='<div class="card" style="text-align:center;padding:30px 18px"><div style="font-size:32px;margin-bottom:12px">⏰</div>'
         +'<div style="font-size:14px;color:var(--txt);font-weight:bold;margin-bottom:8px">No hay horas extra activas</div>'
         +'<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:14px">Activa el calculador cuando necesites cubrir un déficit de la próxima quincena.</div>'
         +'<button class="btn btn-sky btn-sm" onclick="showOvertimeCalc()">Calcular horas extra</button></div>';
+    }
+    // History (paid) — collapsible
+    if(paidOts.length>0){
+      const collapsed=S._otHistColl!==false; // default collapsed
+      otContent+='<div class="card" style="margin-top:16px"><div class="ct" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center" onclick="toggleOtHistory()"><span>📚 Historial de horas extra ('+paidOts.length+')</span><span style="font-size:14px;color:var(--muted)">'+(collapsed?'▶':'▼')+'</span></div>';
+      if(!collapsed){
+        otContent+='<div style="margin-top:12px">';
+        paidOts.forEach(otCk=>{
+          const ot=S.overtimeLog[otCk];
+          const totalHrs=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
+          const totalMoney=Math.round(totalHrs*ot.rate);
+          const dates=ot.entries.map(e=>e.date).sort();
+          const dStart=dates[0]?fmtDate(dates[0]):'';
+          const dEnd=dates[dates.length-1]?fmtDate(dates[dates.length-1]):'';
+          const rangeLabel=dStart&&dEnd?(dStart===dEnd?dStart:dStart+' → '+dEnd):otCk;
+          const expKey='_otHistExp_'+otCk;
+          const isExp=S[expKey]===true;
+          otContent+='<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:rgba(154,149,144,.04)"><div class="row-b" style="cursor:pointer" onclick="toggleOtHistEntry(\''+otCk+'\')"><div style="flex:1"><div style="font-size:12px;font-weight:bold;color:var(--txt)">⏰ Horas extra de '+rangeLabel+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+totalHrs.toFixed(1)+'h · '+fx(totalMoney)+' · '+ot.entries.length+' registro'+(ot.entries.length!==1?'s':'')+'</div></div><div style="font-size:12px;color:var(--muted)">'+(isExp?'▼':'▶')+'</div></div>';
+          if(isExp){
+            otContent+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)">'
+              +ot.entries.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(e=>'<div style="padding:5px 0;font-size:10px;line-height:1.5"><div class="row-b"><span><strong>'+fmtDate(e.date)+'</strong> <span style="color:var(--muted)">'+e.from+' → '+e.to+'</span></span><strong style="color:var(--sky)">'+e.hours.toFixed(1)+'h</strong></div>'+(e.desc?'<div style="color:var(--muted);margin-top:2px">'+e.desc+'</div>':'')+'</div>').join('')
+              +'<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);font-size:10px;color:var(--muted);text-align:right">Pagadas: '+(ot.paidAt?fmtDate(ot.paidAt.split('T')[0]):'—')+'</div></div>';
+          }
+          otContent+='</div>';
+        });
+        otContent+='</div>';
+      }
+      otContent+='</div>';
     }
 
     document.getElementById('tab-plan').innerHTML=`
@@ -4752,7 +4828,16 @@ function acceptOvertime(deficit,pendingThis,nextTotal){
   const RATE=172;
   const ck=cycleKey();
   if(!S.overtimeLog)S.overtimeLog={};
-  S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:hrs,rate:RATE,deficit,pendingThis,nextTotal,committedAt:Date.now()};
+  const existing=S.overtimeLog[ck];
+  if(existing&&!existing.paid&&(existing.entries||[]).length>0){
+    // Don't overwrite — preserve entries, just update target
+    S.overtimeLog[ck]={...existing,targetHrs:Math.max(existing.targetHrs||0,hrs),deficit,pendingThis,nextTotal};
+    sv();closeConfirm();
+    habitView='retos';go('habitos');
+    toast('⏰ Reto actualizado · '+(existing.entries.length)+' registros conservados');
+    return;
+  }
+  S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:hrs,rate:RATE,deficit,pendingThis,nextTotal,committedAt:Date.now(),paid:false};
   sv();closeConfirm();
   habitView='retos';go('habitos');
   toast('⏰ Reto activado: '+hrs+'h de horas extra');
@@ -4776,11 +4861,25 @@ function logOvertime(){
   const earned=Math.round(hours*S.overtimeLog[ck].rate);
   sv();toast('⏰ '+hours.toFixed(1)+'h registradas = '+fx(earned));rPlan();
 }
-function delOtEntry(idx){
-  const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
+function delOtEntry(idx,otCk){
+  const ck=otCk||cycleKey();
+  const ot=S.overtimeLog?.[ck];if(!ot)return;
   const e=ot.entries[idx];if(!e)return;
   ot.entries.splice(idx,1);sv();toast('Registro eliminado');rPlan();
 }
+// Mark a cycle's overtime log as paid → moves it to history (collapsed)
+function markOtAsPaid(otCk){
+  const ot=S.overtimeLog?.[otCk];if(!ot)return;
+  const totalHrs=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
+  const totalMoney=Math.round(totalHrs*ot.rate);
+  const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a marcar como <strong style="color:var(--sage)">pagadas</strong> las <strong>'+totalHrs.toFixed(1)+' horas</strong> ('+fx(totalMoney)+') del ciclo <strong>'+otCk+'</strong>.<br><br>El log se moverá al historial colapsable. Las entradas no se borran — quedan como referencia.<br><br><em style="font-size:11px;color:var(--muted)">Esto NO suma nada como ingreso extra. Si ya recibiste el dinero y quieres registrarlo, hazlo manualmente desde Ingresos y Gastos.</em></div>';
+  showConfirm('💵 ¿Marcar como pagadas?',body,()=>{
+    S.overtimeLog[otCk]={...ot,paid:true,paidAt:new Date().toISOString()};
+    sv();closeConfirm();toast('💵 Movidas al historial');rPlan();
+  });
+}
+function toggleOtHistory(){S._otHistColl=S._otHistColl===false;sv();rPlan();}
+function toggleOtHistEntry(otCk){const k='_otHistExp_'+otCk;S[k]=!S[k];sv();rPlan();}
 function editOtEntry(idx){
   const ck=cycleKey();const ot=S.overtimeLog?.[ck];if(!ot)return;
   const e=ot.entries[idx];if(!e)return;
@@ -5948,7 +6047,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-bono2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-otfx1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

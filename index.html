@@ -1173,18 +1173,35 @@ function curSavCommit(){return (S.savCommits||{})[cycleKey()]||null;}
 // Check if user has committed this cycle
 function hasSavCommittedThisCycle(){const c=curSavCommit();return c&&c.status==='committed';}
 // ══ FASE 3 · QUINCENA GRANDE (bono) ═══════════════════
-// Detects if the current cycle is the one that receives the monthly bono
+// Detects if we're in the useful window around the bono arrival date.
+// Returns {status:'upcoming'|'active', daysUntil?, daysSince?} or false.
+// - upcoming: 1-3 days before bono arrives (prepare your play)
+// - active: bono day + 7 days after (execute your play)
+// Checks prev/current/next month bono dates to handle month boundary crossings.
 function isBonoQna(){
   try{
     const bfDate=+S.inc.bfDate||0;
     const bf=+S.inc.bf||0;
     if(!bf||!bfDate)return false;
-    const ck=cycleKey();
-    // If bfDate <= 14 → bono falls in 1ra qna (which is labeled -1ra in cycleKey for the next month)
-    // If bfDate 15-29 → bono falls in 2da qna (labeled -2da)
-    // If bfDate >= 30 → bono falls in 1ra qna of next month
-    const isInFirst=bfDate<=14||bfDate>=30;
-    return isInFirst?ck.endsWith('-1ra'):ck.endsWith('-2da');
+    const today=new Date();today.setHours(0,0,0,0);
+    const m=today.getMonth(),y=today.getFullYear();
+    // Clamp bfDate to last day of each month (handles bfDate=31 in Feb, etc.)
+    const bonoDateFor=(yy,mm)=>{const last=new Date(yy,mm+1,0).getDate();const dt=new Date(yy,mm,Math.min(bfDate,last));dt.setHours(0,0,0,0);return dt;};
+    const bonoPrev=bonoDateFor(y,m-1);
+    const bonoThis=bonoDateFor(y,m);
+    const bonoNext=bonoDateFor(y,m+1);
+    const diffPrev=Math.round((bonoPrev-today)/86400000);
+    const diffThis=Math.round((bonoThis-today)/86400000);
+    const diffNext=Math.round((bonoNext-today)/86400000);
+    // Active window takes precedence (bono day + 7 days after)
+    for(const d of [diffThis,diffPrev,diffNext]){
+      if(d<=0&&d>=-7)return {status:'active',daysSince:-d};
+    }
+    // Upcoming window: 1-3 days before
+    for(const d of [diffThis,diffNext]){
+      if(d>0&&d<=3)return {status:'upcoming',daysUntil:d};
+    }
+    return false;
   }catch(e){return false;}
 }
 // Calculates the three strategic plays for the bono quincena
@@ -1578,18 +1595,26 @@ function rDash(){
     return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div><div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'%</div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
   }catch(e){return'';}})()}
 
-  <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en qna con bono) -->
+  <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en ventana del bono) -->
   ${(()=>{try{
-    if(!isBonoQna())return '';
+    const bq=isBonoQna();
+    if(!bq)return '';
     const p=calcBonoPlays();
     if(p.bf<=0)return '';
     const topName=p.topDebt?p.topDebt.name:'';
     const strategyLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
+    // Header copy depends on window status
+    const isUpcoming=bq.status==='upcoming';
+    const headerLabel=isUpcoming?'💎 QUINCENA GRANDE · VIENE':'💎 QUINCENA GRANDE · AQUÍ';
+    const headerSub=isUpcoming?('Llega en '+bq.daysUntil+' día'+(bq.daysUntil!==1?'s':'')):(bq.daysSince===0?'Tu bono llegó hoy':'Día '+(bq.daysSince+1)+' del bono');
+    const introCopy=isUpcoming
+      ? 'Tu bono está por caer. Tienes <strong>tres jugadas</strong> preparadas — decide ahora para ejecutar el día que llegue.'
+      : 'Tu bono está aquí. Tienes <strong>tres jugadas</strong> para empujar tu deadline. Tú decides — la app no aplica nada automático.';
     const playA='<div style="padding:14px;border:1px solid rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sage)">🪙 A · Súper Ahorro</div><div style="font-size:10px;color:var(--muted)">50% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Aparta <strong>'+fx(p.A.boost)+'</strong> extra al ahorro esta quincena además de tu base.</div><div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(78,124,106,.2)"><span style="font-size:10px;color:var(--muted)">Total a activos</span><strong style="color:var(--sage);font-size:15px">'+fx(p.A.total)+'</strong></div><div style="font-size:10px;color:var(--muted);margin-top:4px">Patrimonio sube '+fx(p.A.total)+' esta quincena</div></div>';
     const playB=p.topDebt?'<div style="padding:14px;border:1px solid rgba(74,110,140,.3);border-radius:10px;background:rgba(74,110,140,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sky)">⚔️ B · Asalto a la Deuda</div><div style="font-size:10px;color:var(--muted)">70% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Pago extra de <strong>'+fx(p.B.extra)+'</strong> a <strong>'+topName+'</strong> (tu #1 según '+strategyLabel+').</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo actual</span><span>'+fx(p.topDebt.bal)+'</span></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo tras golpe</span><strong style="color:var(--sky)">'+fx(p.B.newBal)+'</strong></div>'+(p.B.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(74,110,140,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--sky);font-size:15px">'+p.B.monthsSaved+'</strong></div>':'<div style="font-size:10px;color:var(--muted);margin-top:6px">Impacto visible en el saldo, deadline sin cambio claro</div>')+'</div>':'';
     const playC=p.topDebt?'<div style="padding:14px;border:1px solid rgba(160,112,48,.3);border-radius:10px;background:rgba(160,112,48,.05);margin-bottom:0"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--amber)">⚖️ C · Balanceada</div><div style="font-size:10px;color:var(--muted)">35% + 35%</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Mitad al ahorro, mitad a deuda. No es el extremo de ninguna pero avanzas en ambos frentes.</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">🪙 Extra a ahorro</span><strong style="color:var(--sage)">'+fx(p.C.savBoost)+'</strong></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">⚔️ Extra a '+topName+'</span><strong style="color:var(--sky)">'+fx(p.C.debtExtra)+'</strong></div>'+(p.C.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(160,112,48,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--amber);font-size:15px">'+p.C.monthsSaved+'</strong></div>':'')+'</div>':'';
     const noDebts='<div style="padding:14px;border:1px dashed rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.03);font-size:12px;color:var(--txt2);line-height:1.6">Sin deudas activas — las jugadas B y C no aplican. Considera destinar <strong style="color:var(--sage)">todo</strong> el bono al ahorro esta quincena (patrimonio +<strong>'+fx(p.bf)+'</strong>). <br><br>⚠️ <em>Cuidado con la zona de tentación:</em> sin deudas, el mayor riesgo son los gastos hormiga. Revisa tus retos en Hábitos.</div>';
-    return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💎 Quincena Grande</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Esta quincena llega tu bono. Tienes <strong>tres jugadas</strong> para empujar tu deadline. Tú decides — la app no aplica nada automático.</div>'+playA+(p.topDebt?playB+playC:noDebts)+'<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div></div>';
+    return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">'+headerLabel+'</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+headerSub+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">'+introCopy+'</div>'+playA+(p.topDebt?playB+playC:noDebts)+'<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div></div>';
   }catch(e){return'';}})()}
   
   <!-- META -->
@@ -5923,7 +5948,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-bono1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-bono2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

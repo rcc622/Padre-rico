@@ -4423,6 +4423,24 @@ function renderRetos(){
   }catch(e){return'<div class="card card-red"><div style="font-size:12px;color:var(--terra)">Error en retos: '+e.message+'</div></div>';}
 }
 
+// Fase 3.5 · Savings percentage setter with validation (used by slider + direct input)
+function setSavPct(v){
+  let n=Math.round(+v||0);
+  if(n<1)n=1;
+  if(n>100)n=100;
+  if(n===S.savPct){
+    // Still sync UI in case slider and input are out of step
+    const inp=document.getElementById('savPctInput');
+    const sld=document.getElementById('savPctSlider');
+    if(inp&&+inp.value!==n)inp.value=n;
+    if(sld)sld.value=Math.max(5,Math.min(50,Math.round(n/5)*5));
+    return;
+  }
+  pt({savPct:n});
+  rHabitos();
+  hdrUp&&hdrUp();
+}
+
 function rHabitos(){
   const now=Date.now();
   const pending=S.waitList.filter(w=>!w.resolved);
@@ -4530,11 +4548,20 @@ function rHabitos(){
   ${habitView==='ahorro'?`
   <div class="card">
     <div class="ct">🪙 Págate Primero ${ib('pagateprimero','Págate Primero')}</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto.</div>
-    <div class="row-b" style="margin-bottom:9px"><span style="font-size:13px">Porcentaje: <strong style="color:var(--sage)">${S.savPct}%</strong></span><span style="color:var(--sage);font-size:13px;font-weight:bold">${fx(Math.round(savAmt()/2))}/qna</span></div>
-    <input type="range" min="1" max="30" value="${S.savPct}" style="width:100%;margin-bottom:5px"
-      oninput="pt({savPct:+this.value});rHabitos();">
-    <div style="font-size:11px;color:var(--sage);text-align:right">${S.savPct}% = ${fx(Math.round(savAmt()/2))}/qna (${fx(savAmt())}/mes)</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto. Usa el slider en pasos de 5% o escribe el monto exacto.</div>
+    <div class="row-b" style="margin-bottom:12px">
+      <div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Porcentaje</div>
+        <div class="row" style="gap:6px;align-items:baseline;margin-top:2px"><input type="number" min="1" max="100" step="1" value="${S.savPct}" id="savPctInput" style="width:68px;font-size:22px;font-weight:bold;color:var(--sage);text-align:center;padding:4px 6px" oninput="setSavPct(+this.value)"><span style="font-size:18px;color:var(--sage);font-weight:bold">%</span></div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Por quincena</div>
+        <div style="font-size:18px;color:var(--sage);font-weight:bold;margin-top:2px">${fx(Math.round(savAmt()/2))}</div>
+      </div>
+    </div>
+    <input type="range" min="5" max="50" step="5" value="${Math.max(5,Math.min(50,Math.round(S.savPct/5)*5))}" id="savPctSlider" style="width:100%;margin-bottom:2px" oninput="setSavPct(+this.value)">
+    <div class="sld-ticks"><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span><span>35</span><span>40</span><span>45</span><span>50</span></div>
+    <div style="font-size:11px;color:var(--sage);text-align:center;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(78,124,106,.2)">${S.savPct}% = <strong>${fx(Math.round(savAmt()/2))}</strong>/qna · ${fx(savAmt())}/mes</div>
   </div>
 
   <!-- METAS DE AHORRO -->

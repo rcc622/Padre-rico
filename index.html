@@ -271,7 +271,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='metodo3-2026-04-16';
+window.APP_BUILD='metodo4-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -642,10 +642,10 @@ function togglePaid(type,id){
   if(cur==='applied'||typeof cur==='object'&&cur?.applied){toast('Este pago ya fue aplicado');return;}
   if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');sv();rPlan();return;}
   
-  // Get item info (name + budgeted amount)
+  // Get item info (name + budgeted amount per quincena)
   const info=(()=>{
     if(type==='debt'){const d=S.debts.find(x=>x.id===id);return d?{name:d.name,amt:+d.pay||0}:{name:'?',amt:0};}
-    if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(!e)return {name:'?',amt:0};return {name:e.name,amt:e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual')};}
+    if(type==='exp'){const e=S.exp.find(x=>x.id===id);return e?{name:e.name,amt:+e.amt||0}:{name:'?',amt:0};}
     if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);return e?{name:e.name,amt:+e.amt||0}:{name:'?',amt:0};}
     if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);return g?{name:'🎯 '+g.name,amt:savGoalPerQ(g)}:{name:'?',amt:0};}
     if(type==='apt'){const e=S.exp.find(x=>x.id===id);return e?{name:'💰 Apartar '+e.name,amt:Math.round((+e.amt||0)/2)}:{name:'?',amt:0};}
@@ -789,7 +789,7 @@ function paidTotal(){
     if(key.startsWith('_'))continue;
     const [type,idStr]=key.split('_');
     const id=+idStr;
-    if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)total+=(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual'));}
+    if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);}
     else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);} // week 2/3 of weekly expense
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)total+=savGoalPerQ(g);} // savings goal
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)total+=Math.round((+e.amt||0)/2);} // apartado
@@ -1488,7 +1488,7 @@ function cyclePaymentTotals(){
     if(!amt){
       const [type,idStr]=key.split('_');const id=+idStr;
       if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2)amt=+d2.pay||0;}
-      else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');}
+      else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
       else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
     }
     const method=(typeof v==='object'&&v.paidWith)||'debito';
@@ -1567,7 +1567,7 @@ function tdcChargesByBillingCycle(){
       if(!amt){
         const [type,idStr]=key.split('_');const id=+idStr;
         if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2)amt=+d2.pay||0;}
-        else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');}
+        else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
         else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
       }
       if(!cycles[cKey])cycles[cKey]={corteDate:corte,charges:[],total:0};
@@ -1710,7 +1710,7 @@ function unclassifiedPayments(){
       const [type,idStr]=key.split('_');const id=+idStr;
       let name='?',amt=0;
       if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2){name=d2.name;amt=+d2.pay||0;}}
-      else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e){name=e.name+(e.freq==='semanal'?' (sem 1)':'');amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');}}
+      else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e){name=e.name+(e.freq==='semanal'?' (sem 1)':'');amt=+e.amt||0;}}
       else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e){name=e.name+' (sem 2)';amt=+e.amt||0;}}
       else if(type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e){name=e.name+' (sem 3)';amt=+e.amt||0;}}
       else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){name='🎯 '+g.name;amt=savGoalPerQ(g);}}
@@ -4617,7 +4617,7 @@ function applyPayments(){
     if(type==='debt'){
       const d2=S.debts.find(x=>x.id===id);
       if(d2){amt=+d2.pay||0;if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);d2.bal=Math.max(0,(+d2.bal||0)-amt);appliedDebt++;}
-    }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual'));appliedExp++;}
+    }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
@@ -5592,7 +5592,7 @@ function showOvertimeCalc(){
   S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')thisCycleTotal+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')thisCycleTotal+=(+e.amt||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
   S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')thisCycleTotal+=(db.pay||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
   // Applied this cycle
-  for(const key in paidItems){if(key.startsWith('_'))continue;if(paidItems[key]==='applied'){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)thisApplied+=toMonthly(+e.amt||0,e.freq||'mensual');}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)thisApplied+=(+db.pay||0);}}}
+  for(const key in paidItems){if(key.startsWith('_'))continue;if(paidItems[key]==='applied'){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)thisApplied+=(+e.amt||0);}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)thisApplied+=(+db.pay||0);}}}
   const pendingThis=Math.max(0,thisCycleTotal-thisApplied);
 
   // ── NEXT QUINCENA ──
@@ -6862,7 +6862,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-metodo3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-metodo4';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

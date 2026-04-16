@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='ckorder2-2026-04-16';
+window.APP_BUILD='p2dash-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -1946,6 +1946,20 @@ function calcBonoPlays(){
     C:{savBoost:playCSavBoost,debtExtra:playCDebtExtra,monthsSaved:playCMonthsSaved}
   };
 }
+function showBonoPlays(){
+  try{
+    const p=calcBonoPlays();if(p.bf<=0){toast('Sin bono configurado');return;}
+    const topName=p.topDebt?p.topDebt.name:'';
+    const stratLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
+    let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Bono mensual: <strong>'+fx(p.bf)+'</strong>. Tú decides — la app no aplica nada automático.</div>';
+    body+='<div style="padding:12px;border:1px solid rgba(78,124,106,.3);border-radius:8px;background:rgba(78,124,106,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sage)">🪙 A · Súper Ahorro</strong><span style="font-size:10px;color:var(--muted)">50%</span></div><div style="font-size:11px">+'+fx(p.A.boost)+' extra → Total activos: <strong style="color:var(--sage)">'+fx(p.A.total)+'</strong></div></div>';
+    if(p.topDebt){
+      body+='<div style="padding:12px;border:1px solid rgba(74,110,140,.3);border-radius:8px;background:rgba(74,110,140,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sky)">⚔️ B · Asalto Deuda</strong><span style="font-size:10px;color:var(--muted)">70%</span></div><div style="font-size:11px">'+fx(p.B.extra)+' a <strong>'+topName+'</strong> ('+stratLabel+') → Saldo: '+fx(p.B.newBal)+(p.B.monthsSaved>0?' · ~'+p.B.monthsSaved+' meses adelantados':'')+'</div></div>';
+      body+='<div style="padding:12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;background:rgba(160,112,48,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--amber)">⚖️ C · Balanceada</strong><span style="font-size:10px;color:var(--muted)">35%+35%</span></div><div style="font-size:11px">Ahorro +'+fx(p.C.savBoost)+' · Deuda −'+fx(p.C.debtExtra)+(p.C.monthsSaved>0?' · ~'+p.C.monthsSaved+' meses':'')+'</div></div>';
+    }
+    showInfo('💎 Jugada Estratégica',body);
+  }catch(e){toast('Error al calcular jugadas');}
+}
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+toMonthly(+d.pay||0,d.freq||'mensual'),0);
 const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
 const tDebt=()=>S.debts.reduce((a,d)=>a+(+d.bal||0),0);
@@ -2290,218 +2304,121 @@ function rDash(){
   const pFlow=pInc+pExtras-pExp-pSav-pSavGoals-pDebtPay;
 
   document.getElementById('tab-dash').innerHTML=`
-  <!-- FRENTE 4 · SABIDURÍA DEL DÍA (Hooked: Hunt reward diario) -->
-  ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:14px 16px;margin-bottom:13px;background:linear-gradient(135deg,rgba(78,124,106,.04) 0%,rgba(74,110,140,.02) 100%)"><div class="row" style="gap:12px;align-items:flex-start"><div style="font-size:30px;line-height:1;flex-shrink:0">${w.icon}</div><div style="flex:1;min-width:0"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px;font-weight:bold">💡 Sabiduría del día · ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.65">${w.text}</div></div></div></div>`;}catch(e){return'';}})()}
 
-  <!-- FASE 5 · DÉFICIT DE QUINCENA ANTERIOR (recordatorio amable hasta resolver) -->
-  ${(()=>{try{
-    const pd=pendingDeficitCycle();
-    if(!pd)return '';
-    return '<div class="card" style="border:2px solid rgba(184,92,74,.45);background:linear-gradient(135deg,rgba(184,92,74,.06) 0%,rgba(160,112,48,.03) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">⚠️ Quincena pasada cerró con déficit</div><div style="font-size:13px;color:var(--txt);font-weight:bold;margin-top:4px">'+pd.ck+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Faltante</div><div style="font-size:20px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.65;margin-bottom:14px">Te faltaron <strong style="color:var(--terra)">'+fx(Math.abs(pd.balance))+'</strong> al cerrar. ¿Cómo lo cubriste?</div><div class="row" style="gap:6px;margin-bottom:10px"><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Lo absorbo</button></div><div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">Si elegiste TDC o Préstamo, recuerda registrar la deuda manualmente en <strong>Ingresos, Gastos y Activos → ⛓️ Deudas</strong></div></div>';
-  }catch(e){return'';}})()}
-
-  <!-- FASE 2 · PÁGATE A TI PRIMERO (Hooked: gatillo quincenal) -->
-  ${(()=>{try{
-    if(mInc()<=0)return '';
-    const c=curSavCommit();
-    const sug=savAmtQ();
-    const streak=S.savStreak||0;
-    const best=S.savStreakBest||0;
-    const streakLine=streak>0?'<div style="font-size:11px;color:var(--amber);margin-top:6px">🔥 Racha: <strong>'+streak+'</strong> quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+(best>streak?' · Mejor: '+best:'')+'</div>':'';
-    if(c&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept')){
-      // Already committed this cycle — show confirmed state
-      const asset=S.assets.find(a=>a.id===c.assetId);
-      const assetName=asset?asset.name:'tu activo';
-      const canCheck=c.status==='committed';
-      return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px"><div class="row-b"><div style="flex:1"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;font-weight:bold">✅ Ahorro apartado esta quincena</div><div style="font-size:16px;color:var(--sage);font-weight:bold">'+fx(c.amount)+' → '+assetName+'</div>'+streakLine+'</div></div>'+(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')+'</div>';
-    }
-    // Not yet committed — show action card
-    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div><div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'%</div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
-  }catch(e){return'';}})()}
-
-  <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en ventana del bono) -->
-  ${(()=>{try{
-    const bq=isBonoQna();
-    if(!bq)return '';
-    const p=calcBonoPlays();
-    if(p.bf<=0)return '';
-    const topName=p.topDebt?p.topDebt.name:'';
-    const strategyLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
-    // Header copy depends on window status
-    const isUpcoming=bq.status==='upcoming';
-    const headerLabel=isUpcoming?'💎 QUINCENA GRANDE · VIENE':'💎 QUINCENA GRANDE · AQUÍ';
-    const headerSub=isUpcoming?('Llega en '+bq.daysUntil+' día'+(bq.daysUntil!==1?'s':'')):(bq.daysSince===0?'Tu bono llegó hoy':'Día '+(bq.daysSince+1)+' del bono');
-    const introCopy=isUpcoming
-      ? 'Tu bono está por caer. Tienes <strong>tres jugadas</strong> preparadas — decide ahora para ejecutar el día que llegue.'
-      : 'Tu bono está aquí. Tienes <strong>tres jugadas</strong> para empujar tu deadline. Tú decides — la app no aplica nada automático.';
-    const playA='<div style="padding:14px;border:1px solid rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sage)">🪙 A · Súper Ahorro</div><div style="font-size:10px;color:var(--muted)">50% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Aparta <strong>'+fx(p.A.boost)+'</strong> extra al ahorro esta quincena además de tu base.</div><div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(78,124,106,.2)"><span style="font-size:10px;color:var(--muted)">Total a activos</span><strong style="color:var(--sage);font-size:15px">'+fx(p.A.total)+'</strong></div><div style="font-size:10px;color:var(--muted);margin-top:4px">Patrimonio sube '+fx(p.A.total)+' esta quincena</div></div>';
-    const playB=p.topDebt?'<div style="padding:14px;border:1px solid rgba(74,110,140,.3);border-radius:10px;background:rgba(74,110,140,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sky)">⚔️ B · Asalto a la Deuda</div><div style="font-size:10px;color:var(--muted)">70% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Pago extra de <strong>'+fx(p.B.extra)+'</strong> a <strong>'+topName+'</strong> (tu #1 según '+strategyLabel+').</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo actual</span><span>'+fx(p.topDebt.bal)+'</span></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo tras golpe</span><strong style="color:var(--sky)">'+fx(p.B.newBal)+'</strong></div>'+(p.B.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(74,110,140,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--sky);font-size:15px">'+p.B.monthsSaved+'</strong></div>':'<div style="font-size:10px;color:var(--muted);margin-top:6px">Impacto visible en el saldo, deadline sin cambio claro</div>')+'</div>':'';
-    const playC=p.topDebt?'<div style="padding:14px;border:1px solid rgba(160,112,48,.3);border-radius:10px;background:rgba(160,112,48,.05);margin-bottom:0"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--amber)">⚖️ C · Balanceada</div><div style="font-size:10px;color:var(--muted)">35% + 35%</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Mitad al ahorro, mitad a deuda. No es el extremo de ninguna pero avanzas en ambos frentes.</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">🪙 Extra a ahorro</span><strong style="color:var(--sage)">'+fx(p.C.savBoost)+'</strong></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">⚔️ Extra a '+topName+'</span><strong style="color:var(--sky)">'+fx(p.C.debtExtra)+'</strong></div>'+(p.C.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(160,112,48,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--amber);font-size:15px">'+p.C.monthsSaved+'</strong></div>':'')+'</div>':'';
-    const noDebts='<div style="padding:14px;border:1px dashed rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.03);font-size:12px;color:var(--txt2);line-height:1.6">Sin deudas activas — las jugadas B y C no aplican. Considera destinar <strong style="color:var(--sage)">todo</strong> el bono al ahorro esta quincena (patrimonio +<strong>'+fx(p.bf)+'</strong>). <br><br>⚠️ <em>Cuidado con la zona de tentación:</em> sin deudas, el mayor riesgo son los gastos hormiga. Revisa tus retos en Hábitos.</div>';
-    return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">'+headerLabel+'</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+headerSub+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">'+introCopy+'</div>'+playA+(p.topDebt?playB+playC:noDebts)+'<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div></div>';
-  }catch(e){return'';}})()}
-  
-  <!-- META -->
-  <div class="card card-sage">
-    <div class="ct">🎯 Tu Meta — 6 Meses</div>
-    <div style="font-size:15px;line-height:1.7;margin-bottom:14px;color:var(--txt2);font-style:italic">"${S.goal||'Sin meta definida'}"</div>
-    <div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted)">Progreso del plazo</span><span style="font-size:11px;color:var(--sage);font-weight:bold">${pctT}% transcurrido</span></div>
-    <div class="pw"><div class="pb" style="width:${pctT}%;background:var(--sage)"></div></div>
-    <div style="font-size:11px;color:var(--muted);margin-top:7px">${dl} días restantes · Límite: ${dlFmt}</div>
+  <!-- ══ SCORE COMPACTO (1 línea) ══ -->
+  <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;margin-bottom:13px;border-radius:12px;background:linear-gradient(135deg,rgba(78,124,106,.06),rgba(74,110,140,.03));border:1px solid rgba(78,124,106,.15)">
+    <div style="font-size:32px;font-weight:bold;color:${sc};font-family:Georgia,serif;line-height:1">${s}</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:13px;font-weight:bold;color:var(--txt)">${r.emoji} ${r.name}</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:2px">
+        <div class="pw" style="flex:1;height:4px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
+        ${streak>0?`<span style="font-size:10px;color:var(--amber);white-space:nowrap">🔥${streak}</span>`:''}
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-size:16px;font-weight:bold;color:${nw()>=0?'var(--sage)':'var(--terra)'};font-family:Georgia,serif">${fx(nw())}</div>
+      <div style="font-size:9px;color:var(--muted)">patrimonio</div>
+    </div>
   </div>
 
-  <!-- SCORE + RANGO -->
-  <div class="card" style="text-align:center;padding:28px 18px">
-    <div style="font-size:10px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">SALUD FINANCIERA ${ib('score','Salud Financiera')}</div>
-    <div style="font-size:72px;font-weight:bold;color:${sc};line-height:1">${s}</div>
-    <div style="color:${sc};margin:8px 0 4px;font-size:16px;font-weight:bold">${r.emoji} ${r.name}</div>
-    ${streak>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:12px">🔥 Racha: ${streak} ${cycleLabel()}${streak>1?(S.cycleMode==='quincenal'?'s':'es'):''} consecutiv${streak>1?(S.cycleMode==='quincenal'?'as':'os'):'o'}</div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Sube tu primer CSV para iniciar tu racha</div>`}
-    <div class="pw" style="max-width:220px;margin:0 auto 6px;height:7px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
-    <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'}</div>
-  </div>
-
-  <!-- PERIODO TOGGLE -->
-  <div class="card" style="padding:10px 18px">
-    <div class="row-b">
-      <span style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Ver cifras:</span>
-      <div class="row" style="gap:4px">
-        <button class="btn btn-sm ${isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'quincenal'});rDash()">Quincenal</button>
-        <button class="btn btn-sm ${!isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'mensual'});rDash()">Mensual</button>
+  <!-- ══ ESTA QUINCENA (waterfall compacto) ══ -->
+  <div class="card" style="margin-bottom:13px">
+    <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;font-weight:bold">💰 Esta quincena</div>
+    <div style="display:flex;flex-direction:column;gap:4px;font-size:13px">
+      <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(pInc))}</strong></div>
+      <div class="row-b"><span style="color:var(--terra)">Gastos fijos</span><span style="color:var(--terra)">−${fx(Math.round(pExp))}</span></div>
+      <div class="row-b"><span style="color:var(--sky)">Deudas</span><span style="color:var(--sky)">−${fx(Math.round(pDebtPay))}</span></div>
+      <div class="row-b"><span style="color:var(--sage)">Ahorro</span><span style="color:var(--sage)">−${fx(Math.round(pSav))}</span></div>
+      ${totalDiariosCycle()>0?`<div class="row-b"><span style="color:var(--amber)">Gastos diarios</span><span style="color:var(--amber)">−${fx(Math.round(totalDiariosCycle()))}</span></div>`:''}
+      <div style="border-top:1.5px solid var(--border);padding-top:6px;margin-top:4px" class="row-b">
+        <span style="font-weight:bold;color:var(--txt)">Disponible</span>
+        <strong style="font-size:16px;color:${(pFlow-totalDiariosCycle()/div)>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(pFlow-totalDiariosCycle()/div))}</strong>
       </div>
     </div>
   </div>
 
-  <!-- KPIs -->
-  <div class="g2" style="margin-bottom:13px">
-    ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna')}
-    ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero')}
-  </div>
-  <div class="g2" style="margin-bottom:13px">
-    ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos')}
-    ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.length+' créditos')}
-  </div>
-  <div class="${tExtras()>0?'g3':'g2'}" style="margin-bottom:13px">
-    <div class="card" style="margin-bottom:0;text-align:center;${hormigaTotal?'cursor:pointer':''}" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🐜 Gastos hormiga ${ib("hormiga","Gastos Hormiga")}</div>
-      <div class="stat-sm" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div>
-      <div class="lbl" style="margin-top:4px">${lastSnap?(hormigaTotal?'Toca para ver detalle ▾':'Sin hormiga'):'Sube CSV'}</div>
-    </div>
-    ${tExtras()>0?kpi('📈 Extras'+pLbl,'+'+fx(Math.round(pExtras)),'var(--sage)',S.extras.length+' fuentes'):''}
-    ${kpi('🌊 Disponible'+pLbl,fx(Math.round(pFlow)),pFlow>=0?'var(--sage)':'var(--terra)',pFlow>=0?'Después de todo':'⚠ Déficit')}
-  </div>
+  <!-- ══ ALERTAS ══ -->
 
-  <!-- HORMIGA DETAIL (expandable) -->
-  ${lastSnap&&hormigaTotal?`
-  <div id="hormigaDetail" class="card card-amber" style="display:none;cursor:default">
-    <div class="ct">🐜 Detalle de gastos hormiga</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px">Periodo: ${lastSnap.periodStart?fmtDate(lastSnap.periodStart):''} → ${lastSnap.periodEnd?fmtDate(lastSnap.periodEnd):''}</div>
-    ${(()=>{try{
-      const cats=Object.entries(lastSnap.hormiga||{}).sort((a,b)=>b[1].total-a[1].total);
-      const maxH=cats.length?cats[0][1].total:1;
-      let html=cats.map(([cat,d])=>{
-        const pct=(d.total/maxH*100).toFixed(0);
-        return'<div style="margin-bottom:10px"><div class="row-b" style="margin-bottom:3px"><span style="font-size:12px">'+cat+'</span><span style="font-size:12px;color:var(--amber);font-weight:bold">'+fx(Math.round(d.total))+'</span></div><div style="font-size:10px;color:var(--muted);margin-bottom:3px">'+d.count+' compra'+(d.count!==1?'s':'')+'  ·  promedio '+fx(Math.round(d.total/d.count))+' c/u</div><div class="pw"><div class="pb" style="width:'+pct+'%;background:var(--amber)"></div></div></div>';
-      }).join('');
-      // Top merchants
-      const tc=lastSnap.topCommerces||[];
-      const hormigaKeys=Object.values(HK).flat();
-      const topH=tc.filter(c=>hormigaKeys.some(k=>c.name.toUpperCase().includes(k))).slice(0,6);
-      if(topH.length){
-        html+='<div style="border-top:1px solid rgba(160,112,48,.2);padding-top:10px;margin-top:6px"><div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px;font-weight:bold">Comercios destacados</div>';
-        html+=topH.map(c=>'<div class="row-b" style="padding:4px 0;font-size:12px"><span style="color:var(--txt)">'+c.name+'</span><span class="badge bdg-amber">'+c.count+'× veces</span></div>').join('');
-        html+='</div>';
-      }
-      html+='<div style="border-top:1px solid rgba(160,112,48,.2);padding-top:10px;margin-top:10px;font-size:11px;color:var(--txt2);line-height:1.7">💡 Si reduces estos gastos a la mitad ahorrarías ~<strong style="color:var(--sage)">'+fx(Math.round(hormigaTotal/2))+'</strong>/quincena.</div>';
-      return html;
-    }catch(e){return'';}})()}
-  </div>`:''}
-
-  <!-- LIQUIDACIONES URGENTES (esta quincena) -->
-  ${urgentLiqs.length>0?`
-  <div class="card" style="border-left:3px solid var(--sage)">
-    <div class="ct">🏁 Últimos pagos este ciclo</div>
-    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Estas deudas terminan en los próximos 15 días. El monto es la mensualidad (ya incluida en tus pagos de deuda).</div>
-    ${urgentLiqs.map(d=>{
-      const mo=toMonthly(d.pay||0,d.freq||'mensual');
-      const col=d.daysLeft<=3?'var(--terra)':'var(--sage)';
-      return`<div class="ql-item">
-        <div class="ql-dot" style="background:${col}"></div>
-        <div style="flex:1">
-          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}<span style="color:var(--sky);font-weight:bold">${fx(Math.round(mo))}</span></div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">Último pago: ${fmtDate(d.liqDate)} · <span style="color:var(--sage)">✓ Terminas esta deuda</span></div>
-        </div>
-      </div>`;
-    }).join('')}
-  </div>`:''}
-
-  <!-- PATRIMONIO -->
-  <div class="card">
-    <div class="ct">Patrimonio Neto ${ib('patrimonio','Patrimonio')}</div>
-    <div class="row-b">
-      <div><div class="stat" style="color:${nw()>=0?'var(--sage)':'var(--terra)'}">${fx(nw())}</div><div class="lbl">Activos ${fx(tAss())} − Deudas ${fx(tDebt())}</div></div>
-      <div style="text-align:right"><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Deuda / Ingreso anual</div><div style="font-size:22px;font-weight:bold;color:${tDebt()/(Math.max(mInc()*12,1))<0.4?'var(--sage)':'var(--terra)'}">${(tDebt()/Math.max(mInc()*12,1)*100).toFixed(0)}%</div></div>
-    </div>
-  </div>
-
-  <!-- PRINCIPIO -->
-  <div class="card" style="background:linear-gradient(135deg,rgba(78,124,106,.06) 0%,rgba(74,110,140,.04) 100%);border-color:rgba(78,124,106,.2)">
-    <div class="ct">📖 Principio de la quincena</div>
-    <div style="font-size:13px;font-style:italic;line-height:1.85;color:var(--txt2)">${principle()}</div>
-  </div>
-
-  <!-- METAS DE AHORRO ACTIVAS -->
-  ${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).length>0?`
-  <div class="card" style="border-left:3px solid var(--sky)">
-    <div class="ct">🎯 Metas de ahorro activas</div>
-    ${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).map(g=>{
-      const pct=Math.min(100,((+g.saved||0)/g.target*100));
-      const perQ=savGoalPerQ(g);
-      const daysLeft=Math.ceil((new Date(g.deadline+'T12:00')-new Date())/864e5);
-      return`<div style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <div class="row-b" style="margin-bottom:4px"><div class="row" style="gap:6px"><span>${g.icon||'🎯'}</span><span style="font-weight:bold;color:var(--txt)">${g.name}</span></div><span style="font-size:12px;color:var(--sky);font-weight:bold">${fx(perQ)}/qna</span></div>
-        <div class="pw" style="height:5px"><div class="pb" style="width:${pct.toFixed(0)}%;background:var(--sky)"></div></div>
-        <div class="row-b" style="font-size:10px;color:var(--muted);margin-top:3px"><span>${fx(Math.round(+g.saved||0))} de ${fx(g.target)}</span><span>${daysLeft}d restantes</span></div>
-      </div>`;
-    }).join('')}
-  </div>`:''}
-
-  <!-- RETOS ACTIVOS -->
   ${(()=>{try{
-    const ck=cycleKey();
-    const activeS=S.survivalRetos.filter(r=>r.cycle===ck&&r.active);
-    if(!activeS.length)return'';
-    if(!S.retoChecks)S.retoChecks={};
-    const allR=genSurvivalRetos(1000);
-    const trackLbl=(t)=>t==='dia'?'día':t==='sem'?'semana':'quincena';
-    return`<div class="card" style="border-left:3px solid var(--amber)">
-      <div class="ct">🎯 Retos activos</div>
-      ${activeS.map(sr=>{
-        const m=allR.find(x=>x.id===sr.id);
-        if(!m)return'';
-        const rawC=S.retoChecks[sr.id+'_'+ck]||[];
-        const nC=rawC.length;
-        const totalN=m.steps||1;
-        const pctD=Math.min(100,Math.round(nC/totalN*100));
-        return`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
-          <div class="row-b" style="margin-bottom:6px">
-            <div class="row" style="gap:8px"><span style="font-size:18px">${m.icon}</span><div><div style="font-weight:bold;color:var(--txt);font-size:13px">${m.name}</div><div style="font-size:10px;color:var(--muted)">${sr.completed?'🏆 Completado':nC+'/'+totalN+' '+trackLbl(m.track)+(totalN>1?'s':'')}</div></div></div>
-            <span style="font-size:14px;font-weight:bold;color:var(--sage)">+${fx(m.save)}</span>
-          </div>
-          ${!sr.completed?`<div class="pw" style="height:5px"><div class="pb" style="width:${pctD}%;background:${pctD>=100?'var(--sage)':'var(--amber)'}"></div></div>`:''}
-        </div>`;
-      }).join('')}
-      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="go('habitos')">Ver todos los retos →</button>
-    </div>`;
-  }catch{return'';}})()}
+    const pd=pendingDeficitCycle();
+    if(!pd)return '';
+    return '<div class="card" style="border-left:3px solid var(--terra);margin-bottom:13px;padding:14px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:12px;font-weight:bold;color:var(--terra)">⚠️ Déficit · '+pd.ck+'</div><div style="font-size:16px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div><div class="row" style="gap:6px"><button class="btn btn-sky btn-sm" style="flex:1;padding:10px;font-size:11px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:10px;font-size:11px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:10px;font-size:11px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Absorbo</button></div></div>';
+  }catch(e){return'';}})()}
 
-  <!-- CAPÍTULOS -->
-  <div class="card">
-    <div class="ct">📊 Resumen de actividad</div>
-    <div class="row-b" style="font-size:12px;color:var(--txt2)">
-      <span>${S.snapshots.length} capítulo${S.snapshots.length!==1?'s':''}</span>
-      <span>${S.waitList.filter(w=>!w.bought&&w.resolved).length} compras impulsivas evitadas</span>
+  ${(()=>{try{
+    if(mInc()<=0)return '';
+    const c=curSavCommit();const sug=savAmtQ();const savSt=S.savStreak||0;const savBest=S.savStreakBest||0;
+    if(c&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept')){
+      const asset=S.assets.find(a=>a.id===c.assetId);
+      return '<div class="card card-grn" style="margin-bottom:13px;padding:12px 14px"><div class="row-b"><div><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold">✅ Ahorro apartado</div><div style="font-size:15px;color:var(--sage);font-weight:bold;margin-top:2px">'+fx(c.amount)+' → '+(asset?asset.name:'activo')+'</div></div>'+(savSt>0?'<div style="font-size:14px;color:var(--amber);font-weight:bold">🔥'+savSt+'</div>':'')+'</div></div>';
+    }
+    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:rgba(160,112,48,.04);margin-bottom:13px;padding:14px"><div class="row-b"><div style="flex:1"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:12px;color:var(--txt2);margin-top:4px">Aparta <strong style="color:var(--sage)">'+fx(sug)+'</strong> ('+S.savPct+'%)</div></div><button class="btn btn-sage btn-sm" style="padding:12px 16px" onclick="openSavCommitModal()">Apartar</button></div>'+(savSt>0?'<div style="font-size:10px;color:var(--muted);margin-top:6px">🔥 Racha: '+savSt+(savBest>savSt?' · Mejor: '+savBest:'')+'</div>':'')+'</div>';
+  }catch(e){return'';}})()}
+
+  ${(()=>{try{
+    const bq=isBonoQna();if(!bq)return '';const p=calcBonoPlays();if(p.bf<=0)return '';
+    return '<div class="card" style="border-left:3px solid var(--amber);margin-bottom:13px;padding:14px"><div class="row-b"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;font-weight:bold">💎 '+(bq.status==='upcoming'?'Bono en '+bq.daysUntil+'d':'Bono activo')+'</div><div style="font-size:12px;color:var(--txt2);margin-top:4px">3 jugadas preparadas</div></div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div><button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="showBonoPlays()">Ver jugadas →</button></div>';
+  }catch(e){return'';}})()}
+
+  ${urgentLiqs.length>0?`<div class="card" style="border-left:3px solid var(--sage);margin-bottom:13px;padding:12px 14px"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:8px">🏁 Deudas por terminar</div>${urgentLiqs.map(d=>`<div class="row-b" style="padding:4px 0;font-size:12px"><span>${d.name}</span><span style="color:var(--sage);font-weight:bold">${fmtDate(d.liqDate)}</span></div>`).join('')}</div>`:''}
+
+  <!-- ══ MÁS DETALLES ══ -->
+  <details style="margin-bottom:13px">
+    <summary style="cursor:pointer;padding:12px 16px;background:var(--bg);border:1px solid var(--border);border-radius:10px;font-size:12px;color:var(--muted);letter-spacing:.5px;font-family:Georgia,serif;font-weight:bold">📊 Más detalles</summary>
+    <div style="margin-top:10px">
+
+    ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:12px 14px;margin-bottom:13px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;font-weight:bold">💡 ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.6">${w.text}</div></div>`;}catch(e){return'';}})()}
+
+    <div class="card" style="margin-bottom:13px;padding:12px 14px">
+      <div class="row-b" style="margin-bottom:6px"><span style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold">🎯 Meta</span><span style="font-size:10px;color:var(--sage);font-weight:bold">${pctT}%</span></div>
+      <div style="font-size:12px;color:var(--txt2);font-style:italic;margin-bottom:6px;line-height:1.5">"${S.goal||'Sin meta'}"</div>
+      <div class="pw"><div class="pb" style="width:${pctT}%;background:var(--sage)"></div></div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">${dl} días · ${dlFmt}</div>
     </div>
-  </div>
+
+    <div class="card" style="text-align:center;padding:20px 16px;margin-bottom:13px">
+      <div style="font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:8px">SALUD FINANCIERA ${ib('score','Salud Financiera')}</div>
+      <div style="font-size:52px;font-weight:bold;color:${sc};line-height:1">${s}</div>
+      <div style="color:${sc};margin:6px 0;font-size:14px;font-weight:bold">${r.emoji} ${r.name}</div>
+      <div class="pw" style="max-width:180px;margin:0 auto 4px;height:5px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
+      <div style="font-size:10px;color:var(--muted)">Próximo: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'}</div>
+    </div>
+
+    <div class="card" style="padding:8px 14px;margin-bottom:13px">
+      <div class="row-b"><span style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Cifras:</span><div class="row" style="gap:4px"><button class="btn btn-sm ${isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'quincenal'});rDash()">Qna</button><button class="btn btn-sm ${!isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'mensual'});rDash()">Mes</button></div></div>
+    </div>
+
+    <div class="g2" style="margin-bottom:10px">
+      ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna')}
+      ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'%')}
+    </div>
+    <div class="g2" style="margin-bottom:10px">
+      ${kpi('📋 Gastos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos')}
+      ${kpi('⛓️ Deudas'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.length+' créditos')}
+    </div>
+    <div class="g2" style="margin-bottom:10px">
+      <div class="card" style="margin-bottom:0;text-align:center;${hormigaTotal?'cursor:pointer':''}" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:4px;letter-spacing:1px;text-transform:uppercase">🐜 Hormiga</div>
+        <div class="stat-sm" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div>
+      </div>
+      ${kpi('🌊 Libre'+pLbl,fx(Math.round(pFlow)),pFlow>=0?'var(--sage)':'var(--terra)',pFlow>=0?'OK':'Déficit')}
+    </div>
+
+    ${lastSnap&&hormigaTotal?`<div id="hormigaDetail" class="card card-amber" style="display:none;margin-bottom:13px"><div class="ct">🐜 Detalle</div>${(()=>{try{const cats=Object.entries(lastSnap.hormiga||{}).sort((a,b)=>b[1].total-a[1].total);const maxH=cats.length?cats[0][1].total:1;return cats.map(([cat,d])=>'<div style="margin-bottom:8px"><div class="row-b"><span style="font-size:11px">'+cat+'</span><span style="font-size:11px;color:var(--amber);font-weight:bold">'+fx(Math.round(d.total))+'</span></div><div class="pw"><div class="pb" style="width:'+(d.total/maxH*100).toFixed(0)+'%;background:var(--amber)"></div></div></div>').join('');}catch(e){return'';}})()}</div>`:''}
+
+    <div class="card" style="margin-bottom:13px"><div class="row-b"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold">Patrimonio</div><div class="stat" style="color:${nw()>=0?'var(--sage)':'var(--terra)'}">${fx(nw())}</div><div class="lbl">Activos ${fx(tAss())} − Deudas ${fx(tDebt())}</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Deuda/Ingreso</div><div style="font-size:20px;font-weight:bold;color:${tDebt()/(Math.max(mInc()*12,1))<0.4?'var(--sage)':'var(--terra)'}">${(tDebt()/Math.max(mInc()*12,1)*100).toFixed(0)}%</div></div></div></div>
+
+    ${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).length>0?`<div class="card" style="margin-bottom:13px"><div class="ct">🎯 Metas de ahorro</div>${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).map(g=>{const pct=Math.min(100,((+g.saved||0)/g.target*100));return`<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div class="row-b"><span style="font-size:12px">${g.icon||'🎯'} ${g.name}</span><span style="font-size:12px;color:var(--sky);font-weight:bold">${fx(savGoalPerQ(g))}/qna</span></div><div class="pw" style="height:4px;margin-top:4px"><div class="pb" style="width:${pct.toFixed(0)}%;background:var(--sky)"></div></div></div>`;}).join('')}</div>`:''}
+
+    ${(()=>{try{const ck=cycleKey();const activeS=S.survivalRetos.filter(r=>r.cycle===ck&&r.active);if(!activeS.length)return'';if(!S.retoChecks)S.retoChecks={};const allR=genSurvivalRetos(1000);return`<div class="card" style="margin-bottom:13px"><div class="ct">🎯 Retos</div>${activeS.map(sr=>{const m=allR.find(x=>x.id===sr.id);if(!m)return'';const rawC=S.retoChecks[sr.id+'_'+ck]||[];const nC=rawC.length;const totalN=m.steps||1;const pctD=Math.min(100,Math.round(nC/totalN*100));return'<div style="padding:6px 0;border-bottom:1px solid var(--border)"><div class="row-b"><span style="font-size:12px">'+m.icon+' '+m.name+'</span><span style="font-size:11px;color:var(--sage)">+'+fx(m.save)+'</span></div><div class="pw" style="height:4px;margin-top:4px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div></div>';}).join('')}</div>`;
+    }catch(e){return'';}})()}
+
+    <div class="card" style="margin-bottom:13px;padding:12px 14px;background:rgba(78,124,106,.04)"><div style="font-size:9px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px;font-weight:bold">📖 Principio</div><div style="font-size:12px;font-style:italic;line-height:1.7;color:var(--txt2)">${principle()}</div></div>
+
+    <div class="card"><div class="ct">📊 Actividad</div><div class="row-b" style="font-size:12px;color:var(--txt2)"><span>${S.snapshots.length} capítulo${S.snapshots.length!==1?'s':''}</span><span>${S.waitList.filter(w=>!w.bought&&w.resolved).length} impulsos evitados</span></div></div>
+
+    </div>
+  </details>
   `;
 }
 
@@ -7341,7 +7258,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-ckorder2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-p2dash';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

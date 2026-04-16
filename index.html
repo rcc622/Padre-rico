@@ -271,13 +271,15 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='nav4-2026-04-16';
+window.APP_BUILD='tdc4-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
+  tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
+  tdcPayments:[],
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
 
 function migrate(){
@@ -317,6 +319,10 @@ function initSavStreakFields(){
   if(typeof S.savStreakBest!=='number')S.savStreakBest=0;
   if(!S.savCommits||typeof S.savCommits!=='object')S.savCommits={};
   if(!S.deficitDecisions||typeof S.deficitDecisions!=='object')S.deficitDecisions={};
+  if(!S.tdcConfig||typeof S.tdcConfig!=='object')S.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
+  if(S.tdcConfig&&!('corteDay' in S.tdcConfig))S.tdcConfig.corteDay=null;
+  if(S.tdcConfig&&!('corteUltimoDelMes' in S.tdcConfig))S.tdcConfig.corteUltimoDelMes=false;
+  if(!Array.isArray(S.tdcPayments))S.tdcPayments=[];
   S.savStreakV1=true;
   sv();
 }
@@ -573,6 +579,46 @@ function getRealAmt(type,id){
   const v=items[type+'_'+id];
   if(typeof v==='object'&&v?.realAmt!==undefined)return v.realAmt;
   return null;
+}
+// FASE 8 · Helpers de método de pago por item
+function getPaidMethod(type,id){
+  const ck=planCk();
+  const items=S.paidItems[ck]||{};
+  const v=items[type+'_'+id];
+  if(typeof v==='object'&&v?.paidWith)return v.paidWith;
+  return 'debito';
+}
+// FASE 8b · Saber si un ciclo contiene el día de pago de la TDC
+// dueDay 1-14 o 30-31 → cae en 1ra quincena
+// dueDay 15-29 → cae en 2da quincena
+function cycleContainsTdcDueDay(ck,dueDay){
+  if(!dueDay||!ck)return false;
+  if(ck.endsWith('-2da'))return dueDay>=15&&dueDay<=29;
+  if(ck.endsWith('-1ra'))return dueDay<=14||dueDay>=30;
+  return false;
+}
+// Returns true if ck is current or future (not past)
+function cycleIsCurrentOrFuture(ck){
+  const allKeys=allCycleKeys();
+  const curIdx=allKeys.indexOf(cycleKey());
+  const targetIdx=allKeys.indexOf(ck);
+  return targetIdx>=curIdx;
+}
+function togglePaidMethod(type,id){
+  const ck=planCk();
+  if(!S.paidItems[ck]){toast('Pago no encontrado');return;}
+  const key=type+'_'+id;
+  const v=S.paidItems[ck][key];
+  if(!v){toast('Pago no encontrado');return;}
+  const applied=typeof v==='object'?v.applied:(v==='applied');
+  if(!applied){toast('Solo pagos aplicados');return;}
+  const current=typeof v==='object'?(v.paidWith||'debito'):'debito';
+  const newMethod=current==='tdc'?'debito':'tdc';
+  if(typeof v==='object')S.paidItems[ck][key]={...v,paidWith:newMethod};
+  else S.paidItems[ck][key]={at:Date.now(),applied:true,paidWith:newMethod};
+  sv();
+  toast(newMethod==='tdc'?'💳 Cambiado a TDC':'💵 Cambiado a Débito');
+  rPlan();if(typeof rFlujo==='function')rFlujo();
 }
 function undoApply(type,id){
   const ck=planCk();
@@ -1404,6 +1450,183 @@ function cyclePaymentTotals(){
   });
   return {debito:Math.round(debito),tdc:Math.round(tdc),debitoCount,tdcCount,total:Math.round(debito+tdc)};
 }
+// FASE 8 · TARJETA DE CRÉDITO
+// La TDC tiene DOS fechas distintas:
+//   corteDay: día del mes cuando cierra el ciclo (o "último día del mes" si corteUltimoDelMes=true)
+//   dueDay: día del mes cuando vence el pago del ciclo cortado
+// Un cargo pertenece al ciclo que se cierra en el siguiente corte ≥ fecha del cargo.
+
+// Devuelve el día efectivo de corte para un mes específico (ajustando a "último día")
+function tdcEffectiveCorteDay(year,month,cfg){
+  const lastDay=new Date(year,month+1,0).getDate();
+  if(cfg.corteUltimoDelMes)return lastDay;
+  return Math.min(cfg.corteDay||30,lastDay);
+}
+
+// Dado un cargo con fecha date, devuelve el Date del corte que lo agrupa
+function tdcCorteForDate(date,cfg){
+  const d=new Date(date);d.setHours(0,0,0,0);
+  const y=d.getFullYear(),m=d.getMonth();
+  const thisCorteDay=tdcEffectiveCorteDay(y,m,cfg);
+  if(d.getDate()<=thisCorteDay){
+    return new Date(y,m,thisCorteDay);
+  }
+  const nextCorteDay=tdcEffectiveCorteDay(y,m+1,cfg);
+  return new Date(y,m+1,nextCorteDay);
+}
+
+// Dado un corte date, calcula la fecha de pago
+function tdcDueDateForCorte(corteDate,cfg){
+  const d=new Date(corteDate);d.setHours(0,0,0,0);
+  const y=d.getFullYear(),m=d.getMonth();
+  // Due es el próximo dueDay DESPUÉS del corte
+  if(cfg.dueDay>d.getDate()){
+    // Due cae mismo mes
+    const lastOfMonth=new Date(y,m+1,0).getDate();
+    return new Date(y,m,Math.min(cfg.dueDay,lastOfMonth));
+  }
+  // Due cae el siguiente mes
+  const lastOfNext=new Date(y,m+2,0).getDate();
+  return new Date(y,m+1,Math.min(cfg.dueDay,lastOfNext));
+}
+// Recolecta todos los cargos TDC sin tdcCleared, agrupados por fecha de corte
+function tdcChargesByBillingCycle(){
+  const cfg=S.tdcConfig||{};
+  if(!cfg.corteDay&&!cfg.corteUltimoDelMes)return {};
+  const cycles={};
+  // paidItems
+  Object.keys(S.paidItems||{}).forEach(ck=>{
+    const items=S.paidItems[ck];if(!items||typeof items!=='object')return;
+    Object.keys(items).forEach(key=>{
+      if(key.startsWith('_'))return;
+      const v=items[key];
+      if(typeof v!=='object')return;
+      if(!v.applied)return;
+      if(v.paidWith!=='tdc')return;
+      if(v.tdcCleared)return;
+      const at=v.at||Date.now();
+      const corte=tdcCorteForDate(new Date(at),cfg);
+      const cKey=corte.toISOString().split('T')[0];
+      let amt=+v.amt||+v.realAmt||0;
+      if(!amt){
+        const [type,idStr]=key.split('_');const id=+idStr;
+        if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2)amt=+d2.pay||0;}
+        else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');}
+        else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
+      }
+      if(!cycles[cKey])cycles[cKey]={corteDate:corte,charges:[],total:0};
+      cycles[cKey].charges.push({ck,key,amt,name:v.name||key,date:at});
+      cycles[cKey].total+=amt;
+    });
+  });
+  // Diarios
+  (S.gastosDiarios||[]).forEach(g=>{
+    if(g.paidWith!=='tdc')return;
+    if(g.tdcCleared)return;
+    const corte=tdcCorteForDate(new Date(g.date),cfg);
+    const cKey=corte.toISOString().split('T')[0];
+    if(!cycles[cKey])cycles[cKey]={corteDate:corte,charges:[],total:0};
+    cycles[cKey].charges.push({diarioId:g.id,amt:+g.amt||0,name:g.name,date:g.date});
+    cycles[cKey].total+=+g.amt||0;
+  });
+  return cycles;
+}
+// El "ciclo actual" es el que NO ha cortado todavía (corteDate > hoy)
+// Los "ciclos por pagar" son los que YA cortaron (corteDate ≤ hoy)
+function tdcBuckets(){
+  const cycles=tdcChargesByBillingCycle();
+  const today=new Date();today.setHours(0,0,0,0);
+  const current={total:0,charges:[],corteDate:null};
+  const billed=[]; // array de ciclos ya cortados, pendientes de pago
+  Object.keys(cycles).forEach(cKey=>{
+    const c=cycles[cKey];
+    if(c.corteDate>today){
+      // Aún no corta → va a "current"
+      current.total+=c.total;
+      current.charges.push(...c.charges);
+      if(!current.corteDate||c.corteDate<current.corteDate)current.corteDate=c.corteDate;
+    }else{
+      billed.push(c);
+    }
+  });
+  billed.sort((a,b)=>a.corteDate-b.corteDate);
+  const billedTotal=billed.reduce((s,c)=>s+c.total,0);
+  return {current,billed,billedTotal,grandTotal:current.total+billedTotal};
+}
+// Helper legacy: suma total de cargos sin tdcCleared
+function tdcAccumulated(){
+  const b=tdcBuckets();
+  const allDetails=[...b.current.charges,...b.billed.flatMap(c=>c.charges)];
+  return {used:Math.round(b.grandTotal),details:allDetails};
+}
+function tdcSave(){
+  const limit=+(document.getElementById('tdcLimit')?.value)||0;
+  const due=+(document.getElementById('tdcDueDay')?.value)||null;
+  const ultimo=!!document.getElementById('tdcUltimoDia')?.checked;
+  const corte=ultimo?null:(+(document.getElementById('tdcCorteDay')?.value)||null);
+  if(!limit||!due||(!corte&&!ultimo)){toast('Completa todos los campos (incluyendo límite, día de pago y día de corte o "último día")');return;}
+  pt({tdcConfig:{limit,dueDay:due,corteDay:corte,corteUltimoDelMes:ultimo}});
+  toast('✓ Configuración guardada');rFlujo();
+}
+function tdcEditConfig(){
+  const cfg=S.tdcConfig||{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
+  const body='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">'
+    +'<div><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Límite ($)</label><input type="number" id="tdcLimitEdit" value="'+(cfg.limit||'')+'" style="width:100%;padding:8px;font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px"></div>'
+    +'<div><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Día corte</label><input type="number" id="tdcCorteDayEdit" value="'+(cfg.corteDay||'')+'" min="1" max="31" '+(cfg.corteUltimoDelMes?'disabled style="opacity:.5;':'style="')+'width:100%;padding:8px;font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px"></div>'
+    +'<div><label style="font-size:10px;color:var(--muted);display:block;margin-bottom:4px">Día pago</label><input type="number" id="tdcDueDayEdit" value="'+(cfg.dueDay||'')+'" min="1" max="31" style="width:100%;padding:8px;font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px"></div>'
+    +'</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txt2);cursor:pointer"><input type="checkbox" id="tdcUltimoDiaEdit" '+(cfg.corteUltimoDelMes?'checked':'')+' onchange="document.getElementById(\'tdcCorteDayEdit\').disabled=this.checked;document.getElementById(\'tdcCorteDayEdit\').style.opacity=this.checked?\'.5\':\'1\'"> 📅 Corte el último día de cada mes</label>';
+  showConfirm('⚙️ Editar TDC',body,()=>{
+    const limit=+(document.getElementById('tdcLimitEdit')?.value)||0;
+    const due=+(document.getElementById('tdcDueDayEdit')?.value)||null;
+    const ultimo=!!document.getElementById('tdcUltimoDiaEdit')?.checked;
+    const corte=ultimo?null:(+(document.getElementById('tdcCorteDayEdit')?.value)||null);
+    pt({tdcConfig:{limit,dueDay:due,corteDay:corte,corteUltimoDelMes:ultimo}});
+    closeConfirm();toast('✓ Actualizado');rFlujo();
+  });
+}
+// Pagar TDC: marca como cleared SOLO los cargos de ciclos ya cortados (billed)
+// Los cargos del ciclo actual (aún no cortado) se mantienen.
+function tdcPay(){
+  const b=tdcBuckets();
+  if(b.billedTotal<=0){
+    if(b.current.total>0){
+      toast('El ciclo actual aún no corta. Nada por pagar todavía.');
+    }else{
+      toast('No hay saldo de TDC por pagar');
+    }
+    return;
+  }
+  const amt=b.billedTotal;
+  const chargesToClear=b.billed.flatMap(c=>c.charges);
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">Vas a registrar el pago de <strong style="color:var(--sage)">'+fx(amt)+'</strong> de tu TDC (ciclo'+(b.billed.length>1?'s ya cortado':' ya cortado')+').<br><br>'
+    +'• <strong>'+chargesToClear.length+'</strong> movimiento'+(chargesToClear.length!==1?'s':'')+' se marcarán como saldados.<br>'
+    +'• Se creará un pago <strong>"💳 Pago TDC"</strong> aplicado con débito en la quincena actual.<br>'
+    +(b.current.total>0?'• ⚠️ El ciclo actual ('+fx(b.current.total)+') sigue abierto y se pagará en el próximo corte.<br>':'')
+    +'</div>';
+  showConfirm('💳 ¿Pagaste tu TDC?',body,()=>{
+    const ck=planCk();
+    chargesToClear.forEach(d=>{
+      if(d.diarioId){
+        const newD=(S.gastosDiarios||[]).map(g=>g.id===d.diarioId?{...g,tdcCleared:true,tdcClearedAt:Date.now()}:g);
+        S.gastosDiarios=newD;
+      }else{
+        const items=S.paidItems[d.ck];if(!items||!items[d.key])return;
+        items[d.key]={...items[d.key],tdcCleared:true,tdcClearedAt:Date.now()};
+      }
+    });
+    if(!S.paidItems[ck])S.paidItems[ck]={};
+    const tdcPayId=Date.now();
+    S.paidItems[ck]['tdcpay_'+tdcPayId]={
+      at:Date.now(),applied:true,paidWith:'debito',
+      amt,name:'💳 Pago TDC',tdcPayment:true
+    };
+    S.tdcPayments=[...(S.tdcPayments||[]),{id:tdcPayId,at:Date.now(),amount:amt,cycleKey:ck,clearedCount:chargesToClear.length}];
+    sv();closeConfirm();
+    toast('✓ Pago TDC de '+fx(amt)+' registrado');
+    rFlujo();if(typeof rPlan==='function')rPlan();if(typeof rDash==='function')rDash();
+  });
+}
 // FASE 6 · Migración manual: encuentra applied items sin paidWith explícito
 // (legacy items donde el método se asume 'debito' por default sin que el usuario lo haya confirmado)
 function unclassifiedPayments(){
@@ -1928,15 +2151,6 @@ function rDash(){
     const pd=pendingDeficitCycle();
     if(!pd)return '';
     return '<div class="card" style="border:2px solid rgba(184,92,74,.45);background:linear-gradient(135deg,rgba(184,92,74,.06) 0%,rgba(160,112,48,.03) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">⚠️ Quincena pasada cerró con déficit</div><div style="font-size:13px;color:var(--txt);font-weight:bold;margin-top:4px">'+pd.ck+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Faltante</div><div style="font-size:20px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.65;margin-bottom:14px">Te faltaron <strong style="color:var(--terra)">'+fx(Math.abs(pd.balance))+'</strong> al cerrar. ¿Cómo lo cubriste?</div><div class="row" style="gap:6px;margin-bottom:10px"><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Lo absorbo</button></div><div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">Si elegiste TDC o Préstamo, recuerda registrar la deuda manualmente en <strong>Ingresos, Gastos y Activos → ⛓️ Deudas</strong></div></div>';
-  }catch(e){return'';}})()}
-
-  <!-- FASE 6 · CONTADOR DE PAGOS POR MÉTODO (débito vs TDC del ciclo actual) -->
-  ${(()=>{try{
-    const t=cyclePaymentTotals();
-    const unclassifiedCount=unclassifiedPayments().length;
-    if(t.total===0&&unclassifiedCount===0)return '';
-    const tdcPct=t.total>0?Math.round(t.tdc/t.total*100):0;
-    return '<div class="card" style="margin-bottom:13px;padding:14px 16px"><div class="row-b" style="margin-bottom:10px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💰 Pagos esta quincena por método</div><div style="font-size:11px;color:var(--muted)">'+(t.debitoCount+t.tdcCount)+' pago'+(t.debitoCount+t.tdcCount!==1?'s':'')+'</div></div><div class="row" style="gap:8px"><div style="flex:1;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px;border-left:3px solid var(--sage)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">💵 Débito</div><div style="font-size:18px;font-weight:bold;color:var(--sage);margin-top:2px">'+fx(t.debito)+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+t.debitoCount+' pago'+(t.debitoCount!==1?'s':'')+'</div></div><div style="flex:1;padding:10px 12px;background:rgba(74,110,140,.06);border-radius:8px;border-left:3px solid var(--sky)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">💳 TDC</div><div style="font-size:18px;font-weight:bold;color:var(--sky);margin-top:2px">'+fx(t.tdc)+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+t.tdcCount+' pago'+(t.tdcCount!==1?'s':'')+(t.tdc>0?' · '+tdcPct+'%':'')+'</div></div></div>'+(t.tdc>0?'<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5;text-align:center">💡 Recuerda registrar tu deuda de TDC en <strong>⛓️ Deudas</strong> antes del corte</div>':'')+(unclassifiedCount>0?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);text-align:center"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="openMigrationModal()">🔄 Clasificar '+unclassifiedCount+' pago'+(unclassifiedCount!==1?'s':'')+' sin método</button></div>':'')+'</div>';
   }catch(e){return'';}})()}
 
   <!-- FASE 2 · PÁGATE A TI PRIMERO (Hooked: gatillo quincenal) -->
@@ -3544,16 +3758,8 @@ function rFlujo(){try{
 
   const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['diarios','🛒 Diarios'],['deudas','⛓️ Deudas'],['activos','🏦 Activos']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
 
-  // ── KPI RESUMEN ALWAYS ON TOP ──
-  const flujoKPI=`<div style="margin-bottom:5px">${kpi('💰 Ingreso',fx(mInc()+tExtras())+'/mes','var(--sage)',fx(Math.round((mInc()+tExtras())/2))+'/qna')}</div>
-  <div style="display:flex;gap:8px;margin-bottom:5px">
-    <div style="flex:1">${kpi('📋 Gastos',fx(tExp())+'/mes','var(--terra)',S.exp.length+' conceptos')}</div>
-    <div style="flex:1">${kpi('⛓️ Deudas',fx(tDebtPay())+'/mes','var(--sky)',activeDebts.length+' activas'+(liqCount>0?' · '+liqCount+' liq.':''))}</div>
-  </div>
-  <div style="margin-bottom:14px">${kpi('🌊 Flujo libre',fx(Math.round(mInc()+tExtras()-tExp()-tDebtPay()-savAmt()))+'/mes',mInc()+tExtras()-tExp()-tDebtPay()-savAmt()>=0?'var(--sage)':'var(--terra)','después de todo')}</div>`;
-
   document.getElementById('tab-flujo').innerHTML=`
-  ${flujoNav}${flujoKPI}
+  ${flujoNav}
 
   ${flujoView==='ingresos'?`
   <!-- ═══ INGRESOS ═══ -->
@@ -3709,6 +3915,96 @@ function rFlujo(){try{
   `;})():''}
 
   ${flujoView==='deudas'?`
+  <!-- ═══ WIDGET TDC (Fase 8b) ═══ -->
+  ${(()=>{
+    const cfg=S.tdcConfig||{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
+    const configured=cfg.limit>0&&(cfg.corteDay||cfg.corteUltimoDelMes)&&cfg.dueDay;
+    if(!configured){
+      return `<div class="card" style="background:linear-gradient(135deg,rgba(74,110,140,.05),rgba(78,124,106,.02));border-left:3px solid var(--sky)">
+        <div class="ct" style="color:var(--sky)">💳 Configurar TDC</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Configura tu TDC para llevar el control. El <strong>corte</strong> es cuando cierra el ciclo. El <strong>pago</strong> es cuando vence el estado de cuenta.</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+          <div><label style="font-size:10px">Límite ($)</label><input type="number" id="tdcLimit" placeholder="0" value="${cfg.limit||''}"></div>
+          <div><label style="font-size:10px">Día corte</label><input type="number" id="tdcCorteDay" placeholder="1-31" min="1" max="31" value="${cfg.corteDay||''}" ${cfg.corteUltimoDelMes?'disabled style="opacity:.5"':''}></div>
+          <div><label style="font-size:10px">Día pago</label><input type="number" id="tdcDueDay" placeholder="1-31" min="1" max="31" value="${cfg.dueDay||''}"></div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txt2);margin-bottom:12px;cursor:pointer"><input type="checkbox" id="tdcUltimoDia" ${cfg.corteUltimoDelMes?'checked':''} onchange="document.getElementById('tdcCorteDay').disabled=this.checked;document.getElementById('tdcCorteDay').style.opacity=this.checked?'.5':'1'"> 📅 El corte es el <strong>último día de cada mes</strong> (28/29/30/31 según el mes)</label>
+        <button class="btn btn-sky" style="width:100%" onclick="tdcSave()">💾 Guardar TDC</button>
+        <div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">Ej. Nu: corta último día del mes, vence día 10 del sig. mes.</div>
+      </div>`;
+    }
+    const b=tdcBuckets();
+    const used=b.grandTotal;
+    const pct=Math.min(100,Math.round(used/cfg.limit*100));
+    const available=Math.max(0,cfg.limit-used);
+    const over=used>cfg.limit;
+    const barColor=over?'var(--terra)':pct>=80?'var(--amber)':'var(--sky)';
+    // Next corte
+    const today=new Date();today.setHours(0,0,0,0);
+    const nextCorte=tdcCorteForDate(today,cfg);
+    // If nextCorte is today or past, compute the following one
+    const nextCorteActual=(()=>{
+      if(nextCorte>today)return nextCorte;
+      const ny=nextCorte.getFullYear(),nm=nextCorte.getMonth()+1;
+      return new Date(ny,nm,tdcEffectiveCorteDay(ny,nm,cfg));
+    })();
+    const daysToCorte=Math.ceil((nextCorteActual-today)/(1000*60*60*24));
+    const corteDisplayDay=cfg.corteUltimoDelMes?'último día':cfg.corteDay;
+    // Due date for earliest billed bucket
+    let dueText='';let daysToDue=null;
+    if(b.billed.length>0){
+      const earliestBilled=b.billed[0];
+      const dueDate=tdcDueDateForCorte(earliestBilled.corteDate,cfg);
+      daysToDue=Math.ceil((dueDate-today)/(1000*60*60*24));
+      if(daysToDue<0)dueText='⚠️ Vencido hace '+Math.abs(daysToDue)+'d';
+      else if(daysToDue===0)dueText='Vence hoy';
+      else if(daysToDue===1)dueText='Vence mañana';
+      else dueText='Vence en '+daysToDue+'d ('+dueDate.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+')';
+    }
+    return `<div class="card" style="background:linear-gradient(135deg,rgba(74,110,140,.05),rgba(78,124,106,.02));border-left:3px solid ${barColor}">
+      <div class="row-b" style="margin-bottom:10px">
+        <div>
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💳 Tu Tarjeta de Crédito</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">Corte ${corteDisplayDay} · Pago día ${cfg.dueDay}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tdcEditConfig()">⚙️</button>
+      </div>
+
+      <!-- Total usage bar -->
+      <div class="row-b" style="margin-bottom:4px">
+        <span style="font-size:11px;color:var(--muted)">Usado total</span>
+        <span style="font-size:11px;color:var(--muted)">Límite ${fx(cfg.limit)}</span>
+      </div>
+      <div class="row-b" style="margin-bottom:8px">
+        <strong style="font-size:22px;color:${barColor};font-family:Georgia,serif">${fx(used)}</strong>
+        <span style="font-size:12px;color:${over?'var(--terra)':'var(--sage)'};font-weight:bold">${over?'Sobre límite':fx(available)+' disp.'}</span>
+      </div>
+      <div class="pw" style="height:10px;margin-bottom:14px"><div class="pb" style="width:${pct}%;background:${barColor}"></div></div>
+
+      <!-- Two buckets -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <!-- Billed (to pay) -->
+        <div style="padding:10px;background:${b.billedTotal>0?'rgba(184,92,74,.08)':'rgba(160,140,120,.06)'};border-radius:8px;border:1px solid ${b.billedTotal>0?'rgba(184,92,74,.3)':'var(--border)'}">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">📋 Por pagar</div>
+          <div style="font-size:16px;font-weight:bold;color:${b.billedTotal>0?'var(--terra)':'var(--muted)'};margin-top:2px">${fx(b.billedTotal)}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px;min-height:14px">${dueText||(b.billedTotal===0?'Nada pendiente':'')}</div>
+        </div>
+        <!-- Current cycle -->
+        <div style="padding:10px;background:rgba(74,110,140,.08);border-radius:8px;border:1px solid rgba(74,110,140,.3)">
+          <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">🔄 Ciclo actual</div>
+          <div style="font-size:16px;font-weight:bold;color:var(--sky);margin-top:2px">${fx(b.current.total)}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">Corta en ${daysToCorte}d</div>
+        </div>
+      </div>
+
+      ${b.billedTotal>0?`<button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="tdcPay()">✓ Pagar ${fx(b.billedTotal)}</button>`:b.current.total>0?'<div style="text-align:center;font-size:11px;color:var(--muted);padding:8px;line-height:1.5">💡 El ciclo actual aún no corta.<br>El pago estará disponible después del corte.</div>':'<div style="text-align:center;font-size:12px;color:var(--sage);padding:8px">🎉 TDC sin movimientos</div>'}
+
+      ${b.billed.length>0?`<details style="margin-top:10px"><summary style="font-size:11px;color:var(--terra);cursor:pointer;padding:6px 0;font-weight:bold">Ver ${b.billed.reduce((s,c)=>s+c.charges.length,0)} mov. por pagar</summary><div style="max-height:160px;overflow-y:auto;margin-top:6px">${b.billed.flatMap(c=>c.charges).map(d=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2);max-width:70%;overflow:hidden;text-overflow:ellipsis">'+d.name+'</span><strong style="color:var(--terra)">'+fx(d.amt)+'</strong></div>').join('')}</div></details>`:''}
+      ${b.current.charges.length>0?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--sky);cursor:pointer;padding:6px 0">Ver ${b.current.charges.length} mov. ciclo actual</summary><div style="max-height:160px;overflow-y:auto;margin-top:6px">${b.current.charges.map(d=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2);max-width:70%;overflow:hidden;text-overflow:ellipsis">'+d.name+'</span><strong style="color:var(--sky)">'+fx(d.amt)+'</strong></div>').join('')}</div></details>`:''}
+      ${S.tdcPayments&&S.tdcPayments.length>0?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer;padding:6px 0">Historial de pagos (${S.tdcPayments.length})</summary><div style="margin-top:6px">${[...S.tdcPayments].reverse().slice(0,10).map(p=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2)">'+new Date(p.at).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'2-digit'})+'</span><strong style="color:var(--sage)">'+fx(p.amount)+'</strong></div>').join('')}</div></details>`:''}
+    </div>`;
+  })()}
+
   <!-- ═══ DEUDAS ═══ -->
   <div class="card">
     <div class="ct">${editDebtId?'✏️ Editando deuda':'⛓️ Registrar deuda'}</div>
@@ -4427,6 +4723,52 @@ try{
     // Optional: savings, apartados, impulses
     S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{const perQ=savGoalPerQ(g);const paid=!showNext&&isPaid('sav',g.id);optional.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});});
     expSavePlan.forEach(e=>{const paid=!showNext&&isPaid('apt',e.id);const label=e.type==='other'?'💰 Apartar '+e.name+' (día '+e.day+' · '+fx(e.amt)+')':'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';optional.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});});
+    // FASE 8: TDC payment synthetic entries (paidItems keys starting with 'tdcpay_')
+    if(!showNext){
+      const ckView=planCk();const itemsView=(S.paidItems||{})[ckView]||{};
+      Object.keys(itemsView).forEach(key=>{
+        if(!key.startsWith('tdcpay_'))return;
+        const v=itemsView[key];if(typeof v!=='object')return;
+        const idFromKey=+key.split('_')[1];
+        mandatory.push({day:new Date(v.at||Date.now()).getDate(),name:v.name||'💳 Pago TDC',amt:+v.amt||0,type:'deuda',id:idFromKey,ptype:'tdcpay',paid:true,tdcPayment:true});
+      });
+    }
+    // FASE 8b: TDC PENDIENTE — pago programado en la quincena donde vence el ciclo cortado
+    // Solo muestra el monto del ciclo que ESA quincena específica está pagando
+    (()=>{
+      const cfg=S.tdcConfig||{};
+      if(!cfg.limit||!cfg.dueDay||(!cfg.corteDay&&!cfg.corteUltimoDelMes))return;
+      const ckView=planCk();
+      if(!cycleContainsTdcDueDay(ckView,cfg.dueDay))return;
+      if(!cycleIsCurrentOrFuture(ckView))return;
+      const itemsView=(S.paidItems||{})[ckView]||{};
+      const alreadyPaid=Object.keys(itemsView).some(k=>k.startsWith('tdcpay_'));
+      if(alreadyPaid)return;
+      const qnaWindow=cycleWindowFromKey(ckView);
+      let dueDate=new Date(qnaWindow.start);dueDate.setHours(0,0,0,0);
+      while(dueDate<=qnaWindow.end&&dueDate.getDate()!==cfg.dueDay){
+        dueDate.setDate(dueDate.getDate()+1);
+      }
+      if(dueDate>qnaWindow.end)return;
+      // El corte que cerró esta factura fue el último corte ANTES de dueDate
+      // Probar corte del mes previo al dueDate, luego mismo mes
+      let corteDate=null;
+      const dueY=dueDate.getFullYear(),dueM=dueDate.getMonth();
+      // Corte del mes previo (más probable: corte a fin de mes, pago inicio del sig.)
+      const prevCorteDay=tdcEffectiveCorteDay(dueY,dueM-1,cfg);
+      const prevCorte=new Date(dueY,dueM-1,prevCorteDay);
+      // Corte del mismo mes (si corte es temprano y pago tardío en el mismo mes)
+      const sameCorteDay=tdcEffectiveCorteDay(dueY,dueM,cfg);
+      const sameCorte=new Date(dueY,dueM,sameCorteDay);
+      // Escoger el corte más cercano a dueDate pero ANTES
+      if(sameCorte<dueDate&&sameCorte>prevCorte)corteDate=sameCorte;
+      else corteDate=prevCorte;
+      const corteKey=corteDate.toISOString().split('T')[0];
+      const cycles=tdcChargesByBillingCycle();
+      const bucket=cycles[corteKey];
+      if(!bucket||bucket.total<=0)return;
+      mandatory.push({day:cfg.dueDay,name:'💳 Pago TDC (corte '+corteDate.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+')',amt:Math.round(bucket.total),type:'deuda',id:1,ptype:'tdcpend',paid:false,tdcPending:true});
+    })();
 
     mandatory.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
     const passedDay=today.getDate();
@@ -4461,18 +4803,28 @@ try{
       const rAmt=getRealAmt(p.ptype,p.id);
       const showReal=rAmt!==null&&Math.abs(rAmt-p.amt)>1;
       const diff=rAmt!==null?p.amt-rAmt:0;
+      // FASE 8: método de pago (solo para applied, y tdcpay siempre es débito sin toggle)
+      const methodIcon=(()=>{
+        if(st!=='applied')return '';
+        if(p.tdcPending)return '';
+        const method=getPaidMethod(p.ptype,p.id);
+        if(p.tdcPayment||p.ptype==='tdcpay'){return '<span title="Pago TDC" style="font-size:13px;opacity:.9;padding:3px 5px">💵</span>';}
+        const icon=method==='tdc'?'💳':'💵';
+        return '<button title="Cambiar método" style="font-size:13px;background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;cursor:pointer;line-height:1" onclick="event.stopPropagation();togglePaidMethod(\''+p.ptype+'\','+p.id+')">'+icon+'</button>';
+      })();
       return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
         <div class="row" style="gap:8px">
-          ${!showNext?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:''}
+          ${!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:22px;height:22px;font-size:11px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:22px;height:22px;font-size:11px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
           <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
           <span style="font-size:12px;color:var(--txt)">${p.name}</span>
         </div>
         <div style="text-align:right;display:flex;align-items:center;gap:6px">
+          ${methodIcon}
           <div>
             <span style="font-size:12px;color:${col};font-weight:bold">${fx(Math.round(showReal?rAmt:p.amt))}</span>
             ${showReal?`<div style="font-size:9px;color:${diff>0?'var(--sage)':'var(--terra)'}">${diff>0?'↓'+fx(Math.round(diff)):'↑'+fx(Math.round(Math.abs(diff)))}</div>`:''}
           </div>
-          ${st==='applied'?`<button style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-family:Georgia,serif" onclick="event.stopPropagation();undoApply('${p.ptype}',${p.id})">↩</button>`:''}
+          ${st==='applied'&&!p.tdcPayment&&!p.tdcPending?`<button style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-family:Georgia,serif" onclick="event.stopPropagation();undoApply('${p.ptype}',${p.id})">↩</button>`:''}
         </div>
       </div>`;};
 
@@ -6431,7 +6783,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-nav4';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-tdc4';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

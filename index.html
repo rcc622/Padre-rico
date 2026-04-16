@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='ux2-2026-04-16';
+window.APP_BUILD='ux3-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -4608,36 +4608,152 @@ function quickUpdAsset(id){
   });
 }
 // ══ SAVINGS STREAK (Fase 2 · Hooked) ════════════════════
-function openSavCommitModal(){
-  if(!S.assets||S.assets.length===0){
-    showInfo('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para apartar tu ahorro necesitas un destino real.<br><br>Ve a <strong>Ingresos, Gastos y Activos → 🏦 Activos</strong> y registra dónde guardas tu dinero (Mercado Pago, Cajita Nu, etc).<br><br>Cuando tengas al menos uno, regresa aquí y vuelve a intentar.</div>');
+// ══ WIZARD DE AHORRO (Hooked guiado, 3 pasos) ═══════════
+let _savWizStep=1,_savWizData={amount:0,assetId:null,pct:10};
+function openSavCommitModal(){startSavWizard();}
+function startSavWizard(){
+  // Pre-condiciones
+  if(mInc()<=0){
+    showInfo('🌱 Primero registra tu ingreso','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para calcular cuánto apartar necesitamos saber tu ingreso quincenal.<br><br>Ve a <strong>Ingresos, Gastos y Activos → 💰 Ingresos</strong> y registra tu salario.</div>');
     return;
   }
-  const sug=savAmtQ();
-  const assetOptions=S.assets.map(a=>'<label class="row" style="gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_savAsset" value="'+a.id+'" style="margin:0"><div style="flex:1"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:10px;color:var(--muted)">Saldo actual: '+fx(a.val)+'</div></div></label>').join('');
-  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6"><em style="color:var(--sage)">"De cada 10 monedas que ganes, gasta sólo 9."</em> — Arkad. Primero págate a ti mismo.</div>'
-    +'<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Monto que apartaste ($)</label><input type="number" id="_savAmt" value="'+sug+'" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"><div style="font-size:10px;color:var(--muted);margin-top:4px;text-align:center">Sugerido: '+fx(sug)+' ('+S.savPct+'% de tu quincena)</div></div>'
-    +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">🏦 ¿A cuál activo lo mandaste?</div>'
-    +'<div style="max-height:240px;overflow-y:auto;margin-bottom:4px">'+assetOptions+'</div>';
-  showConfirm('🪙 Págate a ti primero',body,()=>{
-    const amt=+(document.getElementById('_savAmt')?.value)||0;
-    const assetRadio=document.querySelector('input[name="_savAsset"]:checked');
-    if(amt<=0){toast('⚠ Monto inválido');return;}
-    if(!assetRadio){toast('⚠ Elige el activo destino');return;}
-    const assetId=+assetRadio.value;
-    const asset=S.assets.find(a=>a.id===assetId);if(!asset)return;
-    // Update asset balance
-    const newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amt}:a);
-    // Record commit
-    const ck=cycleKey();
-    const newCommits={...(S.savCommits||{}),[ck]:{amount:amt,assetId,date:new Date().toISOString(),status:'committed'}};
-    // Increment streak
-    const newStreak=(S.savStreak||0)+1;
-    const newBest=Math.max(S.savStreakBest||0,newStreak);
-    pt({assets:newAssets,savCommits:newCommits,savStreak:newStreak,savStreakBest:newBest});
-    toast('🔥 Racha '+newStreak+' · '+fx(amt)+' → '+asset.name);
-    rDash();hdrUp&&hdrUp();
+  const cur=curSavCommit();
+  if(cur&&(cur.status==='committed'||cur.status==='intact'||cur.status==='emergency-kept')){
+    const asset=S.assets.find(a=>a.id===cur.assetId);
+    const assetName=asset?asset.name:'tu activo';
+    const streak=S.savStreak||0;
+    showInfo('✅ Ya apartaste esta quincena','<div style="font-size:12px;line-height:1.7;color:var(--txt2);text-align:center"><div style="font-size:24px;margin:10px 0">🪙</div><div style="font-size:18px;font-weight:bold;color:var(--sage);margin-bottom:4px">'+fx(cur.amount)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px">→ '+assetName+'</div>'+(streak>0?'<div style="padding:10px;background:rgba(160,112,48,.08);border-radius:8px;margin-top:10px"><strong style="color:var(--amber);font-size:16px">🔥 Racha '+streak+'</strong><div style="font-size:11px;color:var(--muted);margin-top:4px">'+streak+' quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+' al principio</div></div>':'')+'</div>');
+    return;
+  }
+  if(!S.assets||S.assets.length===0){
+    showConfirm('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para apartar tu ahorro necesitas un destino real donde guardarlo.<br><br>Ejemplos: <strong>Mercado Pago BMG</strong>, <strong>Cajita Nu</strong>, <strong>efectivo</strong> en una caja fuerte.<br><br>¿Lo creamos ahora?</div>',()=>{
+      closeConfirm();flujoView='activos';go('flujo');setTimeout(()=>{document.getElementById('an')?.focus();document.getElementById('an')?.scrollIntoView({behavior:'smooth',block:'center'});},200);
+    });
+    return;
+  }
+  _savWizStep=1;
+  _savWizData={amount:savAmtQ(),assetId:S.assets[0]?.id,pct:S.savPct||10};
+  _renderSavWiz();
+}
+function _renderSavWiz(){
+  if(_savWizStep===1)_savWizStep1();
+  else if(_savWizStep===2)_savWizStep2();
+  else if(_savWizStep===3)_savWizStep3();
+}
+function _savWizProgress(n){
+  return '<div style="display:flex;gap:6px;justify-content:center;margin-bottom:16px">'
+    +[1,2,3].map(s=>'<div style="width:28px;height:4px;border-radius:2px;background:'+(s<=n?'var(--sage)':'var(--border)')+'"></div>').join('')
+    +'</div>';
+}
+// PASO 1: Monto
+function _savWizStep1(){
+  const incQ=Math.round(mInc()/2);
+  const pct=_savWizData.pct;
+  const amt=Math.round(incQ*pct/100);
+  _savWizData.amount=amt;
+  const streak=S.savStreak||0;
+  // Projection
+  const year=amt*24;
+  const fiveY=amt*24*5;
+  const body=_savWizProgress(1)
+    +'<div style="text-align:center;margin-bottom:16px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:4px">Tu ingreso quincenal</div><div style="font-size:24px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(incQ)+'</div>'+(streak>0?'<div style="font-size:11px;color:var(--amber);margin-top:6px">🔥 Racha actual: '+streak+'</div>':'')+'</div>'
+    +'<div style="padding:14px;background:rgba(78,124,106,.06);border-radius:10px;margin-bottom:14px;text-align:center">'
+    +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">¿Cuánto apartar?</div>'
+    +'<div style="display:flex;align-items:center;gap:12px;justify-content:center;margin-bottom:10px"><button type="button" class="btn btn-ghost btn-sm" style="padding:6px 12px;font-size:18px" onclick="_savWizPct(-5)">−</button><div style="text-align:center"><div style="font-size:28px;font-weight:bold;color:var(--sage);font-family:Georgia,serif" id="_savWizAmt">'+fx(amt)+'</div><div style="font-size:11px;color:var(--muted)" id="_savWizPctTxt">'+pct+'% de tu quincena</div></div><button type="button" class="btn btn-ghost btn-sm" style="padding:6px 12px;font-size:18px" onclick="_savWizPct(5)">+</button></div>'
+    +'<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">'
+    +[5,10,15,20,25,30].map(p=>'<button type="button" class="chip" style="font-size:10px;padding:4px 10px;'+(p===pct?'background:var(--sagedim);color:var(--sage);font-weight:bold':'')+'" onclick="_savWizSetPct('+p+')">'+p+'%</button>').join('')
+    +'</div></div>'
+    +'<div style="padding:12px;background:rgba(160,112,48,.05);border-radius:8px;border-left:3px solid var(--amber);margin-bottom:14px;font-size:11px;color:var(--txt2);line-height:1.6">'
+    +'💡 <em>"De cada 10 monedas que ganes, gasta sólo 9."</em> — Arkad, El Hombre Más Rico de Babilonia<br><br>'
+    +'<strong>Proyección si mantienes el ritmo:</strong><br>'
+    +'• En 1 año: <strong style="color:var(--sage)">'+fx(year)+'</strong><br>'
+    +'• En 5 años: <strong style="color:var(--sage)">'+fx(fiveY)+'</strong> <span style="color:var(--muted)">(sin contar rendimientos)</span>'
+    +'</div>';
+  showConfirm('🪙 Págate a ti primero',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();_savWizStep=1" style="flex:0 0 auto;padding:10px 16px">Después</button><button class="btn btn-sage" onclick="_savWizNext()" style="flex:1">Siguiente →</button>';
+}
+function _savWizPct(delta){
+  const newPct=Math.max(5,Math.min(50,_savWizData.pct+delta));
+  _savWizSetPct(newPct);
+}
+function _savWizSetPct(pct){
+  _savWizData.pct=pct;
+  const incQ=Math.round(mInc()/2);
+  const amt=Math.round(incQ*pct/100);
+  _savWizData.amount=amt;
+  const amtEl=document.getElementById('_savWizAmt');
+  const txtEl=document.getElementById('_savWizPctTxt');
+  if(amtEl)amtEl.textContent=fx(amt);
+  if(txtEl)txtEl.textContent=pct+'% de tu quincena';
+  // Update chip styles
+  document.querySelectorAll('#confirmModal .chip').forEach(c=>{
+    const txt=c.textContent.replace('%','');
+    if(+txt===pct){c.style.background='var(--sagedim)';c.style.color='var(--sage)';c.style.fontWeight='bold';}
+    else{c.style.background='';c.style.color='';c.style.fontWeight='';}
   });
+}
+// PASO 2: Activo destino
+function _savWizStep2(){
+  const amt=_savWizData.amount;
+  const body=_savWizProgress(2)
+    +'<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a apartar</div><div style="font-size:28px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+'</div></div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A cuál activo lo mandas?</div>'
+    +'<div style="max-height:280px;overflow-y:auto;margin-bottom:4px">'
+    +S.assets.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===_savWizData.assetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===_savWizData.assetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_savAsset" value="'+a.id+'" '+(a.id===_savWizData.assetId?'checked':'')+' onchange="_savWizData.assetId='+a.id+';_renderSavWiz()" style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx(+a.val+amt)+'</strong></div></div></label>').join('')
+    +'</div>';
+  showConfirm('🪙 Paso 2 — Destino',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="_savWizStep=1;_renderSavWiz()" style="flex:0 0 auto;padding:10px 16px">← Atrás</button><button class="btn btn-sage" onclick="_savWizNext()" style="flex:1">Apartar '+fx(amt)+' ✓</button>';
+}
+// PASO 3: Confirmación + celebración
+function _savWizStep3(){
+  const {amount,assetId}=_savWizData;
+  const asset=S.assets.find(a=>a.id===assetId);if(!asset)return;
+  // Execute commit
+  const newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amount}:a);
+  const ck=cycleKey();
+  const newCommits={...(S.savCommits||{}),[ck]:{amount,assetId,date:new Date().toISOString(),status:'committed'}};
+  const newStreak=(S.savStreak||0)+1;
+  const newBest=Math.max(S.savStreakBest||0,newStreak);
+  pt({assets:newAssets,savCommits:newCommits,savStreak:newStreak,savStreakBest:newBest,savPct:_savWizData.pct});
+  // Render celebration
+  const messages=[
+    '¡La primera moneda es la más difícil! 🌱',
+    '¡Construiste el hábito más poderoso! 🔥',
+    '¡Tu yo del futuro te lo agradece! 🙏',
+    '¡Esa es la disciplina de Arkad! 💪',
+    '¡Cada quincena más libre! 🕊️'
+  ];
+  const msg=messages[Math.min(newStreak-1,messages.length-1)];
+  const streakBadge=newStreak>=5?'🔥🔥🔥':newStreak>=3?'🔥🔥':'🔥';
+  const body=_savWizProgress(3)
+    +'<div style="text-align:center"><div style="font-size:56px;margin:10px 0">✨</div>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:4px">Apartaste</div>'
+    +'<div style="font-size:32px;font-weight:bold;color:var(--sage);font-family:Georgia,serif;margin-bottom:6px">'+fx(amount)+'</div>'
+    +'<div style="font-size:13px;color:var(--txt2);margin-bottom:16px">→ <strong>'+asset.name+'</strong></div>'
+    +'<div style="padding:14px;background:linear-gradient(135deg,rgba(160,112,48,.1),rgba(78,124,106,.06));border-radius:10px;margin-bottom:14px">'
+    +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">Racha</div>'
+    +'<div style="font-size:28px;font-weight:bold;color:var(--amber)">'+streakBadge+' '+newStreak+'</div>'
+    +'<div style="font-size:11px;color:var(--txt2);margin-top:6px;font-style:italic">'+msg+'</div>'
+    +(newBest>newStreak?'<div style="font-size:10px;color:var(--muted);margin-top:4px">Mejor racha: '+newBest+'</div>':'')
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:10px">Este dinero es <strong style="color:var(--sage)">sagrado</strong>. No se toca salvo emergencia real.</div>'
+    +'</div>';
+  showConfirm('🎉 ¡Hecho!',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();_savWizStep=1;rDash()" style="flex:1">Cerrar</button><button class="btn btn-sage" onclick="closeConfirm();_savWizStep=1;go(\'plan\')" style="flex:1">Ir a pagos →</button>';
+  rDash();hdrUp&&hdrUp();
+}
+function _savWizNext(){
+  if(_savWizStep===1){
+    if(_savWizData.amount<=0){toast('⚠ Monto inválido');return;}
+    _savWizStep=2;
+  }else if(_savWizStep===2){
+    if(!_savWizData.assetId){toast('⚠ Elige un activo');return;}
+    _savWizStep=3;
+  }
+  _renderSavWiz();
 }
 function openSavCloseCheck(){
   const c=curSavCommit();if(!c||c.status!=='committed'){toast('No hay compromiso activo esta quincena');return;}
@@ -6971,7 +7087,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-ux2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-ux3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

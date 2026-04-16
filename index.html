@@ -94,6 +94,19 @@ button:active{transform:scale(.97)}
 .ql-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
 /* Toast */
 #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--sage2);color:#fff;padding:10px 22px;border-radius:10px;font-size:12px;font-family:Georgia,serif;font-weight:bold;opacity:0;transition:all .3s ease;pointer-events:none;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.2);white-space:nowrap}
+/* FAB (Floating Action Button) */
+#fabContainer{position:fixed;bottom:20px;right:20px;z-index:500;display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+#fabMenu{display:none;flex-direction:column;gap:10px;align-items:flex-end}
+#fabMenu.open{display:flex}
+#fabBackdrop{position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:499;display:none}
+#fabBackdrop.open{display:block}
+.fab-item{display:flex;align-items:center;gap:10px;animation:fabIn .18s ease-out}
+@keyframes fabIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+.fab-label{background:rgba(30,40,35,.9);color:#fff;padding:7px 12px;border-radius:14px;font-size:12px;font-family:Georgia,serif;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,.2);font-weight:bold;letter-spacing:.3px}
+.fab-mini{width:48px;height:48px;border-radius:24px;background:#fff;border:1px solid var(--border);font-size:20px;box-shadow:0 3px 10px rgba(0,0,0,.18);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.fab-mini:disabled{opacity:.4;cursor:not-allowed}
+.fab-main{width:56px;height:56px;border-radius:28px;background:var(--sage);color:#fff;border:none;font-size:28px;font-weight:300;box-shadow:0 4px 14px rgba(78,124,106,.4);cursor:pointer;transition:transform .25s ease, background .2s;display:flex;align-items:center;justify-content:center;padding:0;line-height:1}
+.fab-main.open{transform:rotate(45deg);background:var(--terra)}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 /* Timeline */
 .tl-item{display:flex;gap:14px;padding:16px 0;border-bottom:1px solid var(--border)}
@@ -261,6 +274,18 @@ button:active{transform:scale(.97)}
   </div>
 </div>
 
+<!-- FAB -->
+<div id="fabBackdrop" onclick="_fabToggle()"></div>
+<div id="fabContainer">
+  <div id="fabMenu">
+    <div class="fab-item"><span class="fab-label">🛒 Gasto diario</span><button class="fab-mini" onclick="fabAction('diario')" style="color:var(--terra)">🛒</button></div>
+    <div class="fab-item"><span class="fab-label">✓ Ir a pagos</span><button class="fab-mini" onclick="fabAction('pago')" style="color:var(--sage)">✓</button></div>
+    <div class="fab-item"><span class="fab-label">💰 Apartar ahorro</span><button class="fab-mini" onclick="fabAction('ahorro')" style="color:var(--amber)">💰</button></div>
+    <div class="fab-item"><span class="fab-label">💳 Pagar TDC</span><button class="fab-mini" onclick="fabAction('tdc')" style="color:var(--sky)">💳</button></div>
+  </div>
+  <button id="fabMain" class="fab-main" onclick="_fabToggle()" aria-label="Acciones rápidas">+</button>
+</div>
+
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -271,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='metodo4-2026-04-16';
+window.APP_BUILD='ux2-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -4234,9 +4259,9 @@ function rFlujo(){try{
 
   ${flujoView==='activos'?`
   <!-- ═══ ACTIVOS ═══ -->
-  <div class="card card-grn" style="background:rgba(78,124,106,.06);border-color:rgba(78,124,106,.25)">
-    <div class="ct" style="color:var(--sage)">🏦 ¿Qué es un activo?</div>
-    <div style="font-size:12px;line-height:1.7;color:var(--txt2)">
+  <details class="card card-grn" style="background:rgba(78,124,106,.06);border-color:rgba(78,124,106,.25);padding:10px 14px">
+    <summary style="cursor:pointer;font-size:12px;color:var(--sage);font-weight:bold;letter-spacing:1px;text-transform:uppercase;padding:6px 0">🏦 ¿Qué es un activo? <span style="font-weight:normal;color:var(--muted);font-size:10px">(toca para ver)</span></summary>
+    <div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-top:10px">
       <em style="color:var(--sage)">"Un activo pone dinero en tu bolsillo. Un pasivo lo saca."</em> — Robert Kiyosaki, <strong>Padre Rico Padre Pobre</strong>.
       <br><br>
       Para efectos de esta app, tus <strong style="color:var(--sage)">activos</strong> son los lugares donde guardas capital que puedes recuperar y que, idealmente, genera rendimiento:
@@ -4249,7 +4274,7 @@ function rFlujo(){try{
         ⚠️ <strong>No son activos</strong> para este tracker: tu coche, laptop, muebles — son pasivos depreciables. Tu salario tampoco — es ingreso, no capital.
       </div>
     </div>
-  </div>
+  </details>
 
   <!-- REGISTRAR / EDITAR ACTIVO -->
   <div class="card">
@@ -4355,13 +4380,97 @@ function addDiario(){
   const a=+(document.getElementById('gda')?.value);
   const d=document.getElementById('gdd')?.value||new Date().toISOString().split('T')[0];
   if(!n||!a){toast('Concepto y monto requeridos');return;}
-  // FASE 6: defaultear paidWith:'debito' en cada diario
-  const newDiario={id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:'debito'};
+  // FASE 6b: abrir modal para elegir método (mismo patrón que Plan de Acción)
+  const catLabel=({snack:'🍪 Snack',bebida:'🥤 Bebida',delivery:'🍕 Delivery',transporte:'🚗 Transporte',minisuper:'🛒 Minisuper',impulso:'⚡ Impulso',esencial:'📋 Esencial',otro:'📦 Otro'})[_diarioCat]||_diarioCat;
+  const body='<div style="padding:14px 16px;background:var(--bg);border-radius:10px;margin-bottom:14px;text-align:center">'
+    +'<div style="font-size:14px;font-weight:bold;color:var(--txt);margin-bottom:2px">'+n+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px">'+catLabel+' · '+d+'</div>'
+    +'<div style="font-size:24px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(a)+'</div>'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
+    +'<div style="display:flex;gap:10px">'
+    +'<button type="button" class="btn btn-sage" style="flex:1;padding:16px;font-size:15px" onclick="_confirmDiario(\'debito\')">💵 Débito</button>'
+    +'<button type="button" class="btn" style="flex:1;padding:16px;font-size:15px;background:rgba(74,110,140,.1);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_confirmDiario(\'tdc\')">💳 TDC</button>'
+    +'</div>';
+  _pendingDiario={name:n,amt:a,cat:_diarioCat,date:d};
+  showConfirm('🛒 Registrar gasto diario',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm();_pendingDiario=null">Cancelar</button>';
+}
+let _pendingDiario=null;
+function _confirmDiario(method){
+  if(!_pendingDiario){closeConfirm();return;}
+  const {name,amt,cat,date}=_pendingDiario;
+  const newDiario={id:Date.now(),name,amt,cat,date,paidWith:method};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
   _diarioCat='snack';
-  rFlujo();
-  // Toast con switch a TDC
-  toastSwitchDiarioTDC('✓ '+fx(a)+' registrado · 💵 Débito',newDiario.id);
+  _pendingDiario=null;
+  // Clear form
+  const nEl=document.getElementById('gdn');if(nEl)nEl.value='';
+  const aEl=document.getElementById('gda');if(aEl)aEl.value='';
+  closeConfirm();rFlujo();
+  toast(method==='tdc'?'✓ '+fx(amt)+' registrado · 💳 TDC':'✓ '+fx(amt)+' registrado · 💵 Débito');
+}
+// ══ FAB (Floating Action Button) ═══════════════════
+let _fabOpen=false,_quickDiarioCat='snack';
+function _fabToggle(){
+  _fabOpen=!_fabOpen;
+  const m=document.getElementById('fabMenu');
+  const b=document.getElementById('fabBackdrop');
+  const btn=document.getElementById('fabMain');
+  if(_fabOpen){m.classList.add('open');b.classList.add('open');btn.classList.add('open');}
+  else{m.classList.remove('open');b.classList.remove('open');btn.classList.remove('open');}
+}
+function fabAction(type){
+  _fabToggle(); // close menu
+  setTimeout(()=>{
+    if(type==='diario')openQuickDiario();
+    else if(type==='pago')go('plan');
+    else if(type==='ahorro'){
+      if(typeof openSavCommitModal==='function')openSavCommitModal();
+      else toast('Registra primero un ingreso y activo');
+    }
+    else if(type==='tdc'){
+      const cfg=S.tdcConfig||{};
+      if(!cfg.limit){toast('Configura tu TDC primero en Deudas');go('flujo');return;}
+      if(typeof tdcPay==='function')tdcPay();
+    }
+  },180);
+}
+// Quick modal for diario (from FAB, without navigating)
+function openQuickDiario(){
+  _quickDiarioCat='snack';
+  const today=new Date().toISOString().split('T')[0];
+  const cats=[['snack','🍪 Snack'],['bebida','🥤 Bebida'],['delivery','🍕 Delivery'],['transporte','🚗 Transporte'],['minisuper','🛒 Minisuper'],['impulso','⚡ Impulso'],['esencial','📋 Esencial'],['otro','📦 Otro']];
+  const body='<input type="text" id="qdn" placeholder="Concepto (Coca OXXO, Uber...)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
+    +'<input type="number" id="qda" placeholder="Monto $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Categoría</div>'
+    +'<div id="qdCats" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">'
+    +cats.map(([id,l])=>'<button type="button" class="chip'+(id==='snack'?' chip-sel':'')+'" style="font-size:11px;padding:6px 10px;'+(id==='snack'?'background:var(--sagedim);color:var(--sage);font-weight:bold':'')+'" onclick="_quickDiarioCat=\''+id+'\';document.querySelectorAll(\'#qdCats button\').forEach(b=>{b.classList.remove(\'chip-sel\');b.style.background=\'\';b.style.color=\'\';b.style.fontWeight=\'\';});this.classList.add(\'chip-sel\');this.style.background=\'var(--sagedim)\';this.style.color=\'var(--sage)\';this.style.fontWeight=\'bold\'">'+l+'</button>').join('')
+    +'</div>'
+    +'<input type="date" id="qdd" value="'+today+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:14px;font-family:Georgia,serif">'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
+    +'<div style="display:flex;gap:10px">'
+    +'<button type="button" class="btn btn-sage" style="flex:1;padding:14px;font-size:14px" onclick="_quickDiarioSave(\'debito\')">💵 Débito</button>'
+    +'<button type="button" class="btn" style="flex:1;padding:14px;font-size:14px;background:rgba(74,110,140,.1);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_quickDiarioSave(\'tdc\')">💳 TDC</button>'
+    +'</div>';
+  showConfirm('🛒 Gasto diario rápido',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
+  setTimeout(()=>document.getElementById('qdn')?.focus(),150);
+}
+function _quickDiarioSave(method){
+  const n=document.getElementById('qdn')?.value.trim();
+  const a=+(document.getElementById('qda')?.value);
+  const d=document.getElementById('qdd')?.value||new Date().toISOString().split('T')[0];
+  if(!n||!a){toast('Concepto y monto requeridos');return;}
+  const newDiario={id:Date.now(),name:n,amt:a,cat:_quickDiarioCat,date:d,paidWith:method};
+  pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
+  _quickDiarioCat='snack';
+  closeConfirm();
+  toast(method==='tdc'?'✓ '+fx(a)+' · 💳 TDC':'✓ '+fx(a)+' · 💵 Débito');
+  try{if(typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(typeof rDash==='function')rDash();}catch(e){}
 }
 // FASE 6 · Toast específico para diarios (key distinta porque vive en S.gastosDiarios)
 function toastSwitchDiarioTDC(msg,diarioId){
@@ -6862,7 +6971,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-metodo4';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-ux2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

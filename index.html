@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='histinc-2026-04-16';
+window.APP_BUILD='bvvar-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -1458,7 +1458,25 @@ function getIncForCycle(ck){
     const sorted=[...hist].sort((a,b)=>ckToOrder(a.from)-ckToOrder(b.from));
     match=sorted[0];
   }
-  return match?{sal:match.sal,bf:match.bf,bfDate:match.bfDate,bv:match.bv,ms:match.ms??S.inc.ms,mls:match.mls??S.inc.mls,dn:match.dn??S.inc.dn}:S.inc;
+  return match?{sal:match.sal,bf:match.bf,bfDate:match.bfDate,bfLastDay:match.bfLastDay||false,bv:match.bv,bvMes:match.bvMes||0,bvDia:match.bvDia||0,ms:match.ms??S.inc.ms,mls:match.mls??S.inc.mls,dn:match.dn??S.inc.dn}:S.inc;
+}
+// Check if bonus pay day falls within the cycle window, honoring "last day of month" setup.
+// inc.bfLastDay: if true, bonus pays on last day of each month (handles 28/29/30/31).
+// Otherwise uses inc.bfDate as-is.
+function bonusInCycle(cStart,cEnd,inc){
+  if(!inc)return false;
+  const lastDay=!!inc.bfLastDay;
+  const pdCfg=+(inc.bfDate)||0;
+  if(!lastDay&&!pdCfg)return false;
+  // Check each month that the cycle could span (from month before start to month after end)
+  const y0=cStart.getFullYear();
+  for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){
+    const lastOfMonth=new Date(y0,tm+1,0).getDate();
+    const effectiveDay=lastDay?lastOfMonth:Math.min(pdCfg,lastOfMonth);
+    const candidate=new Date(y0,tm,effectiveDay);
+    if(candidate>=cStart&&candidate<=cEnd)return true;
+  }
+  return false;
 }
 const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;if(freq==='bimestral')return amt/2;if(freq==='unico')return amt;return amt;};
 const freqShort=(f)=>f==='semanal'?'sem':f==='quincenal'?'qna':f==='bimestral'?'bim':f==='unico'?'único':'mes';
@@ -1475,13 +1493,13 @@ function calcCycleBalance(ck){
   try{
     const paid=(S.paidItems||{})[ck];if(!paid)return null;
     // Ingreso del ciclo: salario/2 + bono mensual si cae en este ciclo
-    const sal=+S.inc.sal||0;
-    const bf=+S.inc.bf||0;
-    const bfDate=+S.inc.bfDate||0;
+    const incH=getIncForCycle(ck);
+    const sal=+incH.sal||0;
+    const bf=+incH.bf||0;
     let ingreso=sal/2;
-    const isFirstQna=ck.endsWith('-1ra');
-    const bonoEnFirst=bfDate<=14||bfDate>=30;
-    if(bf>0&&((isFirstQna&&bonoEnFirst)||(!isFirstQna&&!bonoEnFirst)))ingreso+=bf;
+    // Compute cycle window to check if bonus falls in it
+    const w=cycleWindowFromKey(ck);
+    if(bf>0&&bonusInCycle(w.start,w.end,incH))ingreso+=bf;
     // Sumar gastos applied
     let gastos=0;
     for(const k in paid){
@@ -1872,11 +1890,13 @@ function isBonoQna(){
   try{
     const bfDate=+S.inc.bfDate||0;
     const bf=+S.inc.bf||0;
-    if(!bf||!bfDate)return false;
+    const bfLast=!!S.inc.bfLastDay;
+    if(!bf)return false;
+    if(!bfLast&&!bfDate)return false;
     const today=new Date();today.setHours(0,0,0,0);
     const m=today.getMonth(),y=today.getFullYear();
-    // Clamp bfDate to last day of each month (handles bfDate=31 in Feb, etc.)
-    const bonoDateFor=(yy,mm)=>{const last=new Date(yy,mm+1,0).getDate();const dt=new Date(yy,mm,Math.min(bfDate,last));dt.setHours(0,0,0,0);return dt;};
+    // If bfLastDay: use last day of each month. Otherwise: clamp bfDate to last day.
+    const bonoDateFor=(yy,mm)=>{const last=new Date(yy,mm+1,0).getDate();const d=bfLast?last:Math.min(bfDate,last);const dt=new Date(yy,mm,d);dt.setHours(0,0,0,0);return dt;};
     const bonoPrev=bonoDateFor(y,m-1);
     const bonoThis=bonoDateFor(y,m);
     const bonoNext=bonoDateFor(y,m+1);
@@ -3865,6 +3885,24 @@ const QUICK_EXP=[
   {n:'💊 Farmacia',a:0,c:'Salud / Medicamentos'},
 ];
 
+function _qnaLabel(inc){
+  const sal=+inc.sal||0;const bf=+inc.bf||0;const bd=+inc.bfDate||0;const lastDay=!!inc.bfLastDay;
+  const salQ=Math.round(sal/2);
+  const bonoInFirst=bf>0&&(lastDay||bd>=30||bd<=14);
+  const bonoInSecond=bf>0&&!lastDay&&bd>=15&&bd<=29;
+  const q1=salQ+(bonoInFirst?bf:0);
+  const q2=salQ+(bonoInSecond?bf:0);
+  return fx(q1)+' / '+fx(q2);
+}
+function _bonoLabel(inc){
+  if(!inc.bfDate&&!inc.bfLastDay)return '';
+  if(inc.bfLastDay)return '<div style="font-size:10px;color:var(--sage);margin-top:6px">💡 Bono mensual ('+fx(inc.bf)+') cae el <strong>último día del mes</strong> — entra en la 1ra quincena del mes siguiente</div>';
+  const d=+inc.bfDate||0;
+  let qLabel='';
+  if(d>=15&&d<=29)qLabel='en la 2da quincena (día '+d+')';
+  else if(d>=30||d<=14)qLabel='en la 1ra quincena'+(d>=30?' del mes siguiente':'')+' (día '+d+')';
+  return '<div style="font-size:10px;color:var(--sage);margin-top:6px">💡 Bono mensual ('+fx(inc.bf)+') cae '+qLabel+'</div>';
+}
 function rFlujo(){try{
   const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});
   const maxC=Math.max(...Object.values(bc),1);
@@ -3884,27 +3922,46 @@ function rFlujo(){try{
   ${flujoView==='ingresos'?`
   <!-- ═══ INGRESOS ═══ -->
   <div class="card">
-    <div class="ct">💰 Salario y bonos</div>
-    <div class="g2" style="margin-bottom:10px">
-      <div><label>Salario mensual (neto)</label><input type="number" id="incSal" value="${S.inc.sal||''}" placeholder="0" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
-      <div><label>Bono semestral</label><input type="number" id="incBv" value="${S.inc.bv||''}" placeholder="0" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
+    <div class="ct">💰 Salario fijo</div>
+    <div style="margin-bottom:10px">
+      <label>Salario mensual (neto)</label><input type="number" id="incSal" value="${S.inc.sal||''}" placeholder="0" oninput="_incEdited=true;_refreshIncSaveBtn()">
     </div>
-    <div class="g2" style="margin-bottom:10px">
-      <div><label>Bono/Compensación mensual</label><input type="number" id="incBf" value="${S.inc.bf||''}" placeholder="0" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
-      <div><label>Día aprox. de pago bono</label><input type="number" id="incBfDate" value="${S.inc.bfDate||''}" placeholder="15" min="1" max="31" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
+    <div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:12px">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;font-weight:bold">💵 Bono / Compensación MENSUAL <span style="color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0">(monto fijo cada mes)</span></div>
+      <div class="g2" style="margin-bottom:10px">
+        <div><label>Monto</label><input type="number" id="incBf" value="${S.inc.bf||''}" placeholder="0" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
+        <div><label>Día aprox. de pago</label><input type="number" id="incBfDate" value="${S.inc.bfDate||''}" placeholder="30" min="1" max="31" ${S.inc.bfLastDay?'disabled style="opacity:.4"':''} oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:12px;color:var(--txt2);margin-bottom:6px;padding:8px 10px;background:rgba(78,124,106,.05);border-radius:6px"><input type="checkbox" id="incBfLastDay" ${S.inc.bfLastDay?'checked':''} onchange="_incEdited=true;document.getElementById('incBfDate').disabled=this.checked;document.getElementById('incBfDate').style.opacity=this.checked?'.4':'1';_refreshIncSaveBtn()" style="width:auto;accent-color:var(--sage)">Cae el <strong>último día del mes</strong> (30, 31 o 28/29 feb)</label>
     </div>
-    <div id="incSaveBar" style="display:none;margin-bottom:10px;padding:10px;background:rgba(160,112,48,.08);border-radius:8px;border-left:3px solid var(--amber)">
+    <div id="incSaveBar" style="display:none;margin-bottom:10px;padding:10px;background:rgba(160,112,48,.08);border-radius:8px;border-left:3px solid var(--amber);margin-top:10px">
       <div style="font-size:11px;color:var(--txt2);margin-bottom:8px">💡 Tienes cambios sin guardar. Al guardar te preguntaré desde cuándo aplican.</div>
       <div class="row" style="gap:8px"><button class="btn btn-sage btn-sm" style="flex:1" onclick="saveIncomeChanges()">✓ Guardar</button><button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="cancelIncomeChanges()">Cancelar</button></div>
     </div>
-    <div class="card card-grn" style="margin-bottom:0">
+    <div class="card card-grn" style="margin-bottom:0;margin-top:10px">
       <div class="row-b">
         <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Ingreso mensual</div><div class="stat" style="color:var(--sage)">${fx(mInc())}</div></div>
-        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">1ra qna / 2da qna</div><div style="font-size:14px;font-weight:bold;color:var(--sky)">${fx(Math.round(S.inc.sal/2))} / ${fx(Math.round(S.inc.sal/2+(+S.inc.bf||0)))}</div></div>
+        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">1ra qna / 2da qna</div><div style="font-size:14px;font-weight:bold;color:var(--sky)">${_qnaLabel(S.inc)}</div></div>
       </div>
-      ${S.inc.bfDate?`<div style="font-size:10px;color:var(--sage);margin-top:6px">💡 Bono mensual (${fx(S.inc.bf)}) cae ${S.inc.bfDate<=15?'en la 1ra quincena (día '+S.inc.bfDate+')':'en la 2da quincena (día '+S.inc.bfDate+')'}</div>`:''}
-      ${(S.incHistory&&S.incHistory.length)?`<div style="font-size:10px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);cursor:pointer" onclick="showIncHistory()">📜 ${S.incHistory.length} cambio${S.incHistory.length!==1?'s':''} de ingreso registrado${S.incHistory.length!==1?'s':''} · Toca para ver</div>`:''}
+      ${_bonoLabel(S.inc)}
+      ${(S.incHistory&&S.incHistory.length)?`<div style="font-size:10px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);cursor:pointer" onclick="showIncHistory()">📜 ${S.incHistory.length} cambio${S.incHistory.length!==1?'s':''} de ingreso registrado${S.incHistory.length!==1?'s':''} · Toca para ver / limpiar</div>`:''}
     </div>
+  </div>
+  
+  <!-- ═══ BONO SEMESTRAL (VARIABLE) ═══ -->
+  <div class="card" style="border:1px solid rgba(74,110,140,.25);background:rgba(74,110,140,.03)">
+    <div class="ct" style="color:var(--sky)">🎯 Bono semestral <span style="font-size:10px;color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0;margin-left:4px">(variable — depende de KPIs)</span></div>
+    <div class="g2" style="margin-bottom:10px">
+      <div><label>Monto estimado ($)</label><input type="number" id="incBv" value="${S.inc.bv||''}" placeholder="0" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
+      <div><label>Mes esperado (1-12)</label><input type="number" id="incBvMes" value="${S.inc.bvMes||''}" placeholder="6" min="1" max="12" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
+    </div>
+    <div style="margin-bottom:10px">
+      <label>Día aprox. de pago</label><input type="number" id="incBvDia" value="${S.inc.bvDia||''}" placeholder="30" min="1" max="31" oninput="_incEdited=true;_refreshIncSaveBtn()">
+    </div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.6;padding:10px;background:rgba(78,124,106,.04);border-radius:8px;margin-bottom:10px">
+      💡 <strong>Es solo referencia</strong>. Cuando te lo paguen, usa el botón de abajo para registrar el monto real como ingreso extra.
+    </div>
+    <button class="btn" style="width:100%;background:var(--sky);color:#fff;padding:12px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="openBvApply()">💰 Ya me pagaron el bono semestral</button>
   </div>
 
   <div class="card">
@@ -4399,19 +4456,23 @@ function cancelIncomeChanges(){
 function saveIncomeChanges(){
   const newSal=+(document.getElementById('incSal')?.value)||0;
   const newBv=+(document.getElementById('incBv')?.value)||0;
+  const newBvMes=+(document.getElementById('incBvMes')?.value)||0;
+  const newBvDia=+(document.getElementById('incBvDia')?.value)||0;
   const newBf=+(document.getElementById('incBf')?.value)||0;
   const newBfDate=+(document.getElementById('incBfDate')?.value)||0;
+  const newBfLastDay=!!document.getElementById('incBfLastDay')?.checked;
   const oldInc={...S.inc};
-  const changed=(newSal!==(+oldInc.sal||0))||(newBv!==(+oldInc.bv||0))||(newBf!==(+oldInc.bf||0))||(newBfDate!==(+oldInc.bfDate||0));
+  const changed=(newSal!==(+oldInc.sal||0))||(newBv!==(+oldInc.bv||0))||(newBvMes!==(+oldInc.bvMes||0))||(newBvDia!==(+oldInc.bvDia||0))||(newBf!==(+oldInc.bf||0))||(newBfDate!==(+oldInc.bfDate||0))||(newBfLastDay!==!!oldInc.bfLastDay);
   if(!changed){_incEdited=false;_refreshIncSaveBtn();toast('Sin cambios');return;}
-  // Build preview of what changes
   const diffs=[];
   if(newSal!==(+oldInc.sal||0))diffs.push(`Salario: ${fx(+oldInc.sal||0)} → <strong>${fx(newSal)}</strong>`);
   if(newBf!==(+oldInc.bf||0))diffs.push(`Bono mensual: ${fx(+oldInc.bf||0)} → <strong>${fx(newBf)}</strong>`);
-  if(newBv!==(+oldInc.bv||0))diffs.push(`Bono semestral: ${fx(+oldInc.bv||0)} → <strong>${fx(newBv)}</strong>`);
-  if(newBfDate!==(+oldInc.bfDate||0))diffs.push(`Día bono: ${oldInc.bfDate||'—'} → <strong>${newBfDate||'—'}</strong>`);
+  if(newBv!==(+oldInc.bv||0))diffs.push(`Bono semestral estimado: ${fx(+oldInc.bv||0)} → <strong>${fx(newBv)}</strong>`);
+  if(newBvMes!==(+oldInc.bvMes||0))diffs.push(`Mes bono semestral: ${oldInc.bvMes||'—'} → <strong>${newBvMes||'—'}</strong>`);
+  if(newBvDia!==(+oldInc.bvDia||0))diffs.push(`Día bono semestral: ${oldInc.bvDia||'—'} → <strong>${newBvDia||'—'}</strong>`);
+  if(newBfDate!==(+oldInc.bfDate||0))diffs.push(`Día bono mensual: ${oldInc.bfDate||'—'} → <strong>${newBfDate||'—'}</strong>`);
+  if(newBfLastDay!==!!oldInc.bfLastDay)diffs.push(`Pago último del mes: ${oldInc.bfLastDay?'sí':'no'} → <strong>${newBfLastDay?'sí':'no'}</strong>`);
   const ckNow=cycleKey();
-  // Pretty label of current cycle
   const m=ckNow.match(/^(\d+)-(\d+)-(1ra|2da)$/);
   const cycleLbl=m?`${m[3]} qna · ${['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][(+m[2])-1]} ${m[1]}`:ckNow;
   const body='<div style="font-size:12px;color:var(--txt2);line-height:1.8;margin-bottom:14px">'
@@ -4419,51 +4480,85 @@ function saveIncomeChanges(){
     +'</div>'
     +'<div style="font-size:12px;color:var(--txt);margin-bottom:10px"><strong>¿Desde cuándo aplica este cambio?</strong></div>'
     +'<div style="display:flex;flex-direction:column;gap:8px">'
-    +'<button class="btn" style="text-align:left;padding:12px 14px;background:rgba(78,124,106,.08);border:1px solid rgba(78,124,106,.3);color:var(--sage);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_applyIncChange(\'forward\','+newSal+','+newBv+','+newBf+','+newBfDate+')">'
+    +'<button class="btn" style="text-align:left;padding:12px 14px;background:rgba(78,124,106,.08);border:1px solid rgba(78,124,106,.3);color:var(--sage);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_applyIncChange(\'forward\','+newSal+','+newBv+','+newBf+','+newBfDate+','+newBfLastDay+','+newBvMes+','+newBvDia+')">'
     +'<div style="font-weight:bold;font-size:13px">✅ Desde esta quincena ('+cycleLbl+')</div>'
     +'<div style="font-size:10px;color:var(--muted);margin-top:2px">Las quincenas pasadas conservan el ingreso viejo</div></button>'
-    +'<button class="btn" style="text-align:left;padding:12px 14px;background:rgba(160,112,48,.05);border:1px solid rgba(160,112,48,.3);color:var(--amber);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_applyIncChange(\'retroactive\','+newSal+','+newBv+','+newBf+','+newBfDate+')">'
-    +'<div style="font-weight:bold;font-size:13px">⏮ Siempre ha sido así</div>'
-    +'<div style="font-size:10px;color:var(--muted);margin-top:2px">Recalcula todas las quincenas con el nuevo monto (corrige error de dato)</div></button>'
+    +'<button class="btn" style="text-align:left;padding:12px 14px;background:rgba(160,112,48,.05);border:1px solid rgba(160,112,48,.3);color:var(--amber);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_applyIncChange(\'retroactive\','+newSal+','+newBv+','+newBf+','+newBfDate+','+newBfLastDay+','+newBvMes+','+newBvDia+')">'
+    +'<div style="font-weight:bold;font-size:13px">⏮ Siempre ha sido así / corregir dato</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:2px">Recalcula todas las quincenas con el nuevo monto y limpia el historial de ingresos</div></button>'
     +'</div>';
   showConfirm('💰 Guardar cambios de ingreso',body,null);
   const row=document.getElementById('confirmModal').querySelector('.row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
 }
-function _applyIncChange(mode,sal,bv,bf,bfDate){
+function _applyIncChange(mode,sal,bv,bf,bfDate,bfLastDay,bvMes,bvDia){
   const ckNow=cycleKey();
   const oldInc={...S.inc};
+  bfLastDay=!!bfLastDay;
+  bvMes=+bvMes||0;
+  bvDia=+bvDia||0;
   if(mode==='forward'){
-    // Guardar el VIEJO en el historial con from = ckNow (el nuevo aplica DESDE ckNow)
-    // Truco: el historial guarda valores que estaban ANTES de ckNow
-    // Si no hay historial previo, el "antes" es "siempre" → from='2000-1-1ra' (un ciclo muy viejo)
     const hist=S.incHistory||[];
-    // La entrada vieja cubre desde el inicio (o desde el último cambio) hasta ckNow-1
-    // Guardamos el viejo con from = la entrada más antigua conocida o un ancla
-    // Encontrar el from más antiguo actual, o usar ancla
     let oldestFrom='2020-1-1ra';
     if(hist.length){
       const sorted=[...hist].sort((a,b)=>ckToOrder(a.from)-ckToOrder(b.from));
       oldestFrom=sorted[0].from;
     }
-    // La entrada vieja representa lo que regía ANTES del cambio actual
-    // Necesitamos marcar desde "siempre" (o desde el último cambio) con el valor viejo
-    const oldEntry={from:oldestFrom,sal:+oldInc.sal||0,bv:+oldInc.bv||0,bf:+oldInc.bf||0,bfDate:+oldInc.bfDate||0,savedAt:new Date().toISOString()};
-    // Remover cualquier entrada existente con mismo from para no duplicar
-    const cleanHist=hist.filter(h=>h.from!==oldestFrom);
-    // Nueva entrada con el NUEVO valor y from=ckNow
-    const newEntry={from:ckNow,sal:+sal||0,bv:+bv||0,bf:+bf||0,bfDate:+bfDate||0,savedAt:new Date().toISOString()};
-    const newHist=[...cleanHist,oldEntry,newEntry];
-    pt({inc:{...S.inc,sal:+sal||0,bv:+bv||0,bf:+bf||0,bfDate:+bfDate||0},incHistory:newHist});
+    const hasOldest=hist.some(h=>h.from===oldestFrom);
+    const oldEntry=hasOldest?null:{from:oldestFrom,sal:+oldInc.sal||0,bv:+oldInc.bv||0,bvMes:+oldInc.bvMes||0,bvDia:+oldInc.bvDia||0,bf:+oldInc.bf||0,bfDate:+oldInc.bfDate||0,bfLastDay:!!oldInc.bfLastDay,savedAt:new Date().toISOString()};
+    const newEntry={from:ckNow,sal:+sal||0,bv:+bv||0,bvMes,bvDia,bf:+bf||0,bfDate:+bfDate||0,bfLastDay,savedAt:new Date().toISOString()};
+    const cleanHist=hist.filter(h=>h.from!==ckNow);
+    const newHist=oldEntry?[...cleanHist,oldEntry,newEntry]:[...cleanHist,newEntry];
+    pt({inc:{...S.inc,sal:+sal||0,bv:+bv||0,bvMes,bvDia,bf:+bf||0,bfDate:+bfDate||0,bfLastDay},incHistory:newHist});
     toast('✓ Guardado · aplica desde esta quincena');
   }else{
-    // Retroactivo: solo actualizar S.inc sin tocar historial (o limpiarlo si había)
-    pt({inc:{...S.inc,sal:+sal||0,bv:+bv||0,bf:+bf||0,bfDate:+bfDate||0}});
-    toast('✓ Guardado · aplica a todo el historial');
+    pt({inc:{...S.inc,sal:+sal||0,bv:+bv||0,bvMes,bvDia,bf:+bf||0,bfDate:+bfDate||0,bfLastDay},incHistory:[]});
+    toast('✓ Guardado · historial limpiado');
   }
   _incEdited=false;
   closeConfirm();
   rFlujo();hdrUp();
+}
+// Modal para registrar el bono semestral REAL al recibirlo (monto variable)
+function openBvApply(){
+  const estimate=+S.inc.bv||0;
+  const today=new Date().toISOString().split('T')[0];
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">Registra el bono <strong>tal cual te lo pagaron</strong>. Se agregará como ingreso extra de este ciclo.</div>'
+    +(estimate>0?'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Estimado registrado: <strong>'+fx(estimate)+'</strong></div>':'')
+    +'<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Monto real recibido ($)</label><input type="number" id="_bvReal" value="'+estimate+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sky);font-family:Georgia,serif;border:1px solid var(--border);border-radius:8px;padding:10px" onclick="this.select()"></div>'
+    +'<div id="_bvDiff" style="font-size:11px;text-align:center;margin-bottom:12px;min-height:16px;color:var(--muted)"></div>'
+    +'<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Fecha del pago</label><input type="date" id="_bvDate" value="'+today+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Nota (opcional)</label><input type="text" id="_bvNote" placeholder="Ej. bono Q2 2026 · KPIs 105%" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>';
+  showConfirm('🎯 Registrar bono semestral',body,()=>{
+    const real=+(document.getElementById('_bvReal')?.value)||0;
+    const date=document.getElementById('_bvDate')?.value||today;
+    const note=document.getElementById('_bvNote')?.value.trim()||'';
+    if(real<=0){toast('⚠ Monto inválido');return;}
+    const extra={id:Date.now(),name:'🎯 Bono semestral'+(note?' · '+note:''),amt:real,tipo:'unico',date};
+    pt({extras:[...(S.extras||[]),extra]});
+    closeConfirm();
+    const diff=real-estimate;
+    if(estimate>0){
+      if(diff>0)toast('✓ '+fx(real)+' registrado · '+fx(diff)+' más que estimado 🎉');
+      else if(diff<0)toast('✓ '+fx(real)+' registrado · '+fx(Math.abs(diff))+' menos que estimado');
+      else toast('✓ '+fx(real)+' registrado · exacto al estimado');
+    }else{
+      toast('✓ '+fx(real)+' registrado como ingreso extra');
+    }
+    rFlujo();hdrUp();
+  });
+  setTimeout(()=>{
+    const inp=document.getElementById('_bvReal');
+    if(inp){inp.oninput=function(){
+      const r=+this.value||0;
+      const diff=r-estimate;
+      const el=document.getElementById('_bvDiff');
+      if(!el)return;
+      if(!estimate||r===estimate)el.innerHTML='';
+      else if(diff>0)el.innerHTML='<span style="color:var(--sage)">🎉 '+fx(diff)+' más que lo estimado</span>';
+      else el.innerHTML='<span style="color:var(--terra)">⚠ '+fx(Math.abs(diff))+' menos que lo estimado</span>';
+    };inp.focus();}
+  },100);
 }
 function showIncHistory(){
   const hist=[...(S.incHistory||[])].sort((a,b)=>ckToOrder(b.from)-ckToOrder(a.from));
@@ -4472,9 +4567,19 @@ function showIncHistory(){
   const fmtCk=ck=>{const m=ck.match(/^(\d+)-(\d+)-(1ra|2da)$/);return m?`${m[3]} · ${mNames[(+m[2])-1]} ${m[1]}`:ck;};
   const body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px">Cambios de ingreso registrados (del más reciente al más viejo):</div>'
     +'<div style="max-height:320px;overflow-y:auto">'
-    +hist.map((h,i)=>`<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px"><div style="font-size:12px;font-weight:bold;color:var(--sage);margin-bottom:4px">Desde ${fmtCk(h.from)}</div><div style="font-size:11px;color:var(--txt2);line-height:1.6">Salario: ${fx(h.sal)}${h.bf?' · Bono mensual: '+fx(h.bf):''}${h.bv?' · Bono semestral: '+fx(h.bv):''}</div><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;margin-top:6px;color:var(--terra)" onclick="_deleteIncHistory(${i})">🗑 Eliminar</button></div>`).join('')
+    +hist.map((h,i)=>`<div style="padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px"><div style="font-size:12px;font-weight:bold;color:var(--sage);margin-bottom:4px">Desde ${fmtCk(h.from)}</div><div style="font-size:11px;color:var(--txt2);line-height:1.6">Salario: ${fx(h.sal)}${h.bf?' · Bono mensual: '+fx(h.bf):''}${h.bfDate?' (día '+h.bfDate+')':''}${h.bfLastDay?' (último del mes)':''}${h.bv?' · Bono semestral: '+fx(h.bv):''}</div><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px;margin-top:6px;color:var(--terra)" onclick="_deleteIncHistory(${i})">🗑 Eliminar</button></div>`).join('')
+    +'</div>'
+    +'<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">'
+    +'<button class="btn btn-ghost btn-sm" style="width:100%;color:var(--terra);font-size:11px" onclick="_clearAllIncHistory()">🗑 Limpiar TODO el historial y usar solo el ingreso actual</button>'
     +'</div>';
   showInfo('📜 Historial de ingresos',body);
+}
+function _clearAllIncHistory(){
+  showConfirm('¿Limpiar todo el historial?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Todas las quincenas (pasadas y futuras) usarán el <strong>ingreso actual</strong> que tienes configurado.<br><br>Útil si el historial quedó inconsistente. Tu ingreso actual no se toca.</div>',()=>{
+    pt({incHistory:[]});
+    toast('✓ Historial limpiado');
+    closeConfirm();rFlujo();
+  });
 }
 function _deleteIncHistory(idx){
   const hist=[...(S.incHistory||[])].sort((a,b)=>ckToOrder(b.from)-ckToOrder(a.from));
@@ -5062,8 +5167,7 @@ try{
   // ── INCOME ── (usa snapshot histórico si existe)
   const incForCk=getIncForCycle(_viewCk);
   const salQ=(+incForCk.sal||0)/2;
-  const bfDay=+(incForCk.bfDate)||0;
-  const bfThisQ=dayInCycle(bfDay)?(+incForCk.bf||0):0;
+  const bfThisQ=bonusInCycle(cStart,cEnd,incForCk)?(+incForCk.bf||0):0;
   let extrasQ=0;
   S.extras.forEach(x=>{if(x.tipo==='recurrente'){extrasQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;}else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extrasQ+=(+x.amt||0);}});
   const incQ=salQ+bfThisQ+extrasQ;
@@ -7221,7 +7325,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-histinc';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-bvvar';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

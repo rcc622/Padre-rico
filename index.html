@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='ckorder2-2026-04-16';
+window.APP_BUILD='revert-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -1945,6 +1945,20 @@ function calcBonoPlays(){
     B:{extra:playBExtra,newBal:playBNewBal,monthsSaved:playBMonthsSaved},
     C:{savBoost:playCSavBoost,debtExtra:playCDebtExtra,monthsSaved:playCMonthsSaved}
   };
+}
+function showBonoPlays(){
+  try{
+    const p=calcBonoPlays();if(p.bf<=0){toast('Sin bono configurado');return;}
+    const topName=p.topDebt?p.topDebt.name:'';
+    const stratLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
+    let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Bono mensual: <strong>'+fx(p.bf)+'</strong>. Tú decides — la app no aplica nada automático.</div>';
+    body+='<div style="padding:12px;border:1px solid rgba(78,124,106,.3);border-radius:8px;background:rgba(78,124,106,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sage)">🪙 A · Súper Ahorro</strong><span style="font-size:10px;color:var(--muted)">50%</span></div><div style="font-size:11px">+'+fx(p.A.boost)+' extra → Total activos: <strong style="color:var(--sage)">'+fx(p.A.total)+'</strong></div></div>';
+    if(p.topDebt){
+      body+='<div style="padding:12px;border:1px solid rgba(74,110,140,.3);border-radius:8px;background:rgba(74,110,140,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sky)">⚔️ B · Asalto Deuda</strong><span style="font-size:10px;color:var(--muted)">70%</span></div><div style="font-size:11px">'+fx(p.B.extra)+' a <strong>'+topName+'</strong> ('+stratLabel+') → Saldo: '+fx(p.B.newBal)+(p.B.monthsSaved>0?' · ~'+p.B.monthsSaved+' meses adelantados':'')+'</div></div>';
+      body+='<div style="padding:12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;background:rgba(160,112,48,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--amber)">⚖️ C · Balanceada</strong><span style="font-size:10px;color:var(--muted)">35%+35%</span></div><div style="font-size:11px">Ahorro +'+fx(p.C.savBoost)+' · Deuda −'+fx(p.C.debtExtra)+(p.C.monthsSaved>0?' · ~'+p.C.monthsSaved+' meses':'')+'</div></div>';
+    }
+    showInfo('💎 Jugada Estratégica',body);
+  }catch(e){toast('Error al calcular jugadas');}
 }
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+toMonthly(+d.pay||0,d.freq||'mensual'),0);
 const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
@@ -7341,7 +7355,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-ckorder2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-revert';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

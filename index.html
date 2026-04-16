@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='bvvar-2026-04-16';
+window.APP_BUILD='ckorder2-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -430,19 +430,20 @@ function cycleWindowFromKey(ck){
 function allCycleKeys(){
   const keys=new Set(Object.keys(S.paidItems||{}));
   keys.add(cycleKey());
-  // Add next cycle
+  // Add next cycle. Convención: "1ra X" = empieza día 30 de mes X, termina 14 de X+1.
+  // "2da X" = 15-29 de mes X.
   const cw=getCycleWindow();
   const ne=new Date(cw.end);ne.setDate(ne.getDate()+1);
   const nd=ne.getDate(),nm=ne.getMonth(),ny=ne.getFullYear();
   const nextCk=nd>=15&&nd<=29?ny+'-'+(nm+1)+'-2da':ny+'-'+(nm+1)+'-1ra';
   keys.add(nextCk);
-  // Sort chronologically by parsing the key
+  // Sort chronologically: 2da X antes de 1ra X (mismo mes X)
   return [...keys].sort((a,b)=>{
     const pa=a.match(/(\d+)-(\d+)-(1ra|2da)/);
     const pb=b.match(/(\d+)-(\d+)-(1ra|2da)/);
     if(!pa||!pb)return 0;
-    const va=+pa[1]*100+( +pa[2])*2+(pa[3]==='1ra'?1:0);
-    const vb=+pb[1]*100+( +pb[2])*2+(pb[3]==='1ra'?1:0);
+    const va=+pa[1]*24+(+pa[2])*2+(pa[3]==='2da'?0:1);
+    const vb=+pb[1]*24+(+pb[2])*2+(pb[3]==='2da'?0:1);
     return va-vb;
   });
 }
@@ -1436,11 +1437,17 @@ const mBonus=()=>(+S.inc.bv)/6;
 // Si no hay historial, retorna S.inc (comportamiento actual — sin cambios).
 // Si hay historial, busca la entrada más reciente cuyo "from" <= ck.
 // Historial: S.incHistory = [{from:'2026-3-2da', sal, bf, bfDate, bv, savedAt}, ...]
+// Convierte cycleKey a número ordenable cronológicamente.
+// Convención app: "1ra X" = ciclo que inicia día 30 del mes X (termina 14 de X+1).
+//                 "2da X" = ciclo que inicia día 15 del mes X (termina 29 de X).
+// Orden temporal real: ...→ 2da mar → 1ra mar(30mar-14abr) → 2da abr → 1ra abr(30abr-14may) → 2da may → ...
+// Dentro del mismo mes, "2da X" ocurre ANTES de "1ra X".
 function ckToOrder(ck){
-  // Convierte 'YYYY-M-Xra' a número ordenable: año*100 + mes*2 + (0 si 1ra, 1 si 2da)
   const m=(ck||'').match(/^(\d+)-(\d+)-(1ra|2da)$/);
   if(!m)return 0;
-  return (+m[1])*100 + (+m[2])*2 + (m[3]==='2da'?1:0);
+  const y=+m[1],mo=+m[2],tipo=m[3];
+  // 2da X (día 15 de X) antes que 1ra X (día 30 de X)
+  return y*24 + mo*2 + (tipo==='2da'?0:1);
 }
 function getIncForCycle(ck){
   const hist=S.incHistory||[];
@@ -5671,7 +5678,7 @@ function renderRetos(){
   else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
   else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
   function dayInC(pd){if(!pd)return false;const tds=[];for(let tm2=cStart.getMonth()-1;tm2<=cEnd.getMonth()+1;tm2++){const mx=new Date(cStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
-  const salQ=S.inc.sal/2;const bfDay=+(S.inc.bfDate)||0;const bfQ=dayInC(bfDay)?(+S.inc.bf||0):0;
+  const salQ=S.inc.sal/2;const bfQ=bonusInCycle(cStart,cEnd,S.inc)?(+S.inc.bf||0):0;
   let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extQ+=(+x.amt||0);}});
   const incQ=salQ+bfQ+extQ;
   let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
@@ -6064,18 +6071,27 @@ function showOvertimeCalc(){
   else if(d>=30){nStart=new Date(y,m+1,15);nEnd=new Date(y,m+1,29);}
   else{nStart=new Date(y,m,15);nEnd=new Date(y,m,29);}
   function dayInN(pd){if(!pd)return false;const tds=[];for(let tm2=nStart.getMonth()-1;tm2<=nEnd.getMonth()+1;tm2++){const mx=new Date(nStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(nStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=nStart&&td<=nEnd);}
-  const salQ=S.inc.sal/2;
+  // Compute next cycle key from nStart/nEnd to lookup correct income snapshot
+  const nCycleKey=(()=>{
+    const y2=nStart.getFullYear(),m2=nStart.getMonth()+1,d2=nStart.getDate();
+    const nType=(d2>=15&&d2<=29)?'2da':'1ra';
+    return y2+'-'+m2+'-'+nType;
+  })();
+  const nIncH=getIncForCycle(nCycleKey);
+  const salQ=(+nIncH.sal||0)/2;
+  const nBonus=bonusInCycle(nStart,nEnd,nIncH)?(+nIncH.bf||0):0;
+  const nextIncome=salQ+nBonus;
   let nextExpQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')nextExpQ+=(+e.amt||0)*getWeeksInCycle({start:nStart,end:nEnd});else if(f==='quincenal')nextExpQ+=(+e.amt||0);else if(pd>0&&dayInN(pd))nextExpQ+=mo;else if(!pd)nextExpQ+=mo/2;});
   let nextDebtQ=0;S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')nextDebtQ+=(db.pay||0);else if(pd>0&&dayInN(pd))nextDebtQ+=mo;else if(!pd)nextDebtQ+=mo/2;});
   const savQ2=savAmt()/2;
   const nextTotal=nextExpQ+nextDebtQ+savQ2;
-  const totalDeficit=Math.max(0,pendingThis+nextTotal-salQ);
+  const totalDeficit=Math.max(0,pendingThis+nextTotal-nextIncome);
   const hoursNeeded=totalDeficit>0?Math.ceil(totalDeficit/RATE*10)/10:0;
 
   const body='<div style="font-size:12px;line-height:1.8;color:var(--txt2);margin-bottom:14px">'
     +'<div class="row-b" style="margin-bottom:2px"><span>Pendiente esta qna:</span><strong style="color:var(--terra)">'+fx(Math.round(pendingThis))+'</strong></div>'
     +'<div class="row-b" style="margin-bottom:2px"><span>Compromisos próxima qna:</span><strong style="color:var(--terra)">'+fx(Math.round(nextTotal))+'</strong></div>'
-    +'<div class="row-b" style="margin-bottom:2px"><span>Ingreso próxima qna:</span><strong style="color:var(--sage)">'+fx(Math.round(salQ))+'</strong></div>'
+    +'<div class="row-b" style="margin-bottom:2px"><span>Ingreso próxima qna'+(nBonus>0?' <span style="font-size:10px;color:var(--sage)">(+bono)</span>':'')+':</span><strong style="color:var(--sage)">'+fx(Math.round(nextIncome))+'</strong></div>'
     +'<div class="row-b" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><span style="font-weight:bold">Déficit total:</span><strong style="color:'+(totalDeficit>0?'var(--terra)':'var(--sage)')+'">'+fx(Math.round(totalDeficit))+'</strong></div>'
     +'</div>'
     +(totalDeficit>0?'<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Para cubrir necesitas <strong>'+hoursNeeded+'h</strong> a $'+RATE+'/hr.</div>'
@@ -7325,7 +7341,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-bvvar';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-ckorder2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

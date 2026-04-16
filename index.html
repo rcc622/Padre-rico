@@ -271,11 +271,13 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
+window.APP_BUILD='metodo1-2026-04-15';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
+  deficitDecisions:{},
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
 
 function migrate(){
@@ -314,6 +316,7 @@ function initSavStreakFields(){
   if(typeof S.savStreak!=='number')S.savStreak=0;
   if(typeof S.savStreakBest!=='number')S.savStreakBest=0;
   if(!S.savCommits||typeof S.savCommits!=='object')S.savCommits={};
+  if(!S.deficitDecisions||typeof S.deficitDecisions!=='object')S.deficitDecisions={};
   S.savStreakV1=true;
   sv();
 }
@@ -335,9 +338,36 @@ const pt=(o)=>{S={...S,...o};sv()};
 let toastTimer=null;
 function toast(msg){
   const el=document.getElementById('toast');
-  el.textContent=msg;el.classList.add('show');
+  el.innerHTML=msg;el.classList.add('show');el.style.pointerEvents='none';
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>el.classList.remove('show'),2500);
+}
+// FASE 6 · Toast con botón para cambiar método de pago a TDC.
+// Se muestra después de cada pago aplicado. Si el usuario tapea el botón,
+// el método cambia de 'debito' (default) a 'tdc'. Si lo deja pasar, queda débito.
+let _toastTdcCtx=null;
+function toastSwitchTDC(msg,ck,key){
+  const el=document.getElementById('toast');
+  _toastTdcCtx={ck,key};
+  el.innerHTML=msg+' <span style="display:inline-block;background:rgba(255,255,255,.18);border-radius:6px;padding:3px 8px;margin-left:8px;cursor:pointer;font-weight:bold" onclick="_switchToTDC()">💳 TDC</span>';
+  el.classList.add('show');el.style.pointerEvents='auto';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';_toastTdcCtx=null;},4500);
+}
+function _switchToTDC(){
+  if(!_toastTdcCtx)return;
+  const {ck,key}=_toastTdcCtx;
+  const items=S.paidItems[ck];if(!items||!items[key])return;
+  const v=items[key];
+  if(typeof v==='object')items[key]={...v,paidWith:'tdc'};
+  else items[key]={at:v,paidWith:'tdc',applied:typeof v==='string'&&v==='applied'};
+  sv();
+  const el=document.getElementById('toast');
+  el.innerHTML='💳 Cambiado a TDC';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';},1800);
+  _toastTdcCtx=null;
+  if(typeof rDash==='function')try{rDash();}catch(e){}
 }
 
 // ══ CONFIRM MODAL ════════════════════════════════════
@@ -821,6 +851,21 @@ function _offerSavingsDeposit(amt,retoName,retoId){
   });
 }
 
+// ══ FASE 5 · MANEJO DE DÉFICIT DE QUINCENA ANTERIOR ══
+// El usuario administra TDC y préstamos manualmente. La app solo recuerda y guía.
+function markDeficitDecision(ck,tipo,balance){
+  const monto=Math.abs(balance);
+  const newDecisions={...(S.deficitDecisions||{}),[ck]:{tipo,amount:monto,decidedAt:new Date().toISOString()}};
+  pt({deficitDecisions:newDecisions});
+  if(tipo==='absorbido'){
+    toast('✓ Decisión guardada · Sin deuda nueva');
+  }else{
+    const label=tipo==='tdc'?'TDC':'préstamo';
+    toast('💡 Recuerda registrar la deuda del '+label+' en ⛓️ Deudas');
+  }
+  rDash();
+}
+
 // ══ ETAPA 1 · 6-B · EDICIÓN RETROACTIVA DE RETOS COMPLETADOS ══
 function _editCompletedReto(retoId,cycle){
   try{
@@ -1212,6 +1257,159 @@ const savAmt=()=>mInc()*S.savPct/100;
 const savAmtQ=()=>Math.round(savAmt()/2);
 // Get commit for current cycle, returns null if none
 function curSavCommit(){return (S.savCommits||{})[cycleKey()]||null;}
+// FASE 5 · Detección de déficit pendiente de resolver
+// Calcula el saldo de un ciclo basado en items applied de paidItems vs ingreso esperado
+function calcCycleBalance(ck){
+  try{
+    const paid=(S.paidItems||{})[ck];if(!paid)return null;
+    // Ingreso del ciclo: salario/2 + bono mensual si cae en este ciclo
+    const sal=+S.inc.sal||0;
+    const bf=+S.inc.bf||0;
+    const bfDate=+S.inc.bfDate||0;
+    let ingreso=sal/2;
+    const isFirstQna=ck.endsWith('-1ra');
+    const bonoEnFirst=bfDate<=14||bfDate>=30;
+    if(bf>0&&((isFirstQna&&bonoEnFirst)||(!isFirstQna&&!bonoEnFirst)))ingreso+=bf;
+    // Sumar gastos applied
+    let gastos=0;
+    for(const k in paid){
+      if(k.startsWith('_'))continue;
+      const v=paid[k];
+      const st=typeof v==='string'?v:(v?.applied?'applied':'selected');
+      if(st!=='applied')continue;
+      const parts=k.split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
+      if(t==='exp'||t==='expw2'){
+        const e=S.exp.find(x=>x.id===idn);if(!e)continue;
+        const amt=+e.amt||0;const fr=e.freq||'mensual';
+        // Quincenal/semanal: cada marca representa la mitad del total qnal
+        if(fr==='semanal'||fr==='quincenal')gastos+=amt/2;
+        else if(fr==='mensual')gastos+=amt/2;
+        else if(fr==='bimestral')gastos+=amt/4;
+        else if(fr==='anual')gastos+=amt/24;
+        else gastos+=amt;
+      }else if(t==='debt'){
+        const d=S.debts.find(x=>x.id===idn);if(!d)continue;
+        gastos+=+d.pay||0;
+      }
+    }
+    return Math.round(ingreso-gastos);
+  }catch(e){return null;}
+}
+// Returns the previous cycleKey if it cerró con déficit y aún no se ha decidido qué hacer
+function pendingDeficitCycle(){
+  try{
+    const ck=cycleKey();
+    const allCycles=Object.keys(S.paidItems||{}).filter(c=>c!==ck).sort().reverse();
+    for(const c of allCycles){
+      if((S.deficitDecisions||{})[c])continue; // ya decidió
+      const bal=calcCycleBalance(c);
+      if(bal===null||bal>=0)continue;
+      const paid=(S.paidItems||{})[c]||{};
+      const appliedCount=Object.keys(paid).filter(k=>!k.startsWith('_')&&(typeof paid[k]==='string'?paid[k]==='applied':paid[k]?.applied)).length;
+      if(appliedCount<3)continue;
+      return {ck:c,balance:bal};
+    }
+    return null;
+  }catch(e){return null;}
+}
+// FASE 6 · Totales del ciclo actual por método de pago (débito vs TDC)
+// Suma applied de paidItems + diarios. paidWith default = 'debito' si está applied sin método.
+function cyclePaymentTotals(){
+  const ck=cycleKey();
+  const items=(S.paidItems||{})[ck]||{};
+  let debito=0,tdc=0,debitoCount=0,tdcCount=0;
+  // From paidItems (Plan de Acción)
+  for(const key in items){
+    if(key.startsWith('_'))continue;
+    const v=items[key];
+    const applied=typeof v==='object'?v.applied:(v==='applied');
+    if(!applied)continue;
+    let amt=typeof v==='object'?(v.amt||v.realAmt||0):0;
+    // If amt missing (legacy applied), try to compute from current data
+    if(!amt){
+      const [type,idStr]=key.split('_');const id=+idStr;
+      if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2)amt=+d2.pay||0;}
+      else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');}
+      else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
+    }
+    const method=(typeof v==='object'&&v.paidWith)||'debito';
+    if(method==='tdc'){tdc+=amt;tdcCount++;}else{debito+=amt;debitoCount++;}
+  }
+  // From Diarios (filter to current cycle)
+  const cw=getCycleWindow();
+  const startStr=cw.start.toISOString().split('T')[0];
+  const endStr=cw.end.toISOString().split('T')[0];
+  (S.gastosDiarios||[]).forEach(g=>{
+    if(!g.date||g.date<startStr||g.date>endStr)return;
+    const method=g.paidWith||'debito';
+    const amt=+g.amt||0;
+    if(method==='tdc'){tdc+=amt;tdcCount++;}else{debito+=amt;debitoCount++;}
+  });
+  return {debito:Math.round(debito),tdc:Math.round(tdc),debitoCount,tdcCount,total:Math.round(debito+tdc)};
+}
+// FASE 6 · Migración manual: encuentra applied items sin paidWith explícito
+// (legacy items donde el método se asume 'debito' por default sin que el usuario lo haya confirmado)
+function unclassifiedPayments(){
+  const out=[];
+  Object.keys(S.paidItems||{}).forEach(ck=>{
+    const items=S.paidItems[ck];if(!items||typeof items!=='object')return;
+    Object.keys(items).forEach(key=>{
+      if(key.startsWith('_'))return;
+      const v=items[key];
+      const applied=typeof v==='object'?v.applied:(v==='applied');
+      if(!applied)return;
+      // sólo legacy (sin paidWith asignado explícitamente)
+      if(typeof v==='object'&&v.paidWith)return;
+      const [type,idStr]=key.split('_');const id=+idStr;
+      let name='?',amt=0;
+      if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2){name=d2.name;amt=+d2.pay||0;}}
+      else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e){name=e.name+(e.freq==='semanal'?' (sem 1)':'');amt=e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual');}}
+      else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e){name=e.name+' (sem 2)';amt=+e.amt||0;}}
+      else if(type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e){name=e.name+' (sem 3)';amt=+e.amt||0;}}
+      else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){name='🎯 '+g.name;amt=savGoalPerQ(g);}}
+      else return;
+      out.push({ck,key,name,amt:Math.round(amt)});
+    });
+  });
+  // Also unclassified Diarios
+  (S.gastosDiarios||[]).forEach(g=>{
+    if(g.paidWith)return;
+    out.push({ck:'diario',key:'diario_'+g.id,name:'🛒 '+g.name+' ('+g.date+')',amt:+g.amt||0,_diarioId:g.id});
+  });
+  return out;
+}
+function reclassifyPayment(ck,key,method,_diarioId){
+  if(_diarioId){
+    const newDiarios=(S.gastosDiarios||[]).map(g=>g.id===_diarioId?{...g,paidWith:method}:g);
+    pt({gastosDiarios:newDiarios});
+  }else{
+    const items=S.paidItems[ck];if(!items||!items[key])return;
+    const v=items[key];
+    if(typeof v==='object')items[key]={...v,paidWith:method};
+    else items[key]={at:Date.now(),applied:true,paidWith:method};
+    sv();
+  }
+  rDash();
+  // reopen modal to continue
+  setTimeout(()=>openMigrationModal(),100);
+}
+function openMigrationModal(){
+  const list=unclassifiedPayments();
+  if(list.length===0){
+    showInfo('✅ Todo clasificado','<div style="font-size:12px;color:var(--txt2);line-height:1.7">No hay pagos pendientes de clasificar. Todos tus pagos tienen método registrado.</div>');
+    return;
+  }
+  // Show first 8 to avoid huge modal
+  const shown=list.slice(0,8);
+  const remaining=list.length-shown.length;
+  let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Clasifica cada pago según con qué lo pagaste. <strong>'+list.length+'</strong> pendiente'+(list.length!==1?'s':'')+'.</div>';
+  shown.forEach(it=>{
+    const did=it._diarioId?(',\''+it._diarioId+'\''):'';
+    body+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px"><div class="row-b" style="margin-bottom:6px"><div style="flex:1;min-width:0;padding-right:8px"><div style="font-size:12px;font-weight:bold;color:var(--txt);overflow:hidden;text-overflow:ellipsis">'+it.name+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+it.ck+(it.amt?' · '+fx(it.amt):'')+'</div></div></div><div class="row" style="gap:6px"><button class="btn btn-sage btn-sm" style="flex:1;padding:8px;font-size:11px" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'debito\''+(it._diarioId?',\''+it._diarioId+'\'':'')+')">💵 Débito</button><button class="btn btn-sky btn-sm" style="flex:1;padding:8px;font-size:11px" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'tdc\''+(it._diarioId?',\''+it._diarioId+'\'':'')+')">💳 TDC</button></div></div>';
+  });
+  if(remaining>0)body+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">+ '+remaining+' más después</div>';
+  showInfo('🔄 Clasificar pagos sin método',body);
+}
 // Check if user has committed this cycle
 function hasSavCommittedThisCycle(){const c=curSavCommit();return c&&c.status==='committed';}
 // ══ FASE 3 · QUINCENA GRANDE (bono) ═══════════════════
@@ -1409,7 +1607,7 @@ function hdrUp(){
   el.style.color=scCol(s);
   const today=new Date();
   const dtEl=document.getElementById('hdr-date');
-  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+cyc;}
+  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.innerHTML=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+cyc+' <span style="opacity:.5;font-size:9px;margin-left:4px">v'+(window.APP_BUILD||'?')+'</span>';}
 }
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go('dash');}
 
@@ -1617,6 +1815,22 @@ function rDash(){
   document.getElementById('tab-dash').innerHTML=`
   <!-- FRENTE 4 · SABIDURÍA DEL DÍA (Hooked: Hunt reward diario) -->
   ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:14px 16px;margin-bottom:13px;background:linear-gradient(135deg,rgba(78,124,106,.04) 0%,rgba(74,110,140,.02) 100%)"><div class="row" style="gap:12px;align-items:flex-start"><div style="font-size:30px;line-height:1;flex-shrink:0">${w.icon}</div><div style="flex:1;min-width:0"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px;font-weight:bold">💡 Sabiduría del día · ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.65">${w.text}</div></div></div></div>`;}catch(e){return'';}})()}
+
+  <!-- FASE 5 · DÉFICIT DE QUINCENA ANTERIOR (recordatorio amable hasta resolver) -->
+  ${(()=>{try{
+    const pd=pendingDeficitCycle();
+    if(!pd)return '';
+    return '<div class="card" style="border:2px solid rgba(184,92,74,.45);background:linear-gradient(135deg,rgba(184,92,74,.06) 0%,rgba(160,112,48,.03) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">⚠️ Quincena pasada cerró con déficit</div><div style="font-size:13px;color:var(--txt);font-weight:bold;margin-top:4px">'+pd.ck+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Faltante</div><div style="font-size:20px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.65;margin-bottom:14px">Te faltaron <strong style="color:var(--terra)">'+fx(Math.abs(pd.balance))+'</strong> al cerrar. ¿Cómo lo cubriste?</div><div class="row" style="gap:6px;margin-bottom:10px"><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Lo absorbo</button></div><div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">Si elegiste TDC o Préstamo, recuerda registrar la deuda manualmente en <strong>Ingresos, Gastos y Activos → ⛓️ Deudas</strong></div></div>';
+  }catch(e){return'';}})()}
+
+  <!-- FASE 6 · CONTADOR DE PAGOS POR MÉTODO (débito vs TDC del ciclo actual) -->
+  ${(()=>{try{
+    const t=cyclePaymentTotals();
+    const unclassifiedCount=unclassifiedPayments().length;
+    if(t.total===0&&unclassifiedCount===0)return '';
+    const tdcPct=t.total>0?Math.round(t.tdc/t.total*100):0;
+    return '<div class="card" style="margin-bottom:13px;padding:14px 16px"><div class="row-b" style="margin-bottom:10px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💰 Pagos esta quincena por método</div><div style="font-size:11px;color:var(--muted)">'+(t.debitoCount+t.tdcCount)+' pago'+(t.debitoCount+t.tdcCount!==1?'s':'')+'</div></div><div class="row" style="gap:8px"><div style="flex:1;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px;border-left:3px solid var(--sage)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">💵 Débito</div><div style="font-size:18px;font-weight:bold;color:var(--sage);margin-top:2px">'+fx(t.debito)+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+t.debitoCount+' pago'+(t.debitoCount!==1?'s':'')+'</div></div><div style="flex:1;padding:10px 12px;background:rgba(74,110,140,.06);border-radius:8px;border-left:3px solid var(--sky)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">💳 TDC</div><div style="font-size:18px;font-weight:bold;color:var(--sky);margin-top:2px">'+fx(t.tdc)+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+t.tdcCount+' pago'+(t.tdcCount!==1?'s':'')+(t.tdc>0?' · '+tdcPct+'%':'')+'</div></div></div>'+(t.tdc>0?'<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5;text-align:center">💡 Recuerda registrar tu deuda de TDC en <strong>⛓️ Deudas</strong> antes del corte</div>':'')+(unclassifiedCount>0?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);text-align:center"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="openMigrationModal()">🔄 Clasificar '+unclassifiedCount+' pago'+(unclassifiedCount!==1?'s':'')+' sin método</button></div>':'')+'</div>';
+  }catch(e){return'';}})()}
 
   <!-- FASE 2 · PÁGATE A TI PRIMERO (Hooked: gatillo quincenal) -->
   ${(()=>{try{
@@ -3653,10 +3867,35 @@ function addDiario(){
   const a=+(document.getElementById('gda')?.value);
   const d=document.getElementById('gdd')?.value||new Date().toISOString().split('T')[0];
   if(!n||!a){toast('Concepto y monto requeridos');return;}
-  pt({gastosDiarios:[...(S.gastosDiarios||[]),{id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d}]});
-  toast('✓ Gasto registrado');
+  // FASE 6: defaultear paidWith:'debito' en cada diario
+  const newDiario={id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:'debito'};
+  pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
   _diarioCat='snack';
   rFlujo();
+  // Toast con switch a TDC
+  toastSwitchDiarioTDC('✓ '+fx(a)+' registrado · 💵 Débito',newDiario.id);
+}
+// FASE 6 · Toast específico para diarios (key distinta porque vive en S.gastosDiarios)
+function toastSwitchDiarioTDC(msg,diarioId){
+  const el=document.getElementById('toast');
+  _toastTdcCtx={diarioId};
+  el.innerHTML=msg+' <span style="display:inline-block;background:rgba(255,255,255,.18);border-radius:6px;padding:3px 8px;margin-left:8px;cursor:pointer;font-weight:bold" onclick="_switchDiarioToTDC()">💳 TDC</span>';
+  el.classList.add('show');el.style.pointerEvents='auto';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';_toastTdcCtx=null;},4500);
+}
+function _switchDiarioToTDC(){
+  if(!_toastTdcCtx||!_toastTdcCtx.diarioId)return;
+  const id=_toastTdcCtx.diarioId;
+  const newDiarios=(S.gastosDiarios||[]).map(g=>g.id===id?{...g,paidWith:'tdc'}:g);
+  pt({gastosDiarios:newDiarios});
+  const el=document.getElementById('toast');
+  el.innerHTML='💳 Cambiado a TDC';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';},1800);
+  _toastTdcCtx=null;
+  rFlujo();
+  if(typeof rDash==='function')try{rDash();}catch(e){}
 }
 function rmDiario(id){
   pt({gastosDiarios:(S.gastosDiarios||[]).filter(g=>g.id!==id)});
@@ -3881,6 +4120,7 @@ function applyPayments(){
   const ck=cycleKey();
   const items=S.paidItems[ck]||{};
   let appliedExp=0,appliedDebt=0,appliedAmt=0;
+  const newlyApplied=[]; // FASE 6: track keys aplicados en esta corrida
   for(const key in items){
     const v=items[key];
     if(v==='applied'||(typeof v==='object'&&v?.applied)||key.startsWith('_'))continue;
@@ -3910,13 +4150,25 @@ function applyPayments(){
       appliedExp++;
     }
     appliedAmt+=amt;
-    items[key]=typeof v==='object'?{...v,applied:true}:'applied';
+    // FASE 6: defaultear paidWith:'debito' si no estaba seteado
+    const baseObj=typeof v==='object'?v:{at:v||Date.now()};
+    items[key]={...baseObj,applied:true,amt,paidWith:baseObj.paidWith||'debito'};
+    newlyApplied.push({key,amt});
   }
   items._appliedTotal=((+items._appliedTotal)||0)+appliedAmt;
   S.paidItems[ck]=items;
   sv();
   const total=appliedExp+appliedDebt;
-  if(total>0){toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':''));rPlan();rFlujo();hdrUp();}
+  if(total>0){
+    rPlan();rFlujo();hdrUp();
+    // FASE 6: si fue solo 1 pago, ofrecer toast con switch a TDC.
+    // Si fueron varios, mostrar toast normal (el usuario puede editar método después en Inicio).
+    if(newlyApplied.length===1){
+      toastSwitchTDC('✅ '+fx(newlyApplied[0].amt)+' pagado · 💵 Débito',ck,newlyApplied[0].key);
+    }else{
+      toast('✅ '+total+' pagos aplicados · 💵 Débito por defecto');
+    }
+  }
   else{toast('No hay pagos seleccionados');}
 }
 function confirmApply(){
@@ -5099,7 +5351,7 @@ function waitToDiario(id){
   const today=new Date().toISOString().split('T')[0];
   pt({
     waitList:S.waitList.map(x=>x.id===id?{...x,resolved:true,bought:true,destino:'debito'}:x),
-    gastosDiarios:[...(S.gastosDiarios||[]),{id:Date.now(),name:w.name,amt:w.price,cat:'impulso',date:today,fromWait:id}]
+    gastosDiarios:[...(S.gastosDiarios||[]),{id:Date.now(),name:w.name,amt:w.price,cat:'impulso',date:today,fromWait:id,paidWith:'debito'}]
   });
   closeConfirm();toast('🛒 Registrado en Diarios como impulso');rHabitos();
 }
@@ -6057,7 +6309,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-otfx2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-metodo1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

@@ -271,7 +271,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='metodo2-2026-04-16';
+window.APP_BUILD='metodo3-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -642,116 +642,85 @@ function togglePaid(type,id){
   if(cur==='applied'||typeof cur==='object'&&cur?.applied){toast('Este pago ya fue aplicado');return;}
   if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');sv();rPlan();return;}
   
-  // Check if this is a variable expense (weekly: súper, gasolina)
-  const exp=(type==='exp'||type==='expw2'||type==='expw3')?S.exp.find(e=>e.id===id):null;
-  const isVariable=exp&&(exp.freq==='semanal'||/super|súper|gasol|mandado/i.test(exp.name||''));
+  // Get item info (name + budgeted amount)
+  const info=(()=>{
+    if(type==='debt'){const d=S.debts.find(x=>x.id===id);return d?{name:d.name,amt:+d.pay||0}:{name:'?',amt:0};}
+    if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(!e)return {name:'?',amt:0};return {name:e.name,amt:e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual')};}
+    if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);return e?{name:e.name,amt:+e.amt||0}:{name:'?',amt:0};}
+    if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);return g?{name:'🎯 '+g.name,amt:savGoalPerQ(g)}:{name:'?',amt:0};}
+    if(type==='apt'){const e=S.exp.find(x=>x.id===id);return e?{name:'💰 Apartar '+e.name,amt:Math.round((+e.amt||0)/2)}:{name:'?',amt:0};}
+    return {name:'?',amt:0};
+  })();
+  const budgeted=info.amt;
   
-  if(isVariable){
-    // Variable expense: ask amount + method together
-    const budgeted=+exp.amt||0;
-    const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:14px">Presupuestado: <strong>'+fx(budgeted)+'</strong><br>¿Cuánto gastaste realmente?</div>'
-      +'<input type="number" id="realAmtInput" value="'+budgeted+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">'
-      +'<div id="realAmtDiff" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px;margin-bottom:16px"></div>'
-      +'<div style="border-top:1px solid var(--border);padding-top:14px"><div style="font-size:11px;color:var(--muted);margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
-      +'<div style="display:flex;gap:8px">'
-      +'<button type="button" id="methodDebito" class="btn btn-sage" style="flex:1;padding:14px;font-size:14px" onclick="_selectMethod(\'debito\')">💵 Débito</button>'
-      +'<button type="button" id="methodTdc" class="btn" style="flex:1;padding:14px;font-size:14px;background:transparent;color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_selectMethod(\'tdc\')">💳 TDC</button>'
-      +'</div></div>';
-    showConfirm('💸 Registrar pago',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
-    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
-    _pendingMethod='debito'; // default
-    setTimeout(()=>{
-      const inp=document.getElementById('realAmtInput');
-      if(inp){inp.focus();inp.oninput=function(){
-        const real=+this.value||0;
-        const diff=budgeted-real;
-        const el=document.getElementById('realAmtDiff');
-        if(el)el.innerHTML=diff>0?'<span style="color:var(--sage)">🎉 Ahorraste '+fx(diff)+'</span>':diff<0?'<span style="color:var(--terra)">⚠ Gastaste '+fx(Math.abs(diff))+' de más</span>':'Exacto al presupuesto';
-      };}
-    },100);
-    // store pending context for method buttons
-    _pendingPayCtx={type,id,budgeted,isVariable:true};
-  }else{
-    // Simple item: ask only method
-    const itemName=(()=>{
-      if(type==='debt'){const d=S.debts.find(x=>x.id===id);return d?d.name:'?';}
-      if(type==='exp'||type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);return e?e.name:'?';}
-      if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);return g?g.name:'?';}
-      if(type==='apt'){const e=S.exp.find(x=>x.id===id);return e?'Apartar '+e.name:'?';}
-      return '?';
-    })();
-    const amt=(()=>{
-      if(type==='debt'){const d=S.debts.find(x=>x.id===id);return d?+d.pay||0:0;}
-      if(type==='exp'){const e=S.exp.find(x=>x.id===id);return e?(e.freq==='semanal'?(+e.amt||0):toMonthly(+e.amt||0,e.freq||'mensual')):0;}
-      if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);return e?+e.amt||0:0;}
-      if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);return g?savGoalPerQ(g):0;}
-      if(type==='apt'){const e=S.exp.find(x=>x.id===id);return e?Math.round((+e.amt||0)/2):0;}
-      return 0;
-    })();
-    const body='<div style="padding:14px 16px;background:var(--bg);border-radius:10px;margin-bottom:16px;text-align:center">'
-      +'<div style="font-size:15px;font-weight:bold;color:var(--txt)">'+itemName+'</div>'
-      +(amt?'<div style="font-size:20px;color:var(--sage);font-weight:bold;font-family:Georgia,serif;margin-top:4px">'+fx(Math.round(amt))+'</div>':'')
-      +'</div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
-      +'<div style="display:flex;gap:10px">'
-      +'<button type="button" class="btn btn-sage" style="flex:1;padding:16px;font-size:15px" onclick="_markSelected(\''+type+'\','+id+',\'debito\')">💵 Débito</button>'
-      +'<button type="button" class="btn" style="flex:1;padding:16px;font-size:15px;background:rgba(74,110,140,.1);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_markSelected(\''+type+'\','+id+',\'tdc\')">💳 TDC</button>'
-      +'</div>';
-    showConfirm('✓ Marcar como pagado',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
-    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
-  }
+  // Check if this is a weekly variable expense (for reto auto-check later)
+  const exp=(type==='exp'||type==='expw2'||type==='expw3')?S.exp.find(e=>e.id===id):null;
+  const isWeeklyVariable=exp&&exp.freq==='semanal';
+  
+  const body='<div style="padding:14px 16px;background:var(--bg);border-radius:10px;margin-bottom:14px;text-align:center">'
+    +'<div style="font-size:14px;font-weight:bold;color:var(--txt);margin-bottom:10px">'+info.name+'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Monto pagado</div>'
+    +'<input type="number" id="realAmtInput" value="'+budgeted+'" style="width:140px;font-size:24px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:8px;padding:8px" onclick="this.select()">'
+    +(budgeted>0?'<div style="font-size:10px;color:var(--muted);margin-top:4px">Presupuestado: '+fx(budgeted)+'</div>':'')
+    +'<div id="realAmtDiff" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px;min-height:16px"></div>'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:10px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
+    +'<div style="display:flex;gap:10px">'
+    +'<button type="button" class="btn btn-sage" style="flex:1;padding:16px;font-size:15px" onclick="_confirmPayment(\''+type+'\','+id+',\'debito\','+budgeted+')">💵 Débito</button>'
+    +'<button type="button" class="btn" style="flex:1;padding:16px;font-size:15px;background:rgba(74,110,140,.1);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_confirmPayment(\''+type+'\','+id+',\'tdc\','+budgeted+')">💳 TDC</button>'
+    +'</div>';
+  showConfirm('✓ Marcar como pagado',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
+  setTimeout(()=>{
+    const inp=document.getElementById('realAmtInput');
+    if(inp){inp.oninput=function(){
+      const real=+this.value||0;
+      const diff=budgeted-real;
+      const el=document.getElementById('realAmtDiff');
+      if(!el)return;
+      if(real===budgeted||budgeted<=0)el.innerHTML='';
+      else if(diff>0)el.innerHTML='<span style="color:var(--sage)">🎉 Ahorraste '+fx(Math.round(diff))+'</span>';
+      else el.innerHTML='<span style="color:var(--terra)">⚠ Gastaste '+fx(Math.round(Math.abs(diff)))+' de más</span>';
+    };}
+  },100);
 }
-// Mark a simple item as selected with chosen method
-function _markSelected(type,id,method){
-  const ck=planCk();
-  if(!S.paidItems[ck])S.paidItems[ck]={};
-  const key=type+'_'+id;
-  S.paidItems[ck][key]={at:Date.now(),paidWith:method};
-  sv();closeConfirm();rPlan();
-  toast(method==='tdc'?'✓ Marcado · 💳 TDC':'✓ Marcado · 💵 Débito');
-}
-// For variable items: selecting method triggers the save
-let _pendingPayCtx=null,_pendingMethod='debito';
-function _selectMethod(method){
-  if(!_pendingPayCtx){closeConfirm();return;}
-  const {type,id,budgeted,isVariable}=_pendingPayCtx;
-  const real=isVariable?(+(document.getElementById('realAmtInput')?.value)||0):0;
-  if(isVariable&&!real){toast('Ingresa el monto');return;}
+// Confirma el pago con método y monto, maneja auto-check de retos semanales
+function _confirmPayment(type,id,method,budgeted){
+  const real=+(document.getElementById('realAmtInput')?.value)||0;
+  if(!real){toast('Ingresa un monto válido');return;}
   const ck=planCk();
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
   const entry={at:Date.now(),paidWith:method};
-  if(isVariable){entry.realAmt=real;entry.budgeted=budgeted;}
+  // Save realAmt only if different from budgeted
+  if(real!==budgeted){entry.realAmt=real;entry.budgeted=budgeted;}
   S.paidItems[ck][key]=entry;
-  // Auto-check corresponding weekly reto (same logic as before)
-  if(isVariable&&(type==='exp'||type==='expw2'||type==='expw3')){
-    const exp=S.exp.find(e=>e.id===id);
-    if(exp&&exp.freq==='semanal'){
-      const name=(exp.name||'').toLowerCase();
-      let retoId=null;
-      if(/super|súper|despensa|mandado/i.test(name))retoId='surv_super';
-      else if(/gasol/i.test(name))retoId='surv_gas';
-      if(retoId){
-        const sr=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck&&r.active&&!r.completed);
-        if(sr){
-          const weekIdx=type==='expw3'?2:type==='expw2'?1:0;
-          if(!S.retoChecks)S.retoChecks={};
-          const rk=retoId+'_'+ck;
-          if(!S.retoChecks[rk])S.retoChecks[rk]=[];
-          S.retoChecks[rk]=S.retoChecks[rk].filter(c=>c.idx!==weekIdx);
-          const saved=(budgeted-real)>0;
-          S.retoChecks[rk].push({idx:weekIdx,date:new Date().toISOString().split('T')[0],pass:saved||real<=budgeted,realAmt:real,budgeted});
-        }
+  // Auto-check corresponding weekly reto (súper/gasolina)
+  const exp=(type==='exp'||type==='expw2'||type==='expw3')?S.exp.find(e=>e.id===id):null;
+  if(exp&&exp.freq==='semanal'){
+    const name=(exp.name||'').toLowerCase();
+    let retoId=null;
+    if(/super|súper|despensa|mandado/i.test(name))retoId='surv_super';
+    else if(/gasol/i.test(name))retoId='surv_gas';
+    if(retoId){
+      const sr=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck&&r.active&&!r.completed);
+      if(sr){
+        const weekIdx=type==='expw3'?2:type==='expw2'?1:0;
+        if(!S.retoChecks)S.retoChecks={};
+        const rk=retoId+'_'+ck;
+        if(!S.retoChecks[rk])S.retoChecks[rk]=[];
+        S.retoChecks[rk]=S.retoChecks[rk].filter(c=>c.idx!==weekIdx);
+        const saved=(budgeted-real)>0;
+        S.retoChecks[rk].push({idx:weekIdx,date:new Date().toISOString().split('T')[0],pass:saved||real<=budgeted,realAmt:real,budgeted});
       }
     }
   }
   sv();closeConfirm();rPlan();
-  _pendingPayCtx=null;
-  const diff=isVariable?(budgeted-real):0;
+  const diff=budgeted-real;
   const methodTxt=method==='tdc'?'💳 TDC':'💵 Débito';
-  if(diff>0)toast('✓ Pagado · Ahorraste '+fx(diff)+' · '+methodTxt);
+  if(diff>0)toast('✓ Pagado · Ahorraste '+fx(Math.round(diff))+' · '+methodTxt);
+  else if(diff<0)toast('✓ Pagado '+fx(real)+' · '+methodTxt);
   else toast('✓ Pagado · '+methodTxt);
 }
 function confirmRealAmt(type,id,budgeted){
@@ -6893,7 +6862,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-metodo2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-metodo3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

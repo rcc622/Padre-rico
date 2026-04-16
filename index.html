@@ -271,7 +271,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='metodo1-2026-04-15';
+window.APP_BUILD='nav1-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -374,6 +374,77 @@ function _switchToTDC(){
 let _confirmCb=null;
 let editDebtId=null,editExpId=null,editAssetId=null;
 let dStrat='snowball',planQ='actual',planView='pagos',debtSort='prox';
+// FASE 7 · Navegación de quincenas en Plan de Acción
+// _planViewCk overrides cycleKey() for Plan de Acción context.
+// null = ciclo actual. Se cambia con las flechas ← →.
+let _planViewCk=null;
+function planCk(){return _planViewCk||cycleKey();}
+// Derive cycle window from a cycleKey string (e.g. "2026-3-1ra" → {start, end, type})
+function cycleWindowFromKey(ck){
+  try{
+    const m=ck.match(/^(\d+)-(\d+)-(1ra|2da)$/);
+    if(!m)return getCycleWindow();
+    const y=+m[1],mo=+m[2]-1,tipo=m[3]; // mo is 0-indexed label month
+    if(tipo==='2da'){
+      // 2da qna: 15 to 29 of the labeled month
+      return {start:new Date(y,mo,15),end:new Date(y,mo,29),type:'2da'};
+    }
+    // 1ra qna: day 30 of prev month to 14 of labeled month
+    // But cycleKey labels 1ra with the month that starts at day 30
+    // e.g. "2026-3-1ra" means month index 2 (March) → d>=30 → start Mar 30, end Apr 14
+    // OR month index 3 → d 1-14 → start prev month 30, end Apr 14
+    // The cycleKey uses: d>=30 → y-(m+1)-1ra, d 1-14 → y-m-1ra
+    // So "2026-3-1ra": if generated from d>=30 → actual month index was 2 (March, 0-indexed)
+    //   → start Mar 30, end Apr 14
+    // if generated from d 1-14 → actual month index m where label = y+'-'+m+'-1ra'
+    //   → same: start prev month 30, end this month 14
+    // Label month for 1ra: mo (0-indexed). Actual range:
+    //   start = new Date(y, mo, 30) but mo is label-1... this is confusing
+    // Let me just use: for 1ra, the cycle spans from day 30 of (mo-1) to day 14 of mo
+    // But cycleKey for d>=30: y+'-'+(m+1)+'-1ra' where m is 0-indexed month
+    // So label month = m+1, actual month = m → start = new Date(y, m, 30) = new Date(y, labelMonth-1, 30)
+    // For d 1-14: label month = m (0-indexed), actual month = m → start = new Date(y, m-1, 30)
+    // Both resolve to: start = prev month's 30th relative to the cycle
+    const prevLast=new Date(y,mo,0).getDate();
+    return {start:new Date(y,mo-1,Math.min(30,prevLast)),end:new Date(y,mo,14),type:'1ra'};
+  }catch(e){return getCycleWindow();}
+}
+// Get all known cycle keys (from paidItems + current + next), sorted chronologically
+function allCycleKeys(){
+  const keys=new Set(Object.keys(S.paidItems||{}));
+  keys.add(cycleKey());
+  // Add next cycle
+  const cw=getCycleWindow();
+  const ne=new Date(cw.end);ne.setDate(ne.getDate()+1);
+  const nd=ne.getDate(),nm=ne.getMonth(),ny=ne.getFullYear();
+  const nextCk=nd>=15&&nd<=29?ny+'-'+(nm+1)+'-2da':ny+'-'+(nm+1)+'-1ra';
+  keys.add(nextCk);
+  // Sort chronologically by parsing the key
+  return [...keys].sort((a,b)=>{
+    const pa=a.match(/(\d+)-(\d+)-(1ra|2da)/);
+    const pb=b.match(/(\d+)-(\d+)-(1ra|2da)/);
+    if(!pa||!pb)return 0;
+    const va=+pa[1]*100+( +pa[2])*2+(pa[3]==='2da'?1:0);
+    const vb=+pb[1]*100+( +pb[2])*2+(pb[3]==='2da'?1:0);
+    return va-vb;
+  });
+}
+function navPlanCycle(dir){
+  const keys=allCycleKeys();
+  const cur=planCk();
+  const idx=keys.indexOf(cur);
+  const ni=idx+dir;
+  if(ni<0||ni>=keys.length)return;
+  _planViewCk=keys[ni]===cycleKey()?null:keys[ni];
+  rPlan();
+}
+function fmtCycleRange(ck){
+  try{
+    const w=cycleWindowFromKey(ck);
+    const fmt=d=>d.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+    return fmt(w.start)+' al '+fmt(w.end);
+  }catch(e){return ck;}
+}
 let flujoView='ingresos',debtView='plazos';
 let habitView='retos';
 function toggleFlujo(sec){flujoView=sec;rFlujo();}
@@ -499,26 +570,26 @@ function calcImpulseSpent(ck){
   return total;
 }
 function isPaid(type,id){
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   const v=items[type+'_'+id];
   return !!v;
 }
 function isApplied(type,id){
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   const v=items[type+'_'+id];
   return v==='applied'||(typeof v==='object'&&v?.applied);
 }
 function getRealAmt(type,id){
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   const v=items[type+'_'+id];
   if(typeof v==='object'&&v?.realAmt!==undefined)return v.realAmt;
   return null;
 }
 function undoApply(type,id){
-  const ck=cycleKey();
+  const ck=planCk();
   if(!S.paidItems[ck])return;
   const key=type+'_'+id;
   const v=S.paidItems[ck][key];
@@ -532,7 +603,7 @@ function undoApply(type,id){
   sv();toast('↩ Pago revertido a seleccionado');rPlan();
 }
 function togglePaid(type,id){
-  const ck=cycleKey();
+  const ck=planCk();
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
   const cur=S.paidItems[ck][key];
@@ -567,7 +638,7 @@ function togglePaid(type,id){
 function confirmRealAmt(type,id,budgeted){
   const real=+(document.getElementById('realAmtInput')?.value)||0;
   if(!real){toast('Ingresa el monto');return;}
-  const ck=cycleKey();
+  const ck=planCk();
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
   S.paidItems[ck][key]={at:Date.now(),realAmt:real,budgeted};
@@ -608,22 +679,22 @@ function toggleImpulseItem(itemId){
   togglePaid('imp',itemId);
 }
 function pendingCount(){
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   return Object.entries(items).filter(([k,v])=>!k.startsWith('_')&&v!=='applied'&&!(typeof v==='object'&&v?.applied)).length;
 }
 function appliedCount(){
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   return Object.entries(items).filter(([k,v])=>!k.startsWith('_')&&v==='applied').length;
 }
 function paidCount(){
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   return Object.keys(items).filter(k=>!k.startsWith('_')).length;
 }
 function paidTotal(){
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   let total=0;
   for(const key in items){
@@ -4117,7 +4188,7 @@ function saveDebt(){
 // ══ PLAN DE ACCIÓN ═════════════════════════════════
 function applyPayments(){
   try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch{}
-  const ck=cycleKey();
+  const ck=planCk();
   const items=S.paidItems[ck]||{};
   let appliedExp=0,appliedDebt=0,appliedAmt=0;
   const newlyApplied=[]; // FASE 6: track keys aplicados en esta corrida
@@ -4197,11 +4268,11 @@ function rPlan(){
   let nextType,nextStart,nextEnd,nextPayday;
   if(cycleType==='2da'){nextType='1ra';const ld=new Date(y,m+1,0).getDate();nextStart=new Date(y,m,30);nextEnd=new Date(y,m+1,14);nextPayday=new Date(y,m,ld);}
   else{nextType='2da';if(d>=30){nextStart=new Date(y,m+1,15);nextEnd=new Date(y,m+1,29);nextPayday=new Date(y,m+1,15);}else{nextStart=new Date(y,m,15);nextEnd=new Date(y,m,29);nextPayday=new Date(y,m,15);}}
-  const showNext=planQ==='next';
-  const ct=showNext?nextType:cycleType;
-  const cStart=showNext?nextStart:cycleStart;
-  const cEnd=showNext?nextEnd:cycleEnd;
-  const cPayday=showNext?nextPayday:cyclePayday;
+  const showNext=_isFuture;
+  const ct=showNext?nextType:(_isPast?cycleWindowFromKey(_viewCk).type:cycleType);
+  const cStart=showNext?nextStart:(_isPast?cycleWindowFromKey(_viewCk).start:cycleStart);
+  const cEnd=showNext?nextEnd:(_isPast?cycleWindowFromKey(_viewCk).end:cycleEnd);
+  const cPayday=showNext?nextPayday:(_isPast?(_viewCk.endsWith('-1ra')?30:15):cyclePayday);
   const fmtD=d2=>d2.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
   const qLabel=`${ct} quincena · ${fmtD(cStart)} → ${fmtD(cEnd)}`;
   function dayInCycle(pd){if(!pd)return false;const tds=[];for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){const mx=new Date(cStart.getFullYear(),tm+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
@@ -4243,7 +4314,7 @@ function rPlan(){
   // ── IMPULSE SPENDING (from reto failures) ──
   const impulseItems=[];
   if(!showNext){
-    const ck2=cycleKey();
+    const ck2=planCk();
     const retoIcons={'surv_nocompras':'🚫','surv_lunch':'🍱','surv_rest':'🍔','pos_extra':'💰','pos_ahorro':'🏦','pos_emergencia':'🛡️'};
     Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
       if(!k.endsWith('_'+ck2))return;
@@ -4283,14 +4354,24 @@ function rPlan(){
   // ── SUB-NAV ──
   const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia'],['hrsxtra','⏱️ Hrs Xtra']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
 
-  // ── TOGGLE ──
-  const toggle=`<div class="card" style="padding:10px 18px">
-    <div class="row-b">
-      <span style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Plan para:</span>
-      <div class="row" style="gap:4px">
-        <button class="btn btn-sm ${planQ==='actual'?'btn-sage':'btn-ghost'}" onclick="planQ='actual';rPlan()">Esta quincena</button>
-        <button class="btn btn-sm ${planQ==='next'?'btn-sage':'btn-ghost'}" onclick="planQ='next';rPlan()">Próxima quincena</button>
+  // ── NAVEGADOR DE QUINCENA (Fase 7) ──
+  const _viewCk=planCk();
+  const _isCurrent=_viewCk===cycleKey();
+  const _allKeys=allCycleKeys();
+  const _curIdx=_allKeys.indexOf(_viewCk);
+  const _isLast=_curIdx>=_allKeys.length-1;
+  const _isFirst=_curIdx<=0;
+  const _isFuture=_curIdx>_allKeys.indexOf(cycleKey());
+  const _isPast=_curIdx<_allKeys.indexOf(cycleKey());
+  const _periodLabel=_isCurrent?'ESTA QUINCENA':_isFuture?'PRÓXIMA QUINCENA':'QUINCENA PASADA';
+  const toggle=`<div class="card" style="padding:10px 14px">
+    <div class="row-b" style="align-items:center">
+      <button class="btn btn-ghost btn-sm" style="font-size:20px;padding:6px 12px;${_isFirst?'opacity:.3;pointer-events:none':''}" onclick="navPlanCycle(-1)">←</button>
+      <div style="flex:1;text-align:center">
+        <div style="font-size:9px;color:${_isPast?'var(--amber)':_isFuture?'var(--sky)':'var(--sage)'};text-transform:uppercase;letter-spacing:1.5px;font-weight:bold;margin-bottom:2px">${_periodLabel}</div>
+        <div style="font-size:13px;font-weight:bold;color:var(--txt)">${fmtCycleRange(_viewCk)}</div>
       </div>
+      <button class="btn btn-ghost btn-sm" style="font-size:20px;padding:6px 12px;${_isLast?'opacity:.3;pointer-events:none':''}" onclick="navPlanCycle(1)">→</button>
     </div>
   </div>`;
 
@@ -6309,7 +6390,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-metodo1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-nav1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

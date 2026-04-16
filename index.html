@@ -271,7 +271,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='nav1-2026-04-16';
+window.APP_BUILD='nav2-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -389,24 +389,10 @@ function cycleWindowFromKey(ck){
       // 2da qna: 15 to 29 of the labeled month
       return {start:new Date(y,mo,15),end:new Date(y,mo,29),type:'2da'};
     }
-    // 1ra qna: day 30 of prev month to 14 of labeled month
-    // But cycleKey labels 1ra with the month that starts at day 30
-    // e.g. "2026-3-1ra" means month index 2 (March) → d>=30 → start Mar 30, end Apr 14
-    // OR month index 3 → d 1-14 → start prev month 30, end Apr 14
-    // The cycleKey uses: d>=30 → y-(m+1)-1ra, d 1-14 → y-m-1ra
-    // So "2026-3-1ra": if generated from d>=30 → actual month index was 2 (March, 0-indexed)
-    //   → start Mar 30, end Apr 14
-    // if generated from d 1-14 → actual month index m where label = y+'-'+m+'-1ra'
-    //   → same: start prev month 30, end this month 14
-    // Label month for 1ra: mo (0-indexed). Actual range:
-    //   start = new Date(y, mo, 30) but mo is label-1... this is confusing
-    // Let me just use: for 1ra, the cycle spans from day 30 of (mo-1) to day 14 of mo
-    // But cycleKey for d>=30: y+'-'+(m+1)+'-1ra' where m is 0-indexed month
-    // So label month = m+1, actual month = m → start = new Date(y, m, 30) = new Date(y, labelMonth-1, 30)
-    // For d 1-14: label month = m (0-indexed), actual month = m → start = new Date(y, m-1, 30)
-    // Both resolve to: start = prev month's 30th relative to the cycle
-    const prevLast=new Date(y,mo,0).getDate();
-    return {start:new Date(y,mo-1,Math.min(30,prevLast)),end:new Date(y,mo,14),type:'1ra'};
+    // 1ra qna: day 30 of month mo to day 14 of month mo+1
+    // '2026-3-1ra' → mo=2 (March 0-indexed) → start Mar 30, end Apr 14
+    const lastOfMo=new Date(y,mo+1,0).getDate(); // last day of month mo
+    return {start:new Date(y,mo,Math.min(30,lastOfMo)),end:new Date(y,mo+1,14),type:'1ra'};
   }catch(e){return getCycleWindow();}
 }
 // Get all known cycle keys (from paidItems + current + next), sorted chronologically
@@ -424,8 +410,8 @@ function allCycleKeys(){
     const pa=a.match(/(\d+)-(\d+)-(1ra|2da)/);
     const pb=b.match(/(\d+)-(\d+)-(1ra|2da)/);
     if(!pa||!pb)return 0;
-    const va=+pa[1]*100+( +pa[2])*2+(pa[3]==='2da'?1:0);
-    const vb=+pb[1]*100+( +pb[2])*2+(pb[3]==='2da'?1:0);
+    const va=+pa[1]*100+( +pa[2])*2+(pa[3]==='1ra'?1:0);
+    const vb=+pb[1]*100+( +pb[2])*2+(pb[3]==='1ra'?1:0);
     return va-vb;
   });
 }
@@ -1451,7 +1437,7 @@ function unclassifiedPayments(){
 }
 function reclassifyPayment(ck,key,method,_diarioId){
   if(_diarioId){
-    const newDiarios=(S.gastosDiarios||[]).map(g=>g.id===_diarioId?{...g,paidWith:method}:g);
+    const newDiarios=(S.gastosDiarios||[]).map(g=>String(g.id)===String(_diarioId)?{...g,paidWith:method}:g);
     pt({gastosDiarios:newDiarios});
   }else{
     const items=S.paidItems[ck];if(!items||!items[key])return;
@@ -1460,26 +1446,38 @@ function reclassifyPayment(ck,key,method,_diarioId){
     else items[key]={at:Date.now(),applied:true,paidWith:method};
     sv();
   }
-  rDash();
-  // reopen modal to continue
-  setTimeout(()=>openMigrationModal(),100);
+  // Advance to next card
+  _migrationIdx++;
+  _showMigrationCard();
 }
+let _migrationList=[],_migrationIdx=0;
 function openMigrationModal(){
   const list=unclassifiedPayments();
   if(list.length===0){
     showInfo('✅ Todo clasificado','<div style="font-size:12px;color:var(--txt2);line-height:1.7">No hay pagos pendientes de clasificar. Todos tus pagos tienen método registrado.</div>');
     return;
   }
-  // Show first 8 to avoid huge modal
-  const shown=list.slice(0,8);
-  const remaining=list.length-shown.length;
-  let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Clasifica cada pago según con qué lo pagaste. <strong>'+list.length+'</strong> pendiente'+(list.length!==1?'s':'')+'.</div>';
-  shown.forEach(it=>{
-    const did=it._diarioId?(',\''+it._diarioId+'\''):'';
-    body+='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px"><div class="row-b" style="margin-bottom:6px"><div style="flex:1;min-width:0;padding-right:8px"><div style="font-size:12px;font-weight:bold;color:var(--txt);overflow:hidden;text-overflow:ellipsis">'+it.name+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+it.ck+(it.amt?' · '+fx(it.amt):'')+'</div></div></div><div class="row" style="gap:6px"><button class="btn btn-sage btn-sm" style="flex:1;padding:8px;font-size:11px" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'debito\''+(it._diarioId?',\''+it._diarioId+'\'':'')+')">💵 Débito</button><button class="btn btn-sky btn-sm" style="flex:1;padding:8px;font-size:11px" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'tdc\''+(it._diarioId?',\''+it._diarioId+'\'':'')+')">💳 TDC</button></div></div>';
-  });
-  if(remaining>0)body+='<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">+ '+remaining+' más después</div>';
-  showInfo('🔄 Clasificar pagos sin método',body);
+  _migrationList=list;
+  _migrationIdx=0;
+  _showMigrationCard();
+}
+function _showMigrationCard(){
+  const list=_migrationList;
+  if(_migrationIdx>=list.length){
+    showInfo('✅ Todo clasificado','<div style="text-align:center;padding:10px 0"><div style="font-size:40px;margin-bottom:10px">🎉</div><div style="font-size:14px;font-weight:bold;color:var(--sage);margin-bottom:6px">¡Listo!</div><div style="font-size:12px;color:var(--txt2)">Todos los pagos ya tienen método asignado.</div></div>');
+    _migrationList=[];_migrationIdx=0;
+    rDash();
+    return;
+  }
+  const it=list[_migrationIdx];
+  const n=_migrationIdx+1;
+  const total=list.length;
+  const did=it._diarioId||'';
+  const body='<div style="text-align:center;margin-bottom:16px"><div style="font-size:14px;font-weight:bold;color:var(--sage)">'+n+' de '+total+'</div><div class="pw" style="margin-top:8px;height:4px"><div class="pb" style="width:'+Math.round(n/total*100)+'%;background:var(--sage)"></div></div></div>'
+    +'<div style="padding:20px 16px;border:2px solid var(--border);border-radius:12px;background:var(--bg);margin-bottom:16px;text-align:center"><div style="font-size:18px;font-weight:bold;color:var(--txt);margin-bottom:6px">'+it.name+'</div><div style="font-size:12px;color:var(--muted)">'+it.ck+(it.amt?' · <strong>'+fx(it.amt)+'</strong>':'')+'</div></div>'
+    +'<div class="row" style="gap:10px;margin-bottom:10px"><button class="btn btn-sage" style="flex:1;padding:16px;font-size:15px" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'debito\''+(did?',\''+did+'\'':'')+')">💵 Débito</button><button class="btn" style="flex:1;padding:16px;font-size:15px;background:rgba(74,110,140,.15);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'tdc\''+(did?',\''+did+'\'':'')+')">💳 TDC</button></div>'
+    +'<button class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;color:var(--muted)" onclick="closeConfirm()">Terminar después ('+(total-n)+' restantes)</button>';
+  showInfo('🔄 ¿Con qué pagaste?',body);
 }
 // Check if user has committed this cycle
 function hasSavCommittedThisCycle(){const c=curSavCommit();return c&&c.status==='committed';}
@@ -1678,7 +1676,7 @@ function hdrUp(){
   el.style.color=scCol(s);
   const today=new Date();
   const dtEl=document.getElementById('hdr-date');
-  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.innerHTML=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+cyc+' <span style="opacity:.5;font-size:9px;margin-left:4px">v'+(window.APP_BUILD||'?')+'</span>';}
+  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+cyc;dtEl.title='v'+(window.APP_BUILD||'?');}
 }
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go('dash');}
 
@@ -4258,6 +4256,7 @@ function restoreBackup(){
 }
 
 function rPlan(){
+try{
   const today=new Date();today.setHours(0,0,0,0);
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
 
@@ -4268,10 +4267,22 @@ function rPlan(){
   let nextType,nextStart,nextEnd,nextPayday;
   if(cycleType==='2da'){nextType='1ra';const ld=new Date(y,m+1,0).getDate();nextStart=new Date(y,m,30);nextEnd=new Date(y,m+1,14);nextPayday=new Date(y,m,ld);}
   else{nextType='2da';if(d>=30){nextStart=new Date(y,m+1,15);nextEnd=new Date(y,m+1,29);nextPayday=new Date(y,m+1,15);}else{nextStart=new Date(y,m,15);nextEnd=new Date(y,m,29);nextPayday=new Date(y,m,15);}}
+
+  // ── FASE 7 · Navegación: determinar qué ciclo estamos viendo ──
+  const _viewCk=planCk();
+  const _isCurrent=_viewCk===cycleKey();
+  const _allKeys=allCycleKeys();
+  const _curIdx=_allKeys.indexOf(_viewCk);
+  const _isLast=_curIdx>=_allKeys.length-1;
+  const _isFirst=_curIdx<=0;
+  const _isFuture=_curIdx>_allKeys.indexOf(cycleKey());
+  const _isPast=_curIdx<_allKeys.indexOf(cycleKey());
+
   const showNext=_isFuture;
-  const ct=showNext?nextType:(_isPast?cycleWindowFromKey(_viewCk).type:cycleType);
-  const cStart=showNext?nextStart:(_isPast?cycleWindowFromKey(_viewCk).start:cycleStart);
-  const cEnd=showNext?nextEnd:(_isPast?cycleWindowFromKey(_viewCk).end:cycleEnd);
+  const _viewWindow=_isPast?cycleWindowFromKey(_viewCk):null;
+  const ct=showNext?nextType:(_isPast?_viewWindow.type:cycleType);
+  const cStart=showNext?nextStart:(_isPast?_viewWindow.start:cycleStart);
+  const cEnd=showNext?nextEnd:(_isPast?_viewWindow.end:cycleEnd);
   const cPayday=showNext?nextPayday:(_isPast?(_viewCk.endsWith('-1ra')?30:15):cyclePayday);
   const fmtD=d2=>d2.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
   const qLabel=`${ct} quincena · ${fmtD(cStart)} → ${fmtD(cEnd)}`;
@@ -4355,14 +4366,6 @@ function rPlan(){
   const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia'],['hrsxtra','⏱️ Hrs Xtra']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
 
   // ── NAVEGADOR DE QUINCENA (Fase 7) ──
-  const _viewCk=planCk();
-  const _isCurrent=_viewCk===cycleKey();
-  const _allKeys=allCycleKeys();
-  const _curIdx=_allKeys.indexOf(_viewCk);
-  const _isLast=_curIdx>=_allKeys.length-1;
-  const _isFirst=_curIdx<=0;
-  const _isFuture=_curIdx>_allKeys.indexOf(cycleKey());
-  const _isPast=_curIdx<_allKeys.indexOf(cycleKey());
   const _periodLabel=_isCurrent?'ESTA QUINCENA':_isFuture?'PRÓXIMA QUINCENA':'QUINCENA PASADA';
   const toggle=`<div class="card" style="padding:10px 14px">
     <div class="row-b" style="align-items:center">
@@ -4721,7 +4724,7 @@ function rPlan(){
     return;
   }
 
-
+}catch(e){document.getElementById('tab-plan').innerHTML='<div class="card card-red"><div class="ct">Error en Plan de Acción</div><div style="font-size:12px;color:var(--terra);line-height:1.6">'+e.message+'</div></div>';console.error('rPlan error:',e);}
 }
 
 
@@ -6390,7 +6393,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-nav1';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-nav2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

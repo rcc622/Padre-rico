@@ -271,7 +271,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='nav2-2026-04-16';
+window.APP_BUILD='nav3-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -1446,11 +1446,8 @@ function reclassifyPayment(ck,key,method,_diarioId){
     else items[key]={at:Date.now(),applied:true,paidWith:method};
     sv();
   }
-  // Advance to next card
-  _migrationIdx++;
-  _showMigrationCard();
+  rDash();
 }
-let _migrationList=[],_migrationIdx=0;
 function openMigrationModal(){
   const list=unclassifiedPayments();
   if(list.length===0){
@@ -1458,26 +1455,69 @@ function openMigrationModal(){
     return;
   }
   _migrationList=list;
-  _migrationIdx=0;
-  _showMigrationCard();
+  _migrationPage=0;
+  _showMigrationPage();
 }
-function _showMigrationCard(){
+let _migrationList=[],_migrationPage=0;
+function _showMigrationPage(){
   const list=_migrationList;
-  if(_migrationIdx>=list.length){
+  const pageSize=5;
+  const start=_migrationPage*pageSize;
+  const batch=list.slice(start,start+pageSize);
+  if(batch.length===0){
     showInfo('✅ Todo clasificado','<div style="text-align:center;padding:10px 0"><div style="font-size:40px;margin-bottom:10px">🎉</div><div style="font-size:14px;font-weight:bold;color:var(--sage);margin-bottom:6px">¡Listo!</div><div style="font-size:12px;color:var(--txt2)">Todos los pagos ya tienen método asignado.</div></div>');
-    _migrationList=[];_migrationIdx=0;
+    _migrationList=[];_migrationPage=0;
     rDash();
     return;
   }
-  const it=list[_migrationIdx];
-  const n=_migrationIdx+1;
   const total=list.length;
-  const did=it._diarioId||'';
-  const body='<div style="text-align:center;margin-bottom:16px"><div style="font-size:14px;font-weight:bold;color:var(--sage)">'+n+' de '+total+'</div><div class="pw" style="margin-top:8px;height:4px"><div class="pb" style="width:'+Math.round(n/total*100)+'%;background:var(--sage)"></div></div></div>'
-    +'<div style="padding:20px 16px;border:2px solid var(--border);border-radius:12px;background:var(--bg);margin-bottom:16px;text-align:center"><div style="font-size:18px;font-weight:bold;color:var(--txt);margin-bottom:6px">'+it.name+'</div><div style="font-size:12px;color:var(--muted)">'+it.ck+(it.amt?' · <strong>'+fx(it.amt)+'</strong>':'')+'</div></div>'
-    +'<div class="row" style="gap:10px;margin-bottom:10px"><button class="btn btn-sage" style="flex:1;padding:16px;font-size:15px" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'debito\''+(did?',\''+did+'\'':'')+')">💵 Débito</button><button class="btn" style="flex:1;padding:16px;font-size:15px;background:rgba(74,110,140,.15);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="reclassifyPayment(\''+it.ck+'\',\''+it.key+'\',\'tdc\''+(did?',\''+did+'\'':'')+')">💳 TDC</button></div>'
-    +'<button class="btn btn-ghost btn-sm" style="width:100%;font-size:11px;color:var(--muted)" onclick="closeConfirm()">Terminar después ('+(total-n)+' restantes)</button>';
-  showInfo('🔄 ¿Con qué pagaste?',body);
+  const classified=start;
+  const remaining=total-classified;
+  let body='<div style="text-align:center;margin-bottom:12px"><div style="font-size:12px;color:var(--sage);font-weight:bold">'+classified+' de '+total+' clasificados</div><div class="pw" style="margin-top:6px;height:4px"><div class="pb" style="width:'+Math.round(classified/total*100)+'%;background:var(--sage)"></div></div></div>';
+  body+='<div style="max-height:55vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -14px;padding:0 14px">';
+  batch.forEach((it,i)=>{
+    const did=it._diarioId||'';
+    const didParam=did?",'"+did+"'":'';
+    body+='<div style="padding:12px;border:1px solid var(--border);border-radius:10px;margin-bottom:8px;background:var(--bg)">'
+      +'<div style="font-size:14px;font-weight:bold;color:var(--txt);margin-bottom:3px">'+it.name+'</div>'
+      +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'+it.ck+(it.amt?' · '+fx(it.amt):'')+'</div>'
+      +'<div class="row" style="gap:6px">'
+      +'<button class="btn btn-sage btn-sm" style="flex:1;padding:10px;font-size:13px" onclick="event.stopPropagation();_migClassify('+i+',\'debito\''+didParam+')">💵 Débito</button>'
+      +'<button class="btn btn-sm" style="flex:1;padding:10px;font-size:13px;background:rgba(74,110,140,.15);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="event.stopPropagation();_migClassify('+i+',\'tdc\''+didParam+')">💳 TDC</button>'
+      +'</div></div>';
+  });
+  body+='</div>';
+  showConfirm('🔄 Clasificar pagos ('+remaining+' restantes)',body,null);
+  // Override bottom buttons
+  setTimeout(()=>{
+    const row=document.getElementById('confirmModal')?.querySelector('.row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="flex:1" onclick="closeConfirm()">Terminar después</button>';
+  },50);
+}
+function _migClassify(batchIdx,method,_diarioId){
+  const pageSize=5;
+  const realIdx=_migrationPage*pageSize+batchIdx;
+  const it=_migrationList[realIdx];if(!it)return;
+  // Apply classification
+  if(_diarioId||it._diarioId){
+    const did=_diarioId||it._diarioId;
+    const newD=(S.gastosDiarios||[]).map(g=>g.id==did?{...g,paidWith:method}:g);
+    pt({gastosDiarios:newD});
+  }else{
+    const items=S.paidItems[it.ck];if(!items||!items[it.key])return;
+    const v=items[it.key];
+    if(typeof v==='object')items[it.key]={...v,paidWith:method};
+    else items[it.key]={at:Date.now(),applied:true,paidWith:method};
+    sv();
+  }
+  // Remove from list
+  _migrationList.splice(realIdx,1);
+  // If batch empty, go to next page (or same page since we removed items)
+  const start=_migrationPage*pageSize;
+  if(start>=_migrationList.length)_migrationPage=Math.max(0,_migrationPage-1);
+  // Refresh
+  closeConfirm();
+  setTimeout(()=>_showMigrationPage(),150);
 }
 // Check if user has committed this cycle
 function hasSavCommittedThisCycle(){const c=curSavCommit();return c&&c.status==='committed';}
@@ -6393,7 +6433,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-nav2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-nav3';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

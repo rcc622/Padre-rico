@@ -5311,7 +5311,7 @@ try{
           const icon=retoIcons[rid]||'🚫';
           const fallbacks={'surv_nocompras':'Gasto impulso','surv_lunch':'Comida fuera','surv_rest':'Comida fuera'};
           const desc=c.note||(fallbacks[rid]||'Impulso');
-          impulseItems.push({id:numId,name:icon+' '+desc,amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate()});
+          impulseItems.push({id:numId,name:icon+' '+desc,amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate(),_rid:rid,_idx:c.idx,_ck:ck2});
         }
       });
     });
@@ -5465,6 +5465,7 @@ try{
             ${showReal?`<div style="font-size:9px;color:${diff>0?'var(--sage)':'var(--terra)'}">${diff>0?'↓'+fx(Math.round(diff)):'↑'+fx(Math.round(Math.abs(diff)))}</div>`:''}
           </div>
           ${st==='applied'&&!p.tdcPayment&&!p.tdcPending?`<button style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-family:Georgia,serif" onclick="event.stopPropagation();undoApply('${p.ptype}',${p.id})">↩</button>`:''}
+          ${p.ptype==='imp'&&p._rid?`<button title="Eliminar este gasto impulso" style="font-size:11px;color:var(--terra);background:none;border:1px solid rgba(184,92,74,.3);border-radius:4px;padding:2px 6px;cursor:pointer;font-family:Georgia,serif;line-height:1" onclick="event.stopPropagation();confirmDeleteImpulse('${p._rid}','${p._ck}',${p._idx},${p.id},'${(p.name||'').replace(/'/g,"\\'")}',${p.amt})">✕</button>`:''}
         </div>
       </div>`;};
 
@@ -6347,6 +6348,45 @@ function showOvertimeCalc(){
     if(inp&&out)inp.oninput=function(){out.textContent=fx(Math.round(+this.value*RATE));};
   },100);
 }
+// Elimina un gasto impulso huérfano (proveniente de un check fallido de un reto)
+// Borra la entrada del check del reto + cualquier paidItems asociado
+function confirmDeleteImpulse(rid,ck,idx,impId,impName,impAmt){
+  const body='<div style="font-size:13px;line-height:1.7;color:var(--txt2)">¿Eliminar este gasto impulso?<br><br>'
+    +'<div style="padding:10px;background:rgba(184,92,74,.06);border-radius:6px;margin:10px 0">'
+    +'<div style="font-weight:bold;color:var(--txt)">'+impName+'</div>'
+    +'<div style="font-size:14px;color:var(--terra);font-weight:bold;margin-top:4px">-'+fx(impAmt)+'</div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.6">Se borrará el registro del check fallido. Si era de un reto que ya no existe, ese registro huérfano desaparecerá.</div>'
+    +'</div>';
+  showConfirm('🗑 Eliminar gasto impulso',body,()=>{
+    deleteImpulse(rid,ck,idx,impId);
+  });
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-red" onclick="execConfirm()">🗑 Eliminar</button>';
+}
+function deleteImpulse(rid,ck,idx,impId){
+  try{
+    // 1. Quitar el check fallido del reto
+    const key=rid+'_'+ck;
+    if(S.retoChecks&&Array.isArray(S.retoChecks[key])){
+      const before=S.retoChecks[key].length;
+      S.retoChecks[key]=S.retoChecks[key].filter(c=>!(c.idx===idx&&c.pass===false));
+      // Si queda vacío, limpiar la entrada
+      if(S.retoChecks[key].length===0)delete S.retoChecks[key];
+    }
+    // 2. Quitar paidItems['imp_'+impId] si existe (selected o applied)
+    if(S.paidItems&&S.paidItems[ck]){
+      delete S.paidItems[ck]['imp_'+impId];
+    }
+    sv();
+    toast('🗑 Gasto impulso eliminado');
+    if(typeof rPlan==='function')rPlan();
+  }catch(e){
+    toast('Error al eliminar');
+    console.error(e);
+  }
+}
+
 // Recalcula el target de horas extra basándose en el déficit actualizado (deudas/gastos nuevos)
 // Conserva entradas registradas, solo actualiza targetHrs al valor nuevo necesario.
 function recalcOvertime(otCk){

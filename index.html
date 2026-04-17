@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='revert-2026-04-16';
+window.APP_BUILD='score-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -484,7 +484,7 @@ function execConfirm(){if(_confirmCb)_confirmCb();closeConfirm();}
 function showInfo(title,body){showConfirm(title,body,null);document.getElementById('confirmModal').querySelector('.row').innerHTML='<button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Entendido</button>';}
 const INFO={
   patrimonio:'<strong>Patrimonio neto</strong> = lo que tienes (activos) menos lo que debes (deudas).<br><br>Si es negativo, debes más de lo que tienes. Es normal cuando estás pagando deudas. Cada pago que haces lo acerca a $0 y después a positivo.<br><br><strong>Meta:</strong> llevar tu patrimonio a positivo.',
-  score:'<strong>Score de salud financiera</strong> (0-100) mide qué tan sano está tu flujo de dinero.<br><br>Considera: % de ahorro, relación deuda/ingreso, gastos hormiga, patrimonio.<br><br><strong>Rangos:</strong><br>0-20: Sobreviviente<br>21-40: En recuperación<br>41-60: Estable<br>61-80: Saludable<br>81-100: Libre Financieramente',
+  score:'<strong>Score de salud financiera</strong> (0-100) mide qué tan sano está tu flujo de dinero.<br><br>Considera: <strong>flujo libre</strong> (30 pts — lo más importante), relación deuda/ingreso (20 pts), ahorro real (15 pts), patrimonio neto (15 pts), constancia (10 pts), ingreso pasivo (10 pts). <strong>Penaliza déficit activo</strong> (hasta −15 pts).<br><br><strong>Rangos:</strong><br>0-19: Aprendiz 🐣<br>20-34: Constructor 🧱<br>35-49: Guardián ⚖️<br>50-64: Inversor 📈<br>65-79: Arquitecto 🏛️<br>80-89: Padre Rico 👑<br>90-100: Libre 🌟',
   hormiga:'<strong>Gastos hormiga</strong> son compras pequeñas y frecuentes: OXXO, delivery, cafés, compras en línea.<br><br>Individualmente son "baratos" ($50-$200) pero en la quincena suman $2,000-$5,000.',
   bolanieve:'<strong>Bola de Nieve</strong>: pagas primero la deuda más pequeña. Cuando la terminas, sumas ese pago a la siguiente.<br><br><strong>Avalancha</strong>: pagas primero la de mayor tasa de interés. Ahorras más en intereses.',
   disponible:'<strong>Disponible</strong> = ingreso − gastos fijos − ahorro − metas − deudas.<br><br>Positivo = te sobra. Negativo = déficit.',
@@ -1981,12 +1981,43 @@ const tExtras=()=>{
 };
 const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline)-new Date())/864e5))};
 const score=()=>{
-  let s=0;if(flow()>0)s+=25;
-  const dr=tDebt()/Math.max(mInc()*12,1);s+=dr===0?25:Math.max(0,25-dr*20);
-  if(S.savPct>=10)s+=20;if(tAss()>0)s+=15;if(passInc()>0)s+=15;
-  // Bonus por constancia quincenal (max 5 pts)
-  const streak=qStreak();
-  s+=Math.min(5,streak);
+  let s=0;
+  const inc=mInc()||1;
+  const fl=flow();
+  // 1. Flujo libre (0-30): lo más importante
+  if(fl>0){
+    const pct=fl/inc;// ratio flujo/ingreso
+    s+=Math.min(30,Math.round(pct/0.15*30));// 15% surplus = 30 pts
+  }
+  // Penalización por déficit (hasta -15)
+  if(fl<0){
+    const defPct=Math.abs(fl)/inc;
+    s-=Math.min(15,Math.round(defPct*30));
+  }
+  // 2. Deuda vs ingreso anual (0-20)
+  const dr=tDebt()/Math.max(inc*12,1);
+  if(dr===0)s+=20;
+  else if(dr<=0.2)s+=18;
+  else if(dr<=0.5)s+=Math.round(10+(0.5-dr)/0.3*8);
+  else if(dr<=1.0)s+=Math.round(3+(1.0-dr)/0.5*7);
+  // >1.0 = 0
+  // 3. Ahorro real (0-15): proporcional + bonus por compromiso
+  const savP=Math.min(S.savPct||0,20);
+  s+=Math.round(savP/20*10);// hasta 10 pts proporcional
+  if(curSavCommit())s+=5;// +5 si comprometiste este ciclo
+  // 4. Patrimonio neto (0-15)
+  const netW=nw();
+  if(netW>0){
+    const moRatio=netW/(inc||1);// patrimonio en meses de ingreso
+    s+=Math.min(15,Math.round(moRatio/6*15));// 6 meses ingreso = 15 pts
+  }
+  // nw <= 0 = 0 pts (no regala puntos por tener $200 con $50K en deuda)
+  // 5. Constancia (0-10): racha CSV + racha ahorro
+  s+=Math.min(5,qStreak());
+  s+=Math.min(5,S.savStreak||0);
+  // 6. Ingreso pasivo (0-10)
+  const pi=passInc();
+  if(pi>0)s+=5+Math.min(5,Math.round(pi/inc*100));
   return Math.min(100,Math.max(0,Math.round(s)));
 };
 const fx=(n)=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0}).format(n||0);
@@ -7355,7 +7386,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-revert';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-score';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

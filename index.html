@@ -880,15 +880,21 @@ function genSurvivalRetos(deficit){
   if(mData&&mData.total>300)retos.push({id:'surv_mini',icon:'🏪',name:'Minisuper solo 2 veces',desc:'Gastaste '+fx(mData.total)+' en OXXO/minisuper. Limita a 2 visitas máximo.',save:Math.round(mData.total*0.6),diff:2,track:'qna',steps:1});
   if(oData&&oData.total>500)retos.push({id:'surv_online',icon:'📦',name:'Congelar compras online',desc:'Gastaste '+fx(oData.total)+' en Amazon/ML. Cero compras online esta quincena.',save:Math.round(oData.total*0.8),diff:3,track:'qna',steps:1});
   if(cData&&cData.total>150)retos.push({id:'surv_cafe',icon:'☕',name:'Café de casa',desc:'Gastaste '+fx(cData.total)+' en cafeterías. Lleva tu café de casa.',save:Math.round(cData.total*0.7),diff:1,track:'dia',steps:qnaDays});
-  if(rData&&rData.total>400)retos.push({id:'surv_rest',icon:'🍔',name:'Cocinar más, comer fuera menos',desc:'Gastaste '+fx(rData.total)+' en restaurantes. Cocina en casa y marca cada día que lo logres.',save:Math.round(rData.total*0.5),diff:2,track:'dia',steps:qnaDays});
+  // [removido] 'surv_rest' (Cocinar más, comer fuera menos) — redundante con surv_lunch
 
   // Expense-based retos with real numbers
   const weeksInC=getWeeksInCycle();
+  // Contar domingos del ciclo (para "Lista del súper" fusionado)
+  let sundaysInC=0;
+  {const d2=new Date(qS);while(d2<=qE){if(d2.getDay()===0)sundaysInC++;d2.setDate(d2.getDate()+1);}}
+  if(sundaysInC===0)sundaysInC=1;
+  // Lista del súper (fusiona "Lista estricta del súper" + "Lista del Mercado") — domingos
+  const baseDesc='"Los deseos son muchos; pocos son los necesarios." — Arkad. Haz lista antes de ir y no compres nada fuera de ella.';
   if(superWeekly>0){
     const cut=Math.round(superWeekly*0.15);
-    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Tu súper es '+fx(superWeekly)+'/sem. Bájalo 15% a '+fx(superWeekly-cut)+'. Haz lista y NO compres nada fuera de ella.',save:cut*weeksInC,diff:1,track:'sem',steps:weeksInC});
+    retos.push({id:'surv_super',icon:'🛒',name:'Lista del súper',desc:'Tu súper es '+fx(superWeekly)+'/sem. Bájalo 15% a '+fx(superWeekly-cut)+'. '+baseDesc+' Marca cada domingo que lo cumplas.',save:cut*sundaysInC,diff:1,track:'sem',steps:sundaysInC});
   }else{
-    retos.push({id:'surv_super',icon:'🛒',name:'Lista estricta del súper',desc:'Haz lista antes de ir y no compres NADA fuera de ella.',save:Math.min(300,Math.round(Math.max(deficit*0.03,150))),diff:1,track:'sem',steps:weeksInC});
+    retos.push({id:'surv_super',icon:'🛒',name:'Lista del súper',desc:baseDesc+' Marca cada domingo que lo cumplas.',save:Math.min(300,Math.round(Math.max(deficit*0.03,150))),diff:1,track:'sem',steps:sundaysInC});
   }
   if(gasWeekly>0){
     const cut=Math.round(gasWeekly*0.2);
@@ -897,8 +903,7 @@ function genSurvivalRetos(deficit){
     retos.push({id:'surv_gas',icon:'⛽',name:'Modo ahorro de gasolina',desc:'Planea rutas, comparte rides, usa menos el coche.',save:Math.min(400,Math.round(Math.max(deficit*0.04,200))),diff:2,track:'sem',steps:weeksInC});
   }
 
-  // Always-available retos (capped at realistic amounts)
-  retos.push({id:'surv_nocompras',icon:'🚫',name:'Semana sin gastar',desc:'Intenta pasar 7 días sin compras no esenciales. Marca cada día que lo logres.',save:Math.min(500,Math.round(Math.max(deficit*0.05,300))),diff:3,track:'dia',steps:7});
+  // [removido] 'surv_nocompras' (Semana sin gastar) — redundante con surv_nada_credito
   retos.push({id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Prepara tu comida en casa y evita comprar en la calle. Marca cada día.',save:Math.min(600,Math.round(Math.max(deficit*0.04,200))),diff:2,track:'dia',steps:qnaDays});
 
   // Detect online shopping pattern from debts
@@ -909,14 +914,28 @@ function genSurvivalRetos(deficit){
   }
 
   // ══ RETOS NUEVOS · Frente 3 (Babilonia + Padre Rico) ══
-  // El Diezmo de Arkad (1ra Ley del Oro)
+  // El Diezmo de Arkad (1ra Ley del Oro) — solo si hay superávit suficiente
   const salarioQ=Math.round(((+S.inc.sal)||0)/2);
   const diezmoQ=Math.round(salarioQ*0.10);
+  // Calcular disponible actual (mismo cálculo que renderRetos)
+  const disponibleActual=(()=>{try{
+    const bfQ=bonusInCycle(qS,qE,S.inc)?(+S.inc.bf||0):0;
+    let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=qS&&xd<=qE)extQ+=(+x.amt||0);}});
+    const incQ=salarioQ+bfQ+extQ;
+    let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
+    let dbtQ=0;S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(db.pay||0);else dbtQ+=mo/2;});
+    return incQ-expQ-dbtQ-(savAmt()/2);
+  }catch(e){return 0;}})();
   if(salarioQ>0&&diezmoQ>=100){
-    retos.push({id:'surv_diezmo',icon:'🪙',name:'El Diezmo de Arkad',desc:'"De cada 10 monedas, gasta sólo 9." Aparta '+fx(diezmoQ)+' (10% de tu quincena) a una cajita ANTES de pagar cualquier otra cosa.',save:diezmoQ,diff:1,track:'qna',steps:1});
+    const locked=disponibleActual<diezmoQ;
+    const falta=Math.max(0,diezmoQ-Math.round(disponibleActual));
+    const baseDiezmoDesc='"De cada 10 monedas, gasta sólo 9." Aparta '+fx(diezmoQ)+' (10% de tu quincena) a una cajita ANTES de pagar cualquier otra cosa.';
+    const desc=locked
+      ? baseDiezmoDesc+' 🔒 Tu superávit actual ('+fx(Math.round(disponibleActual))+') no alcanza — te faltan '+fx(falta)+' para poder activarlo sin caer en déficit.'
+      : baseDiezmoDesc;
+    retos.push({id:'surv_diezmo',icon:'🪙',name:'El Diezmo de Arkad',desc,save:diezmoQ,diff:1,track:'qna',steps:1,locked,lockReason:locked?'Necesitas '+fx(falta)+' más de superávit':null});
   }
-  // Lista del Mercado (2da Manera — controlar gastos)
-  retos.push({id:'surv_lista_mercado',icon:'📜',name:'Lista del Mercado',desc:'"Los deseos son muchos; pocos son los necesarios." Antes de ir al súper, escribe la lista. Marca cada día que salgas de compras y la respetes al 100%.',save:Math.min(400,Math.round(Math.max(deficit*0.03,200))),diff:2,track:'dia',steps:qnaDays});
+  // [removido] 'surv_lista_mercado' — fusionado en 'surv_super'
   // Nada a Crédito (Padre Rico — no más pasivos)
   retos.push({id:'surv_nada_credito',icon:'🚫',name:'Nada a Crédito',desc:'"Los pobres y la clase media compran pasivos creyendo que son activos." — Padre Rico. Pasa esta quincena sin un solo cargo nuevo a tarjeta de crédito.',save:Math.min(800,Math.round(Math.max(deficit*0.05,300))),diff:3,track:'qna',steps:1});
 
@@ -926,6 +945,12 @@ function activateSurvival(retoId){
   const ck=cycleKey();
   const existing=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck);
   if(existing){existing.active=!existing.active;sv();rHabitos();toast(existing.active?'🎯 Reto activado':'Reto desactivado');return;}
+  // Check if reto is locked (e.g. Diezmo con superávit insuficiente)
+  try{
+    const allR=genSurvivalRetos(1000);
+    const match=allR.find(x=>x.id===retoId);
+    if(match&&match.locked){toast('🔒 '+(match.lockReason||'Reto bloqueado'));return;}
+  }catch(e){}
   S.survivalRetos.push({id:retoId,cycle:ck,active:true,completed:false,activatedAt:Date.now()});
   sv();rHabitos();toast('🎯 Reto de supervivencia activado');
 }
@@ -5880,10 +5905,11 @@ function renderRetos(){
       return true;
     }).map(r=>{
       const sr=activeRetos.find(x=>x.id===r.id);const isA=sr?.active&&!sr?.completed;const isC=false;
+      const locked=!!r.locked&&!isA;
       const checks=getChecks(r.id);const totalN=r.steps||1;const nChecked=countChecks(r.id);const pctD=isA?Math.min(100,Math.round(nChecked/totalN*100)):0;
-      const cCls=isC?'card-grn':isA?'':'card-sage';const aBrd=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':'';
-      return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
-        +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+r.icon+'</div><div style="font-weight:bold;color:var(--txt);font-size:14px">'+r.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:var(--sage)">+'+fx((isC&&sr&&sr.realSave)?sr.realSave:r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
+      const cCls=isC?'card-grn':isA?'':locked?'':'card-sage';const aBrd=isA?'border:2px solid var(--amber);background:rgba(160,112,48,.04)':locked?'border:1px dashed var(--muted);background:rgba(120,120,120,.04);opacity:.7':'';
+      return'<div class="card '+cCls+'" style="margin-bottom:10px;padding:14px;'+(isC||locked?'':'cursor:pointer;')+aBrd+'" '+((!isC&&!isA&&!locked)?'onclick="activateSurvival(\''+r.id+'\')"':'')+'>'
+        +'<div class="row-b" style="margin-bottom:4px"><div><div style="font-size:24px;margin-bottom:6px">'+(locked?'🔒':r.icon)+'</div><div style="font-weight:bold;color:'+(locked?'var(--muted)':'var(--txt)')+';font-size:14px">'+r.name+(locked?' (bloqueado)':'')+'</div><div style="font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5">'+r.desc+'</div></div><div style="text-align:right;flex-shrink:0;padding-left:12px"><div style="font-size:16px;font-weight:bold;color:'+(locked?'var(--muted)':'var(--sage)')+'">+'+fx((isC&&sr&&sr.realSave)?sr.realSave:r.save)+'</div><div style="font-size:10px;margin-top:2px">'+diffStars(r.diff)+'</div></div></div>'
         +(isA?'<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--amber)"><div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--amber);font-weight:bold">Progreso: '+nChecked+'/'+totalN+' '+trackLabel(r.track)+(totalN>1?'s':'')+'</span><span style="font-size:11px;color:var(--muted)">'+pctD+'%</span></div><div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pctD+'%;background:'+(pctD>=100?'var(--sage)':'var(--amber)')+'"></div></div><div style="display:flex;flex-wrap:wrap;gap:6px">'+Array.from({length:totalN},(_,idx)=>{
                   const chk=isIdxDone(r.id,idx);
                   const done=!!chk;

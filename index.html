@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='incsummary-2026-04-16';
+window.APP_BUILD='estrat-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -5602,11 +5602,55 @@ try{
     document.getElementById('tab-plan').innerHTML=`
     ${subNav}
 
-    <!-- PENDING ALERT -->
-    ${hasPending&&!showNext?`<div class="card card-red" style="padding:14px 18px">
-      <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mPendingAmt))}</strong>. Liquida primero tus pagos antes de planear estrategia.</div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;color:var(--terra)" onclick="planView='pagos';rPlan()">Ir a Pagos →</button>
+    <!-- AHORRO COMPROMETIDO -->
+    ${(()=>{try{
+      const c=curSavCommit();
+      const savGoalsActive=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0));
+      if(!c&&!savGoalsActive.length)return '';
+      let h='<div class="card" style="border-left:3px solid var(--sage);padding:14px">';
+      h+='<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px;font-weight:bold">🪙 Ahorro esta quincena</div>';
+      if(c){const asset=S.assets.find(a=>a.id===c.assetId);h+='<div class="row-b" style="margin-bottom:4px"><span style="font-size:13px">✅ Apartado a '+(asset?asset.name:'activo')+'</span><strong style="color:var(--sage);font-size:14px">'+fx(c.amount)+'</strong></div>';}
+      else{h+='<div class="row-b" style="margin-bottom:4px"><span style="font-size:13px;color:var(--amber)">⏳ Sin ahorro apartado</span><button class="btn btn-sage btn-sm" style="padding:6px 12px" onclick="openSavCommitModal()">Apartar</button></div>';}
+      if(savGoalsActive.length>0){h+='<div style="border-top:1px dashed var(--border);padding-top:6px;margin-top:6px">';savGoalsActive.forEach(g=>{const perQ=savGoalPerQ(g);h+='<div class="row-b" style="font-size:12px;padding:3px 0"><span>'+(g.icon||'🎯')+' '+g.name+'</span><span style="color:var(--sky);font-weight:bold">'+fx(perQ)+'/qna</span></div>';});h+='</div>';}
+      h+='</div>';return h;
+    }catch(e){return '';}})()}
+
+    <!-- PENDING WARNING -->
+    ${hasPending&&!showNext?`<div class="card" style="border-left:3px solid var(--amber);padding:14px 18px">
+      <div style="font-size:13px;color:var(--amber);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mPendingAmt))}</strong>. Liquida tus pagos antes de planear estrategia.</div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;width:100%;color:var(--amber)" onclick="planView='pagos';rPlan()">Ir a Pagos →</button>
     </div>`:''}
+
+    <!-- AHORRO Y ACTIVOS -->
+    ${(()=>{try{
+      const sc2=curSavCommit();
+      const savSt=S.savStreak||0;
+      const assTotal=tAss();
+      const savGoalsActive=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0));
+      let h='<div class="card" style="border-left:3px solid var(--sage);margin-bottom:0">';
+      h+='<div class="ct" style="color:var(--sage)">🪙 Ahorro y Activos</div>';
+      // Commitment status
+      if(sc2&&(sc2.status==='committed'||sc2.status==='intact')){
+        const asset=S.assets.find(a=>a.id===sc2.assetId);
+        h+='<div style="padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px;margin-bottom:10px"><div class="row-b"><div style="font-size:12px"><span style="color:var(--sage);font-weight:bold">✅ Apartado esta qna</span></div><div style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(sc2.amount)+'</div></div><div style="font-size:10px;color:var(--muted);margin-top:4px">→ '+(asset?asset.name:'activo')+(savSt>0?' · 🔥 Racha '+savSt:'')+'</div></div>';
+      }else{
+        const sug=savAmtQ();
+        h+='<div style="padding:10px 12px;background:rgba(160,112,48,.06);border-radius:8px;margin-bottom:10px"><div class="row-b"><div style="font-size:12px;color:var(--amber);font-weight:bold">🪙 Sin apartar esta quincena</div><button class="btn btn-sage btn-sm" style="padding:8px 14px;font-size:11px" onclick="openSavCommitModal()">Apartar '+fx(sug)+'</button></div></div>';
+      }
+      // Activos
+      if(S.assets.length>0){
+        h+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold">Activos</div>';
+        S.assets.forEach(a=>{h+='<div class="row-b" style="padding:4px 0;font-size:12px"><span>'+(a.gen?'📈 ':'')+a.name+'</span><strong style="color:var(--sage)">'+fx(a.val)+'</strong></div>';});
+        h+='<div class="row-b" style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><strong style="font-size:12px">Total activos</strong><strong style="font-size:14px;color:var(--sage)">'+fx(assTotal)+'</strong></div>';
+      }
+      // Savings goals
+      if(savGoalsActive.length>0){
+        h+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:10px 0 6px;font-weight:bold">Metas de ahorro</div>';
+        savGoalsActive.forEach(g=>{const pct=Math.min(100,Math.round((+g.saved||0)/g.target*100));h+='<div style="margin-bottom:6px"><div class="row-b" style="font-size:12px"><span>'+(g.icon||'🎯')+' '+g.name+'</span><span style="color:var(--sky);font-weight:bold">'+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+'</span></div><div class="pw" style="height:4px;margin-top:3px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div></div>';});
+      }
+      h+='</div>';
+      return h;
+    }catch(e){return '';}})()}
 
     <!-- BONO SEMESTRAL -->
     ${bv>0?`<div class="card card-sage">
@@ -5623,9 +5667,8 @@ try{
     </div>`:''}
 
     <!-- PLAN DE ATAQUE -->
-    <div class="card" style="${hasPending?'opacity:.5;pointer-events:none':''}">
+    <div class="card">
       <div class="ct">Plan de ataque ${ib("bolanieve","Estrategia")}</div>
-      ${hasPending?`<div style="font-size:12px;color:var(--terra);margin-bottom:12px;line-height:1.7">🔒 Función suspendida. Liquida tus pagos pendientes primero para ver tu plan de ataque actualizado.</div>`:`
       <div style="margin-bottom:13px">
         <div onclick="dStrat='snowball';rPlan()" style="cursor:pointer;padding:14px;border-radius:8px;border:2px solid ${dStrat==='snowball'?'var(--sage)':'var(--border)'};background:${dStrat==='snowball'?'var(--sagedim2)':'var(--bg)'};margin-bottom:8px">
           <div style="font-weight:bold;font-size:15px;color:${dStrat==='snowball'?'var(--sage2)':'var(--txt)'}">❄️ Bola de Nieve ${ib("bolanieve","Bola de Nieve")}</div>
@@ -5638,7 +5681,7 @@ try{
       </div>
       <div style="background:var(--skydim);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--sky);line-height:1.7;margin-bottom:16px">
         💡 Cuando termines de pagar la <strong>#1</strong>, toma ese pago y súmalo a la <strong>#2</strong>. El pago crece como bola de nieve y cada deuda cae más rápido.
-      </div>`}
+      </div>
 
       ${sortedActive.map((db,i)=>{
         const moP=toMonthly(db.pay||0,db.freq||'mensual');
@@ -5653,13 +5696,13 @@ try{
         return`<div style="padding:14px 0;border-bottom:1px solid var(--border)">
           <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px">
-              ${isFirst&&!hasPending?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
+              ${isFirst?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
               <span style="font-weight:bold;color:var(--txt);font-size:15px">${db.name}</span>
               ${hasMSI?'<span class="badge bdg-sky">'+db.curPay+' de '+db.totalPays+'</span>':''}
             </div>
             <strong style="color:var(--sky);font-size:18px">${fx(Math.round(moP))}</strong>
           </div>
-          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:${isFirst&&!hasPending?0:32}px">
+          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:${isFirst?0:32}px">
             Pago: ${fx(db.pay)}/${fqLabel}${npLabel?' · '+npLabel:''}${liqLabel?' · '+liqLabel:''}
           </div>
         </div>`;
@@ -7450,7 +7493,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-incsummary';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-estrat';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

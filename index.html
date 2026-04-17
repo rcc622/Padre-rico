@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='score-2026-04-16';
+window.APP_BUILD='incsummary-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -3955,6 +3955,65 @@ function _bonoLabel(inc){
   else if(d>=30||d<=14)qLabel='en la 1ra quincena'+(d>=30?' del mes siguiente':'')+' (día '+d+')';
   return '<div style="font-size:10px;color:var(--sage);margin-top:6px">💡 Bono mensual ('+fx(inc.bf)+') cae '+qLabel+'</div>';
 }
+// Calcula ingreso REAL desglosado por quincena (esta y próxima), incluyendo extras
+function _realIncSummary(){
+  try{
+    const today=new Date();today.setHours(0,0,0,0);
+    const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+    // Current cycle
+    const cw=getCycleWindow();
+    const ck=cycleKey();
+    const incH=getIncForCycle(ck);
+    const salQ=Math.round((+incH.sal||0)/2);
+    const hasBono=bonusInCycle(cw.start,cw.end,incH);
+    const bonoQ=hasBono?(+incH.bf||0):0;
+    // Extras this cycle
+    let extRecQ=0,extUniQ=0;
+    S.extras.forEach(x=>{
+      if(x.tipo==='recurrente')extRecQ+=Math.round(toMonthly(+x.amt||0,x.freq||'mensual')/2);
+      else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cw.start&&xd<=cw.end)extUniQ+=(+x.amt||0);}
+    });
+    const totalThis=salQ+bonoQ+extRecQ+extUniQ;
+    // Next cycle
+    const ne=new Date(cw.end);ne.setDate(ne.getDate()+1);
+    const nd=ne.getDate();
+    let nStart,nEnd;
+    if(nd>=15&&nd<=29){nStart=new Date(ne.getFullYear(),ne.getMonth(),15);nEnd=new Date(ne.getFullYear(),ne.getMonth(),29);}
+    else{nStart=new Date(ne.getFullYear(),ne.getMonth(),Math.min(30,new Date(ne.getFullYear(),ne.getMonth()+1,0).getDate()));nEnd=new Date(ne.getFullYear(),ne.getMonth()+1,14);}
+    const nCk=nd>=15&&nd<=29?ne.getFullYear()+'-'+(ne.getMonth()+1)+'-2da':ne.getFullYear()+'-'+(ne.getMonth()+1)+'-1ra';
+    const nIncH=getIncForCycle(nCk);
+    const nSalQ=Math.round((+nIncH.sal||0)/2);
+    const nHasBono=bonusInCycle(nStart,nEnd,nIncH);
+    const nBonoQ=nHasBono?(+nIncH.bf||0):0;
+    let nExtRecQ=0,nExtUniQ=0;
+    S.extras.forEach(x=>{
+      if(x.tipo==='recurrente')nExtRecQ+=Math.round(toMonthly(+x.amt||0,x.freq||'mensual')/2);
+      else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=nStart&&xd<=nEnd)nExtUniQ+=(+x.amt||0);}
+    });
+    const totalNext=nSalQ+nBonoQ+nExtRecQ+nExtUniQ;
+    const fmtD=dt=>dt.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+    const thisLabel=fmtD(cw.start)+' – '+fmtD(cw.end);
+    const nextLabel=fmtD(nStart)+' – '+fmtD(nEnd);
+    // Build rows helper
+    function qnaBlock(label,sal,bono,hasBon,extRec,extUni,total,isCurrent){
+      const badge=isCurrent?'<span style="font-size:9px;background:var(--sage);color:#fff;padding:2px 6px;border-radius:4px;margin-left:6px">ACTUAL</span>':'<span style="font-size:9px;background:var(--sky);color:#fff;padding:2px 6px;border-radius:4px;margin-left:6px">PRÓXIMA</span>';
+      let h='<div style="padding:10px 12px;border:1px solid var(--border);border-radius:8px;'+(isCurrent?'background:rgba(78,124,106,.04)':'background:rgba(74,110,140,.03)')+';margin-bottom:8px">';
+      h+='<div style="font-size:10px;color:var(--muted);margin-bottom:6px;font-weight:bold;text-transform:uppercase;letter-spacing:1px">'+label+badge+'</div>';
+      h+='<div style="font-size:12px;display:flex;flex-direction:column;gap:3px">';
+      h+='<div class="row-b"><span>Salario</span><span>'+fx(sal)+'</span></div>';
+      if(hasBon)h+='<div class="row-b"><span>Bono mensual</span><span style="color:var(--sage)">+'+fx(bono)+'</span></div>';
+      if(extRec>0)h+='<div class="row-b"><span>Extras recurrentes</span><span style="color:var(--sage)">+'+fx(extRec)+'</span></div>';
+      if(extUni>0)h+='<div class="row-b"><span>Extras únicos</span><span style="color:var(--sage)">+'+fx(extUni)+'</span></div>';
+      h+='<div class="row-b" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><strong>Total</strong><strong style="color:var(--sage);font-size:14px">'+fx(total)+'</strong></div>';
+      h+='</div></div>';
+      return h;
+    }
+    return '<div class="card" style="margin-bottom:0;margin-top:10px;padding:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;font-weight:bold">📊 Ingreso real por quincena</div>'
+      +qnaBlock(thisLabel,salQ,bonoQ,hasBono,extRecQ,extUniQ,totalThis,true)
+      +qnaBlock(nextLabel,nSalQ,nBonoQ,nHasBono,nExtRecQ,nExtUniQ,totalNext,false)
+      +'<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">💡 Estos montos coinciden con el <strong>Ingreso</strong> que ves en Plan de Acción para cada quincena.</div></div>';
+  }catch(e){return '';}
+}
 function rFlujo(){try{
   const bc={};S.exp.forEach(e=>{bc[e.cat]=(bc[e.cat]||0)+toMonthly(+e.amt||0,e.freq||'mensual')});
   const maxC=Math.max(...Object.values(bc),1);
@@ -3998,11 +4057,13 @@ function rFlujo(){try{
       ${_bonoLabel(S.inc)}
       ${(S.incHistory&&S.incHistory.length)?`<div style="font-size:10px;color:var(--muted);margin-top:6px;padding-top:6px;border-top:1px dashed var(--border);cursor:pointer" onclick="showIncHistory()">📜 ${S.incHistory.length} cambio${S.incHistory.length!==1?'s':''} de ingreso registrado${S.incHistory.length!==1?'s':''} · Toca para ver / limpiar</div>`:''}
     </div>
+    ${_realIncSummary()}
   </div>
   
   <!-- ═══ BONO SEMESTRAL (VARIABLE) ═══ -->
-  <div class="card" style="border:1px solid rgba(74,110,140,.25);background:rgba(74,110,140,.03)">
-    <div class="ct" style="color:var(--sky)">🎯 Bono semestral <span style="font-size:10px;color:var(--muted);font-weight:normal;text-transform:none;letter-spacing:0;margin-left:4px">(variable — depende de KPIs)</span></div>
+  <details class="card" style="border:1px solid rgba(74,110,140,.25);background:rgba(74,110,140,.03);padding:10px 14px">
+    <summary style="cursor:pointer;font-size:12px;color:var(--sky);font-weight:bold;letter-spacing:1px;text-transform:uppercase;padding:6px 0">🎯 Bono semestral <span style="font-weight:normal;color:var(--muted);font-size:10px;text-transform:none;letter-spacing:0">(variable · ${S.inc.bv?fx(S.inc.bv)+' estimado':'sin configurar'})</span></summary>
+    <div style="margin-top:10px">
     <div class="g2" style="margin-bottom:10px">
       <div><label>Monto estimado ($)</label><input type="number" id="incBv" value="${S.inc.bv||''}" placeholder="0" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
       <div><label>Mes esperado (1-12)</label><input type="number" id="incBvMes" value="${S.inc.bvMes||''}" placeholder="6" min="1" max="12" oninput="_incEdited=true;_refreshIncSaveBtn()"></div>
@@ -4014,10 +4075,12 @@ function rFlujo(){try{
       💡 <strong>Es solo referencia</strong>. Cuando te lo paguen, usa el botón de abajo para registrar el monto real como ingreso extra.
     </div>
     <button class="btn" style="width:100%;background:var(--sky);color:#fff;padding:12px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="openBvApply()">💰 Ya me pagaron el bono semestral</button>
-  </div>
+    </div>
+  </details>
 
-  <div class="card">
-    <div class="ct">📈 Ingresos extras</div>
+  <details class="card" style="padding:10px 14px">
+    <summary style="cursor:pointer;font-size:12px;color:var(--txt);font-weight:bold;letter-spacing:1px;text-transform:uppercase;padding:6px 0">📈 Ingresos extras <span style="font-weight:normal;color:var(--muted);font-size:10px;text-transform:none;letter-spacing:0">(${S.extras.length} registrado${S.extras.length!==1?'s':''}${tExtras()>0?' · +'+fx(Math.round(tExtras()))+'/mes':''})</span></summary>
+    <div style="margin-top:10px">
     <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Horas extra, freelance, inversiones, o cualquier ingreso adicional.</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:10px">
       <div><label>Concepto</label><input type="text" id="xn" placeholder="Horas extra, CETES..."></div>
@@ -4035,7 +4098,8 @@ function rFlujo(){try{
     ${S.extras.filter(x=>x.tipo!=='recurrente').length>0?`<div style="font-size:10px;color:var(--amber);margin:10px 0 6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Únicos</div>
     ${S.extras.filter(x=>x.tipo!=='recurrente').map(x=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-amber">Único</span>${x.date?`<span style="font-size:10px;color:var(--muted)">${fmtDate(x.date)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(x.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`).join('')}`:''}
     <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total extras/mes:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">+${fx(Math.round(tExtras()))}</span></div></div>`:''}
-  </div>
+    </div>
+  </details>
   `:''}
 
   ${flujoView==='gastos'?`
@@ -7386,7 +7450,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-score';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-incsummary';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

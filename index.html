@@ -5582,25 +5582,15 @@ try{
     const newDebtAfterBono=Math.max(0,debtTotal2-bv70);
     const pctReduction=debtTotal2>0?Math.round(bv70/debtTotal2*100):0;
 
-    // Calculate mandatory pending (gastos + deudas not yet paid)
+    // Calculate mandatory pending (gastos + deudas not yet paid) — excluye ya aplicados este ciclo
     const mPendingAmt=expDetail.reduce((a,e)=>{const pt2=e.paidType||'exp';return a+(!isPaid(pt2,e.id)?e.amt:0);},0)+debtDetail.reduce((a,e)=>a+(!isPaid('debt',e.id)?e.amt:0),0);
     const hasPending=mPendingAmt>0;
+    // Set de deudas ya pagadas/aplicadas este ciclo (para marcar en lista Estrategia)
+    const debtsPaidThisCycle=new Set();
+    debtDetail.forEach(e=>{if(isPaid('debt',e.id)||isApplied('debt',e.id))debtsPaidThisCycle.add(e.id);});
 
     document.getElementById('tab-plan').innerHTML=`
     ${subNav}
-
-    <!-- AHORRO COMPROMETIDO -->
-    ${(()=>{try{
-      const c=curSavCommit();
-      const savGoalsActive=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0));
-      if(!c&&!savGoalsActive.length)return '';
-      let h='<div class="card" style="border-left:3px solid var(--sage);padding:14px">';
-      h+='<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px;font-weight:bold">🪙 Ahorro esta quincena</div>';
-      if(c){const asset=S.assets.find(a=>a.id===c.assetId);h+='<div class="row-b" style="margin-bottom:4px"><span style="font-size:13px">✅ Apartado a '+(asset?asset.name:'activo')+'</span><strong style="color:var(--sage);font-size:14px">'+fx(c.amount)+'</strong></div>';}
-      else{h+='<div class="row-b" style="margin-bottom:4px"><span style="font-size:13px;color:var(--amber)">⏳ Sin ahorro apartado</span><button class="btn btn-sage btn-sm" style="padding:6px 12px" onclick="openSavCommitModal()">Apartar</button></div>';}
-      if(savGoalsActive.length>0){h+='<div style="border-top:1px dashed var(--border);padding-top:6px;margin-top:6px">';savGoalsActive.forEach(g=>{const perQ=savGoalPerQ(g);h+='<div class="row-b" style="font-size:12px;padding:3px 0"><span>'+(g.icon||'🎯')+' '+g.name+'</span><span style="color:var(--sky);font-weight:bold">'+fx(perQ)+'/qna</span></div>';});h+='</div>';}
-      h+='</div>';return h;
-    }catch(e){return '';}})()}
 
     <!-- PENDING WARNING -->
     ${hasPending&&!showNext?`<div class="card" style="border-left:3px solid var(--amber);padding:14px 18px">
@@ -5672,7 +5662,8 @@ try{
 
       ${sortedActive.map((db,i)=>{
         const moP=toMonthly(db.pay||0,db.freq||'mensual');
-        const isFirst=i===0;
+        const paidThisCycle=debtsPaidThisCycle.has(db.id);
+        const isFirst=i===0&&!paidThisCycle;
         const hasMSI=db.curPay&&db.totalPays;
         const pd2=+(db.payDay)||0;
         let npLabel='';
@@ -5680,17 +5671,17 @@ try{
         else if(pd2){npLabel='pago día '+pd2;}
         const liqLabel=db.liqDate?'Liquida: '+fmtDate(db.liqDate):'';
         const fqLabel=freqShort(db.freq||'mensual');
-        return`<div style="padding:14px 0;border-bottom:1px solid var(--border)">
+        return`<div style="padding:14px 0;border-bottom:1px solid var(--border);${paidThisCycle?'opacity:.5':''}">
           <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px">
-              ${isFirst?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
-              <span style="font-weight:bold;color:var(--txt);font-size:15px">${db.name}</span>
+              ${paidThisCycle?'<span style="background:var(--sage);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">✓ PAGADA</span>':isFirst?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
+              <span style="font-weight:bold;color:var(--txt);font-size:15px;${paidThisCycle?'text-decoration:line-through':''}">${db.name}</span>
               ${hasMSI?'<span class="badge bdg-sky">'+db.curPay+' de '+db.totalPays+'</span>':''}
             </div>
-            <strong style="color:var(--sky);font-size:18px">${fx(Math.round(moP))}</strong>
+            <strong style="color:${paidThisCycle?'var(--sage)':'var(--sky)'};font-size:18px">${fx(Math.round(moP))}</strong>
           </div>
-          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:${isFirst?0:32}px">
-            Pago: ${fx(db.pay)}/${fqLabel}${npLabel?' · '+npLabel:''}${liqLabel?' · '+liqLabel:''}
+          <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:32px">
+            ${paidThisCycle?'✓ Pagada este ciclo':'Pago: '+fx(db.pay)+'/'+fqLabel+(npLabel?' · '+npLabel:'')+(liqLabel?' · '+liqLabel:'')}
           </div>
         </div>`;
       }).join('')}
@@ -5728,6 +5719,7 @@ try{
           +'<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--sky);font-weight:bold">'+totalHrs.toFixed(1)+' / '+ot.targetHrs.toFixed(1)+' horas</span><span style="font-size:11px;color:var(--muted)">'+pct+'%</span></div>'
           +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'
           +'<div class="row-b" style="margin-bottom:12px"><span style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(totalMoney)+' por cobrar</span><span style="font-size:11px;color:var(--muted)">Faltan '+fx(Math.max(0,targetMoney-totalMoney))+'</span></div>'
+          +(isCurrentCycle?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px;color:var(--amber)" onclick="recalcOvertime(\''+otCk+'\')">🔄 Recalcular horas requeridas</button>':'')
           +(ot.entries.length>0?'<button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:6px" onclick="markOtAsPaid(\''+otCk+'\')">💵 Ya me pagaron estas horas</button>':'')
           +'</div>';
         // Form for adding hours — disponible para CUALQUIER log activo (Fase 4.1)
@@ -6329,6 +6321,69 @@ function showOvertimeCalc(){
     if(inp&&out)inp.oninput=function(){out.textContent=fx(Math.round(+this.value*RATE));};
   },100);
 }
+// Recalcula el target de horas extra basándose en el déficit actualizado (deudas/gastos nuevos)
+// Conserva entradas registradas, solo actualiza targetHrs al valor nuevo necesario.
+function recalcOvertime(otCk){
+  const ck=otCk||cycleKey();
+  const ot=S.overtimeLog?.[ck];
+  if(!ot){toast('No hay reto activo');return;}
+  const RATE=ot.rate||172;
+  const today=new Date();today.setHours(0,0,0,0);
+  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+  // Usa la misma lógica que showOvertimeCalc para calcular el déficit actualizado
+  let cStart,cEnd;
+  if(d>=15&&d<=29){cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
+  else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
+  else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
+  function dayInC(pd){if(!pd)return false;const tds=[];for(let tm2=cStart.getMonth()-1;tm2<=cEnd.getMonth()+1;tm2++){const mx=new Date(cStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
+  let thisCycleTotal=0,thisApplied=0;
+  S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')thisCycleTotal+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')thisCycleTotal+=(+e.amt||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
+  S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')thisCycleTotal+=(db.pay||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
+  const paidItems=S.paidItems[ck]||{};
+  for(const key in paidItems){if(key.startsWith('_'))continue;const v=paidItems[key];const isApp=v==='applied'||(typeof v==='object'&&v?.applied);if(!isApp)continue;const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)thisApplied+=(+e.amt||0);}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)thisApplied+=(+db.pay||0);}}
+  const pendingThis=Math.max(0,thisCycleTotal-thisApplied);
+  // Próxima qna
+  let nStart,nEnd;
+  if(d>=15&&d<=29){nStart=new Date(y,m,30);nEnd=new Date(y,m+1,14);}
+  else if(d>=30){nStart=new Date(y,m+1,15);nEnd=new Date(y,m+1,29);}
+  else{nStart=new Date(y,m,15);nEnd=new Date(y,m,29);}
+  function dayInN(pd){if(!pd)return false;const tds=[];for(let tm2=nStart.getMonth()-1;tm2<=nEnd.getMonth()+1;tm2++){const mx=new Date(nStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(nStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=nStart&&td<=nEnd);}
+  const nCycleKey=(()=>{const y2=nStart.getFullYear(),m2=nStart.getMonth()+1,d2=nStart.getDate();const nType=(d2>=15&&d2<=29)?'2da':'1ra';return y2+'-'+m2+'-'+nType;})();
+  const nIncH=getIncForCycle(nCycleKey);
+  const salQ=(+nIncH.sal||0)/2;
+  const nBonus=bonusInCycle(nStart,nEnd,nIncH)?(+nIncH.bf||0):0;
+  const nextIncome=salQ+nBonus;
+  let nextExpQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')nextExpQ+=(+e.amt||0)*getWeeksInCycle({start:nStart,end:nEnd});else if(f==='quincenal')nextExpQ+=(+e.amt||0);else if(pd>0&&dayInN(pd))nextExpQ+=mo;else if(!pd)nextExpQ+=mo/2;});
+  let nextDebtQ=0;S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')nextDebtQ+=(db.pay||0);else if(pd>0&&dayInN(pd))nextDebtQ+=mo;else if(!pd)nextDebtQ+=mo/2;});
+  const savQ2=savAmt()/2;
+  const nextTotal=nextExpQ+nextDebtQ+savQ2;
+  const totalDeficit=Math.max(0,pendingThis+nextTotal-nextIncome);
+  const hoursNeeded=totalDeficit>0?Math.ceil(totalDeficit/RATE*10)/10:0;
+  const loggedH=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
+  const newTargetH=Math.max(hoursNeeded,loggedH); // nunca menor a lo ya registrado
+  const curTargetH=+ot.targetHrs||0;
+  const delta=newTargetH-curTargetH;
+  const deltaLabel=delta>0?'+'+delta.toFixed(1)+'h':delta<0?delta.toFixed(1)+'h':'sin cambio';
+  const body='<div style="font-size:12px;line-height:1.8;color:var(--txt2);margin-bottom:14px">'
+    +'<div class="row-b" style="margin-bottom:2px"><span>Pendiente esta qna:</span><strong style="color:var(--terra)">'+fx(Math.round(pendingThis))+'</strong></div>'
+    +'<div class="row-b" style="margin-bottom:2px"><span>Compromisos próxima qna:</span><strong style="color:var(--terra)">'+fx(Math.round(nextTotal))+'</strong></div>'
+    +'<div class="row-b" style="margin-bottom:2px"><span>Ingreso próxima qna:</span><strong style="color:var(--sage)">'+fx(Math.round(nextIncome))+'</strong></div>'
+    +'<div class="row-b" style="border-top:1px solid var(--border);padding-top:4px;margin-top:4px"><span style="font-weight:bold">Déficit actualizado:</span><strong style="color:'+(totalDeficit>0?'var(--terra)':'var(--sage)')+'">'+fx(Math.round(totalDeficit))+'</strong></div>'
+    +'</div>'
+    +'<div style="padding:12px;background:rgba(74,110,140,.06);border-radius:8px;margin-bottom:12px">'
+    +'<div class="row-b" style="font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">Target anterior</span><strong>'+curTargetH.toFixed(1)+'h</strong></div>'
+    +'<div class="row-b" style="font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">Horas ya registradas</span><strong style="color:var(--sage)">'+loggedH.toFixed(1)+'h</strong></div>'
+    +'<div class="row-b" style="font-size:13px;font-weight:bold;padding-top:6px;border-top:1px dashed var(--border)"><span style="color:var(--sky)">Nuevo target</span><strong style="color:var(--sky)">'+newTargetH.toFixed(1)+'h ('+deltaLabel+')</strong></div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.6">💡 Se conservan tus '+ot.entries.length+' registro'+(ot.entries.length!==1?'s':'')+' actuales. Solo se actualiza el objetivo.</div>';
+  showConfirm('🔄 Recalcular horas extra',body,()=>{
+    S.overtimeLog[ck]={...ot,targetHrs:newTargetH,deficit:Math.round(totalDeficit),pendingThis:Math.round(pendingThis),nextTotal:Math.round(nextTotal)};
+    sv();rPlan();toast('⏰ Target actualizado: '+newTargetH.toFixed(1)+'h');
+  });
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="execConfirm()">✓ Actualizar target</button>';
+}
+
 function acceptOvertime(deficit,pendingThis,nextTotal){
   const hrs=+(document.getElementById('otHrsCommit')?.value)||0;
   if(hrs<=0){toast('Ingresa las horas');return;}

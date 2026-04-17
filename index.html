@@ -296,7 +296,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='estrat-2026-04-16';
+window.APP_BUILD='savwf-2026-04-16';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -5495,22 +5495,31 @@ try{
     </div>`:''}
 
     <!-- ESTADO CUENTA -->
-    <div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
+    ${(()=>{
+      const _savC=(S.savCommits||{})[planCk()]||null;
+      const _savAmt=_savC&&(_savC.status==='committed'||_savC.status==='intact'||_savC.status==='emergency-kept')?(+_savC.amount||0):0;
+      const _savAsset=_savAmt>0?S.assets.find(a=>a.id===_savC.assetId):null;
+      const _diarioAmt=showNext?0:totalDiariosCycle(planCk());
+      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_savAmt;
+      const _balance=incQ-_totalOut;
+      return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
       <div style="font-size:13px;line-height:2.2">
         <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
         ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
-        ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes (${impulseItems.filter(p=>!isPaid('imp',p.id)&&!isApplied('imp',p.id)).length})</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
-        ${!showNext&&(()=>{const vck=planCk();const td=totalDiariosCycle(vck);return td>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosThisCycle(vck).length})</span><strong style="color:var(--terra)">−${fx(Math.round(td))}</strong></div>`:'';})()||''}
+        ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
+        ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosThisCycle(planCk()).length})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
+        ${_savAmt>0?`<div class="row-b"><span style="color:var(--sage)">🪙 Ahorro apartado${_savAsset?' → '+_savAsset.name:''}</span><strong style="color:var(--sage)">−${fx(Math.round(_savAmt))}</strong></div>`:''}
         ${showNext?(()=>{const ck2=cycleKey();const ot=S.overtimeLog?.[ck2];if(!ot?.accepted)return'';const otEarned=ot.entries.reduce((a,e)=>a+Math.round(e.hours*ot.rate),0);return otEarned>0?'<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra</span><strong style="color:var(--sky)">+'+fx(otEarned)+'</strong></div>':'';})():''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
-          <strong style="color:${(incQ-appliedAmt2-checkedAmt-impPendingTotal-(showNext?0:totalDiariosCycle(planCk())))>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(incQ-appliedAmt2-checkedAmt-impPendingTotal-(showNext?0:totalDiariosCycle(planCk()))))}</strong>
+          <strong style="color:${_balance>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(_balance))}</strong>
         </div>
         ${checkedAmt>0?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
       </div>
-    </div>
+    </div>`;
+    })()}
 
     <!-- OVERTIME (only next quincena) -->
     ${showNext?(()=>{
@@ -7493,7 +7502,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-estrat';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-savwf';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

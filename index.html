@@ -258,15 +258,13 @@ button:active{transform:scale(.97)}
   </header>
   <nav class="nav">
     <button class="nb act" onclick="go('dash')">🏛️ Inicio</button>
-    <button class="nb" onclick="go('quincena')">📊 Cierre Qna</button>
-    <button class="nb" onclick="go('flujo')">💰 Ingresos, Gastos y Activos</button>
+    <button class="nb" onclick="go('flujo')">💰 Ingresos y Gastos</button>
     <button class="nb" onclick="go('plan')">🎯 Plan de Acción</button>
-    <button class="nb" onclick="go('habitos')">🧠 Mis Hábitos</button>
+    <button class="nb" onclick="go('habitos')">🧠 Día a día</button>
     <button class="nb" onclick="go('historia')">📖 Mi Historia</button>
   </nav>
   <div class="content">
     <div id="tab-dash" class="panel act"></div>
-    <div id="tab-quincena" class="panel"></div>
     <div id="tab-flujo" class="panel"></div>
     <div id="tab-plan" class="panel"></div>
     <div id="tab-habitos" class="panel"></div>
@@ -274,12 +272,23 @@ button:active{transform:scale(.97)}
   </div>
 </div>
 
+<!-- CIERRE QUINCENA MODAL (antes era tab) -->
+<div id="cierreQnaModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:var(--bg);z-index:900;overflow-y:auto;-webkit-overflow-scrolling:touch">
+  <div style="position:sticky;top:0;background:var(--card);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;justify-content:space-between;z-index:10;box-shadow:0 1px 8px rgba(0,0,0,.08)">
+    <div style="font-size:12px;color:var(--sage2);font-weight:bold;letter-spacing:1px">📊 CIERRE DE QUINCENA</div>
+    <button class="btn btn-ghost btn-sm" onclick="closeCierreModal()" style="font-size:11px;padding:6px 12px">✕ Cerrar</button>
+  </div>
+  <div style="padding:16px;max-width:860px;margin:0 auto">
+    <div id="tab-quincena" class="panel act"></div>
+  </div>
+</div>
+</div>
+
 <!-- FAB -->
 <div id="fabBackdrop" onclick="_fabToggle()"></div>
 <div id="fabContainer">
   <div id="fabMenu">
     <div class="fab-item"><span class="fab-label">🛒 Gasto diario</span><button class="fab-mini" onclick="fabAction('diario')" style="color:var(--terra)">🛒</button></div>
-    <div class="fab-item"><span class="fab-label">✓ Ir a pagos</span><button class="fab-mini" onclick="fabAction('pago')" style="color:var(--sage)">✓</button></div>
     <div class="fab-item"><span class="fab-label">💰 Apartar ahorro</span><button class="fab-mini" onclick="fabAction('ahorro')" style="color:var(--amber)">💰</button></div>
     <div class="fab-item"><span class="fab-label">💳 Pagar TDC</span><button class="fab-mini" onclick="fabAction('tdc')" style="color:var(--sky)">💳</button></div>
   </div>
@@ -296,7 +305,7 @@ button:active{transform:scale(.97)}
 <script>
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
-window.APP_BUILD='savwf-2026-04-16';
+window.APP_BUILD='consolidB-2026-04-17';
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -1014,7 +1023,7 @@ function _offerSavingsDeposit(amt,retoName,retoId){
   if(!amt||amt<=0)return;
   const chainHabito=()=>{if(retoId)setTimeout(()=>{try{_offerDeclareHabito(retoId);}catch(e){}},500);};
   if(!S.assets||S.assets.length===0){
-    showInfo('🏦 Reto de ahorro completado','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Completaste un reto de <strong>'+fx(amt)+'</strong> de ahorro real.<br><br>Para registrarlo en tu patrimonio, primero necesitas crear un activo (Mercado Pago, Cajita Nu, etc) en <strong>Ingresos, Gastos y Activos → 🏦 Activos</strong>.<br><br>Una vez creado, puedes registrar el depósito desde Inicio con <em>"Págate a ti primero"</em>.</div>');
+    showInfo('🏦 Reto de ahorro completado','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Completaste un reto de <strong>'+fx(amt)+'</strong> de ahorro real.<br><br>Para registrarlo en tu patrimonio, primero necesitas crear un activo (Mercado Pago, Cajita Nu, etc) en <strong>Ingresos y Gastos → 🏦 Activos</strong>.<br><br>Una vez creado, puedes registrar el depósito desde Inicio con <em>"Págate a ti primero"</em>.</div>');
     chainHabito();
     return;
   }
@@ -2115,13 +2124,30 @@ function obDone(){
 // ══ ROUTING ═════════════════════════════════════════
 let cur='dash';
 function go(tab){
+  // Backward compat: 'quincena' ya no es tab de nav, es modal
+  if(tab==='quincena'){openCierreModal();return;}
   cur=tab;
-  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('act'));
+  // Solo toca paneles que están en .content (no los del modal cierreQna)
+  document.querySelectorAll('.content .panel').forEach(p=>p.classList.remove('act'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('act'));
-  document.getElementById('tab-'+tab).classList.add('act');
+  const tEl=document.getElementById('tab-'+tab);
+  if(tEl)tEl.classList.add('act');
   document.querySelectorAll('.nb').forEach(b=>{if(b.getAttribute('onclick')?.includes("'"+tab+"'"))b.classList.add('act')});
   ({dash:rDash,quincena:rQuincena,flujo:rFlujo,plan:rPlan,habitos:rHabitos,historia:rHistoria})[tab]?.();
   hdrUp();
+}
+function openCierreModal(){
+  document.getElementById('cierreQnaModal').style.display='block';
+  document.body.style.overflow='hidden';
+  try{rQuincena();}catch(e){console.error(e);}
+}
+function closeCierreModal(){
+  document.getElementById('cierreQnaModal').style.display='none';
+  document.body.style.overflow='';
+  // Si estamos en historia o dash, refrescar por si se creó un snapshot nuevo
+  try{if(cur==='historia'&&typeof rHistoria==='function')rHistoria();}catch(e){}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
 }
 function hdrUp(){
   const s=score(),r=getRank(s),el=document.getElementById('hdr-score');
@@ -2338,11 +2364,21 @@ function rDash(){
   <!-- FRENTE 4 · SABIDURÍA DEL DÍA (Hooked: Hunt reward diario) -->
   ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:14px 16px;margin-bottom:13px;background:linear-gradient(135deg,rgba(78,124,106,.04) 0%,rgba(74,110,140,.02) 100%)"><div class="row" style="gap:12px;align-items:flex-start"><div style="font-size:30px;line-height:1;flex-shrink:0">${w.icon}</div><div style="flex:1;min-width:0"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px;font-weight:bold">💡 Sabiduría del día · ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.65">${w.text}</div></div></div></div>`;}catch(e){return'';}})()}
 
+  <!-- CIERRE INMINENTE (≤2 días) -->
+  ${(()=>{try{
+    const w=getCycleWindow();
+    const today=new Date();today.setHours(0,0,0,0);
+    const daysLeft=Math.ceil((w.end-today)/864e5);
+    if(daysLeft<0||daysLeft>2)return'';
+    const label=daysLeft===0?'HOY CIERRA TU QUINCENA':daysLeft===1?'MAÑANA CIERRA TU QUINCENA':'CIERRA EN 2 DÍAS';
+    return '<div class="card" style="border:2px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.09) 0%,rgba(184,92,74,.04) 100%);margin-bottom:13px;padding:14px 16px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">📊 '+label+'</div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Sube tu CSV de Nu o cierra con tu bitácora de Diarios para crear el capítulo.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openCierreModal()">📊 Abrir Cierre de quincena</button></div>';
+  }catch(e){return'';}})()}
+
   <!-- FASE 5 · DÉFICIT DE QUINCENA ANTERIOR (recordatorio amable hasta resolver) -->
   ${(()=>{try{
     const pd=pendingDeficitCycle();
     if(!pd)return '';
-    return '<div class="card" style="border:2px solid rgba(184,92,74,.45);background:linear-gradient(135deg,rgba(184,92,74,.06) 0%,rgba(160,112,48,.03) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">⚠️ Quincena pasada cerró con déficit</div><div style="font-size:13px;color:var(--txt);font-weight:bold;margin-top:4px">'+pd.ck+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Faltante</div><div style="font-size:20px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.65;margin-bottom:14px">Te faltaron <strong style="color:var(--terra)">'+fx(Math.abs(pd.balance))+'</strong> al cerrar. ¿Cómo lo cubriste?</div><div class="row" style="gap:6px;margin-bottom:10px"><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Lo absorbo</button></div><div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">Si elegiste TDC o Préstamo, recuerda registrar la deuda manualmente en <strong>Ingresos, Gastos y Activos → ⛓️ Deudas</strong></div></div>';
+    return '<div class="card" style="border:2px solid rgba(184,92,74,.45);background:linear-gradient(135deg,rgba(184,92,74,.06) 0%,rgba(160,112,48,.03) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">⚠️ Quincena pasada cerró con déficit</div><div style="font-size:13px;color:var(--txt);font-weight:bold;margin-top:4px">'+pd.ck+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Faltante</div><div style="font-size:20px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.65;margin-bottom:14px">Te faltaron <strong style="color:var(--terra)">'+fx(Math.abs(pd.balance))+'</strong> al cerrar. ¿Cómo lo cubriste?</div><div class="row" style="gap:6px;margin-bottom:10px"><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Lo absorbo</button></div><div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">Si elegiste TDC o Préstamo, recuerda registrar la deuda manualmente en <strong>Ingresos y Gastos → ⛓️ Deudas</strong></div></div>';
   }catch(e){return'';}})()}
 
   <!-- FASE 2 · PÁGATE A TI PRIMERO (Hooked: gatillo quincenal) -->
@@ -4025,7 +4061,7 @@ function rFlujo(){try{
   });
   const liqCount=S.debts.length-activeDebts.length;
 
-  const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['diarios','🛒 Diarios'],['deudas','⛓️ Deudas'],['activos','🏦 Activos']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
+  const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['deudas','⛓️ Deudas'],['activos','🏦 Activos']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
 
   document.getElementById('tab-flujo').innerHTML=`
   ${flujoNav}
@@ -4132,85 +4168,7 @@ function rFlujo(){try{
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
   `:''}
 
-  ${flujoView==='diarios'?(()=>{
-    const w=getCycleWindow();
-    const cycleList=diariosThisCycle().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
-    // Split: esenciales are excluded from budget tracking but still appear in the log
-    const esencialList=cycleList.filter(isEsencial);
-    const budgetList=cycleList.filter(g=>!isEsencial(g));
-    const totalEsen=esencialList.reduce((a,g)=>a+(+g.amt||0),0);
-    const totalQ=budgetList.reduce((a,g)=>a+(+g.amt||0),0); // counts against budget
-    const totalAll=totalQ+totalEsen; // real cash out (for "cerrar qna" button)
-    const todayISO=new Date().toISOString().split('T')[0];
-    const todayTotal=cycleList.filter(g=>g.date===todayISO).reduce((a,g)=>a+(+g.amt||0),0);
-    const budget=+S.gastoDiarioBudget||0;
-    const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
-    const bColor=pctB<60?'var(--sage)':pctB<90?'var(--amber)':'var(--terra)';
-    // group by day (all entries — esenciales render in the log too)
-    const byDay={};
-    cycleList.forEach(g=>{(byDay[g.date]=byDay[g.date]||[]).push(g);});
-    // category breakdown — exclude esenciales from the budget-focused chart
-    const byCat={};
-    budgetList.forEach(g=>{const k=g.cat||'otro';byCat[k]=(byCat[k]||0)+(+g.amt||0);});
-    const maxCat=Math.max(...Object.values(byCat),1);
-    const fmtD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===y.toISOString().split('T')[0])return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
-    // Long cycle detection
-    const longAuto=isLongCycleAuto();
-    const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
-    const isLong=longAuto||longManual;
-    return `
-  <!-- ═══ GASTOS DIARIOS ═══ -->
-  <div class="card">
-    <div class="ct">🛒 Gastos diarios · ${w.type==='1ra'?'1ra':'2da'} quincena</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Compras del día a día que pagas a débito: OXXO, delivery, transporte, snacks. No son recurrentes ni se pagan después — salen ahora.</div>
-    <div class="card card-grn" style="margin-bottom:12px">
-      <div class="row-b" style="margin-bottom:${budget>0?'10px':'0'}">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Gastado esta quincena</div><div class="stat" style="color:${totalQ>budget&&budget>0?'var(--terra)':'var(--sage)'}">${fx(Math.round(totalQ))}</div>${totalEsen>0?`<div style="font-size:10px;color:var(--muted);margin-top:3px">+ 🧾 Esenciales: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> <span style="opacity:.6">(fuera de presup.)</span></div>`:''}</div>
-        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Hoy</div><div style="font-size:18px;font-weight:bold;color:var(--txt)">${fx(Math.round(todayTotal))}</div></div>
-      </div>
-      ${budget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctB}%;background:${bColor}"></div></div><div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: ${fx(budget)}</span><span style="color:${bColor};font-weight:bold">${pctB}% usado · ${fx(Math.max(0,budget-totalQ))} restante</span></div>`:''}
-    </div>
-    <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);padding:6px 0">⚙️ ${budget>0?'Ajustar':'Poner'} presupuesto de quincena</summary>
-      <div class="row" style="gap:8px;margin-top:8px"><input type="number" id="gdBudget" placeholder="0" value="${budget||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setDiarioBudget()">Guardar</button></div>
-    </details>
-    <details style="margin-bottom:12px"${isLong?' open':''}><summary style="cursor:pointer;font-size:11px;color:${isLong?'var(--amber)':'var(--muted)'};padding:6px 0;font-weight:${isLong?'bold':'normal'}">📅 Quincena larga (3 fines de semana)${isLong?' · ACTIVA':''}</summary>
-      <div style="font-size:11px;color:var(--muted);margin:8px 0;line-height:1.7">
-        Detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga (3+ sábados en el ciclo)':'No es larga por calendario (2 sábados)'}</strong>.<br>
-        ${longManual?'🟠 Activaste manualmente Sem 3 para esta quincena.':''}
-        ${!longAuto?'<br>Si tú sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (ej. te pagaron antes o compraste el sábado previo al payday), actívalo manual:':''}
-      </div>
-      <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
-    </details>
-    <div style="border-top:1px solid var(--border);padding-top:12px">
-      <div style="font-size:11px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:8px">+ Registrar gasto</div>
-      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
-        <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..."></div>
-        <div><label>Monto $</label><input type="number" id="gda" placeholder="0" inputmode="decimal"></div>
-      </div>
-      <div style="margin-bottom:8px"><label>Categoría</label><div class="chips" id="gdCatChips">${DIARIO_CATS.map(c=>`<button type="button" class="chip" data-cat="${c.k}" style="${_diarioCat===c.k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${c.n}</button>`).join('')}</div><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso.</div></div>
-      <div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="gdd" value="${todayISO}"></div>
-      <button class="btn btn-sage" onclick="addDiario()">+ Agregar gasto diario</button>
-    </div>
-  </div>
-
-  ${cycleList.length>0?`<div class="card"><div class="ct">📋 Registro de la quincena (${cycleList.length})</div>
-    ${Object.keys(byDay).sort((a,b)=>b.localeCompare(a)).map(dk=>{
-      const dayTotal=byDay[dk].reduce((a,g)=>a+(+g.amt||0),0);
-      return `<div style="margin-bottom:14px">
-        <div class="row-b" style="padding:6px 8px;background:var(--sagedim);border-radius:6px;margin-bottom:6px"><span style="font-size:11px;color:var(--sage);font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${fmtD(dk)}</span><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(dayTotal))}</span></div>
-        ${byDay[dk].map(g=>{const c=diarioCat(g.cat);const esen=isEsencial(g);return`<div class="row-b" style="padding:8px 4px;border-bottom:1px solid var(--border);${esen?'background:rgba(120,120,120,.04)':''}"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.name}${esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':''}</div><div style="font-size:10px;color:var(--muted)">${c.n}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:${esen?'var(--muted)':'var(--terra)'};font-weight:bold;font-size:13px">-${fx(g.amt)}</span><button class="btn btn-red btn-sm" onclick="rmDiario(${g.id})">✕</button></div></div>`;}).join('')}
-      </div>`;
-    }).join('')}
-  </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
-
-  ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
-
-  ${cycleList.length>0?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
-    <div class="ct">📖 Cerrar quincena manualmente</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">¿Prefieres no subir el CSV? Puedes cerrar la quincena solo con tu bitácora de Diarios y crear el capítulo en Mi Historia. Opcional — también puedes seguir subiendo el CSV desde Cierre Qna si quieres auditar tus registros.</div>
-    <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${cycleList.length} registros · ${fx(Math.round(totalAll))})</button>
-  </div>`:''}
-  `;})():''}
+  ${flujoView==='diarios'?'<div class="card" style="text-align:center;padding:20px"><div style="font-size:12px;color:var(--muted);line-height:1.6">Diarios se movió a <strong>🧠 Día a día → 🛒 Diarios</strong>.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="habitView=\'diarios\';go(\'habitos\')">Ir a Diarios →</button></div>':''}
 
   ${flujoView==='deudas'?`
   <!-- ═══ WIDGET TDC (Fase 8b) ═══ -->
@@ -4779,7 +4737,6 @@ function fabAction(type){
   _fabToggle(); // close menu
   setTimeout(()=>{
     if(type==='diario')openQuickDiario();
-    else if(type==='pago')go('plan');
     else if(type==='ahorro'){
       if(typeof openSavCommitModal==='function')openSavCommitModal();
       else toast('Registra primero un ingreso y activo');
@@ -4968,7 +4925,7 @@ function openSavCommitModal(){startSavWizard();}
 function startSavWizard(){
   // Pre-condiciones
   if(mInc()<=0){
-    showInfo('🌱 Primero registra tu ingreso','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para calcular cuánto apartar necesitamos saber tu ingreso quincenal.<br><br>Ve a <strong>Ingresos, Gastos y Activos → 💰 Ingresos</strong> y registra tu salario.</div>');
+    showInfo('🌱 Primero registra tu ingreso','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para calcular cuánto apartar necesitamos saber tu ingreso quincenal.<br><br>Ve a <strong>Ingresos y Gastos → 💰 Ingresos</strong> y registra tu salario.</div>');
     return;
   }
   const cur=curSavCommit();
@@ -5587,7 +5544,28 @@ try{
     <div class="card card-grn" style="padding:12px 18px">
       <div style="font-size:12px;color:var(--sage2);font-weight:bold">${pendingCount()} seleccionado${pendingCount()>1?'s':''} · ${mUnpaid.length+oUnpaid.length} pendiente${mUnpaid.length+oUnpaid.length!==1?'s':''}</div>
       <button class="btn btn-sage btn-sm" style="margin-top:10px;width:100%" onclick="confirmApply()">📋 Aplicar ${pendingCount()} seleccionado${pendingCount()>1?'s':''} al historial</button>
-    </div>`:``}`;
+    </div>`:``}
+
+    <!-- CIERRE DE QUINCENA (CTA destacado en últimos 2 días, siempre disponible si es ciclo actual) -->
+    ${!showNext&&_isCurrent?(()=>{
+      const daysLeft=Math.ceil((cEnd-today)/864e5);
+      const urgent=daysLeft>=0&&daysLeft<=2;
+      const bgStyle=urgent
+        ? 'border:2px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(184,92,74,.04) 100%);padding:16px'
+        : 'border:1px dashed var(--border);background:rgba(78,124,106,.03);padding:14px';
+      const headerLabel=urgent
+        ? (daysLeft===0?'📊 HOY CIERRA TU QUINCENA':daysLeft===1?'📊 MAÑANA CIERRA TU QUINCENA':'📊 CIERRA EN '+daysLeft+' DÍAS')
+        : '📊 Cerrar quincena';
+      const headerColor=urgent?'var(--amber)':'var(--sage)';
+      const body=urgent
+        ? 'Es momento de subir tu CSV de Nu y crear el capítulo de esta quincena. Tus hábitos, retos y gastos se consolidan en tu Historia.'
+        : 'Cuando termine la quincena, sube tu CSV de Nu aquí para crear un capítulo nuevo en tu Historia.';
+      return `<div class="card" style="${bgStyle}">
+        <div style="font-size:10px;color:${headerColor};text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:6px">${headerLabel}</div>
+        <div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">${body}</div>
+        <button class="btn ${urgent?'btn-sage':'btn-ghost'}" style="width:100%;padding:${urgent?'14px':'10px'};font-size:13px" onclick="openCierreModal()">📊 Abrir Cierre de quincena</button>
+      </div>`;
+    })():''}`;
     return;
   }
 
@@ -5995,7 +5973,7 @@ function rHabitos(){
   const avoided=resolved.filter(w=>!w.bought);
   const totalSaved=avoided.reduce((a,w)=>a+(+w.price||0),0);
 
-  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','🛟 Retos'],['impulsos','⏳ Impulsos'],['ahorro','💰 Ahorro']].map(([id,l])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="habitView='${id}';rHabitos()">${l}</button>`).join('')}</div>`;
+  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','🛟 Retos'],['diarios','🛒 Diarios'],['impulsos','⏳ Impulsos'],['ahorro','💰 Ahorro']].map(([id,l])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="habitView='${id}';rHabitos()">${l}</button>`).join('')}</div>`;
 
   document.getElementById('tab-habitos').innerHTML=`
   ${habNav}
@@ -6026,6 +6004,82 @@ function rHabitos(){
     <button class="btn btn-sage btn-sm" style="width:100%;margin-top:8px" onclick="addCustomHabit()">🚫 Crear hábito</button>
   </div>
   `:''}
+
+  ${habitView==='diarios'?(()=>{
+    const w=getCycleWindow();
+    const cycleList=diariosThisCycle().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
+    const esencialList=cycleList.filter(isEsencial);
+    const budgetList=cycleList.filter(g=>!isEsencial(g));
+    const totalEsen=esencialList.reduce((a,g)=>a+(+g.amt||0),0);
+    const totalQ=budgetList.reduce((a,g)=>a+(+g.amt||0),0);
+    const totalAll=totalQ+totalEsen;
+    const todayISO=new Date().toISOString().split('T')[0];
+    const todayTotal=cycleList.filter(g=>g.date===todayISO).reduce((a,g)=>a+(+g.amt||0),0);
+    const budget=+S.gastoDiarioBudget||0;
+    const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
+    const bColor=pctB<60?'var(--sage)':pctB<90?'var(--amber)':'var(--terra)';
+    const byDay={};
+    cycleList.forEach(g=>{(byDay[g.date]=byDay[g.date]||[]).push(g);});
+    const byCat={};
+    budgetList.forEach(g=>{const k=g.cat||'otro';byCat[k]=(byCat[k]||0)+(+g.amt||0);});
+    const maxCat=Math.max(...Object.values(byCat),1);
+    const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===y.toISOString().split('T')[0])return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
+    const longAuto=isLongCycleAuto();
+    const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
+    const isLong=longAuto||longManual;
+    return `
+  <!-- ═══ GASTOS DIARIOS ═══ -->
+  <div class="card">
+    <div class="ct">🛒 Gastos diarios · ${w.type==='1ra'?'1ra':'2da'} quincena</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Compras del día a día que pagas a débito: OXXO, delivery, transporte, snacks. No son recurrentes ni se pagan después — salen ahora.</div>
+    <div class="card card-grn" style="margin-bottom:12px">
+      <div class="row-b" style="margin-bottom:${budget>0?'10px':'0'}">
+        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Gastado esta quincena</div><div class="stat" style="color:${totalQ>budget&&budget>0?'var(--terra)':'var(--sage)'}">${fx(Math.round(totalQ))}</div>${totalEsen>0?`<div style="font-size:10px;color:var(--muted);margin-top:3px">+ 🧾 Esenciales: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> <span style="opacity:.6">(fuera de presup.)</span></div>`:''}</div>
+        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Hoy</div><div style="font-size:18px;font-weight:bold;color:var(--txt)">${fx(Math.round(todayTotal))}</div></div>
+      </div>
+      ${budget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctB}%;background:${bColor}"></div></div><div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: ${fx(budget)}</span><span style="color:${bColor};font-weight:bold">${pctB}% usado · ${fx(Math.max(0,budget-totalQ))} restante</span></div>`:''}
+    </div>
+    <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);padding:6px 0">⚙️ ${budget>0?'Ajustar':'Poner'} presupuesto de quincena</summary>
+      <div class="row" style="gap:8px;margin-top:8px"><input type="number" id="gdBudget" placeholder="0" value="${budget||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setDiarioBudget()">Guardar</button></div>
+    </details>
+    <details style="margin-bottom:12px"${isLong?' open':''}><summary style="cursor:pointer;font-size:11px;color:${isLong?'var(--amber)':'var(--muted)'};padding:6px 0;font-weight:${isLong?'bold':'normal'}">📅 Quincena larga (3 fines de semana)${isLong?' · ACTIVA':''}</summary>
+      <div style="font-size:11px;color:var(--muted);margin:8px 0;line-height:1.7">
+        Detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga (3+ sábados en el ciclo)':'No es larga por calendario (2 sábados)'}</strong>.<br>
+        ${longManual?'🟠 Activaste manualmente Sem 3 para esta quincena.':''}
+        ${!longAuto?'<br>Si tú sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (ej. te pagaron antes o compraste el sábado previo al payday), actívalo manual:':''}
+      </div>
+      <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
+    </details>
+    <div style="border-top:1px solid var(--border);padding-top:12px">
+      <div style="font-size:11px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:8px">+ Registrar gasto</div>
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
+        <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..."></div>
+        <div><label>Monto $</label><input type="number" id="gda" placeholder="0" inputmode="decimal"></div>
+      </div>
+      <div style="margin-bottom:8px"><label>Categoría</label><div class="chips" id="gdCatChips">${DIARIO_CATS.map(c=>`<button type="button" class="chip" data-cat="${c.k}" style="${_diarioCat===c.k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${c.n}</button>`).join('')}</div><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso.</div></div>
+      <div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="gdd" value="${todayISO}"></div>
+      <button class="btn btn-sage" onclick="addDiario()">+ Agregar gasto diario</button>
+    </div>
+  </div>
+
+  ${cycleList.length>0?`<div class="card"><div class="ct">📋 Registro de la quincena (${cycleList.length})</div>
+    ${Object.keys(byDay).sort((a,b)=>b.localeCompare(a)).map(dk=>{
+      const dayTotal=byDay[dk].reduce((a,g)=>a+(+g.amt||0),0);
+      return `<div style="margin-bottom:14px">
+        <div class="row-b" style="padding:6px 8px;background:var(--sagedim);border-radius:6px;margin-bottom:6px"><span style="font-size:11px;color:var(--sage);font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${fmtDD(dk)}</span><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(dayTotal))}</span></div>
+        ${byDay[dk].map(g=>{const c=diarioCat(g.cat);const esen=isEsencial(g);return`<div class="row-b" style="padding:8px 4px;border-bottom:1px solid var(--border);${esen?'background:rgba(120,120,120,.04)':''}"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.name}${esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':''}</div><div style="font-size:10px;color:var(--muted)">${c.n}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:${esen?'var(--muted)':'var(--terra)'};font-weight:bold;font-size:13px">-${fx(g.amt)}</span><button class="btn btn-red btn-sm" onclick="rmDiario(${g.id})">✕</button></div></div>`;}).join('')}
+      </div>`;
+    }).join('')}
+  </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
+
+  ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
+
+  ${cycleList.length>0?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
+    <div class="ct">📖 Cerrar quincena manualmente</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">¿Prefieres no subir el CSV? Puedes cerrar la quincena solo con tu bitácora de Diarios y crear el capítulo en Mi Historia. Opcional — también puedes seguir subiendo el CSV desde Plan de Acción → Cerrar quincena si quieres auditar tus registros.</div>
+    <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${cycleList.length} registros · ${fx(Math.round(totalAll))})</button>
+  </div>`:''}
+  `;})():''}
 
   ${habitView==='impulsos'?`
   ${ready.length>0?`<div class="card card-amber">
@@ -6072,8 +6126,8 @@ function rHabitos(){
 
   <div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
     <div class="ct">🛍️ Sobre el presupuesto</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.8">El presupuesto de compras no esenciales ahora vive en <strong>Ingresos y Gastos → 🛒 Diarios</strong>. Un solo techo quincenal cubre tanto los antojitos diarios (chicles, cocas, OXXO) como los impulsos grandes que decidas comprar tras las 48h de espera.</div>
-    <button class="btn btn-sage btn-sm" style="margin-top:10px" onclick="flujoView='diarios';go('flujo')">Ir a Diarios →</button>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.8">El presupuesto de compras no esenciales ahora vive en <strong>Día a día → 🛒 Diarios</strong>. Un solo techo quincenal cubre tanto los antojitos diarios (chicles, cocas, OXXO) como los impulsos grandes que decidas comprar tras las 48h de espera.</div>
+    <button class="btn btn-sage btn-sm" style="margin-top:10px" onclick="habitView='diarios';rHabitos()">Ir a Diarios →</button>
   </div>
 
   ${totalSaved>0?`<div class="card card-grn" style="text-align:center">
@@ -7197,7 +7251,7 @@ function rHistoria(){
   // ═══ TIMELINE ═══
   if(histView==='timeline'){
     if(snaps.length===0){
-      ct=`<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:10px">📖</div><div style="color:var(--muted)">Ve a Cierre Qna y sube tu primer CSV.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="go('quincena')">Ir</button></div>`;
+      ct=`<div class="card" style="text-align:center;padding:30px"><div style="font-size:40px;margin-bottom:10px">📖</div><div style="color:var(--muted)">Ve a Plan de Acción → Cerrar quincena para subir tu primer CSV.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="go('plan')">Ir</button></div>`;
     }else{
       // Group snapshots by overlapping period
       if(!window._snapSrcView)window._snapSrcView={};
@@ -7502,7 +7556,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-savwf';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidB';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

@@ -26,6 +26,10 @@ input,select{background:var(--bg);border:1px solid var(--border);color:var(--txt
 input:focus,select:focus{border-color:var(--sage);box-shadow:0 0 0 3px rgba(78,124,106,.12)}
 input::placeholder{color:var(--muted)}
 input[type=range]{background:none;border:none;padding:0;accent-color:var(--sage)}
+/* Cuando sim está bloqueado, los sliders permiten scroll en lugar de capturar gestos */
+#simSl input[type=range]:disabled{touch-action:auto;pointer-events:none}
+#simSl input[type=range]:disabled::-webkit-slider-thumb{background:var(--muted);cursor:not-allowed}
+#simSl input[type=range]:disabled::-moz-range-thumb{background:var(--muted);cursor:not-allowed}
 .sld-ticks{display:flex;justify-content:space-between;padding:0 6px;margin-top:-2px;margin-bottom:2px;font-size:9px;color:var(--muted);font-family:Georgia,serif}
 .sld-ticks span{flex:0 0 auto;text-align:center;position:relative}
 .sld-ticks span::before{content:'';position:absolute;left:50%;top:-8px;width:2px;height:4px;background:var(--muted);opacity:.4;transform:translateX(-50%)}
@@ -585,7 +589,7 @@ function toggleLongCycle(){
   }
   sv();rFlujo();rPlan();rHabitos();
 }
-function totalDiariosCycle(ck){return diariosThisCycle(ck).reduce((a,g)=>a+(+g.amt||0),0);}
+function totalDiariosCycle(ck){return diariosThisCycle(ck).filter(g=>!g.pending).reduce((a,g)=>a+(+g.amt||0),0);}
 function calcImpulseSpent(ck){
   let total=0;
   Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
@@ -1354,7 +1358,7 @@ function markRetoFail(retoId,idx){
   const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">¿Cuánto gastaste '+periodLbl+'?</div>'
     +'<input type="number" id="retoFailAmt" placeholder="0" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--terra);font-family:Georgia,serif;margin-bottom:10px" onclick="this.select()">'
     +'<input type="text" id="retoFailNote" placeholder="¿En qué? (ej: OXXO, Uber Eats)" style="width:100%;font-size:13px;text-align:center;color:var(--txt);font-family:Georgia,serif;padding:8px;border:1px solid var(--border);border-radius:8px">'
-    +'<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:6px">Se registrará en tu Plan de Acción.</div>';
+    +'<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:6px">Se registrará en Diarios como <strong>pendiente de confirmar</strong>.</div>';
   showConfirm('💸 Gasto no planeado',body,null);
   const row=document.getElementById('confirmModal').querySelector('.row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Cancelar</button><button class="btn btn-red" onclick="confirmRetoFail(\''+retoId+'\','+idx+')">Registrar</button>';
@@ -1365,7 +1369,28 @@ function confirmRetoFail(retoId,idx){
   const ck=cycleKey();const k=retoId+'_'+ck;
   if(!S.retoChecks[k])S.retoChecks[k]=[];
   S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:false,spent:amt,note});
-  sv();closeConfirm();toast('❌ Registrado: '+(note||'impulso')+' '+fx(amt));rHabitos();
+  // NUEVO: Pre-registrar en Diarios como "pendiente de confirmar" (no aparece ya en Plan de Pagos)
+  if(amt>0){
+    if(!Array.isArray(S.gastosDiarios))S.gastosDiarios=[];
+    const today=new Date().toISOString().split('T')[0];
+    const retoNames={'surv_nocompras':'Compra impulso','surv_lunch':'Comida fuera','surv_delivery':'Delivery','surv_mini':'OXXO/Minisuper','surv_online':'Compra online','surv_cafe':'Cafetería','surv_nada_credito':'Cargo TDC'};
+    const fallback=retoNames[retoId]||'Impulso';
+    S.gastosDiarios.push({
+      id:Date.now()+idx,
+      name:note||fallback,
+      amt:amt,
+      cat:'impulso',
+      date:today,
+      paidWith:'debito',
+      pending:true,           // clave: pendiente de confirmar
+      fromReto:retoId,        // rastreo
+      fromRetoIdx:idx,        // rastreo
+      fromRetoCk:ck           // rastreo
+    });
+  }
+  sv();closeConfirm();
+  toast(amt>0?'❌ '+(note||'impulso')+' '+fx(amt)+' · ⏳ Pendiente en Diarios':'❌ Registrado');
+  rHabitos();
 }
 function confirmRetoExpense(retoId,idx,expId,budgeted){
   const real=+(document.getElementById('retoExpAmt')?.value)||0;
@@ -5296,26 +5321,12 @@ try{
   const aptQ=expSavePlan.reduce((a,e)=>a+e.half,0);
   const totalSavQ=savGoalQ+aptQ;
 
-  // ── IMPULSE SPENDING (from reto failures) ──
+  // ── IMPULSE SPENDING (DEPRECADO en nueva lógica) ──
+  // Los impulsos fallidos de retos ahora se pre-registran en Diarios como "pendientes".
+  // Esta lista queda vacía para no duplicar el conteo. Los huérfanos históricos se pueden borrar con el botón ✕.
   const impulseItems=[];
-  if(!showNext){
-    const ck2=planCk();
-    const retoIcons={'surv_nocompras':'🚫','surv_lunch':'🍱','surv_rest':'🍔','pos_extra':'💰','pos_ahorro':'🏦','pos_emergencia':'🛡️'};
-    Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
-      if(!k.endsWith('_'+ck2))return;
-      const rid=k.replace('_'+ck2,'');
-      if(/surv_super|surv_gas/.test(rid))return;
-      checks.forEach(c=>{
-        if(c.pass===false&&c.spent>0){
-          const numId=Date.parse(c.date+'T12:00')+c.idx;
-          const icon=retoIcons[rid]||'🚫';
-          const fallbacks={'surv_nocompras':'Gasto impulso','surv_lunch':'Comida fuera','surv_rest':'Comida fuera'};
-          const desc=c.note||(fallbacks[rid]||'Impulso');
-          impulseItems.push({id:numId,name:icon+' '+desc,amt:c.spent,date:c.date,ptype:'imp',type:'impulso',day:new Date(c.date+'T12:00').getDate(),_rid:rid,_idx:c.idx,_ck:ck2});
-        }
-      });
-    });
-  }
+  // Mantener compatibilidad histórica: si existen huérfanos de quincenas pasadas que ya están en paidItems, no los mostramos aquí
+  // (el botón ✕ en Diarios o en el viejo flujo sigue disponible para limpieza manual).
 
   // ── BUDGET (FIXED) ──
   const disponible=incQ-expQ-savQ-totalSavQ-debtPayQ;
@@ -6027,13 +6038,17 @@ function rHabitos(){
   ${habitView==='diarios'?(()=>{
     const w=getCycleWindow();
     const cycleList=diariosThisCycle().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
-    const esencialList=cycleList.filter(isEsencial);
-    const budgetList=cycleList.filter(g=>!isEsencial(g));
+    // Pendientes pre-registrados desde retos — no cuentan en totales hasta confirmar
+    const pendingList=cycleList.filter(g=>g.pending);
+    const confirmedList=cycleList.filter(g=>!g.pending);
+    const esencialList=confirmedList.filter(isEsencial);
+    const budgetList=confirmedList.filter(g=>!isEsencial(g));
     const totalEsen=esencialList.reduce((a,g)=>a+(+g.amt||0),0);
     const totalQ=budgetList.reduce((a,g)=>a+(+g.amt||0),0);
     const totalAll=totalQ+totalEsen;
+    const totalPending=pendingList.reduce((a,g)=>a+(+g.amt||0),0);
     const todayISO=new Date().toISOString().split('T')[0];
-    const todayTotal=cycleList.filter(g=>g.date===todayISO).reduce((a,g)=>a+(+g.amt||0),0);
+    const todayTotal=confirmedList.filter(g=>g.date===todayISO).reduce((a,g)=>a+(+g.amt||0),0);
     const budget=+S.gastoDiarioBudget||0;
     const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
     const bColor=pctB<60?'var(--sage)':pctB<90?'var(--amber)':'var(--terra)';
@@ -6058,6 +6073,10 @@ function rHabitos(){
       </div>
       ${budget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctB}%;background:${bColor}"></div></div><div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: ${fx(budget)}</span><span style="color:${bColor};font-weight:bold">${pctB}% usado · ${fx(Math.max(0,budget-totalQ))} restante</span></div>`:''}
     </div>
+    ${pendingList.length>0?`<div class="card" style="border:2px solid var(--amber);background:rgba(160,112,48,.06);margin-bottom:12px;padding:12px 14px">
+      <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:6px">⏳ ${pendingList.length} Pre-registro${pendingList.length!==1?'s':''} desde retos (${fx(Math.round(totalPending))})</div>
+      <div style="font-size:11px;color:var(--txt2);line-height:1.6">Cuando fallaste un reto y registraste un gasto, se pre-registró aquí. Confirma (✓) si sí lo gastaste, o cancela (✕) si no. Mientras esté pendiente no cuenta al presupuesto.</div>
+    </div>`:''}
     <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);padding:6px 0">⚙️ ${budget>0?'Ajustar':'Poner'} presupuesto de quincena</summary>
       <div class="row" style="gap:8px;margin-top:8px"><input type="number" id="gdBudget" placeholder="0" value="${budget||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setDiarioBudget()">Guardar</button></div>
     </details>
@@ -6083,10 +6102,25 @@ function rHabitos(){
 
   ${cycleList.length>0?`<div class="card"><div class="ct">📋 Registro de la quincena (${cycleList.length})</div>
     ${Object.keys(byDay).sort((a,b)=>b.localeCompare(a)).map(dk=>{
-      const dayTotal=byDay[dk].reduce((a,g)=>a+(+g.amt||0),0);
+      const dayTotal=byDay[dk].filter(g=>!g.pending).reduce((a,g)=>a+(+g.amt||0),0);
+      const pendingCountDay=byDay[dk].filter(g=>g.pending).length;
       return `<div style="margin-bottom:14px">
         <div class="row-b" style="padding:6px 8px;background:var(--sagedim);border-radius:6px;margin-bottom:6px"><span style="font-size:11px;color:var(--sage);font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${fmtDD(dk)}</span><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(dayTotal))}</span></div>
-        ${byDay[dk].map(g=>{const c=diarioCat(g.cat);const esen=isEsencial(g);return`<div class="row-b" style="padding:8px 4px;border-bottom:1px solid var(--border);${esen?'background:rgba(120,120,120,.04)':''}"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${g.name}${esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':''}</div><div style="font-size:10px;color:var(--muted)">${c.n}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:${esen?'var(--muted)':'var(--terra)'};font-weight:bold;font-size:13px">-${fx(g.amt)}</span><button class="btn btn-red btn-sm" onclick="rmDiario(${g.id})">✕</button></div></div>`;}).join('')}
+        ${byDay[dk].map(g=>{
+          const c=diarioCat(g.cat);
+          const esen=isEsencial(g);
+          const pend=!!g.pending;
+          const rowBg=pend?'background:rgba(160,112,48,.06);border-left:3px solid var(--amber)':(esen?'background:rgba(120,120,120,.04)':'');
+          const priceColor=pend?'var(--amber)':(esen?'var(--muted)':'var(--terra)');
+          const badge=pend
+            ?' <span style="font-size:9px;background:rgba(160,112,48,.15);color:var(--amber);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">⏳ pendiente</span>'
+            :(esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':'');
+          const subLabel=pend?'⏳ Pre-registrado desde reto · confirma o cancela':c.n;
+          const actions=pend
+            ?'<button class="btn btn-sage btn-sm" title="Confirmar gasto" style="padding:4px 8px;font-size:11px" onclick="confirmPendingDiario('+g.id+')">✓</button><button class="btn btn-red btn-sm" title="Cancelar pre-registro" onclick="cancelPendingDiario('+g.id+')">✕</button>'
+            :'<button class="btn btn-red btn-sm" onclick="rmDiario('+g.id+')">✕</button>';
+          return`<div class="row-b" style="padding:8px 6px;border-bottom:1px solid var(--border);${rowBg};border-radius:${pend?'6px':'0'};margin-bottom:${pend?'4px':'0'}"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px">${g.name}${badge}</div><div style="font-size:10px;color:${pend?'var(--amber)':'var(--muted)'}">${subLabel}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:${priceColor};font-weight:bold;font-size:13px">-${fx(g.amt)}</span>${actions}</div></div>`;
+        }).join('')}
       </div>`;
     }).join('')}
   </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
@@ -6348,6 +6382,39 @@ function showOvertimeCalc(){
     if(inp&&out)inp.oninput=function(){out.textContent=fx(Math.round(+this.value*RATE));};
   },100);
 }
+// ═══ DIARIOS PENDIENTES (pre-registrados desde retos) ═══
+// Confirmar → quita el flag pending, se vuelve diario normal
+function confirmPendingDiario(id){
+  const g=(S.gastosDiarios||[]).find(x=>String(x.id)===String(id));
+  if(!g){toast('Registro no encontrado');return;}
+  g.pending=false;
+  delete g.fromReto;delete g.fromRetoIdx;delete g.fromRetoCk; // limpiar rastreo
+  sv();
+  toast('✓ '+g.name+' confirmado');
+  try{rHabitos();}catch(e){}
+  try{rDash();}catch(e){}
+}
+// Cancelar → borra el pre-registro. El check del reto (fallo) SE QUEDA.
+function cancelPendingDiario(id){
+  const g=(S.gastosDiarios||[]).find(x=>String(x.id)===String(id));
+  if(!g){toast('Registro no encontrado');return;}
+  const body='<div style="font-size:13px;line-height:1.7;color:var(--txt2)">¿Cancelar este pre-registro?<br><br>'
+    +'<div style="padding:10px;background:rgba(160,112,48,.06);border-radius:6px;margin:10px 0">'
+    +'<div style="font-weight:bold;color:var(--txt)">'+g.name+'</div>'
+    +'<div style="font-size:14px;color:var(--amber);font-weight:bold;margin-top:4px">'+fx(g.amt)+' · ⏳ pendiente</div>'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.6">El reto mantendrá el fallo marcado (fallaste en la realidad). Solo se elimina el gasto de tu bitácora financiera.</div>'
+    +'</div>';
+  showConfirm('✕ Cancelar pre-registro',body,()=>{
+    S.gastosDiarios=(S.gastosDiarios||[]).filter(x=>String(x.id)!==String(id));
+    sv();
+    toast('✕ Pre-registro cancelado');
+    try{rHabitos();}catch(e){}
+  });
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Volver</button><button class="btn btn-red" onclick="execConfirm()">✕ Cancelar</button>';
+}
+
 // Elimina un gasto impulso huérfano (proveniente de un check fallido de un reto)
 // Borra la entrada del check del reto + cualquier paidItems asociado
 function confirmDeleteImpulse(rid,ck,idx,impId,impName,impAmt){
@@ -6778,10 +6845,12 @@ let histCatsFilter='all'; // all|cat|uncat
 let simPeriod=12; // 1, 2, 6, or 12 months
 function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
 function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
-function project(mo,ov={}){const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};const hD=ov.delivery!==undefined?ov.delivery:aH('🚗 Delivery');const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');const hO=ov.online!==undefined?ov.online:aH('📦 Compras online');const hT=hD+hM+hO;const ex=ov.extraDebt||0;const bD=ov.bonusToDebt||false;const bS=(+S.inc.bv)||0;
+function project(mo,ov={}){const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};
+  // NOTA: hR, hM, hO son promedios QUINCENALES. Para flujo mensual se multiplican x2.
+  const hR=ov.restaurantes!==undefined?ov.restaurantes:aH('🍔 Restaurantes');const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');const hO=ov.online!==undefined?ov.online:aH('📦 Compras online');const hT_qna=hR+hM+hO;const hT_mes=hT_qna*2;const ex=ov.extraDebt||0;const bD=ov.bonusToDebt||false;const bS=(+S.inc.bv)||0;
   // Horas extra: 1× = 1 hr/día × 30.4 días/mes × tarifa
   const otRate=172;const otMul=+ov.overtimeMul||0;const otMonthly=Math.round(otMul*30.4*otRate);
-  let dt=tDebt(),saved=0;const r=[{m:0,dt,pt:nw(),h:hT}];for(let m=1;m<=mo;m++){const monthInc=inc+otMonthly;const payment=Math.min(dt,dpB+ex);dt=Math.max(0,dt-payment);if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);saved+=sav;if(bD&&bS>0&&m%6===0)saved+=bS*0.2;const fr=monthInc-expB-payment-sav-hT;if(fr>0)saved+=fr*0.3;r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT)});}return r;}
+  let dt=tDebt(),saved=0;const r=[{m:0,dt,pt:nw(),h:hT_qna}];for(let m=1;m<=mo;m++){const monthInc=inc+otMonthly;const payment=Math.min(dt,dpB+ex);dt=Math.max(0,dt-payment);if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);saved+=sav;if(bD&&bS>0&&m%6===0)saved+=bS*0.2;const fr=monthInc-expB-payment-sav-hT_mes;if(fr>0)saved+=fr*0.3;r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT_qna)});}return r;}
 const ACHS=[
   // ══ LOGROS (hitos — cosas que HICISTE) ══
   {id:'ch1',cat:'logro',e:'📊',n:'Primer Capítulo',d:'Subiste tu primer CSV',info:'Cada CSV que subes crea un capítulo de tu historia financiera. El primer paso es el más importante.',ck:()=>S.snapshots.length>=1},
@@ -7016,21 +7085,30 @@ function rHistoria(){
   // ═══ SIMULADOR ═══
   if(histView==='sim'){
     const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return Math.round(v.reduce((a,b)=>a+b,0)/v.length);};
-    const dA=aH('🚗 Delivery'),mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
+    const rA=aH('🍔 Restaurantes'),mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
+    const simLocked=!!S._simLocked; // candado persistente en el estado
     ct=`<div class="card card-sage"><div class="ct">🔮 ¿Qué Pasa Si...?</div><div style="font-size:12px;color:var(--txt2);line-height:1.7">Mueve los sliders y ve en tiempo real cómo tus decisiones impactan tu futuro a 12 meses.</div></div>
     ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Cierre Qna para calibrar los sliders con tus datos reales.</div></div>':''}
-    <div class="card" id="simSl"><div class="ct">Ajusta tus hábitos ${ib("simulador","Simulador")}</div>
-      ${(()=>{const maxM=Math.max(Math.ceil(mA*2/500)*500,3000);const maxD=Math.max(Math.ceil(dA*2/500)*500,2000);const maxO=Math.max(Math.ceil(oA*2/500)*500,4000);
-      const snap=(v,mx)=>Math.round(v/(mx/5))*(mx/5);
-      const tickRow=(mx)=>{const st=mx/5;return'<div class="sld-ticks">'+[0,1,2,3,4,5].map(i=>'<span>'+fx(Math.round(st*i))+'</span>').join('')+'</div>';};
+    <div class="card" id="simSl"><div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">Ajusta tus hábitos ${ib("simulador","Simulador")}</div><button class="btn btn-sm ${simLocked?'btn-red':'btn-ghost'}" style="padding:5px 10px;font-size:11px" onclick="toggleSimLock()">${simLocked?'🔒 Bloqueado':'🔓 Libre'}</button></div>
+      ${simLocked?'<div style="font-size:11px;color:var(--terra);background:rgba(184,92,74,.06);padding:8px 10px;border-radius:6px;margin-bottom:12px;line-height:1.5">🔒 Sliders bloqueados. Tap el botón para desbloquear y ajustar.</div>':''}
+      ${(()=>{
+        // Step $500 para minisuper
+        const stepM=500;const maxM=Math.max(Math.ceil(mA*2/stepM)*stepM,3000);const stepsM=Math.round(maxM/stepM);
+        // Restaurantes y online mantienen step original de 5 pasos
+        const maxR=Math.max(Math.ceil(rA*2/500)*500,2000);const maxO=Math.max(Math.ceil(oA*2/500)*500,4000);
+        const snap=(v,mx,stp)=>{const s=stp||(mx/5);return Math.round(v/s)*s;};
+        const tickRow=(mx,nTicks)=>{const n=nTicks||5;const st=mx/n;return'<div class="sld-ticks">'+Array.from({length:n+1},(_,i)=>'<span>'+fx(Math.round(st*i))+'</span>').join('')+'</div>';};
+        // Para minisuper: si stepsM es muy grande (>7), mostrar solo 5 ticks para no saturar
+        const ticksM=stepsM>7?5:stepsM;
+        const disAttr=simLocked?'disabled style="width:100%;opacity:.5;cursor:not-allowed"':'style="width:100%"';
       return`
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(mA,maxM))}/qna</span></div><input type="range" min="0" max="${maxM}" step="${maxM/5}" value="${snap(mA,maxM)}" style="width:100%" oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🚗 Delivery</span><span id="slDV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(dA,maxD))}/qna</span></div><input type="range" min="0" max="${maxD}" step="${maxD/5}" value="${snap(dA,maxD)}" style="width:100%" oninput="document.getElementById('slDV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxD)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(dA)}/qna</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(oA,maxO))}/qna</span></div><input type="range" min="0" max="${maxO}" step="${maxO/5}" value="${snap(oA,maxO)}" style="width:100%" oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxO)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(oA)}/qna</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${S.savPct}%</span></div><input type="range" min="5" max="30" step="5" value="${Math.max(5,Math.round(S.savPct/5)*5)}" style="width:100%" oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(0)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="0" style="width:100%" oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>`;})()}
-      <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">0× (sin horas extra)</span></div><input type="range" min="0" max="4" step="1" value="0" style="width:100%;accent-color:var(--sky)" oninput="runSim()"><div class="sld-ticks"><span>0×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">1× = 1 hr/día × 30.4 días/mes ≈ <strong>30 hrs/mes</strong>. Tarifa: $172/hr → <strong>$5,229/mes</strong>.</div></div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:12px;color:var(--txt2)"><input type="checkbox" id="slBon" onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(mA,maxM,stepM))}/qna</span></div><input type="range" min="0" max="${maxM}" step="${stepM}" value="${snap(mA,maxM,stepM)}" ${disAttr} oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM,ticksM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna · step $${stepM}</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🍔 Restaurantes</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(rA,maxR))}/qna</span></div><input type="range" min="0" max="${maxR}" step="${maxR/5}" value="${snap(rA,maxR)}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · ideal para fines de semana</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(oA,maxO))}/qna</span></div><input type="range" min="0" max="${maxO}" step="${maxO/5}" value="${snap(oA,maxO)}" ${disAttr} oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxO)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(oA)}/qna</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${S.savPct}%</span></div><input type="range" min="5" max="30" step="5" value="${Math.max(5,Math.round(S.savPct/5)*5)}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(0)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="0" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>`;})()}
+      <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">0× (sin horas extra)</span></div><input type="range" min="0" max="4" step="1" value="0" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">1× = 1 hr/día × 30.4 días/mes ≈ <strong>30 hrs/mes</strong>. Tarifa: $172/hr → <strong>$5,229/mes</strong>.</div></div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>
     </div>
     <div class="card"><div class="ct" id="simProjTitle">Proyección a ${simPeriod===1?'1 mes':simPeriod===2?'2 meses':simPeriod===6?'6 meses':'12 meses'}</div>
     <div class="chips" style="margin-bottom:12px">${[[1,'Mensual'],[2,'Bimestral'],[6,'Semestral'],[12,'Anual']].map(([n,l])=>`<button class="chip" style="${simPeriod===n?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="simPeriod=${n};rHistoria()">${l}</button>`).join('')}</div>
@@ -7624,14 +7702,22 @@ function rHistoria(){
     document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
-function runSim(){const sl=document.getElementById('simSl');if(!sl)return;const rg=sl.querySelectorAll('input[type=range]');const mi=+(rg[0]?.value)||0,dl=+(rg[1]?.value)||0,ol=+(rg[2]?.value)||0,sp=+(rg[3]?.value)||10,ex=+(rg[4]?.value)||0,otMul=+(rg[5]?.value)||0;
+// Candado de sliders del simulador — persiste en S._simLocked
+function toggleSimLock(){
+  S._simLocked=!S._simLocked;
+  sv();
+  toast(S._simLocked?'🔒 Sliders bloqueados':'🔓 Sliders libres');
+  try{rHistoria();}catch(e){}
+}
+
+function runSim(){const sl=document.getElementById('simSl');if(!sl)return;const rg=sl.querySelectorAll('input[type=range]');const mi=+(rg[0]?.value)||0,rest=+(rg[1]?.value)||0,ol=+(rg[2]?.value)||0,sp=+(rg[3]?.value)||10,ex=+(rg[4]?.value)||0,otMul=+(rg[5]?.value)||0;
   const bn=document.getElementById('slBon')?.checked||false;
   // Update overtime label
   const otMoney=Math.round(otMul*30.4*172);
   const otLbl=document.getElementById('slOtV');
   if(otLbl)otLbl.textContent=otMul===0?'0× (sin horas extra)':otMul+'× = '+fx(otMoney)+'/mes';
   const H=+simPeriod||12;
-  const base=project(H),mod=project(H,{minisuper:mi,delivery:dl,online:ol,savPct:sp,extraDebt:ex,bonusToDebt:bn,overtimeMul:otMul});
+  const base=project(H),mod=project(H,{minisuper:mi,restaurantes:rest,online:ol,savPct:sp,extraDebt:ex,bonusToDebt:bn,overtimeMul:otMul});
   const w=320,h=160,all=[...base.map(p=>p.pt),...mod.map(p=>p.pt)],mn=Math.min(...all),mx=Math.max(...all),rn=mx-mn||1,pd=12,cw=w-pd*2,ch=h-pd*2;
   const toP=a=>a.map((p,i)=>({x:pd+i/(a.length-1)*cw,y:pd+(1-(p.pt-mn)/rn)*ch}));
   const bP=toP(base),mP=toP(mod);
@@ -7641,11 +7727,14 @@ function runSim(){const sl=document.getElementById('simSl');if(!sl)return;const 
   const titleEl=document.getElementById('simProjTitle');
   if(titleEl)titleEl.textContent='Proyección a '+(H===1?'1 mes':H+' meses');
 document.getElementById('simCnv').innerHTML=`<svg viewBox="0 0 ${w+40} ${h+16}" style="width:100%;max-width:${w+40}px">${[0,.5,1].map(p=>{const y2=pd+p*ch;const val=fx(Math.round(mx-(mx-mn)*p));return`<line x1="${pd+40}" y1="${y2}" x2="${pd+cw+40}" y2="${y2}" stroke="#E5E0D5" stroke-width=".5"/><text x="${pd+36}" y="${y2+3}" text-anchor="end" font-size="8" fill="#9A9590">${val}</text>`;}).join('')}${mn<0&&mx>0?`<line x1="${pd+40}" y1="${pd+(1-(0-mn)/rn)*ch}" x2="${pd+cw+40}" y2="${pd+(1-(0-mn)/rn)*ch}" stroke="#5C5650" stroke-width="1.2" stroke-dasharray="6,4"/><text x="${pd+36}" y="${pd+(1-(0-mn)/rn)*ch+4}" text-anchor="end" font-size="9" font-weight="bold" fill="#5C5650">$0</text>`:''}<polyline points="${bP.map(p=>`${p.x+40},${p.y}`).join(' ')}" fill="none" stroke="#B85C4A" stroke-width="1.5" stroke-dasharray="5,3"/><polygon points="${pd+40},${pd+ch} ${mP.map(p=>`${p.x+40},${p.y}`).join(' ')} ${pd+cw+40},${pd+ch}" fill="#4E7C6A" opacity=".1"/><polyline points="${mP.map(p=>`${p.x+40},${p.y}`).join(' ')}" fill="none" stroke="#4E7C6A" stroke-width="2.5"/><circle cx="${mP[H].x+40}" cy="${mP[H].y}" r="4" fill="#4E7C6A"/><circle cx="${bP[H].x+40}" cy="${bP[H].y}" r="3" fill="#B85C4A"/>${xLabels.map((l,i)=>`<text x="${pd+40+i/4*cw}" y="${h+12}" text-anchor="middle" font-size="9" fill="#9A9590">${l}</text>`).join('')}<line x1="${pd+40}" y1="${h+2}" x2="${pd+58}" y2="${h+2}" stroke="#B85C4A" stroke-width="1.5" stroke-dasharray="4,2"/><text x="${pd+62}" y="${h+5}" font-size="8" fill="#B85C4A">Actual</text><line x1="${pd+120}" y1="${h+2}" x2="${pd+138}" y2="${h+2}" stroke="#4E7C6A" stroke-width="2"/><text x="${pd+142}" y="${h+5}" font-size="8" fill="#4E7C6A">Con cambios</text></svg>`;
-const bF=base[H],mF=mod[H],pD=mF.pt-bF.pt,dD=bF.dt-mF.dt,hS=(base.reduce((a,p)=>a+p.h,0)-mod.reduce((a,p)=>a+p.h,0));
+const bF=base[H],mF=mod[H],pD=mF.pt-bF.pt,dD=bF.dt-mF.dt;
+// Ahorro en hormiga: diferencia de promedios QUINCENALES × 2 qnas/mes × H meses
+const hormigaBase=base[0].h||0,hormigaMod=mod[0].h||0;
+const hS=Math.max(0,(hormigaBase-hormigaMod)*2*H);
 const pLbl=H===1?'1m':H+'m';
 document.getElementById('simRes').innerHTML=`<div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Hoy</div><div style="font-size:13px;font-weight:bold;color:var(--txt)">${fx(mod[0].pt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Patrimonio ${pLbl}</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.pt)}</div><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(mF.pt)}</div></div></div><div style="display:flex;gap:6px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda hoy</div><div style="font-size:13px;font-weight:bold;color:var(--terra)">${fx(mod[0].dt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda ${pLbl}</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.dt)}</div><div style="font-size:18px;font-weight:bold;color:${mF.dt>0?'var(--terra)':'var(--sage)'}">${fx(mF.dt)}</div></div></div>`;
 const otImpact=otMoney*H;
-document.getElementById('simImp').innerHTML=`<div class="ct">💡 Impacto en ${H===1?'1 mes':H+' meses'}</div>${pD?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">${pD>0?'📈':'📉'} Patrimonio: <strong style="color:${pD>0?'var(--sage)':'var(--terra)'}">${pD>0?'+':''}${fx(pD)}</strong> en ${pLbl}</div>`:''}${dD>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⛓️ Liquidas <strong style="color:var(--sage)">${fx(dD)} más</strong> de deuda</div>`:''}${otMul>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⏰ Horas extra: <strong style="color:var(--sky)">+${fx(otImpact)}</strong> ingreso adicional en ${pLbl} (${otMul}× ≈ ${Math.round(otMul*30.4)} hrs/mes)</div>`:''}${hS>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">🐜 Ahorras <strong style="color:var(--sage)">${fx(hS/12*H)}</strong> en hormiga en ${pLbl}</div>`:''}${!pD&&dD<=0&&hS<=0&&otMul===0?'<div style="font-size:12px;color:var(--muted)">Mueve los sliders para ver el impacto.</div>':''}`;
+document.getElementById('simImp').innerHTML=`<div class="ct">💡 Impacto en ${H===1?'1 mes':H+' meses'}</div>${pD?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">${pD>0?'📈':'📉'} Patrimonio: <strong style="color:${pD>0?'var(--sage)':'var(--terra)'}">${pD>0?'+':''}${fx(pD)}</strong> en ${pLbl}</div>`:''}${dD>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⛓️ Liquidas <strong style="color:var(--sage)">${fx(dD)} más</strong> de deuda</div>`:''}${otMul>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⏰ Horas extra: <strong style="color:var(--sky)">+${fx(otImpact)}</strong> ingreso adicional en ${pLbl} (${otMul}× ≈ ${Math.round(otMul*30.4)} hrs/mes)</div>`:''}${hS>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">🐜 Ahorras <strong style="color:var(--sage)">${fx(hS)}</strong> en hormiga en ${pLbl}</div>`:''}${!pD&&dD<=0&&hS<=0&&otMul===0?'<div style="font-size:12px;color:var(--muted)">Mueve los sliders para ver el impacto.</div>':''}`;
 }
 
 function delSnap(id){if(!confirm('¿Eliminar este capítulo?'))return;pt({snapshots:S.snapshots.filter(s=>s.id!==id)});toast('Capítulo eliminado');rHistoria();}

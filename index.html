@@ -294,6 +294,7 @@ button:active{transform:scale(.97)}
   <div id="fabMenu">
     <div class="fab-item"><span class="fab-label">🛒 Gasto diario</span><button class="fab-mini" onclick="fabAction('diario')" style="color:var(--terra)">🛒</button></div>
     <div class="fab-item"><span class="fab-label">💰 Apartar ahorro</span><button class="fab-mini" onclick="fabAction('ahorro')" style="color:var(--amber)">💰</button></div>
+    <div class="fab-item"><span class="fab-label">⏱️ Horas extra</span><button class="fab-mini" onclick="fabAction('hrsxtra')" style="color:var(--sky)">⏱️</button></div>
     <div class="fab-item"><span class="fab-label">💳 Pagar TDC</span><button class="fab-mini" onclick="fabAction('tdc')" style="color:var(--sky)">💳</button></div>
   </div>
   <button id="fabMain" class="fab-main" onclick="_fabToggle()" aria-label="Acciones rápidas">+</button>
@@ -4911,6 +4912,16 @@ function fabAction(type){
       const cfg=S.tdcConfig||{};
       if(!cfg.limit){toast('Configura tu TDC primero en Deudas');go('flujo');return;}
       if(typeof tdcPay==='function')tdcPay();
+    }
+    else if(type==='hrsxtra'){
+      // Lleva al usuario a la subvista de Hrs Xtra del Plan de Acción y le
+      // hace scroll al input de fecha del form "Registrar horas".
+      planView='hrsxtra';
+      go('plan');
+      setTimeout(()=>{
+        const el=document.getElementById('otDate');
+        if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}catch(_){}}
+      },150);
     }
   },180);
 }

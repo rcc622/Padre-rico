@@ -310,6 +310,53 @@ button:active{transform:scale(.97)}
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
 window.APP_BUILD='consolidB-2026-04-17';
+
+// ══ SECURITY & UTIL HELPERS ══════════════════════════
+// Escape para texto insertado en innerHTML / atributos HTML. Se usa en
+// cualquier renderizado donde venga data no confiable (CSVs del usuario,
+// nombres de snapshot, descripciones de transacciones, etc.).
+const _escH=(s)=>String(s==null?'':s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+const _escA=_escH; // mismos caracteres peligrosos en atributos "..."
+// Registro para pasar strings no confiables a handlers inline sin
+// interpolarlos directamente en el JS del onclick. El onclick recibe un
+// índice numérico (seguro) y recupera el valor vía _xget().
+window.__xref=window.__xref||new Map();
+let __xrefSeq=0;
+const _xref=(v)=>{const k=++__xrefSeq;window.__xref.set(k,v);return k;};
+const _xget=(k)=>window.__xref.get(+k);
+// ID robusto con alta entropía — evita colisiones por timestamp repetido
+const _uid=()=>{
+  try{if(typeof crypto!=='undefined'&&crypto.randomUUID)return crypto.randomUUID();}catch(_){}
+  return Date.now()*1e6+Math.floor(Math.random()*1e6);
+};
+// Logger centralizado — no silencia errores pero no revienta la app
+const _logErr=(where,e)=>{try{console.error('[padre-rico]',where,e);}catch(_){}};
+// Valida que un string YYYY-MM-DD represente una fecha real del calendario
+// (rechaza 2026-02-31, 2026-13-01, etc.). Útil para filtrar CSVs con fechas
+// espúreas que después romperían cálculos de ciclo al hacer new Date(ymd).
+const _isValidYMD=(s)=>{
+  if(typeof s!=='string')return false;
+  const m=s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!m)return false;
+  const y=+m[1],mo=+m[2],d=+m[3];
+  if(mo<1||mo>12||d<1||d>31)return false;
+  const dt=new Date(y,mo-1,d);
+  return dt.getFullYear()===y&&dt.getMonth()===mo-1&&dt.getDate()===d;
+};
+// Convierte DD/MM/YYYY o YYYY-MM-DD a YYYY-MM-DD validado. Devuelve '' si la
+// fecha no es real. Los call sites existentes ya toleran '' como "sin fecha".
+const _toValidYMD=(s)=>{
+  if(!s)return'';
+  let out='';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s))out=s;
+  else{
+    const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if(m)out=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  }
+  return _isValidYMD(out)?out:'';
+};
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -324,29 +371,78 @@ function migrate(){
   // Try loading v4 data first
   try{
     const v4=localStorage.getItem('prv4');
-    if(v4){
-      const old=JSON.parse(v4);
-      // Carry over all v4 fields
-      S.goal=old.goal||'';S.deadline=old.deadline||'';S.done=!!old.done;
-      S.inc=old.inc||{sal:0,bf:0,bv:0};S.savPct=old.savPct||10;
-      S.exp=old.exp||[];S.debts=old.debts||[];S.assets=old.assets||[];
-      // Don't carry over chat (removed feature)
-      S.version=5;
-      sv();
-      // Don't delete v4 yet — safety net
-      return true;
-    }
-  }catch{}
-  return false;
+    if(!v4)return false;
+    let old;
+    try{old=JSON.parse(v4);}catch(e){_logErr('migrate.parse',e);return false;}
+    if(!old||typeof old!=='object')return false;
+    // Carry over v4 fields con validación de tipos
+    S.goal=typeof old.goal==='string'?old.goal:'';
+    S.deadline=typeof old.deadline==='string'?old.deadline:'';
+    S.done=!!old.done;
+    S.inc=(old.inc&&typeof old.inc==='object'&&!Array.isArray(old.inc))?old.inc:{sal:0,bf:0,bv:0};
+    S.savPct=typeof old.savPct==='number'?old.savPct:10;
+    S.exp=Array.isArray(old.exp)?old.exp:[];
+    S.debts=Array.isArray(old.debts)?old.debts:[];
+    S.assets=Array.isArray(old.assets)?old.assets:[];
+    S.version=5;
+    sv();
+    // Don't delete v4 yet — safety net
+    return true;
+  }catch(e){_logErr('migrate',e);return false;}
+}
+
+// Normaliza el estado después de cargarlo. Convierte cualquier valor que
+// NO tenga la forma esperada al default seguro, para evitar que el resto
+// del código asuma tipos y explote (por ej. S.paidItems[ck] esperado como
+// objeto y encontrado como string por edición manual de localStorage).
+function _normalizeState(st){
+  if(!st||typeof st!=='object')return;
+  const isObj=(v)=>v&&typeof v==='object'&&!Array.isArray(v);
+  if(!isObj(st.paidItems))st.paidItems={};
+  if(!isObj(st.retoChecks))st.retoChecks={};
+  if(!isObj(st.debtGroupCollapsed))st.debtGroupCollapsed={};
+  if(!isObj(st.overtimeLog))st.overtimeLog={};
+  if(!isObj(st.impulseSpent))st.impulseSpent={};
+  if(!isObj(st.recurringAch))st.recurringAch={};
+  if(!isObj(st.userCategories))st.userCategories={};
+  if(!isObj(st.habitoFormado))st.habitoFormado={};
+  if(!isObj(st.longCycleOverrides))st.longCycleOverrides={};
+  if(!isObj(st.savCommits))st.savCommits={};
+  if(!isObj(st.deficitDecisions))st.deficitDecisions={};
+  if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
+  if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments'];
+  arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
+  if(typeof st.savStreak!=='number')st.savStreak=0;
+  if(typeof st.savStreakBest!=='number')st.savStreakBest=0;
+  if(typeof st.savPct!=='number')st.savPct=10;
+  if(typeof st.impulsesBudget!=='number')st.impulsesBudget=2000;
+  if(typeof st.gastoDiarioBudget!=='number')st.gastoDiarioBudget=0;
 }
 
 function ld(){
   try{
     const d=localStorage.getItem(SK);
-    if(d){S={...S,...JSON.parse(d)};cleanupOvertimeExtras();initSavStreakFields();return;}
-    // No v5 found — try migrate from v4
-    migrate();
-  }catch{}
+    if(!d){migrate();return;}
+    let parsed;
+    try{parsed=JSON.parse(d);}catch(e){
+      _logErr('ld.parse',e);
+      // Backup del JSON corrupto antes de descartarlo — permite recuperación manual
+      try{localStorage.setItem(SK+'_corrupt_'+Date.now(),d);}catch(_){}
+      migrate();
+      return;
+    }
+    if(!parsed||typeof parsed!=='object'||Array.isArray(parsed)){
+      _logErr('ld.shape','estado persistido no es un objeto');
+      migrate();
+      return;
+    }
+    const merged={...S,...parsed};
+    _normalizeState(merged);
+    S=merged;
+    cleanupOvertimeExtras();
+    initSavStreakFields();
+  }catch(e){_logErr('ld',e);}
 }
 function initSavStreakFields(){
   // ONE-SHOT migration: initialize savings streak fields for users who already
@@ -375,7 +471,24 @@ function cleanupOvertimeExtras(){
   S.otCleanupV1=true;
   if(S.extras.length!==before)sv();else sv();
 }
-const sv=()=>{try{localStorage.setItem(SK,JSON.stringify(S))}catch{}};
+// sv(): persistencia síncrona del estado. Antes silenciaba TODOS los errores
+// con `catch{}`; ahora loguea y avisa al usuario si localStorage está lleno
+// (QuotaExceededError) para que pueda limpiar capítulos antes de perder datos.
+let _svQuotaWarned=false;
+const sv=()=>{
+  try{localStorage.setItem(SK,JSON.stringify(S));_svQuotaWarned=false;}
+  catch(e){
+    _logErr('sv',e);
+    // Evita spamear al usuario si el error se repite en una ráfaga de guardados
+    if(!_svQuotaWarned){
+      _svQuotaWarned=true;
+      try{
+        const full=(e&&(e.name==='QuotaExceededError'||/quota/i.test(e.message||'')));
+        if(typeof toast==='function')toast(full?'⚠ Almacenamiento lleno — exporta o borra capítulos':'⚠ No se pudo guardar');
+      }catch(_){}
+    }
+  }
+};
 const pt=(o)=>{S={...S,...o};sv()};
 
 // ══ TOAST ════════════════════════════════════════════
@@ -1309,7 +1422,10 @@ function toggleRetoCheck(retoId,idx){
       +'<div id="retoExpDiff" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px"></div>';
     showConfirm('💸 Gasto de '+label,body,null);
     const row=document.getElementById('confirmModal').querySelector('.row');
-    if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="confirmRetoExpense(\''+retoId+'\','+idx+','+(expMatch?expMatch.id:0)+','+budgeted+')">✓ Registrar</button>';
+    // retoId es un identificador interno — lo pasamos por _xref para evitar
+    // cualquier riesgo si a futuro alguna ruta lo derivase de input de usuario.
+    const _retoRef=_xref(retoId);
+    if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="confirmRetoExpense(_xget('+_retoRef+'),'+idx+','+(expMatch?expMatch.id:0)+','+budgeted+')">✓ Registrar</button>';
     setTimeout(()=>{
       const inp=document.getElementById('retoExpAmt');
       if(inp)inp.oninput=function(){
@@ -2212,12 +2328,13 @@ function launchApp(){document.getElementById('onboarding').style.display='none';
 // ══ HELPERS ═════════════════════════════════════════
 const kpi=(title,val,color,sub)=>`<div class="card" style="margin-bottom:0;text-align:center"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}</div></div>`;
 const fmtDate=(s)=>{if(!s)return'';try{
-  let d=s;
-  // Handle DD/MM/YYYY format
-  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if(m)d=m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  // Acepta DD/MM/YYYY o YYYY-MM-DD. Si la fecha no es válida (ej. 31/02)
+  // devolvemos el string original para que el usuario note el dato raro en
+  // vez de ver una fecha silenciosamente corrida por new Date.
+  const d=_toValidYMD(s);
+  if(!d)return s;
   return new Date(d+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
-}catch{return s;}};
+}catch(e){_logErr('fmtDate',e);return s;}};
 const PRINCIPS=[
   '"Una parte de todo lo que ganas debe ser tuya para siempre." — Arkad',
   '"Los ricos compran activos. La clase media compra pasivos creyendo que son activos." — Kiyosaki',
@@ -2922,12 +3039,13 @@ function showSangradorDetail(merchantKey){
     if(!sangra||!sangra.txns){toast('No encontré el detalle');return;}
     const sorted=[...sangra.txns].sort((a,b)=>b.amt-a.amt);
     let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio agrupado:</div>';
-    body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:12px">'+sangra.name+'</div>';
+    body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:12px">'+_escH(sangra.name)+'</div>';
     body+='<div class="row-b" style="padding:10px 12px;background:var(--sagedim);border-radius:6px;margin-bottom:12px"><span style="font-size:11px;color:var(--sage2);font-weight:bold">'+sangra.count+' transaccion'+(sangra.count!==1?'es':'')+'</span><span style="font-size:14px;color:var(--terra);font-weight:bold">'+fx(Math.round(sangra.total))+'</span></div>';
     body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Verifica que todas estas pertenezcan al mismo comercio. Si una está mal agrupada, tócala para recategorizarla aparte.</div>';
     body+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">';
     sorted.forEach((t,i)=>{
-      const safeDesc=(t.desc||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      // Pasa la descripción por registro seguro en vez de interpolarla en el onclick
+      const descRef=_xref(t.desc||'');
       const dt=t.date||'';
       const borderBot=i<sorted.length-1?'border-bottom:1px solid var(--border);':'';
       // Show current category if any
@@ -2946,16 +3064,16 @@ function showSangradorDetail(merchantKey){
         }
       }
       body+='<div style="padding:10px 12px;'+borderBot+'">'
-        +'<div class="row-b" style="margin-bottom:2px;gap:8px"><span style="font-size:11px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(t.desc||'—')+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(t.amt)+'</span></div>'
-        +(curLbl?'<div style="font-size:9px;color:'+curColor+';font-weight:bold;margin:3px 0">✓ '+curLbl+'</div>':'')
+        +'<div class="row-b" style="margin-bottom:2px;gap:8px"><span style="font-size:11px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(t.desc||'—')+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(t.amt)+'</span></div>'
+        +(curLbl?'<div style="font-size:9px;color:'+curColor+';font-weight:bold;margin:3px 0">✓ '+_escH(curLbl)+'</div>':'')
         +'<div class="row-b" style="margin-top:4px">'
-        +(dt?'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>':'<div></div>')
-        +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(\''+safeDesc+'\')">✏️ Recategorizar</button>'
+        +(dt?'<div style="font-size:10px;color:var(--muted)">'+_escH(dt)+'</div>':'<div></div>')
+        +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(_xget('+descRef+'))">✏️ Recategorizar</button>'
         +'</div>'
         +'</div>';
     });
     body+='</div>';
-    showConfirm('🔍 Desglose de '+sangra.name.slice(0,20),body,null);
+    showConfirm('🔍 Desglose de '+_escH(String(sangra.name||'').slice(0,20)),body,null);
     const row=document.getElementById('confirmModal').querySelector('.row');
     if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
   }catch(e){toast('Error: '+e.message);}
@@ -3031,8 +3149,8 @@ function showReconcileModal(matches){
       +'<div class="row" style="gap:10px;align-items:flex-start">'
       +'<input type="checkbox" class="_rec-chk" data-id="'+m.exp.id+'" checked style="margin-top:3px;width:auto;accent-color:var(--sage)">'
       +'<div style="flex:1;min-width:0">'
-      +'<div class="row-b" style="margin-bottom:3px"><strong style="font-size:12px;color:var(--txt)">'+m.exp.name+'</strong><span style="font-size:10px;color:'+confCol+';font-weight:bold">Confianza: '+confLbl+'</span></div>'
-      +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">CSV: '+m.txn.desc.slice(0,36)+'</div>'
+      +'<div class="row-b" style="margin-bottom:3px"><strong style="font-size:12px;color:var(--txt)">'+_escH(m.exp.name)+'</strong><span style="font-size:10px;color:'+confCol+';font-weight:bold">Confianza: '+confLbl+'</span></div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">CSV: '+_escH(String(m.txn.desc||'').slice(0,36))+'</div>'
       +'<div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: '+fx(m.budgeted)+'</span><span style="color:var(--sage);font-weight:bold">Real: '+fx(m.realAmt)+'</span></div>'
       +'</div></div></label>';
   });
@@ -3069,18 +3187,18 @@ function showHormigaDetail(idx){
       const sorted=[...txns].sort((a,b)=>b.amt-a.amt);
       sorted.forEach(t=>{
         const dt=t.date||'';
-        const safeDesc=(t.desc||'').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+        const descRef=_xref(t.desc||'');
         body+='<div style="padding:10px 12px;border-bottom:1px solid var(--border)">'
-          +'<div class="row-b" style="margin-bottom:2px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+(t.desc||'—')+'</span><span style="font-size:13px;color:var(--terra);font-weight:bold;flex-shrink:0;margin-left:8px">'+fx(t.amt)+'</span></div>'
+          +'<div class="row-b" style="margin-bottom:2px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+_escH(t.desc||'—')+'</span><span style="font-size:13px;color:var(--terra);font-weight:bold;flex-shrink:0;margin-left:8px">'+fx(t.amt)+'</span></div>'
           +'<div class="row-b" style="margin-top:4px">'
-          +(dt?'<div style="font-size:10px;color:var(--muted)">'+dt+'</div>':'<div></div>')
-          +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(\''+safeDesc+'\')">✏️ Recategorizar</button>'
+          +(dt?'<div style="font-size:10px;color:var(--muted)">'+_escH(dt)+'</div>':'<div></div>')
+          +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(_xget('+descRef+'))">✏️ Recategorizar</button>'
           +'</div>'
           +'</div>';
       });
       body+='</div>';
     }
-    showConfirm(cat,body,null);
+    showConfirm(_escH(cat),body,null);
     const row=document.getElementById('confirmModal').querySelector('.row');
     if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
   }catch(e){toast('Error al mostrar detalle');}
@@ -3547,14 +3665,10 @@ function saveSnapshot(txns,source){
   source=source||'combined';
   const hd=detectH(txns);
   const hormiga={};hd.forEach(([cat,data])=>hormiga[cat]=data);
-  // Parse dates: handle DD/MM/YYYY → YYYY-MM-DD
-  const parseDateStr=(s)=>{
-    if(!s)return'';
-    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s; // already ISO
-    const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-    if(m)return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
-    return s;
-  };
+  // Parse dates: handle DD/MM/YYYY → YYYY-MM-DD, descarta fechas no válidas
+  // (antes devolvía el string crudo si no matcheaba; ahora retorna '' para
+  // evitar que new Date() re-interprete fechas imposibles como 31/02).
+  const parseDateStr=(s)=>_toValidYMD(s);
   const dates=txns.map(t=>parseDateStr(t.date)).filter(Boolean).sort();
   const topC={};txns.forEach(t=>{const k=t.desc.slice(0,28);topC[k]=(topC[k]||0)+1;});
   const topCommerces=Object.entries(topC).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([name,count])=>({name,count}));
@@ -3572,7 +3686,7 @@ function saveSnapshot(txns,source){
   const top10General=[...txns].sort((a,b)=>b.amt-a.amt).slice(0,10).map(t=>({desc:(t.desc||'').slice(0,40),amt:t.amt,date:parseDateStr(t.date)||''}));
 
   const snap={
-    id:Date.now()+Math.floor(Math.random()*1000),
+    id:_uid(),
     date:new Date().toISOString().split('T')[0],
     source,
     periodStart:dates[0]||'',
@@ -3836,15 +3950,17 @@ function rQuincena(){
         const curCat=applyUserCategory(s.origDesc||s.name);
         const curCatInfo=curCat?getUserCatInfo(curCat):null;
         const catLabel=curCatInfo?curCatInfo.label:'';
-        const safeDesc=(s.origDesc||s.name).replace(/'/g,"\\'").replace(/"/g,'&quot;');
-        const safeKey=s.name.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+        // Pasa strings no confiables al handler vía registro numérico en vez
+        // de interpolarlos en el JS del onclick.
+        const descRef=_xref(s.origDesc||s.name);
+        const keyRef=_xref(s.name);
         return`<div style="padding:8px 0;${idx<sangradores.length-1?'border-bottom:1px solid var(--border);':''}">
           <div class="row-b" style="margin-bottom:4px">
-            <div class="row" style="gap:8px;align-items:center;flex:1;min-width:0"><span style="font-size:16px;flex-shrink:0">${medal}</span><strong style="font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis">${s.name}</strong></div>
+            <div class="row" style="gap:8px;align-items:center;flex:1;min-width:0"><span style="font-size:16px;flex-shrink:0">${medal}</span><strong style="font-size:12px;color:var(--txt);overflow:hidden;text-overflow:ellipsis">${_escH(s.name)}</strong></div>
             <div class="row" style="gap:4px;align-items:center;flex-shrink:0">
               <span style="font-size:13px;color:var(--terra);font-weight:bold">${fx(Math.round(s.total))}</span>
-              <button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="showSangradorDetail('${safeKey}')" title="Ver desglose">🔍</button>
-              <button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="showCategorizeModal('${safeDesc}')" title="Categorizar">✏️</button>
+              <button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="showSangradorDetail(_xget(${keyRef}))" title="Ver desglose">🔍</button>
+              <button class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="showCategorizeModal(_xget(${descRef}))" title="Categorizar">✏️</button>
             </div>
           </div>
           <div class="pw" style="margin-bottom:4px;height:4px"><div class="pb" style="width:${pct}%;background:var(--terra)"></div></div>
@@ -3871,16 +3987,16 @@ function rQuincena(){
           const info=getUserCatInfo(catId);
           const lbl=info?info.label:catId;
           const color=info?.exclude?'var(--terra)':'var(--sage)';
-          const safeKey=key.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+          const keyRef=_xref(key);
           return`<div style="padding:10px 12px;border-bottom:1px solid var(--border)">
             <div class="row-b" style="margin-bottom:4px">
               <div style="flex:1;min-width:0;margin-right:8px">
-                <div style="font-size:12px;font-weight:bold;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${key}</div>
-                <div style="font-size:11px;color:${color};margin-top:2px">→ ${lbl}</div>
+                <div style="font-size:12px;font-weight:bold;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escH(key)}</div>
+                <div style="font-size:11px;color:${color};margin-top:2px">→ ${_escH(lbl)}</div>
               </div>
               <div class="row" style="gap:4px;flex-shrink:0">
-                <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px" onclick="showCategorizeModal('${safeKey}')">✏️</button>
-                <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px;color:var(--terra)" onclick="_confirmRemoveRule('${safeKey}')">🗑</button>
+                <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px" onclick="showCategorizeModal(_xget(${keyRef}))">✏️</button>
+                <button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:11px;color:var(--terra)" onclick="_confirmRemoveRule(_xget(${keyRef}))">🗑</button>
               </div>
             </div>
           </div>`;
@@ -4885,7 +5001,7 @@ function cerrarQnaDiarios(){
     '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de esta quincena por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
     ()=>{
       const snap={
-        id:Date.now()+Math.floor(Math.random()*1000),
+        id:_uid(),
         date:new Date().toISOString().split('T')[0],
         source:'diarios',
         periodStart:w.start.toISOString().split('T')[0],
@@ -5190,7 +5306,7 @@ function saveDebt(){
 
 // ══ PLAN DE ACCIÓN ═════════════════════════════════
 function applyPayments(){
-  try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch{}
+  try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('applyPayments.backup',e);}
   const ck=planCk();
   const items=S.paidItems[ck]||{};
   let appliedExp=0,appliedDebt=0,appliedAmt=0;
@@ -5476,7 +5592,7 @@ try{
             ${showReal?`<div style="font-size:9px;color:${diff>0?'var(--sage)':'var(--terra)'}">${diff>0?'↓'+fx(Math.round(diff)):'↑'+fx(Math.round(Math.abs(diff)))}</div>`:''}
           </div>
           ${st==='applied'&&!p.tdcPayment&&!p.tdcPending?`<button style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-family:Georgia,serif" onclick="event.stopPropagation();undoApply('${p.ptype}',${p.id})">↩</button>`:''}
-          ${p.ptype==='imp'&&p._rid?`<button title="Eliminar este gasto impulso" style="font-size:11px;color:var(--terra);background:none;border:1px solid rgba(184,92,74,.3);border-radius:4px;padding:2px 6px;cursor:pointer;font-family:Georgia,serif;line-height:1" onclick="event.stopPropagation();confirmDeleteImpulse('${p._rid}','${p._ck}',${p._idx},${p.id},'${(p.name||'').replace(/'/g,"\\'")}',${p.amt})">✕</button>`:''}
+          ${p.ptype==='imp'&&p._rid?(()=>{const _rr=_xref({rid:p._rid,ck:p._ck,idx:p._idx,id:p.id,name:p.name||'',amt:p.amt});return `<button title="Eliminar este gasto impulso" style="font-size:11px;color:var(--terra);background:none;border:1px solid rgba(184,92,74,.3);border-radius:4px;padding:2px 6px;cursor:pointer;font-family:Georgia,serif;line-height:1" onclick="event.stopPropagation();(function(a){confirmDeleteImpulse(a.rid,a.ck,a.idx,a.id,a.name,a.amt);})(_xget(${_rr}))">✕</button>`;})():''}
         </div>
       </div>`;};
 
@@ -7360,7 +7476,7 @@ function rHistoria(){
           html+='<div style="padding:24px;text-align:center;color:var(--muted);font-size:12px">No hay comercios con este filtro.</div>';
         } else {
           filtered.forEach((g,i)=>{
-            const safeDesc=(g.desc||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');
+            const descRef=_xref(g.desc||'');
             const isUncat=g._cat==='Sin categorizar';
             // Color by group
             let catColor,catBg;
@@ -7371,9 +7487,9 @@ function rHistoria(){
             else if(g._exclude){catColor='var(--muted)';catBg='rgba(154,149,144,.12)';}
             else {catColor='var(--sage)';catBg='var(--sagedim)';}
             const borderBot=i<filtered.length-1?'border-bottom:1px solid var(--border);':'';
-            html+='<div onclick="showCategorizeModal(\''+safeDesc+'\')" style="padding:11px 14px;'+borderBot+'cursor:pointer;active:opacity:.7">';
-            html+='<div class="row-b" style="margin-bottom:4px;gap:8px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(g.desc||'—').slice(0,38)+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(g.total)+'</span></div>';
-            html+='<div class="row-b" style="gap:8px"><div class="row" style="gap:6px;align-items:center;flex:1;min-width:0"><span style="font-size:9px;padding:2px 7px;border-radius:10px;background:'+catBg+';color:'+catColor+';font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px">'+g._cat+(g._isUser?' ✓':'')+'</span>'+(g.count>1?'<span style="font-size:9px;color:var(--muted)">×'+g.count+'</span>':'')+'</div><span style="font-size:9px;color:var(--muted);flex-shrink:0">✏️ tocar</span></div>';
+            html+='<div onclick="showCategorizeModal(_xget('+descRef+'))" style="padding:11px 14px;'+borderBot+'cursor:pointer;active:opacity:.7">';
+            html+='<div class="row-b" style="margin-bottom:4px;gap:8px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(String(g.desc||'—').slice(0,38))+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(g.total)+'</span></div>';
+            html+='<div class="row-b" style="gap:8px"><div class="row" style="gap:6px;align-items:center;flex:1;min-width:0"><span style="font-size:9px;padding:2px 7px;border-radius:10px;background:'+catBg+';color:'+catColor+';font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px">'+_escH(g._cat)+(g._isUser?' ✓':'')+'</span>'+(g.count>1?'<span style="font-size:9px;color:var(--muted)">×'+g.count+'</span>':'')+'</div><span style="font-size:9px;color:var(--muted);flex-shrink:0">✏️ tocar</span></div>';
             html+='</div>';
           });
         }

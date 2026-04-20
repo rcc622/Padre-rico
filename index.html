@@ -6972,12 +6972,58 @@ let histCatsFilter='all'; // all|cat|uncat
 let simPeriod=12; // 1, 2, 6, or 12 months
 function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
 function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
-function project(mo,ov={}){const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};
+function project(mo,ov={}){
+  const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();
+  const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};
   // NOTA: hR, hM, hO son promedios QUINCENALES. Para flujo mensual se multiplican x2.
-  const hR=ov.restaurantes!==undefined?ov.restaurantes:aH('🍔 Restaurantes');const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');const hO=ov.online!==undefined?ov.online:aH('📦 Compras online');const hT_qna=hR+hM+hO;const hT_mes=hT_qna*2;const ex=ov.extraDebt||0;const bD=ov.bonusToDebt||false;const bS=(+S.inc.bv)||0;
+  const hR=ov.restaurantes!==undefined?ov.restaurantes:aH('🍔 Restaurantes');
+  const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');
+  const hO=ov.online!==undefined?ov.online:aH('📦 Compras online');
+  const hT_qna=hR+hM+hO;
+  const hT_mes=hT_qna*2;
+  const ex=ov.extraDebt||0;
+  const bD=ov.bonusToDebt||false;
+  const bS=(+S.inc.bv)||0;
   // Horas extra: 1× = 1 hr/día × 30.4 días/mes × tarifa
-  const otRate=172;const otMul=+ov.overtimeMul||0;const otMonthly=Math.round(otMul*30.4*otRate);
-  let dt=tDebt(),saved=0;const r=[{m:0,dt,pt:nw(),h:hT_qna}];for(let m=1;m<=mo;m++){const monthInc=inc+otMonthly;const payment=Math.min(dt,dpB+ex);dt=Math.max(0,dt-payment);if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);saved+=sav;if(bD&&bS>0&&m%6===0)saved+=bS*0.2;const fr=monthInc-expB-payment-sav-hT_mes;if(fr>0)saved+=fr*0.3;r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT_qna)});}return r;}
+  const otRate=172;
+  const otMul=+ov.overtimeMul||0;
+  const otMonthly=Math.round(otMul*30.4*otRate);
+  // `saved` arranca con los activos actuales (nw() + deudas = activos totales)
+  // para que pt = saved - dt coincida con nw() en m=0 y la curva sea continua.
+  // Antes `saved` empezaba en 0 y m=0 tenía pt=nw() hardcodeado, creando una
+  // discontinuidad y subestimando patrimonios altos.
+  let dt=tDebt();
+  const assets=nw()+dt;
+  let saved=assets;
+  const r=[{m:0,dt,pt:nw(),h:hT_qna}];
+  for(let m=1;m<=mo;m++){
+    const monthInc=inc+otMonthly;
+    const payment=Math.min(dt,dpB+ex);
+    dt=Math.max(0,dt-payment);
+    if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);
+    saved+=sav;
+    if(bD&&bS>0&&m%6===0)saved+=bS*0.2;
+    // Flujo libre del mes después de gastos fijos, pagos a deuda, ahorro
+    // programado y hormiga. Antes sólo el flujo POSITIVO afectaba el ahorro
+    // (el déficit se ignoraba silenciosamente, por eso mover los sliders al
+    // máximo no hacía nada en la gráfica). Ahora:
+    //   • fr > 0 → 30% va al ahorro (resto se asume consumido en extras)
+    //   • fr < 0 → el déficit primero drena ahorros; si no alcanza, el resto
+    //     se convierte en deuda nueva (escenario TDC realista).
+    const fr=monthInc-expB-payment-sav-hT_mes;
+    if(fr>0){
+      saved+=fr*0.3;
+    } else if(fr<0){
+      const deficit=-fr;
+      const fromSavings=Math.min(Math.max(0,saved),deficit);
+      saved-=fromSavings;
+      const toDebt=deficit-fromSavings;
+      if(toDebt>0)dt+=toDebt;
+    }
+    r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT_qna)});
+  }
+  return r;
+}
 const ACHS=[
   // ══ LOGROS (hitos — cosas que HICISTE) ══
   {id:'ch1',cat:'logro',e:'📊',n:'Primer Capítulo',d:'Subiste tu primer CSV',info:'Cada CSV que subes crea un capítulo de tu historia financiera. El primer paso es el más importante.',ck:()=>S.snapshots.length>=1},
@@ -7219,26 +7265,46 @@ function rHistoria(){
     <div class="card" id="simSl"><div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">Ajusta tus hábitos ${ib("simulador","Simulador")}</div><button class="btn btn-sm ${simLocked?'btn-red':'btn-ghost'}" style="padding:5px 10px;font-size:11px" onclick="toggleSimLock()">${simLocked?'🔒 Bloqueado':'🔓 Libre'}</button></div>
       ${simLocked?'<div style="font-size:11px;color:var(--terra);background:rgba(184,92,74,.06);padding:8px 10px;border-radius:6px;margin-bottom:12px;line-height:1.5">🔒 Sliders bloqueados. Tap el botón para desbloquear y ajustar.</div>':''}
       ${(()=>{
-        // Step $500 para minisuper
-        const stepM=500;const maxM=Math.max(Math.ceil(mA*2/stepM)*stepM,3000);const stepsM=Math.round(maxM/stepM);
-        // Restaurantes y online mantienen step original de 5 pasos
-        const maxR=Math.max(Math.ceil(rA*2/500)*500,2000);const maxO=Math.max(Math.ceil(oA*2/500)*500,4000);
-        const snap=(v,mx,stp)=>{const s=stp||(mx/5);return Math.round(v/s)*s;};
-        const tickRow=(mx,nTicks)=>{const n=nTicks||5;const st=mx/n;return'<div class="sld-ticks">'+Array.from({length:n+1},(_,i)=>'<span>'+fx(Math.round(st*i))+'</span>').join('')+'</div>';};
-        // Para minisuper: si stepsM es muy grande (>7), mostrar solo 5 ticks para no saturar
-        const ticksM=stepsM>7?5:stepsM;
+        // Todos los sliders de dinero usan el mismo step ($500) y 5 divisiones.
+        // El max se redondea hacia arriba a múltiplo de (nTicks*step) = $2,500
+        // para que los marcadores caigan EXACTAMENTE en valores del step
+        // (ej. 0, 1K, 2K, 3K, 4K, 5K). Antes se dividía max/5 con resultados
+        // como $900, $1,800 que nunca coincidían con la posición real del slider.
+        const stepFin=500;
+        const nTicks=5;
+        const gridStep=nTicks*stepFin; // 2500
+        const roundMax=(v,floor)=>Math.max(Math.ceil(v/gridStep)*gridStep,floor);
+        const maxM=roundMax(mA*2,gridStep);
+        const maxR=roundMax(rA*2,gridStep);
+        const maxO=roundMax(oA*2,gridStep*2); // online default más alto
+        const snap=(v,mx)=>Math.min(mx,Math.max(0,Math.round(v/stepFin)*stepFin));
+        const tickRow=(mx)=>{const st=mx/nTicks;return'<div class="sld-ticks">'+Array.from({length:nTicks+1},(_,i)=>'<span>'+fx(Math.round(st*i))+'</span>').join('')+'</div>';};
         const disAttr=simLocked?'disabled style="width:100%;opacity:.5;cursor:not-allowed"':'style="width:100%"';
+        // Preserva valores de sliders entre re-renders (bloquear/desbloquear
+        // o cambio de periodo) — _captureSimValues() los guarda en window._simVals
+        // justo antes de rHistoria(). Sin esto, la UI "se desconfiguraba" al
+        // togglear el candado porque volvía al promedio histórico.
+        const V=window._simVals||{};
+        const vMi=V.mi!==undefined?Math.min(V.mi,maxM):snap(mA,maxM);
+        const vR=V.rest!==undefined?Math.min(V.rest,maxR):snap(rA,maxR);
+        const vO=V.ol!==undefined?Math.min(V.ol,maxO):snap(oA,maxO);
+        const vSav=V.sav!==undefined?V.sav:Math.max(5,Math.round(S.savPct/5)*5);
+        const vEx=V.ex!==undefined?V.ex:0;
+        const vOt=V.ot!==undefined?V.ot:0;
+        const vBon=V.bon?'checked':'';
+        const otRate=172;const otMoneyInit=Math.round(vOt*30.4*otRate);
+        const otLblInit=vOt===0?'0× (sin horas extra)':vOt+'× = '+fx(otMoneyInit)+'/mes';
       return`
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(mA,maxM,stepM))}/qna</span></div><input type="range" min="0" max="${maxM}" step="${stepM}" value="${snap(mA,maxM,stepM)}" ${disAttr} oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM,ticksM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna · step $${stepM}</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🍔 Restaurantes</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(rA,maxR))}/qna</span></div><input type="range" min="0" max="${maxR}" step="${maxR/5}" value="${snap(rA,maxR)}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · ideal para fines de semana</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(snap(oA,maxO))}/qna</span></div><input type="range" min="0" max="${maxO}" step="${maxO/5}" value="${snap(oA,maxO)}" ${disAttr} oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxO)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(oA)}/qna</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${S.savPct}%</span></div><input type="range" min="5" max="30" step="5" value="${Math.max(5,Math.round(S.savPct/5)*5)}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(0)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="0" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>`;})()}
-      <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">0× (sin horas extra)</span></div><input type="range" min="0" max="4" step="1" value="0" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">1× = 1 hr/día × 30.4 días/mes ≈ <strong>30 hrs/mes</strong>. Tarifa: $172/hr → <strong>$5,229/mes</strong>.</div></div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vMi)}/qna</span></div><input type="range" min="0" max="${maxM}" step="${stepFin}" value="${vMi}" ${disAttr} oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna · step $${stepFin}</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🍔 Restaurantes</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vR)}/qna</span></div><input type="range" min="0" max="${maxR}" step="${stepFin}" value="${vR}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · ideal para fines de semana</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vO)}/qna</span></div><input type="range" min="0" max="${maxO}" step="${stepFin}" value="${vO}" ${disAttr} oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxO)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(oA)}/qna</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${vSav}%</span></div><input type="range" min="5" max="30" step="5" value="${vSav}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vEx)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="${vEx}" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>
+      <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">${otLblInit}</span></div><input type="range" min="0" max="4" step="1" value="${vOt}" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">1× = 1 hr/día × 30.4 días/mes ≈ <strong>30 hrs/mes</strong>. Tarifa: $172/hr → <strong>$5,229/mes</strong>.</div></div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} ${vBon} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>`;})()}
     </div>
     <div class="card"><div class="ct" id="simProjTitle">Proyección a ${simPeriod===1?'1 mes':simPeriod===2?'2 meses':simPeriod===6?'6 meses':'12 meses'}</div>
-    <div class="chips" style="margin-bottom:12px">${[[1,'Mensual'],[2,'Bimestral'],[6,'Semestral'],[12,'Anual']].map(([n,l])=>`<button class="chip" style="${simPeriod===n?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="simPeriod=${n};rHistoria()">${l}</button>`).join('')}</div>
+    <div class="chips" style="margin-bottom:12px">${[[1,'Mensual'],[2,'Bimestral'],[6,'Semestral'],[12,'Anual']].map(([n,l])=>`<button class="chip" style="${simPeriod===n?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setSimPeriod(${n})">${l}</button>`).join('')}</div>
     <div id="simCnv" style="width:100%;overflow:hidden"></div><div id="simRes" style="margin-top:12px"></div></div>
     <div class="card" id="simImp"></div>`;
   }
@@ -7829,12 +7895,29 @@ function rHistoria(){
     document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
+// Guarda los valores actuales de los sliders del simulador en memoria para
+// restaurarlos tras un re-render (bloquear/desbloquear o cambio de periodo).
+// Antes, cualquier rHistoria() devolvía los sliders al promedio histórico y
+// "desconfiguraba" lo que el usuario estaba simulando.
+function _captureSimValues(){
+  const sl=document.getElementById('simSl');
+  if(!sl)return;
+  const rg=sl.querySelectorAll('input[type=range]');
+  if(!rg||rg.length<6)return;
+  window._simVals={
+    mi:+rg[0].value,rest:+rg[1].value,ol:+rg[2].value,
+    sav:+rg[3].value,ex:+rg[4].value,ot:+rg[5].value,
+    bon:!!document.getElementById('slBon')?.checked
+  };
+}
+function setSimPeriod(n){_captureSimValues();simPeriod=n;try{rHistoria();}catch(e){_logErr('setSimPeriod',e);}}
 // Candado de sliders del simulador — persiste en S._simLocked
 function toggleSimLock(){
+  _captureSimValues();
   S._simLocked=!S._simLocked;
   sv();
   toast(S._simLocked?'🔒 Sliders bloqueados':'🔓 Sliders libres');
-  try{rHistoria();}catch(e){}
+  try{rHistoria();}catch(e){_logErr('toggleSimLock',e);}
 }
 
 function runSim(){const sl=document.getElementById('simSl');if(!sl)return;const rg=sl.querySelectorAll('input[type=range]');const mi=+(rg[0]?.value)||0,rest=+(rg[1]?.value)||0,ol=+(rg[2]?.value)||0,sp=+(rg[3]?.value)||10,ex=+(rg[4]?.value)||0,otMul=+(rg[5]?.value)||0;

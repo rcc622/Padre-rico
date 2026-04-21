@@ -8178,10 +8178,63 @@ if(pD)deltas+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">'+(
 if(dD>0)deltas+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">⛓️ Liquidas <strong style="color:var(--sage)">'+fx(dD)+' más</strong> de deuda</div>';
 if(hS>0)deltas+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">🐜 Ahorras <strong style="color:var(--sage)">'+fx(hS)+'</strong> en hormiga vs. tu promedio real</div>';
 
+// ══ EXPLICACIÓN: cómo cambia el patrimonio vs el "sobrante" ────────
+// Usuario común confunde "te sobra $X" con "patrimonio mejora $X". Acá se
+// desglosa la ganancia real de patrimonio en sus componentes: pago a deuda
+// (reduce pasivo → sube patrimonio), ahorro programado (entra a saved) y
+// 30% del sobrante (regla del modelo). Así queda claro por qué el patrimonio
+// mejora más que el "sobrante".
+const pt0=mod[0]?mod[0].pt:0;
+const pt1=mod[1]?mod[1].pt:pt0;
+const ptDelta1=pt1-pt0;
+const contribPay=paymentM1;
+const contribSav=savAmount;
+const contribFlow=fr1>0?Math.round(fr1*0.3):fr1; // si fr<0, el déficit ya reduce saved/aumenta dt
+let whyBlock='';
+if(H===1){
+  whyBlock='<div style="padding:10px 12px;background:var(--bg2);border-radius:6px;margin-bottom:12px;font-size:11px;color:var(--txt2);line-height:1.6">'
+    +'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">¿Por qué mi patrimonio cambia '+(ptDelta1>=0?'+':'')+fx(ptDelta1)+' si sólo me \"sobra\" '+fx(fr1)+'?</div>'
+    +'El sobrante es el <strong>cash libre</strong> al cierre de mes. Tu patrimonio mejora por más porque también cuentan:<br>'
+    +(contribPay>0?'• Pago a deuda: <strong style="color:var(--sage)">+'+fx(contribPay)+'</strong> (reduce pasivo)<br>':'')
+    +(contribSav>0?'• Ahorro programado: <strong style="color:var(--sage)">+'+fx(contribSav)+'</strong><br>':'')
+    +(fr1>0?'• 30% del sobrante al ahorro: <strong style="color:var(--sage)">+'+fx(Math.round(fr1*0.3))+'</strong><br>':(fr1<0?'• Déficit drena ahorro o crea deuda: <strong style="color:var(--terra)">'+fx(fr1)+'</strong><br>':''))
+    +'</div>';
+}
+
+// ══ PLAZOS ESTIMADOS ──────────────────────────────────────────────
+// Cuándo terminas deuda, cuándo patrimonio llega a cero. Si sucede dentro del
+// horizonte, se ve la proyección real; si no, se extrapola linealmente con el
+// delta mensual promedio.
+const firstDebtZero=mod.findIndex(p=>p.m>0&&p.dt<=0);
+const firstPtZero=mod.findIndex(p=>p.m>0&&p.pt>=0);
+const dtDeltaAvg=(mod[0].dt-(mod[mod.length-1]?.dt||0))/(mod.length-1||1);
+const ptDeltaAvg=((mod[mod.length-1]?.pt||0)-mod[0].pt)/(mod.length-1||1);
+let plazos='';
+if(tDebt()>0){
+  if(firstDebtZero>0){
+    plazos+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">⛓️ Deuda liquidada en <strong style="color:var(--sage)">~'+firstDebtZero+' mes'+(firstDebtZero!==1?'es':'')+'</strong></div>';
+  } else if(dtDeltaAvg>0){
+    const est=Math.ceil(mod[mod.length-1].dt/dtDeltaAvg);
+    plazos+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">⛓️ A este ritmo, deuda liquidada en <strong style="color:var(--amber)">~'+(H+est)+' meses</strong></div>';
+  } else {
+    plazos+='<div style="font-size:11px;color:var(--terra);line-height:1.7">⛓️ A este ritmo tu deuda <strong>no se liquida</strong> (o crece). Sube el ahorro/pago extra o baja gastos.</div>';
+  }
+}
+if(mod[0].pt<0){
+  if(firstPtZero>0){
+    plazos+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">🌱 Patrimonio en positivo en <strong style="color:var(--sage)">~'+firstPtZero+' mes'+(firstPtZero!==1?'es':'')+'</strong></div>';
+  } else if(ptDeltaAvg>0){
+    const est=Math.ceil(Math.abs(mod[mod.length-1].pt)/ptDeltaAvg);
+    plazos+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">🌱 A este ritmo, patrimonio positivo en <strong style="color:var(--amber)">~'+(H+est)+' meses</strong></div>';
+  }
+}
+
 document.getElementById('simImp').innerHTML=
   '<div class="ct">💡 Veredicto a '+(H===1?'1 mes':H+' meses')+'</div>'
   +verdictBox
   +breakdown
+  +whyBlock
+  +(plazos?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Plazos estimados</div>'+plazos+'<div style="height:10px"></div>':'')
   +(deltas?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Comparado con tus hábitos reales</div>'+deltas:'');
 }
 

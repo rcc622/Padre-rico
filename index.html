@@ -7039,7 +7039,10 @@ function project(mo,ov={}){
       const toDebt=deficit-fromSavings;
       if(toDebt>0)dt+=toDebt;
     }
-    r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT_qna)});
+    // fr = flujo libre antes de ajustes (positivo = te sobra, negativo = déficit).
+    // payment = pago efectivo a deuda ese mes. Ambos expuestos para que el
+    // veredicto en simImp pueda explicar al usuario si "la libra" o no.
+    r.push({m,dt:Math.round(dt),pt:Math.round(saved-dt),h:Math.round(hT_qna),fr:Math.round(fr),payment:Math.round(payment)});
   }
   return r;
 }
@@ -8100,12 +8103,86 @@ const hS=Math.max(0,(hormigaBase-hormigaMod)*2*H);
 const pLbl=H===1?'1m':H+'m';
 document.getElementById('simRes').innerHTML=`<div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Hoy</div><div style="font-size:13px;font-weight:bold;color:var(--txt)">${fx(mod[0].pt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Patrimonio ${pLbl}</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.pt)}</div><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(mF.pt)}</div></div></div><div style="display:flex;gap:6px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda hoy</div><div style="font-size:13px;font-weight:bold;color:var(--terra)">${fx(mod[0].dt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda ${pLbl}</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.dt)}</div><div style="font-size:18px;font-weight:bold;color:${mF.dt>0?'var(--terra)':'var(--sage)'}">${fx(mF.dt)}</div></div></div>`;
 const otImpact=otMoney*H;
-// Impacto acumulado de conceptos personalizados (amt × freq × H meses)
 const customImpact=customMonthly*H;
-const customLabel=customsArr.length&&customMonthly>0
-  ?'<div style="font-size:12px;color:var(--txt2);line-height:1.8">⚙️ Conceptos personalizados: <strong style="color:var(--terra)">−'+fx(customImpact)+'</strong> en '+pLbl+' ('+fx(Math.round(customMonthly))+'/mes)</div>'
-  :'';
-document.getElementById('simImp').innerHTML=`<div class="ct">💡 Impacto en ${H===1?'1 mes':H+' meses'}</div>${pD?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">${pD>0?'📈':'📉'} Patrimonio: <strong style="color:${pD>0?'var(--sage)':'var(--terra)'}">${pD>0?'+':''}${fx(pD)}</strong> en ${pLbl}</div>`:''}${dD>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⛓️ Liquidas <strong style="color:var(--sage)">${fx(dD)} más</strong> de deuda</div>`:''}${otMul>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⏰ Horas extra: <strong style="color:var(--sky)">+${fx(otImpact)}</strong> ingreso adicional en ${pLbl} (${otMul}× ≈ ${Math.round(otMul*30.4)} hrs/mes)</div>`:''}${hS>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">🐜 Ahorras <strong style="color:var(--sage)">${fx(hS)}</strong> en hormiga en ${pLbl}</div>`:''}${customLabel}${!pD&&dD<=0&&hS<=0&&otMul===0&&customMonthly===0?'<div style="font-size:12px;color:var(--muted)">Mueve los sliders para ver el impacto.</div>':''}`;
+
+// ══ VEREDICTO ──────────────────────────────────────────────────
+// Responde al usuario lo más importante: "¿me alcanza?"
+// fr1 = flujo libre del mes 1 (ingresos − fijos − deuda − ahorro − hormiga
+// − conceptos). Positivo = te sobra. Negativo = falta dinero (se convertirá
+// en deuda nueva o drena ahorros).
+const inc=mInc();
+const monthInc=inc+otMoney;
+const expB=tExp();
+const savAmount=Math.round(inc*sp/100);
+const hT_mes=Math.round((mi+rest+ol)*2);
+// Pagos de deuda del mes 1 (incluye 'unico' que solo aplica la primera vez)
+const dpOngoing=(S.debts||[]).filter(d=>(d.freq||'mensual')!=='unico').reduce((a,d)=>a+toMonthly(+d.pay||0,d.freq||'mensual'),0);
+const dpUnico=(S.debts||[]).filter(d=>(d.freq||'mensual')==='unico').reduce((a,d)=>a+Math.min(+d.pay||0,+d.bal||0),0);
+const paymentM1=Math.min(tDebt(),dpOngoing+ex+dpUnico);
+const fr1=mod[1]?mod[1].fr:(monthInc-expB-paymentM1-savAmount-hT_mes-customMonthly);
+// Estadísticas multi-mes (para horizontes >1)
+const frList=mod.slice(1).map(m=>m.fr||0);
+const avgFr=frList.length?Math.round(frList.reduce((a,v)=>a+v,0)/frList.length):0;
+const posMonths=frList.filter(v=>v>=0).length;
+const negMonths=frList.length-posMonths;
+const worstFr=frList.length?Math.min(...frList):0;
+
+// Veredicto principal (diferente para 1 mes vs multi-mes)
+let verdictBox;
+if(H===1){
+  if(fr1>=0){
+    verdictBox='<div style="background:rgba(78,124,106,.08);border-left:3px solid var(--sage);padding:12px 14px;border-radius:6px;margin-bottom:12px">'
+      +'<div style="font-size:13px;font-weight:bold;color:var(--sage);margin-bottom:4px">✅ Sí la libras este mes</div>'
+      +'<div style="font-size:11px;color:var(--txt2);line-height:1.6">Te sobran <strong>'+fx(fr1)+'/mes</strong> ('+fx(Math.round(fr1/2))+'/qna) después de cubrir todo.</div></div>';
+  } else {
+    verdictBox='<div style="background:rgba(184,92,74,.08);border-left:3px solid var(--terra);padding:12px 14px;border-radius:6px;margin-bottom:12px">'
+      +'<div style="font-size:13px;font-weight:bold;color:var(--terra);margin-bottom:4px">⚠️ Este mes NO te alcanza</div>'
+      +'<div style="font-size:11px;color:var(--txt2);line-height:1.6">Te faltan <strong>'+fx(-fr1)+'/mes</strong> ('+fx(Math.round(-fr1/2))+'/qna). Se convierten en deuda nueva o drenan tus ahorros.</div></div>';
+  }
+} else {
+  if(avgFr>=0&&negMonths===0){
+    verdictBox='<div style="background:rgba(78,124,106,.08);border-left:3px solid var(--sage);padding:12px 14px;border-radius:6px;margin-bottom:12px">'
+      +'<div style="font-size:13px;font-weight:bold;color:var(--sage);margin-bottom:4px">✅ Los '+H+' meses la libras</div>'
+      +'<div style="font-size:11px;color:var(--txt2);line-height:1.6">Flujo libre promedio: <strong>+'+fx(avgFr)+'/mes</strong>. Todos los meses en positivo.</div></div>';
+  } else if(avgFr>=0){
+    verdictBox='<div style="background:rgba(160,112,48,.08);border-left:3px solid var(--amber);padding:12px 14px;border-radius:6px;margin-bottom:12px">'
+      +'<div style="font-size:13px;font-weight:bold;color:var(--amber);margin-bottom:4px">⚖️ La libras en promedio, pero hay meses apretados</div>'
+      +'<div style="font-size:11px;color:var(--txt2);line-height:1.6"><strong>'+posMonths+'/'+H+'</strong> meses con flujo positivo. Promedio: <strong>+'+fx(avgFr)+'/mes</strong>. Peor mes: <strong>'+fx(worstFr)+'</strong>.</div></div>';
+  } else {
+    verdictBox='<div style="background:rgba(184,92,74,.08);border-left:3px solid var(--terra);padding:12px 14px;border-radius:6px;margin-bottom:12px">'
+      +'<div style="font-size:13px;font-weight:bold;color:var(--terra);margin-bottom:4px">⚠️ En '+H+' meses NO la libras</div>'
+      +'<div style="font-size:11px;color:var(--txt2);line-height:1.6">Te faltan en promedio <strong>'+fx(-avgFr)+'/mes</strong>. Sólo '+posMonths+'/'+H+' meses te alcanzan.</div></div>';
+  }
+}
+
+// Desglose del mes 1 (siempre, para que el usuario entienda a dónde va su dinero)
+const salOnly=inc;
+const breakdownRow=(lbl,val,color)=>'<div class="row-b" style="padding:4px 0;font-size:11px"><span style="color:var(--txt2)">'+lbl+'</span><span style="color:'+(color||'var(--txt)')+';font-weight:bold">'+val+'</span></div>';
+let breakdown='<div style="padding:10px 12px;background:var(--bg2);border-radius:6px;margin-bottom:12px">'
+  +'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Flujo del mes 1</div>'
+  +breakdownRow('💼 Sueldo','+'+fx(salOnly),'var(--sage)')
+  +(otMoney>0?breakdownRow('⏰ Horas extra','+'+fx(otMoney),'var(--sky)'):'')
+  +'<div style="border-top:1px dashed var(--border);margin:4px 0"></div>'
+  +breakdownRow('🏠 Gastos fijos','−'+fx(Math.round(expB)),'var(--terra)')
+  +(paymentM1>0?breakdownRow('⛓️ Pagos a deuda'+(dpUnico>0?' (incluye único)':''),'−'+fx(paymentM1),'var(--terra)'):'')
+  +(savAmount>0?breakdownRow('💾 Ahorro '+sp+'%','−'+fx(savAmount),'var(--terra)'):'')
+  +(hT_mes>0?breakdownRow('🐜 Hormiga (mini+rest+online)','−'+fx(hT_mes),'var(--terra)'):'')
+  +(customMonthly>0?breakdownRow('⚙️ Conceptos personalizados','−'+fx(Math.round(customMonthly)),'var(--terra)'):'')
+  +'<div style="border-top:1px solid var(--border);margin:4px 0"></div>'
+  +breakdownRow(fr1>=0?'✅ Te sobra':'⚠️ Te falta',(fr1>=0?'+':'')+fx(fr1),fr1>=0?'var(--sage)':'var(--terra)')
+  +'</div>';
+
+// Comparativos (diff vs. baseline sin cambios)
+let deltas='';
+if(pD)deltas+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">'+(pD>0?'📈':'📉')+' Patrimonio vs. tu ritmo actual: <strong style="color:'+(pD>0?'var(--sage)':'var(--terra)')+'">'+(pD>0?'+':'')+fx(pD)+'</strong></div>';
+if(dD>0)deltas+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">⛓️ Liquidas <strong style="color:var(--sage)">'+fx(dD)+' más</strong> de deuda</div>';
+if(hS>0)deltas+='<div style="font-size:11px;color:var(--txt2);line-height:1.7">🐜 Ahorras <strong style="color:var(--sage)">'+fx(hS)+'</strong> en hormiga vs. tu promedio real</div>';
+
+document.getElementById('simImp').innerHTML=
+  '<div class="ct">💡 Veredicto a '+(H===1?'1 mes':H+' meses')+'</div>'
+  +verdictBox
+  +breakdown
+  +(deltas?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Comparado con tus hábitos reales</div>'+deltas:'');
 }
 
 function delSnap(id){if(!confirm('¿Eliminar este capítulo?'))return;pt({snapshots:S.snapshots.filter(s=>s.id!==id)});toast('Capítulo eliminado');rHistoria();}

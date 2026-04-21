@@ -366,6 +366,7 @@ let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
   tdcPayments:[],
+  simCustoms:[], // FASE 7: conceptos personalizados del simulador (doctor, gym, etc.)
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
 
 function migrate(){
@@ -412,7 +413,7 @@ function _normalizeState(st){
   if(!isObj(st.deficitDecisions))st.deficitDecisions={};
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
-  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments'];
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   if(typeof st.savStreak!=='number')st.savStreak=0;
   if(typeof st.savStreakBest!=='number')st.savStreakBest=0;
@@ -6973,7 +6974,23 @@ let simPeriod=12; // 1, 2, 6, or 12 months
 function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
 function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
 function project(mo,ov={}){
-  const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp(),dpB=tDebtPay();
+  const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp();
+  // Separar pagos recurrentes vs. 'unico'. Antes `tDebtPay()` trataba las
+  // deudas únicas como si se pagaran cada mes, lo que inflaba la capacidad
+  // mensual del simulador (una deuda 'unico' de $18,732 aparecía como
+  // $18,732/mes recurrentes). Ahora:
+  //   • dpOngoing: suma sólo las frecuencias recurrentes (mensual/semanal/...)
+  //   • dpUnico:   se aplica UNA sola vez, en el mes 1 de la proyección
+  const dpOngoing=(S.debts||[]).reduce((a,d)=>{
+    const f=d.freq||'mensual';
+    if(f==='unico')return a;
+    return a+toMonthly(+d.pay||0,f);
+  },0);
+  const dpUnico=(S.debts||[]).reduce((a,d)=>{
+    const f=d.freq||'mensual';
+    if(f!=='unico')return a;
+    return a+Math.min(+d.pay||0,+d.bal||0);
+  },0);
   const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};
   // NOTA: hR, hM, hO son promedios QUINCENALES. Para flujo mensual se multiplican x2.
   const hR=ov.restaurantes!==undefined?ov.restaurantes:aH('🍔 Restaurantes');
@@ -6988,29 +7005,31 @@ function project(mo,ov={}){
   const otRate=172;
   const otMul=+ov.overtimeMul||0;
   const otMonthly=Math.round(otMul*30.4*otRate);
+  // Conceptos personalizados (doctor, gym, etc.): suma amt × freq/mes.
+  // `ov.customs` es array de {amt, freq}. Si se omite, usa lo persistido en
+  // S.simCustoms (con su freqCur actual).
+  const customsArr=ov.customs!==undefined?ov.customs:(S.simCustoms||[]).map(c=>({amt:+c.amt||0,freq:+c.freqCur||0}));
+  const customMonthly=customsArr.reduce((a,c)=>a+(+c.amt||0)*(+c.freq||0),0);
   // `saved` arranca con los activos actuales (nw() + deudas = activos totales)
   // para que pt = saved - dt coincida con nw() en m=0 y la curva sea continua.
-  // Antes `saved` empezaba en 0 y m=0 tenía pt=nw() hardcodeado, creando una
-  // discontinuidad y subestimando patrimonios altos.
   let dt=tDebt();
   const assets=nw()+dt;
   let saved=assets;
   const r=[{m:0,dt,pt:nw(),h:hT_qna}];
   for(let m=1;m<=mo;m++){
     const monthInc=inc+otMonthly;
-    const payment=Math.min(dt,dpB+ex);
+    // 'unico' solo aplica en el mes 1; después dpB sólo incluye recurrentes
+    const dpMonth=dpOngoing+(m===1?dpUnico:0);
+    const payment=Math.min(dt,dpMonth+ex);
     dt=Math.max(0,dt-payment);
     if(bD&&bS>0&&m%6===0)dt=Math.max(0,dt-bS*0.7);
     saved+=sav;
     if(bD&&bS>0&&m%6===0)saved+=bS*0.2;
-    // Flujo libre del mes después de gastos fijos, pagos a deuda, ahorro
-    // programado y hormiga. Antes sólo el flujo POSITIVO afectaba el ahorro
-    // (el déficit se ignoraba silenciosamente, por eso mover los sliders al
-    // máximo no hacía nada en la gráfica). Ahora:
-    //   • fr > 0 → 30% va al ahorro (resto se asume consumido en extras)
-    //   • fr < 0 → el déficit primero drena ahorros; si no alcanza, el resto
-    //     se convierte en deuda nueva (escenario TDC realista).
-    const fr=monthInc-expB-payment-sav-hT_mes;
+    // Flujo libre: ingresos - gastos fijos - pagos a deuda - ahorro programado
+    // - hormiga - conceptos personalizados (doctor, gym, etc.).
+    //   • fr > 0 → 30% va al ahorro
+    //   • fr < 0 → el déficit drena ahorros y, si no alcanza, crea deuda nueva
+    const fr=monthInc-expB-payment-sav-hT_mes-customMonthly;
     if(fr>0){
       saved+=fr*0.3;
     } else if(fr<0){
@@ -7302,6 +7321,40 @@ function rHistoria(){
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vEx)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="${vEx}" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>
       <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">${otLblInit}</span></div><input type="range" min="0" max="4" step="1" value="${vOt}" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0×</span><span>1×</span><span>2×</span><span>3×</span><span>4×</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">1× = 1 hr/día × 30.4 días/mes ≈ <strong>30 hrs/mes</strong>. Tarifa: $172/hr → <strong>$5,229/mes</strong>.</div></div>
       <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} ${vBon} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>`;})()}
+      ${(()=>{
+        // ══ Conceptos personalizados (doctor, gym, terapia, etc.) ══
+        // Cada concepto tiene nombre, monto por visita y un slider 0..freqMax
+        // que representa "veces por mes". El impacto mensual = amt × freq.
+        // Antes: sólo podías simular hormiga preconstruida. Ahora el usuario
+        // modela cualquier gasto variable y ve cómo afecta patrimonio/deuda.
+        const cc=S.simCustoms||[];
+        const V2=window._simVals||{};
+        const customVals=V2.customs||{};
+        const disCustomAttr=simLocked?'disabled style="width:100%;opacity:.5;cursor:not-allowed"':'style="width:100%"';
+        const disBtn=simLocked?'disabled':'';
+        let html='<div style="border-top:1px dashed var(--border);padding-top:14px;margin-top:14px">';
+        html+='<div class="row-b" style="margin-bottom:10px"><span style="font-size:12px;font-weight:bold;color:var(--txt)">⚙️ Conceptos personalizados</span><button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11px" '+disBtn+' onclick="openSimCustomModal()">＋ Agregar</button></div>';
+        if(!cc.length){
+          html+='<div style="font-size:11px;color:var(--muted);line-height:1.6;padding:10px 12px;background:var(--bg2);border-radius:6px">Crea conceptos como <strong>🏥 Doctor</strong> o <strong>🏋️ Gym</strong> con su monto y un rango (0 a N veces/mes) para ver cómo la frecuencia impacta tu proyección.</div>';
+        } else {
+          cc.forEach(c=>{
+            const curFreq=customVals[c.id]!==undefined?customVals[c.id]:(+c.freqCur||0);
+            const fMax=Math.max(1,+c.freqMax||4);
+            const impact=Math.round((+c.amt||0)*curFreq);
+            const freqLbl=curFreq===0?'nunca':curFreq===1?'1×/mes':curFreq+'×/mes';
+            const ticks='<div class="sld-ticks">'+Array.from({length:fMax+1},(_,i)=>'<span>'+i+'×</span>').join('')+'</div>';
+            const idEsc=_escA(String(c.id));
+            html+='<div style="margin-bottom:14px;padding:10px 12px;background:var(--bg2);border-radius:8px;border:1px solid var(--border)">';
+            html+='<div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">'+_escH(c.name||'Sin nombre')+' · '+fx(+c.amt||0)+'/visita</span><span id="slCV_'+idEsc+'" style="font-size:12px;color:var(--sage);font-weight:bold">'+freqLbl+' = '+fx(impact)+'/mes</span></div>';
+            html+='<input type="range" data-simc="'+idEsc+'" data-simc-amt="'+(+c.amt||0)+'" min="0" max="'+fMax+'" step="1" value="'+curFreq+'" '+disCustomAttr+' oninput="_onSimCustomInput(this)">';
+            html+=ticks;
+            html+='<div class="row" style="gap:6px;margin-top:6px;justify-content:flex-end"><button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px" '+disBtn+' onclick="openSimCustomModal(\''+idEsc+'\')">✏️</button><button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:10px;color:var(--terra)" '+disBtn+' onclick="delSimCustom(\''+idEsc+'\')">🗑</button></div>';
+            html+='</div>';
+          });
+        }
+        html+='</div>';
+        return html;
+      })()}
     </div>
     <div class="card"><div class="ct" id="simProjTitle">Proyección a ${simPeriod===1?'1 mes':simPeriod===2?'2 meses':simPeriod===6?'6 meses':'12 meses'}</div>
     <div class="chips" style="margin-bottom:12px">${[[1,'Mensual'],[2,'Bimestral'],[6,'Semestral'],[12,'Anual']].map(([n,l])=>`<button class="chip" style="${simPeriod===n?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setSimPeriod(${n})">${l}</button>`).join('')}</div>
@@ -7902,12 +7955,20 @@ function rHistoria(){
 function _captureSimValues(){
   const sl=document.getElementById('simSl');
   if(!sl)return;
-  const rg=sl.querySelectorAll('input[type=range]');
-  if(!rg||rg.length<6)return;
+  // Los 6 primeros sliders son los fijos (orden: mi, rest, ol, sav, ex, ot).
+  // Los conceptos personalizados usan data-simc y se capturan aparte por id.
+  const rgAll=sl.querySelectorAll('input[type=range]');
+  const rgFixed=Array.from(rgAll).filter(r=>!r.hasAttribute('data-simc'));
+  if(rgFixed.length<6)return;
+  const customs={};
+  sl.querySelectorAll('input[type=range][data-simc]').forEach(r=>{
+    customs[r.getAttribute('data-simc')]=+r.value;
+  });
   window._simVals={
-    mi:+rg[0].value,rest:+rg[1].value,ol:+rg[2].value,
-    sav:+rg[3].value,ex:+rg[4].value,ot:+rg[5].value,
-    bon:!!document.getElementById('slBon')?.checked
+    mi:+rgFixed[0].value,rest:+rgFixed[1].value,ol:+rgFixed[2].value,
+    sav:+rgFixed[3].value,ex:+rgFixed[4].value,ot:+rgFixed[5].value,
+    bon:!!document.getElementById('slBon')?.checked,
+    customs
   };
 }
 function setSimPeriod(n){_captureSimValues();simPeriod=n;try{rHistoria();}catch(e){_logErr('setSimPeriod',e);}}
@@ -7920,14 +7981,109 @@ function toggleSimLock(){
   try{rHistoria();}catch(e){_logErr('toggleSimLock',e);}
 }
 
-function runSim(){const sl=document.getElementById('simSl');if(!sl)return;const rg=sl.querySelectorAll('input[type=range]');const mi=+(rg[0]?.value)||0,rest=+(rg[1]?.value)||0,ol=+(rg[2]?.value)||0,sp=+(rg[3]?.value)||10,ex=+(rg[4]?.value)||0,otMul=+(rg[5]?.value)||0;
+// ══ Conceptos personalizados del simulador (doctor, gym, terapia, etc.) ═══
+// Handler inline del input: actualiza el label del slider y dispara runSim
+// para recalcular la proyección sin re-renderizar todo el card.
+function _onSimCustomInput(el){
+  const id=el.getAttribute('data-simc');
+  const amt=+el.getAttribute('data-simc-amt')||0;
+  const freq=+el.value||0;
+  const lbl=document.getElementById('slCV_'+id);
+  if(lbl){
+    const freqLbl=freq===0?'nunca':freq===1?'1×/mes':freq+'×/mes';
+    lbl.textContent=freqLbl+' = '+fx(Math.round(amt*freq))+'/mes';
+  }
+  runSim();
+}
+// Abre el modal para crear (id null) o editar un concepto personalizado.
+function openSimCustomModal(id){
+  if(!S.simCustoms)S.simCustoms=[];
+  const existing=id?S.simCustoms.find(c=>String(c.id)===String(id)):null;
+  const isEdit=!!existing;
+  const curName=existing?existing.name:'';
+  const curAmt=existing?existing.amt:'';
+  const curMax=existing?existing.freqMax:8;
+  const body='<div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:12px">Agrega un gasto variable como <strong>🏥 Doctor</strong>, <strong>🏋️ Gym</strong> o <strong>💆 Terapia</strong> para ver cómo su frecuencia impacta tu proyección.</div>'
+    +'<label style="font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase">Concepto</label>'
+    +'<input type="text" id="scName" placeholder="🏥 Doctor, 🏋️ Gym..." value="'+_escA(curName)+'" style="width:100%;padding:10px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
+    +'<label style="font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase">Monto por visita</label>'
+    +'<input type="number" id="scAmt" placeholder="500" value="'+(curAmt||'')+'" style="width:100%;padding:10px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif" min="0">'
+    +'<label style="font-size:10px;letter-spacing:1px;color:var(--muted);text-transform:uppercase">Máximo de visitas por mes (slider hasta…)</label>'
+    +'<input type="number" id="scMax" value="'+(curMax||8)+'" style="width:100%;padding:10px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-family:Georgia,serif" min="1" max="30">'
+    +'<div style="font-size:10px;color:var(--muted);line-height:1.5;margin-bottom:4px">Ejemplos: 4 ≈ semanal, 2 ≈ quincenal, 1 = mensual, 8 ≈ 2×/sem</div>';
+  showConfirm(isEdit?'✏️ Editar concepto':'➕ Agregar concepto',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button>'
+    +(isEdit?'<button class="btn btn-red btn-sm" onclick="delSimCustom(_xget('+_xref(String(id))+'))">🗑 Eliminar</button>':'')
+    +'<button class="btn btn-sage" onclick="saveSimCustom('+(isEdit?'_xget('+_xref(String(id))+')':'null')+')">Guardar</button>';
+}
+function saveSimCustom(id){
+  const name=(document.getElementById('scName')?.value||'').trim();
+  const amt=+(document.getElementById('scAmt')?.value)||0;
+  const freqMax=Math.max(1,Math.min(30,+(document.getElementById('scMax')?.value)||8));
+  if(!name){toast('Falta nombre del concepto');return;}
+  if(amt<=0){toast('Monto debe ser mayor a 0');return;}
+  if(!S.simCustoms)S.simCustoms=[];
+  if(id){
+    const c=S.simCustoms.find(x=>String(x.id)===String(id));
+    if(c){c.name=name;c.amt=amt;c.freqMax=freqMax;if((+c.freqCur||0)>freqMax)c.freqCur=freqMax;}
+  } else {
+    S.simCustoms.push({id:_uid(),name,amt,freqMax,freqCur:Math.min(1,freqMax)});
+  }
+  sv();
+  closeConfirm();
+  toast(id?'✓ Concepto actualizado':'✓ Concepto agregado');
+  // Limpia los custom values cacheados para que la UI lea el estado persistido
+  if(window._simVals)delete window._simVals.customs;
+  try{rHistoria();}catch(e){_logErr('saveSimCustom',e);}
+}
+function delSimCustom(id){
+  if(!id)return;
+  const c=(S.simCustoms||[]).find(x=>String(x.id)===String(id));
+  if(!c)return;
+  showConfirm('🗑 Eliminar concepto','¿Eliminar <strong>'+_escH(c.name)+'</strong> del simulador?',()=>{
+    S.simCustoms=(S.simCustoms||[]).filter(x=>String(x.id)!==String(id));
+    sv();
+    if(window._simVals&&window._simVals.customs)delete window._simVals.customs[id];
+    toast('✓ Concepto eliminado');
+    try{rHistoria();}catch(e){_logErr('delSimCustom',e);}
+  });
+}
+
+function runSim(){
+  const sl=document.getElementById('simSl');if(!sl)return;
+  // Separar sliders fijos de los custom (data-simc) para no depender de
+  // índices globales cuando el usuario agrega/elimina conceptos.
+  const rgAll=sl.querySelectorAll('input[type=range]');
+  const rg=Array.from(rgAll).filter(r=>!r.hasAttribute('data-simc'));
+  const mi=+(rg[0]?.value)||0,rest=+(rg[1]?.value)||0,ol=+(rg[2]?.value)||0,sp=+(rg[3]?.value)||10,ex=+(rg[4]?.value)||0,otMul=+(rg[5]?.value)||0;
   const bn=document.getElementById('slBon')?.checked||false;
   // Update overtime label
   const otMoney=Math.round(otMul*30.4*172);
   const otLbl=document.getElementById('slOtV');
   if(otLbl)otLbl.textContent=otMul===0?'0× (sin horas extra)':otMul+'× = '+fx(otMoney)+'/mes';
+  // Conceptos personalizados: lee la frecuencia actual de cada slider custom
+  // y la envía a project() como [{amt, freq}]. También persiste freqCur en S
+  // para que al recargar la app el usuario vea lo último que simuló.
+  const customSliders=sl.querySelectorAll('input[type=range][data-simc]');
+  const customsArr=[];
+  let customDirty=false;
+  customSliders.forEach(r=>{
+    const id=r.getAttribute('data-simc');
+    const amt=+r.getAttribute('data-simc-amt')||0;
+    const freq=+r.value||0;
+    customsArr.push({amt,freq});
+    const c=(S.simCustoms||[]).find(x=>String(x.id)===String(id));
+    if(c&&(+c.freqCur||0)!==freq){c.freqCur=freq;customDirty=true;}
+    // Update label
+    const lbl=document.getElementById('slCV_'+id);
+    if(lbl){const freqLbl=freq===0?'nunca':freq===1?'1×/mes':freq+'×/mes';lbl.textContent=freqLbl+' = '+fx(Math.round(amt*freq))+'/mes';}
+  });
+  if(customDirty)sv();
+  const customMonthly=customsArr.reduce((a,c)=>a+c.amt*c.freq,0);
   const H=+simPeriod||12;
-  const base=project(H),mod=project(H,{minisuper:mi,restaurantes:rest,online:ol,savPct:sp,extraDebt:ex,bonusToDebt:bn,overtimeMul:otMul});
+  const base=project(H,{customs:customsArr.map(c=>({amt:c.amt,freq:0}))}); // baseline = customs en 0
+  const mod=project(H,{minisuper:mi,restaurantes:rest,online:ol,savPct:sp,extraDebt:ex,bonusToDebt:bn,overtimeMul:otMul,customs:customsArr});
   const w=320,h=160,all=[...base.map(p=>p.pt),...mod.map(p=>p.pt)],mn=Math.min(...all),mx=Math.max(...all),rn=mx-mn||1,pd=12,cw=w-pd*2,ch=h-pd*2;
   const toP=a=>a.map((p,i)=>({x:pd+i/(a.length-1)*cw,y:pd+(1-(p.pt-mn)/rn)*ch}));
   const bP=toP(base),mP=toP(mod);
@@ -7944,7 +8100,12 @@ const hS=Math.max(0,(hormigaBase-hormigaMod)*2*H);
 const pLbl=H===1?'1m':H+'m';
 document.getElementById('simRes').innerHTML=`<div style="display:flex;gap:6px;margin-bottom:8px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Hoy</div><div style="font-size:13px;font-weight:bold;color:var(--txt)">${fx(mod[0].pt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Patrimonio ${pLbl}</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.pt)}</div><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(mF.pt)}</div></div></div><div style="display:flex;gap:6px"><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda hoy</div><div style="font-size:13px;font-weight:bold;color:var(--terra)">${fx(mod[0].dt)}</div></div><div style="flex:1;text-align:center"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:2px">Deuda ${pLbl}</div><div style="font-size:10px;color:var(--terra);text-decoration:line-through">${fx(bF.dt)}</div><div style="font-size:18px;font-weight:bold;color:${mF.dt>0?'var(--terra)':'var(--sage)'}">${fx(mF.dt)}</div></div></div>`;
 const otImpact=otMoney*H;
-document.getElementById('simImp').innerHTML=`<div class="ct">💡 Impacto en ${H===1?'1 mes':H+' meses'}</div>${pD?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">${pD>0?'📈':'📉'} Patrimonio: <strong style="color:${pD>0?'var(--sage)':'var(--terra)'}">${pD>0?'+':''}${fx(pD)}</strong> en ${pLbl}</div>`:''}${dD>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⛓️ Liquidas <strong style="color:var(--sage)">${fx(dD)} más</strong> de deuda</div>`:''}${otMul>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⏰ Horas extra: <strong style="color:var(--sky)">+${fx(otImpact)}</strong> ingreso adicional en ${pLbl} (${otMul}× ≈ ${Math.round(otMul*30.4)} hrs/mes)</div>`:''}${hS>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">🐜 Ahorras <strong style="color:var(--sage)">${fx(hS)}</strong> en hormiga en ${pLbl}</div>`:''}${!pD&&dD<=0&&hS<=0&&otMul===0?'<div style="font-size:12px;color:var(--muted)">Mueve los sliders para ver el impacto.</div>':''}`;
+// Impacto acumulado de conceptos personalizados (amt × freq × H meses)
+const customImpact=customMonthly*H;
+const customLabel=customsArr.length&&customMonthly>0
+  ?'<div style="font-size:12px;color:var(--txt2);line-height:1.8">⚙️ Conceptos personalizados: <strong style="color:var(--terra)">−'+fx(customImpact)+'</strong> en '+pLbl+' ('+fx(Math.round(customMonthly))+'/mes)</div>'
+  :'';
+document.getElementById('simImp').innerHTML=`<div class="ct">💡 Impacto en ${H===1?'1 mes':H+' meses'}</div>${pD?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">${pD>0?'📈':'📉'} Patrimonio: <strong style="color:${pD>0?'var(--sage)':'var(--terra)'}">${pD>0?'+':''}${fx(pD)}</strong> en ${pLbl}</div>`:''}${dD>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⛓️ Liquidas <strong style="color:var(--sage)">${fx(dD)} más</strong> de deuda</div>`:''}${otMul>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">⏰ Horas extra: <strong style="color:var(--sky)">+${fx(otImpact)}</strong> ingreso adicional en ${pLbl} (${otMul}× ≈ ${Math.round(otMul*30.4)} hrs/mes)</div>`:''}${hS>0?`<div style="font-size:12px;color:var(--txt2);line-height:1.8">🐜 Ahorras <strong style="color:var(--sage)">${fx(hS)}</strong> en hormiga en ${pLbl}</div>`:''}${customLabel}${!pD&&dD<=0&&hS<=0&&otMul===0&&customMonthly===0?'<div style="font-size:12px;color:var(--muted)">Mueve los sliders para ver el impacto.</div>':''}`;
 }
 
 function delSnap(id){if(!confirm('¿Eliminar este capítulo?'))return;pt({snapshots:S.snapshots.filter(s=>s.id!==id)});toast('Capítulo eliminado');rHistoria();}

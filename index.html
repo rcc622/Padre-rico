@@ -367,6 +367,7 @@ let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
   tdcPayments:[],
   simCustoms:[], // FASE 7: conceptos personalizados del simulador (doctor, gym, etc.)
+  simSliders:{}, // FASE 7b: última posición de los sliders del simulador — se hidrata a window._simVals al cargar la app para que sobrevivan al refresh
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
 
 function migrate(){
@@ -413,6 +414,7 @@ function _normalizeState(st){
   if(!isObj(st.deficitDecisions))st.deficitDecisions={};
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
+  if(!isObj(st.simSliders))st.simSliders={};
   const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   if(typeof st.savStreak!=='number')st.savStreak=0;
@@ -444,6 +446,13 @@ function ld(){
     S=merged;
     cleanupOvertimeExtras();
     initSavStreakFields();
+    // Restaura la última posición de los sliders del simulador. Antes los
+    // valores sólo vivían en window._simVals (memoria) y se perdían al refrescar,
+    // por eso el usuario veía que "aunque estuviera bloqueado" el simulador
+    // volvía a los promedios históricos al recargar.
+    if(S.simSliders&&typeof S.simSliders==='object'&&Object.keys(S.simSliders).length){
+      window._simVals={...S.simSliders};
+    }
   }catch(e){_logErr('ld',e);}
 }
 function initSavStreakFields(){
@@ -7975,6 +7984,22 @@ function _captureSimValues(){
   };
 }
 function setSimPeriod(n){_captureSimValues();simPeriod=n;try{rHistoria();}catch(e){_logErr('setSimPeriod',e);}}
+
+// Persiste la posición de los sliders a localStorage (S.simSliders) para que
+// sobrevivan al refresh. Llamado con debounce desde runSim para no saturar
+// localStorage mientras el usuario arrastra un slider.
+let _simPersistT=null;
+function _persistSimVals(){
+  _captureSimValues();
+  if(window._simVals){
+    S.simSliders={...window._simVals};
+    sv();
+  }
+}
+function _schedulePersistSimVals(){
+  if(_simPersistT)clearTimeout(_simPersistT);
+  _simPersistT=setTimeout(_persistSimVals,400);
+}
 // Candado de sliders del simulador — persiste en S._simLocked
 function toggleSimLock(){
   _captureSimValues();
@@ -8236,6 +8261,8 @@ document.getElementById('simImp').innerHTML=
   +whyBlock
   +(plazos?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Plazos estimados</div>'+plazos+'<div style="height:10px"></div>':'')
   +(deltas?'<div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Comparado con tus hábitos reales</div>'+deltas:'');
+// Persiste la posición actual con debounce para que sobreviva al refresh
+_schedulePersistSimVals();
 }
 
 function delSnap(id){if(!confirm('¿Eliminar este capítulo?'))return;pt({snapshots:S.snapshots.filter(s=>s.id!==id)});toast('Capítulo eliminado');rHistoria();}

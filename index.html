@@ -293,9 +293,8 @@ button:active{transform:scale(.97)}
 <div id="fabContainer">
   <div id="fabMenu">
     <div class="fab-item"><span class="fab-label">🛒 Gasto diario</span><button class="fab-mini" onclick="fabAction('diario')" style="color:var(--terra)">🛒</button></div>
-    <div class="fab-item"><span class="fab-label">💰 Apartar ahorro</span><button class="fab-mini" onclick="fabAction('ahorro')" style="color:var(--amber)">💰</button></div>
+    <div class="fab-item"><span class="fab-label">💵 Ingreso extra</span><button class="fab-mini" onclick="fabAction('ingXtra')" style="color:var(--sage)">💵</button></div>
     <div class="fab-item"><span class="fab-label">⏱️ Horas extra</span><button class="fab-mini" onclick="fabAction('hrsxtra')" style="color:var(--sky)">⏱️</button></div>
-    <div class="fab-item"><span class="fab-label">💳 Pagar TDC</span><button class="fab-mini" onclick="fabAction('tdc')" style="color:var(--sky)">💳</button></div>
   </div>
   <button id="fabMain" class="fab-main" onclick="_fabToggle()" aria-label="Acciones rápidas">+</button>
 </div>
@@ -4914,14 +4913,8 @@ function fabAction(type){
   _fabToggle(); // close menu
   setTimeout(()=>{
     if(type==='diario')openQuickDiario();
-    else if(type==='ahorro'){
-      if(typeof openSavCommitModal==='function')openSavCommitModal();
-      else toast('Registra primero un ingreso y activo');
-    }
-    else if(type==='tdc'){
-      const cfg=S.tdcConfig||{};
-      if(!cfg.limit){toast('Configura tu TDC primero en Deudas');go('flujo');return;}
-      if(typeof tdcPay==='function')tdcPay();
+    else if(type==='ingXtra'){
+      if(typeof openQuickExtraIncome==='function')openQuickExtraIncome();
     }
     else if(type==='hrsxtra'){
       // Lleva al usuario a la subvista de Hrs Xtra del Plan de Acción y le
@@ -4935,6 +4928,59 @@ function fabAction(type){
     }
   },180);
 }
+
+// ══ Ingreso extra rápido desde el FAB ══════════════════════════════════
+// Permite registrar un ingreso extra (único o recurrente) sin salir de la
+// pantalla actual. Empuja a S.extras con la misma estructura que usa addExtra()
+// en la sección de Flujo, para que la app ya lo considere en mInc/proyecciones.
+window._qXtraType='unico';
+function openQuickExtraIncome(){
+  window._qXtraType='unico';
+  const today=new Date().toISOString().split('T')[0];
+  const body='<input type="text" id="qxin" placeholder="Concepto (Freelance, venta, bono...)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
+    +'<input type="number" id="qxia" placeholder="Monto $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Tipo</div>'
+    +'<div id="qxiType" style="display:flex;gap:6px;margin-bottom:12px">'
+    +'<button type="button" class="chip chip-sel" data-t="unico" style="flex:1;font-size:12px;padding:8px;background:var(--sagedim);color:var(--sage);font-weight:bold" onclick="_qXtraSetType(\'unico\')">🎯 Único</button>'
+    +'<button type="button" class="chip" data-t="recurrente" style="flex:1;font-size:12px;padding:8px" onclick="_qXtraSetType(\'recurrente\')">🔄 Recurrente</button>'
+    +'</div>'
+    +'<div id="qxiOneShot"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Fecha</div>'
+    +'<input type="date" id="qxid" value="'+today+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
+    +'<div id="qxiRec" style="display:none"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Frecuencia</div>'
+    +'<select id="qxif" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif;background:#fff"><option value="mensual">Mensual</option><option value="quincenal">Quincenal</option><option value="semanal">Semanal</option><option value="bimestral">Bimestral</option></select></div>';
+  showConfirm('💵 Ingreso extra',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="_qXtraSave()">✓ Registrar</button>';
+}
+function _qXtraSetType(t){
+  window._qXtraType=t;
+  document.querySelectorAll('#qxiType button').forEach(b=>{
+    const sel=b.getAttribute('data-t')===t;
+    if(sel){b.classList.add('chip-sel');b.style.background='var(--sagedim)';b.style.color='var(--sage)';b.style.fontWeight='bold';}
+    else{b.classList.remove('chip-sel');b.style.background='';b.style.color='';b.style.fontWeight='';}
+  });
+  const one=document.getElementById('qxiOneShot');const rec=document.getElementById('qxiRec');
+  if(one)one.style.display=t==='unico'?'block':'none';
+  if(rec)rec.style.display=t==='recurrente'?'block':'none';
+}
+function _qXtraSave(){
+  const n=(document.getElementById('qxin')?.value||'').trim();
+  const a=+(document.getElementById('qxia')?.value)||0;
+  if(!n){toast('Falta el concepto');return;}
+  if(a<=0){toast('Monto debe ser mayor a 0');return;}
+  const t=window._qXtraType||'unico';
+  const extra={id:_uid(),name:n,amt:a,tipo:t};
+  if(t==='recurrente'){
+    extra.freq=document.getElementById('qxif')?.value||'mensual';
+  }else{
+    extra.date=document.getElementById('qxid')?.value||new Date().toISOString().split('T')[0];
+  }
+  pt({extras:[...(S.extras||[]),extra]});
+  closeConfirm();
+  toast('✓ Ingreso extra registrado');
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){_logErr('qXtraSave',e);}
+}
+
 // Quick modal for diario (from FAB, without navigating)
 function openQuickDiario(){
   _quickDiarioCat='snack';

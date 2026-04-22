@@ -7374,20 +7374,28 @@ function rHistoria(){
         const vEx=V.ex!==undefined?V.ex:0;
         const vBon=V.bon?'checked':'';
         const otRate=172;
-        // Slider de horas extra en horas/mes directas (0..120, paso 15).
-        // Migra el valor antiguo (multiplicador 0..4) multiplicándolo por 30
-        // para que 1× (antiguo) = 30 hrs/mes = 15 hrs/qna, números enteros.
+        // Slider de horas extra en horas/mes directas (0..120, paso 10).
+        // Migra el valor antiguo (multiplicador 0..4) multiplicándolo por 30.
         const vOtRaw=V.ot!==undefined?V.ot:0;
         const vOt=vOtRaw<=4?vOtRaw*30:vOtRaw;
         const otMoneyInit=Math.round(vOt*otRate);
-        const otLblInit=vOt===0?'0 hrs (sin horas extra)':vOt+' hrs/mes · '+Math.round(vOt/2)+' hrs/qna = '+fx(otMoneyInit)+'/mes';
+        // Helper: convierte hrs/mes a "hrs/día" o "min/día" según el caso.
+        // ≥1 hora: muestra decimales de hora (1.5 hrs/día).
+        // <1 hora: cambia a minutos para evitar 0.3 hrs/día confusos.
+        const fmtDaily=(h)=>{
+          if(h===0)return '0 min/día';
+          const per=h/30;
+          if(per>=1){const r=Math.round(per*10)/10;return r+' hr'+(r!==1?'s':'')+'/día';}
+          return Math.round(per*60)+' min/día';
+        };
+        const otLblInit=vOt===0?'0 hrs (sin horas extra)':vOt+' hrs/mes · '+fmtDaily(vOt)+' = '+fx(otMoneyInit)+'/mes';
       return`
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vMi)}/qna</span></div><input type="range" min="0" max="${maxM}" step="${stepFin}" value="${vMi}" ${disAttr} oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna · step $${stepFin}</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🍔 Restaurantes</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vR)}/qna</span></div><input type="range" min="0" max="${maxR}" step="${stepFin}" value="${vR}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · ideal para fines de semana</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vO)}/qna</span></div><input type="range" min="0" max="${maxO}" step="${stepFin}" value="${vO}" ${disAttr} oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxO)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(oA)}/qna</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${vSav}%</span></div><input type="range" min="5" max="30" step="5" value="${vSav}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vEx)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="${vEx}" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>
-      <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">${otLblInit}</span></div><input type="range" min="0" max="120" step="10" value="${vOt}" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0h</span><span>20h</span><span>40h</span><span>60h</span><span>80h</span><span>100h</span><span>120h</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">Paso de 10 hrs (hrs enteras en mes y quincena). 30 hrs/mes ≈ 1 hr/día laboral. Tarifa: <strong>$172/hr</strong>.</div></div>
+      <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">${otLblInit}</span></div><input type="range" min="0" max="120" step="10" value="${vOt}" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0h</span><span>20h</span><span>40h</span><span>60h</span><span>80h</span><span>100h</span><span>120h</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">Paso de 10 hrs (total mensual). 30 hrs/mes = 1 hr/día. Tarifa: <strong>$172/hr</strong>.</div></div>
       <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} ${vBon} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>`;})()}
       ${(()=>{
         // ══ Conceptos personalizados (doctor, gym, terapia, etc.) ══
@@ -8142,10 +8150,11 @@ function runSim(){
   const rg=Array.from(rgAll).filter(r=>!r.hasAttribute('data-simc'));
   const mi=+(rg[0]?.value)||0,rest=+(rg[1]?.value)||0,ol=+(rg[2]?.value)||0,sp=+(rg[3]?.value)||10,ex=+(rg[4]?.value)||0,otHrs=+(rg[5]?.value)||0;
   const bn=document.getElementById('slBon')?.checked||false;
-  // Update overtime label — muestra hrs/mes, hrs/qna e ingreso mensual
+  // Update overtime label — muestra hrs/mes, equivalente diario e ingreso
   const otMoney=Math.round(otHrs*172);
   const otLbl=document.getElementById('slOtV');
-  if(otLbl)otLbl.textContent=otHrs===0?'0 hrs (sin horas extra)':otHrs+' hrs/mes · '+Math.round(otHrs/2)+' hrs/qna = '+fx(otMoney)+'/mes';
+  const fmtDailyOt=(h)=>{if(h===0)return '0 min/día';const p=h/30;if(p>=1){const r=Math.round(p*10)/10;return r+' hr'+(r!==1?'s':'')+'/día';}return Math.round(p*60)+' min/día';};
+  if(otLbl)otLbl.textContent=otHrs===0?'0 hrs (sin horas extra)':otHrs+' hrs/mes · '+fmtDailyOt(otHrs)+' = '+fx(otMoney)+'/mes';
   // Conceptos personalizados: lee la frecuencia actual de cada slider custom
   // y la envía a project() como [{amt, freq}]. También persiste freqCur en S
   // para que al recargar la app el usuario vea lo último que simuló.

@@ -4455,11 +4455,11 @@ function rFlujo(){try{
     </div>`;
   })()}
 
-  <!-- KPIs de deuda — movidos aquí (debajo del widget TDC) para que el
-       usuario vea totales antes del formulario de registro. -->
-  <div class="g2" style="margin-bottom:13px">
+  <!-- KPI de deuda — removido "Pagos/mes" porque confundía al usuario
+       (mezclaba con gastos fijos). El total en el mes ya aparece desglosado
+       en el simulador. -->
+  <div style="margin-bottom:13px">
     ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?activeDebts.length+' activas':'¡Sin deudas!')}
-    ${kpi('💸 Pagos/mes',fx(tDebtPay()),tDebtPay()>0?'var(--sky)':'var(--sage)',fx(Math.round(tDebtPay()/2))+'/qna')}
   </div>
 
   <!-- ═══ DEUDAS ═══ -->
@@ -4482,7 +4482,7 @@ function rFlujo(){try{
     </div>
     <div id="debtRowNota" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Nota / Etiqueta</label><input type="text" id="dnote" placeholder="CFE, Telmex..." value="${ed?ed.note||'':''}"></div>
-      <div id="debtGrpWrap" style="${df==='unico'?'display:none':''}"><label>Grupo</label><input type="text" id="dgrp" list="grpList" placeholder="Amazon, ML, Nu..." value="${ed&&ed.group?ed.group:''}"><datalist id="grpList">${[...new Set(S.debts.map(x=>x.group).filter(Boolean))].map(g=>'<option value="'+g+'">').join('')}</datalist></div>
+      <div id="debtGrpWrap"><label>Grupo</label><input type="text" id="dgrp" list="grpList" placeholder="Amazon, ML, Nu..." value="${ed&&ed.group?ed.group:''}"><datalist id="grpList">${[...new Set(S.debts.map(x=>x.group).filter(Boolean))].map(g=>'<option value="'+g+'">').join('')}</datalist></div>
     </div>
     <div id="debtRowMsi" style="display:${df==='unico'?'none':'grid'};grid-template-columns:1fr 1fr 2fr;gap:10px;margin-bottom:12px">
       <div><label>Mensualidad #</label><input type="number" id="dcur" placeholder="5" min="1" value="${ed&&ed.curPay?ed.curPay:''}"></div>
@@ -5100,7 +5100,6 @@ function updDebtUnico(){
   const isU=sel.value==='unico';
   const show=(id,disp)=>{const el=document.getElementById(id);if(el)el.style.display=disp;};
   show('debtLiqWrap',isU?'none':'');
-  show('debtGrpWrap',isU?'none':'');
   show('debtRowMsi',isU?'none':'grid');
   show('debtSaldoWrap',isU?'none':'');
   const row=document.getElementById('debtRowNomSaldo');
@@ -5110,7 +5109,7 @@ function updDebtUnico(){
   // Auto-sync liq date with pay date for unico
   if(isU){const pd=document.getElementById('dpd'),lq=document.getElementById('dliq');if(pd&&lq&&pd.value)lq.value=pd.value;}
 }
-function addDebt(){const n=document.getElementById('dn')?.value.trim();const f=document.getElementById('dpf')?.value||'mensual';const pago=+(document.getElementById('dm')?.value)||0;let b=+(document.getElementById('db')?.value)||0;if(f==='unico')b=pago;if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;const liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,note:document.getElementById('dnote')?.value.trim()||'',curPay:f==='unico'?0:(+(document.getElementById('dcur')?.value)||0),totalPays:f==='unico'?0:(+(document.getElementById('dtot')?.value)||0),group:f==='unico'?'':(document.getElementById('dgrp')?.value.trim()||'')}]});toast(f==='unico'?'💳 Pago único registrado':'⛓️ Deuda registrada');rFlujo();}
+function addDebt(){const n=document.getElementById('dn')?.value.trim();const f=document.getElementById('dpf')?.value||'mensual';const pago=+(document.getElementById('dm')?.value)||0;let b=+(document.getElementById('db')?.value)||0;if(f==='unico')b=pago;if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;const liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,note:document.getElementById('dnote')?.value.trim()||'',curPay:f==='unico'?0:(+(document.getElementById('dcur')?.value)||0),totalPays:f==='unico'?0:(+(document.getElementById('dtot')?.value)||0),group:document.getElementById('dgrp')?.value.trim()||''}]});toast(f==='unico'?'💳 Pago único registrado':'⛓️ Deuda registrada');rFlujo();}
 function addAsset(){
   const n=document.getElementById('an')?.value.trim();
   const v=+(document.getElementById('av')?.value)||0;

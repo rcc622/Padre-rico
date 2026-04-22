@@ -7073,12 +7073,25 @@ function project(mo,ov={}){
   // S.simCustoms (con su freqCur actual).
   const customsArr=ov.customs!==undefined?ov.customs:(S.simCustoms||[]).map(c=>({amt:+c.amt||0,freq:+c.freqCur||0}));
   const customMonthly=customsArr.reduce((a,c)=>a+(+c.amt||0)*(+c.freq||0),0);
-  // Metas de ahorro (cajitas): si el usuario las activa, se suman al gasto
-  // mensual fijo del modelo (savGoalPerQ × 2 = aporte mensual al goal).
+  // Metas de ahorro (cajitas): si el usuario activa la casilla, cada meta
+  // aporta $(savGoalPerQ × 2) por mes HASTA SU FECHA COMPROMISO, no durante
+  // todo el horizonte. Antes, en proyecciones 6m/12m la app restaba el mismo
+  // monto los 12 meses aunque la meta ya estuviera "cumplida" a los 2 meses,
+  // subestimando el patrimonio final.
   const includeGoals=!!ov.includeSavGoals;
-  const goalsMonthly=includeGoals
-    ?Math.round((S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)*2)
-    :0;
+  const goalsList=includeGoals
+    ?(S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0)).map(g=>{
+        const today=new Date();today.setHours(0,0,0,0);
+        const dl=g.deadline?new Date(g.deadline+'T12:00'):null;
+        const daysLeft=dl?Math.ceil((dl-today)/864e5):0;
+        const qLeft=Math.max(1,Math.ceil(daysLeft/15));
+        const monthsLeft=Math.max(1,Math.ceil(qLeft/2));
+        return{perMonth:Math.round(savGoalPerQ(g)*2),monthsLeft};
+      })
+    :[];
+  // Aporte total a metas en el mes m (1-indexed). Se activa sólo si la meta
+  // sigue "vigente" en ese mes (m ≤ monthsLeft).
+  const goalsForMonth=(m)=>goalsList.reduce((a,g)=>a+(m<=g.monthsLeft?g.perMonth:0),0);
   // `saved` arranca con los activos actuales (nw() + deudas = activos totales)
   // para que pt = saved - dt coincida con nw() en m=0 y la curva sea continua.
   let dt=tDebt();
@@ -7098,7 +7111,8 @@ function project(mo,ov={}){
     // - hormiga - conceptos personalizados (doctor, gym, etc.).
     //   • fr > 0 → 30% va al ahorro
     //   • fr < 0 → el déficit drena ahorros y, si no alcanza, crea deuda nueva
-    const fr=monthInc-expB-payment-sav-hT_mes-customMonthly-goalsMonthly;
+    const goalsM=goalsForMonth(m);
+    const fr=monthInc-expB-payment-sav-hT_mes-customMonthly-goalsM;
     if(fr>0){
       saved+=fr*0.3;
     } else if(fr<0){
@@ -8283,8 +8297,23 @@ let breakdown='<div style="padding:10px 12px;background:var(--bg2);border-radius
   +(customMonthly>0?breakdownRow('⚙️ Conceptos personalizados','−'+fx(Math.round(customMonthly)),'var(--terra)'):'')
   +(()=>{
     if(!incSavGoals)return'';
-    const gM=Math.round((S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)*2);
-    return gM>0?breakdownRow('🎯 Metas de ahorro','−'+fx(gM),'var(--terra)'):'';
+    const activeG=(S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0));
+    const gM=Math.round(activeG.reduce((a,g)=>a+savGoalPerQ(g),0)*2);
+    if(gM<=0)return'';
+    // Calcula hasta qué mes del horizonte contribuyen las metas (el máximo
+    // monthsLeft entre las activas) para que el usuario vea que la línea
+    // "metas de ahorro" no drena los 12 meses completos si las metas
+    // terminan antes.
+    const today=new Date();today.setHours(0,0,0,0);
+    const maxMonthsLeft=activeG.reduce((a,g)=>{
+      const dl=g.deadline?new Date(g.deadline+'T12:00'):null;
+      const dl_days=dl?Math.ceil((dl-today)/864e5):0;
+      const qL=Math.max(1,Math.ceil(dl_days/15));
+      const mL=Math.max(1,Math.ceil(qL/2));
+      return Math.max(a,mL);
+    },0);
+    const label='🎯 Metas de ahorro'+(H>1?' ('+maxMonthsLeft+(maxMonthsLeft!==1?' meses':' mes')+')':'');
+    return breakdownRow(label,'−'+fx(gM),'var(--terra)');
   })()
   +'<div style="border-top:1px solid var(--border);margin:4px 0"></div>'
   +breakdownRow(fr1>=0?'✅ Te sobra':'⚠️ Te falta',(fr1>=0?'+':'')+fx(fr1),fr1>=0?'var(--sage)':'var(--terra)')

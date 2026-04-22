@@ -4455,9 +4455,17 @@ function rFlujo(){try{
     </div>`;
   })()}
 
+  <!-- KPIs de deuda — movidos aquí (debajo del widget TDC) para que el
+       usuario vea totales antes del formulario de registro. -->
+  <div class="g2" style="margin-bottom:13px">
+    ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?activeDebts.length+' activas':'¡Sin deudas!')}
+    ${kpi('💸 Pagos/mes',fx(tDebtPay()),tDebtPay()>0?'var(--sky)':'var(--sage)',fx(Math.round(tDebtPay()/2))+'/qna')}
+  </div>
+
   <!-- ═══ DEUDAS ═══ -->
-  <div class="card">
-    <div class="ct">${editDebtId?'✏️ Editando deuda':'⛓️ Registrar deuda'}</div>
+  <details class="card" ${editDebtId?'open':''} style="padding:0">
+    <summary style="cursor:pointer;padding:14px 18px;list-style:none;display:flex;justify-content:space-between;align-items:center"><span class="ct" style="margin:0">${editDebtId?'✏️ Editando deuda':'⛓️ Registrar deuda'}</span><span style="font-size:14px;color:var(--muted)">▸</span></summary>
+    <div style="padding:0 18px 14px">
     ${(()=>{const ed=editDebtId?S.debts.find(d=>d.id===editDebtId):null;const df=ed?.freq||'mensual';return`
     <div id="debtRowNomSaldo" style="display:grid;grid-template-columns:${(editDebtId?S.debts.find(d=>d.id===editDebtId)?.freq:'mensual')==='unico'?'1fr':'2fr 1fr'};gap:10px;margin-bottom:10px">
       <div><label>Nombre</label><input type="text" id="dn" placeholder="Tarjeta Nu, Nómina, Auto..." value="${ed?ed.name:''}"></div>
@@ -4484,12 +4492,8 @@ function rFlujo(){try{
     ${df==='unico'?`<div id="debtUnicoHint" style="font-size:11px;color:var(--sky);background:rgba(74,110,140,.06);border-left:2px solid var(--sky);padding:8px 10px;margin-bottom:12px;line-height:1.5">💡 <strong>Pago único:</strong> un desembolso agendado para una fecha futura (no una deuda a plazos). Saldo = pago.</div>`:''}
     ${editDebtId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="saveDebt()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="cancelEdit()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addDebt()">+ Agregar deuda</button>`}
     `;})()}
-  </div>
-
-  <div class="g2" style="margin-bottom:13px">
-    ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?activeDebts.length+' activas':'¡Sin deudas!')}
-    ${kpi('💸 Pagos/mes',fx(tDebtPay()),tDebtPay()>0?'var(--sky)':'var(--sage)',fx(Math.round(tDebtPay()/2))+'/qna')}
-  </div>
+    </div>
+  </details>
 
   <!-- TODAS LAS DEUDAS -->
   ${S.debts.length>0?`

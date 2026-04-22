@@ -7070,6 +7070,12 @@ function project(mo,ov={}){
   // S.simCustoms (con su freqCur actual).
   const customsArr=ov.customs!==undefined?ov.customs:(S.simCustoms||[]).map(c=>({amt:+c.amt||0,freq:+c.freqCur||0}));
   const customMonthly=customsArr.reduce((a,c)=>a+(+c.amt||0)*(+c.freq||0),0);
+  // Metas de ahorro (cajitas): si el usuario las activa, se suman al gasto
+  // mensual fijo del modelo (savGoalPerQ × 2 = aporte mensual al goal).
+  const includeGoals=!!ov.includeSavGoals;
+  const goalsMonthly=includeGoals
+    ?Math.round((S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)*2)
+    :0;
   // `saved` arranca con los activos actuales (nw() + deudas = activos totales)
   // para que pt = saved - dt coincida con nw() en m=0 y la curva sea continua.
   let dt=tDebt();
@@ -7089,7 +7095,7 @@ function project(mo,ov={}){
     // - hormiga - conceptos personalizados (doctor, gym, etc.).
     //   • fr > 0 → 30% va al ahorro
     //   • fr < 0 → el déficit drena ahorros y, si no alcanza, crea deuda nueva
-    const fr=monthInc-expB-payment-sav-hT_mes-customMonthly;
+    const fr=monthInc-expB-payment-sav-hT_mes-customMonthly-goalsMonthly;
     if(fr>0){
       saved+=fr*0.3;
     } else if(fr<0){
@@ -7396,7 +7402,18 @@ function rHistoria(){
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${vSav}%</span></div><input type="range" min="5" max="30" step="5" value="${vSav}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vEx)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="${vEx}" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>
       <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">${otLblInit}</span></div><input type="range" min="0" max="120" step="10" value="${vOt}" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0h</span><span>20h</span><span>40h</span><span>60h</span><span>80h</span><span>100h</span><span>120h</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">Paso de 10 hrs (total mensual). 30 hrs/mes = 1 hr/día. Tarifa: <strong>$172/hr</strong>.</div></div>
-      <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} ${vBon} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>`;})()}
+      <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} ${vBon} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>
+      ${(()=>{
+        // Casilla para considerar metas de ahorro (cajitas) en la proyección.
+        // Suma savGoalPerQ × 2 de todas las metas activas y lo resta del flujo
+        // mensual cuando está activa. Default desactivado para no asustar al
+        // usuario con un déficit al abrir el simulador por primera vez.
+        const activeGoals=(S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0));
+        if(!activeGoals.length)return'';
+        const monthly=Math.round(activeGoals.reduce((a,g)=>a+savGoalPerQ(g),0)*2);
+        const vSavGoals=V.savGoals?'checked':'';
+        return '<label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:'+(simLocked?'not-allowed':'pointer')+';text-transform:none;font-size:12px;color:var(--txt2);opacity:'+(simLocked?'.5':'1')+'"><input type="checkbox" id="slSavGoals" '+(simLocked?'disabled':'')+' '+vSavGoals+' onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Considerar metas de ahorro ('+activeGoals.length+' activa'+(activeGoals.length!==1?'s':'')+' · '+fx(monthly)+'/mes)?</label>';
+      })()}`;})()}
       ${(()=>{
         // ══ Conceptos personalizados (doctor, gym, terapia, etc.) ══
         // Cada concepto tiene nombre, monto por visita y un slider 0..freqMax
@@ -8044,6 +8061,7 @@ function _captureSimValues(){
     mi:+rgFixed[0].value,rest:+rgFixed[1].value,ol:+rgFixed[2].value,
     sav:+rgFixed[3].value,ex:+rgFixed[4].value,ot:+rgFixed[5].value,
     bon:!!document.getElementById('slBon')?.checked,
+    savGoals:!!document.getElementById('slSavGoals')?.checked,
     customs
   };
 }
@@ -8176,7 +8194,8 @@ function runSim(){
   const customMonthly=customsArr.reduce((a,c)=>a+c.amt*c.freq,0);
   const H=+simPeriod||12;
   const base=project(H,{customs:customsArr.map(c=>({amt:c.amt,freq:0}))}); // baseline = customs en 0
-  const mod=project(H,{minisuper:mi,restaurantes:rest,online:ol,savPct:sp,extraDebt:ex,bonusToDebt:bn,overtimeHrs:otHrs,customs:customsArr});
+  const incSavGoals=document.getElementById('slSavGoals')?.checked||false;
+  const mod=project(H,{minisuper:mi,restaurantes:rest,online:ol,savPct:sp,extraDebt:ex,bonusToDebt:bn,overtimeHrs:otHrs,customs:customsArr,includeSavGoals:incSavGoals});
   const w=320,h=160,all=[...base.map(p=>p.pt),...mod.map(p=>p.pt)],mn=Math.min(...all),mx=Math.max(...all),rn=mx-mn||1,pd=12,cw=w-pd*2,ch=h-pd*2;
   const toP=a=>a.map((p,i)=>({x:pd+i/(a.length-1)*cw,y:pd+(1-(p.pt-mn)/rn)*ch}));
   const bP=toP(base),mP=toP(mod);
@@ -8258,6 +8277,11 @@ let breakdown='<div style="padding:10px 12px;background:var(--bg2);border-radius
   +(savAmount>0?breakdownRow('💾 Ahorro '+sp+'%','−'+fx(savAmount),'var(--terra)'):'')
   +(hT_mes>0?breakdownRow('🐜 Hormiga (mini+rest+online)','−'+fx(hT_mes),'var(--terra)'):'')
   +(customMonthly>0?breakdownRow('⚙️ Conceptos personalizados','−'+fx(Math.round(customMonthly)),'var(--terra)'):'')
+  +(()=>{
+    if(!incSavGoals)return'';
+    const gM=Math.round((S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)*2);
+    return gM>0?breakdownRow('🎯 Metas de ahorro','−'+fx(gM),'var(--terra)'):'';
+  })()
   +'<div style="border-top:1px solid var(--border);margin:4px 0"></div>'
   +breakdownRow(fr1>=0?'✅ Te sobra':'⚠️ Te falta',(fr1>=0?'+':'')+fx(fr1),fr1>=0?'var(--sage)':'var(--terra)')
   +'</div>';

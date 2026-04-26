@@ -1050,7 +1050,7 @@ function genSurvivalRetos(deficit){
     let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=qS&&xd<=qE)extQ+=(+x.amt||0);}});
     const incQ=salarioQ+bfQ+extQ;
     let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
-    let dbtQ=0;S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(db.pay||0);else dbtQ+=mo/2;});
+    let dbtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(db.pay||0);else dbtQ+=mo/2;});
     return incQ-expQ-dbtQ-(savAmt()/2);
   }catch(e){return 0;}})();
   if(salarioQ>0&&diezmoQ>=100){
@@ -4598,20 +4598,28 @@ function rFlujo(){try{
       const _paidEntry=(S.paidItems[_ckCur]||{})['debt_'+d.id];
       const _appliedThisQ=_paidEntry&&(_paidEntry==='applied'||(typeof _paidEntry==='object'&&_paidEntry.applied));
       const _intBadge=d.hasInterest&&d.interestAmt>0?'<span class="badge" style="background:rgba(184,92,74,.12);color:var(--terra);border:1px solid rgba(184,92,74,.3)">📊 '+d.interestPct+'% int. · '+fx(d.interestAmt)+'</span>':'';
-      html+='<div style="padding:12px 0;border-bottom:1px solid var(--border)">'+
+      // Estilos visuales fuertes cuando ya se aplicó el pago en la qna actual:
+      // opacidad reducida, fondo verde tenue, monto tachado, badge grande.
+      const paidWrapStyle=_appliedThisQ
+        ?'padding:12px 0;border-bottom:1px solid var(--border);opacity:.55;background:rgba(78,124,106,.06);border-left:3px solid var(--sage);padding-left:10px'
+        :'padding:12px 0;border-bottom:1px solid var(--border)';
+      const paidAmtStyle=_appliedThisQ?'color:var(--muted);text-decoration:line-through':'color:var(--sky)';
+      const paidName=_appliedThisQ?'color:var(--muted);text-decoration:line-through':'color:var(--txt)';
+      const paidBadgeBig=_appliedThisQ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">✓ Pagada esta qna</span>':'';
+      html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
-          '<div class="row"><span style="font-weight:bold;color:var(--txt);font-size:14px">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+_intBadge+(_appliedThisQ?'<span class="badge bdg-sage">✓ Pagada esta qna</span>':'')+'</div>'+
+          '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
           '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
             '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Pago mensualidad</div>'+
-            '<div class="debt-pago-big" style="font-size:22px;font-weight:bold;color:var(--sky)">'+fx(moP)+((d.freq&&d.freq!=='mensual')?'<span style="font-size:11px;color:var(--muted);font-weight:normal"> ('+fx(d.pay)+'/'+freqShort(d.freq)+')</span>':'')+'</div>'+
+            '<div class="debt-pago-big" style="font-size:22px;font-weight:bold;'+paidAmtStyle+'">'+fx(moP)+((d.freq&&d.freq!=='mensual')?'<span style="font-size:11px;color:var(--muted);font-weight:normal"> ('+fx(d.pay)+'/'+freqShort(d.freq)+')</span>':'')+'</div>'+
           '</div>'+
           '<div style="text-align:right">'+
             '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Próx. pago</div>'+
-            '<div style="font-size:14px;font-weight:bold;color:'+col+'">'+(pd?nextPay2:'sin día')+'</div>'+
-            (pd&&nextDays2<=3?'<div style="font-size:10px;color:var(--terra)">'+(nextDays2===0?'¡HOY!':nextDays2===1?'Mañana':'En '+nextDays2+' días')+' ⚠️</div>':'')+
+            '<div style="font-size:14px;font-weight:bold;color:'+(_appliedThisQ?'var(--muted)':col)+'">'+(pd?nextPay2:'sin día')+'</div>'+
+            (pd&&nextDays2<=3&&!_appliedThisQ?'<div style="font-size:10px;color:var(--terra)">'+(nextDays2===0?'¡HOY!':nextDays2===1?'Mañana':'En '+nextDays2+' días')+' ⚠️</div>':'')+
           '</div>'+
         '</div>'+
         '<div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px">'+
@@ -5646,7 +5654,14 @@ try{
   // ── DEBTS ──
   let debtPayQ=0;const debtDetail=[];
   const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
-  S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
+  S.debts.forEach(db=>{
+    // Excluye deudas ya liquidadas o MSI completadas. Antes el iterador no
+    // las filtraba: una deuda con bal=0 cuyo nextPay caía en el ciclo se
+    // mostraba en el Plan aunque ya estuviera saldada (queja del usuario:
+    // "aparecen deudas que ya se cubrieron").
+    if((+db.bal||0)<=0)return;
+    if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;
+    const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
     if(db.nextPay){
       const npd=new Date(db.nextPay+'T12:00');
       // Cae en el ciclo: la deuda se muestra
@@ -6200,7 +6215,7 @@ function renderRetos(){
   let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extQ+=(+x.amt||0);}});
   const incQ=salQ+bfQ+extQ;
   let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
-  let debtQ=0;S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(db.nextPay){const np=new Date(db.nextPay+'T12:00');if(np>=cStart&&np<=cEnd)debtQ+=(+db.pay||0);}else if(f==='quincenal')debtQ+=(db.pay||0);else if(pd>0&&dayInC(pd))debtQ+=mo;else if(!pd)debtQ+=mo/2;});
+  let debtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(db.nextPay){const np=new Date(db.nextPay+'T12:00');if(np>=cStart&&np<=cEnd)debtQ+=(+db.pay||0);}else if(f==='quincenal')debtQ+=(db.pay||0);else if(pd>0&&dayInC(pd))debtQ+=mo;else if(!pd)debtQ+=mo/2;});
   const savQ=savAmt()/2;
   const savGQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);
   const aptQ=getExpSavePlan().reduce((a,e)=>a+e.half,0);

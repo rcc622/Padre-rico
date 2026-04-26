@@ -4947,14 +4947,10 @@ function fabAction(type){
       if(typeof openQuickExtraIncome==='function')openQuickExtraIncome();
     }
     else if(type==='hrsxtra'){
-      // Lleva al usuario a la subvista de Hrs Xtra del Plan de Acción y le
-      // hace scroll al input de fecha del form "Registrar horas".
-      planView='hrsxtra';
-      go('plan');
-      setTimeout(()=>{
-        const el=document.getElementById('otDate');
-        if(el){try{el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}catch(_){}}
-      },150);
+      // Modal rápido para registrar horas extra sin salir de la pantalla.
+      // Antes navegaba a Plan de Acción > Hrs Xtra y hacía scroll, lo que
+      // forzaba al usuario a moverse y volver. Ahora se queda donde está.
+      if(typeof openQuickOvertime==='function')openQuickOvertime();
     }
   },180);
 }
@@ -5009,6 +5005,64 @@ function _qXtraSave(){
   closeConfirm();
   toast('✓ Ingreso extra registrado');
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){_logErr('qXtraSave',e);}
+}
+
+// ══ Horas extra rápidas desde el FAB ══════════════════════════════════
+// Igual que el modal de Ingreso extra, registra una entrada en S.overtimeLog
+// del ciclo actual sin tener que navegar a Plan > Hrs Xtra.
+function openQuickOvertime(){
+  const today=new Date().toISOString().split('T')[0];
+  const body='<div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:12px">Registra las horas trabajadas. Tarifa por defecto: <strong>$172/hr</strong>. Se agregan a la <strong>minuta de la quincena actual</strong>.</div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'
+    +'<div><label>Fecha</label><input type="date" id="qotDate" value="'+today+'"></div>'
+    +'<div><label>De</label><input type="time" id="qotFrom" value="18:00"></div>'
+    +'<div><label>A</label><input type="time" id="qotTo" value="20:00"></div>'
+    +'</div>'
+    +'<div style="margin-bottom:6px"><label>¿Qué hiciste?</label><input type="text" id="qotDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
+    +'<div id="qotPrev" style="font-size:11px;color:var(--muted);margin-top:4px"></div>';
+  showConfirm('⏱️ Registrar horas extra',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="_qOvertimeSave()">⏰ Registrar</button>';
+  // Preview en vivo del total de horas y el monto estimado
+  setTimeout(()=>{
+    const upd=()=>{
+      const f=document.getElementById('qotFrom')?.value||'';
+      const t=document.getElementById('qotTo')?.value||'';
+      const out=document.getElementById('qotPrev');
+      if(!out||!f||!t)return;
+      const [fh,fm]=f.split(':').map(Number);
+      const [th,tm]=t.split(':').map(Number);
+      let h=(th+tm/60)-(fh+fm/60);
+      if(h<=0)h+=24;
+      out.innerHTML='≈ <strong>'+h.toFixed(1)+'h</strong> · '+fx(Math.round(h*172));
+    };
+    ['qotFrom','qotTo'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el)el.oninput=upd;
+    });
+    upd();
+  },50);
+}
+function _qOvertimeSave(){
+  const ck=cycleKey();
+  const dateVal=document.getElementById('qotDate')?.value||new Date().toISOString().split('T')[0];
+  const from=document.getElementById('qotFrom')?.value||'';
+  const to=document.getElementById('qotTo')?.value||'';
+  const desc=(document.getElementById('qotDesc')?.value||'').trim();
+  if(!from||!to){toast('Falta hora de inicio o fin');return;}
+  const [fh,fm]=from.split(':').map(Number);
+  const [th,tm]=to.split(':').map(Number);
+  let hours=(th+tm/60)-(fh+fm/60);
+  if(hours<=0)hours+=24;
+  if(!S.overtimeLog)S.overtimeLog={};
+  if(!S.overtimeLog[ck])S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:0,rate:172,paid:false};
+  S.overtimeLog[ck].entries.push({date:dateVal,from,to,hours:Math.round(hours*10)/10,desc});
+  sv();
+  closeConfirm();
+  const earned=Math.round(hours*S.overtimeLog[ck].rate);
+  toast('⏰ '+hours.toFixed(1)+'h registradas · '+fx(earned));
+  // Refresca la vista actual si aplica
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){_logErr('qOvertimeSave',e);}
 }
 
 // Quick modal for diario (from FAB, without navigating)

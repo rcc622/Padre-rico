@@ -5655,13 +5655,27 @@ try{
   let debtPayQ=0;const debtDetail=[];
   const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
   S.debts.forEach(db=>{
-    // Excluye deudas ya liquidadas o MSI completadas. Antes el iterador no
-    // las filtraba: una deuda con bal=0 cuyo nextPay caía en el ciclo se
-    // mostraba en el Plan aunque ya estuviera saldada (queja del usuario:
-    // "aparecen deudas que ya se cubrieron").
-    if((+db.bal||0)<=0)return;
-    if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;
+    // Una deuda aparece en el Plan del ciclo que se está viendo si:
+    //  • está activa Y su fecha cae en el ciclo, O
+    //  • ya se aplicó el pago en ESTE ciclo (aunque haya quedado liquidada).
+    // Antes mi filtro la sacaba si bal=0 SIN importar si fue pagada en este
+    // ciclo, lo que inflaba el sobrante de la quincena actual (el dinero ya
+    // había salido). Ahora sólo se oculta si está liquidada Y NO fue pagada
+    // en el ciclo viendo. Por eso en próxima qna no reaparecen, pero en la
+    // qna actual siguen contando como egreso.
+    const _appliedInView=!!(S.paidItems[_viewCk]&&S.paidItems[_viewCk]['debt_'+db.id]);
+    const _isLiquidated=(+db.bal||0)<=0||(db.curPay&&db.totalPays&&db.curPay>db.totalPays);
+    if(_isLiquidated&&!_appliedInView)return;
     const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
+    // Si ya se aplicó en este ciclo, inclúyela directo: el dinero salió y
+    // debe contar como egreso del ciclo, sin importar que nextPay haya
+    // avanzado al siguiente periodo.
+    if(_appliedInView){
+      const dayApp=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);
+      debtPayQ+=(+db.pay||0);
+      debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:dayApp,curPay:db.curPay,totalPays:db.totalPays,isLast});
+      return;
+    }
     if(db.nextPay){
       const npd=new Date(db.nextPay+'T12:00');
       // Cae en el ciclo: la deuda se muestra

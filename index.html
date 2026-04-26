@@ -4491,6 +4491,23 @@ function rFlujo(){try{
       <div><label>Total meses</label><input type="number" id="dtot" placeholder="12" min="1" value="${ed&&ed.totalPays?ed.totalPays:''}"></div>
       <div style="display:flex;align-items:flex-end"><div style="font-size:11px;color:var(--muted);padding-bottom:11px">Ej: <strong>5 de 12</strong></div></div>
     </div>
+    <!-- Switch para deuda con/sin interés. Si la prende, expone monto del
+         préstamo y total a pagar para que la calculadora derive interés. -->
+    <div id="debtIntSwitch" style="display:${df==='unico'?'none':'block'};margin-bottom:10px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:normal;font-size:13px;color:var(--txt);font-weight:normal">
+        <input type="checkbox" id="dHasInt" ${ed&&ed.hasInterest?'checked':''} onchange="updDebtInt()" style="width:auto;accent-color:var(--sage)">
+        <span>¿Esta deuda tiene <strong>intereses</strong>?</span>
+      </label>
+    </div>
+    <div id="debtIntWrap" style="display:${(ed&&ed.hasInterest&&df!=='unico')?'block':'none'};background:var(--bg2);padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Calculadora de interés total</div>
+      <div class="g2" style="margin-bottom:10px;gap:10px">
+        <div><label>Monto del préstamo ($)</label><input type="number" id="dPrinc" placeholder="50000" value="${ed&&ed.principal?ed.principal:''}" oninput="calcDebtInterest()"></div>
+        <div><label>Total a pagar ($)</label><input type="number" id="dTotal" placeholder="60000" value="${ed&&ed.totalToPay?ed.totalToPay:''}" oninput="calcDebtInterest()"></div>
+      </div>
+      <button type="button" class="btn btn-ghost btn-sm" style="width:100%;font-size:12px" onclick="calcDebtInterest()">📊 Calcular interés</button>
+      <div id="dIntResult" style="margin-top:10px;font-size:12px;line-height:1.7"></div>
+    </div>
     ${df==='unico'?`<div id="debtUnicoHint" style="font-size:11px;color:var(--sky);background:rgba(74,110,140,.06);border-left:2px solid var(--sky);padding:8px 10px;margin-bottom:12px;line-height:1.5">💡 <strong>Pago único:</strong> un desembolso agendado para una fecha futura (no una deuda a plazos). Saldo = pago.</div>`:''}
     ${editDebtId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="saveDebt()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="cancelEdit()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addDebt()">+ Agregar deuda</button>`}
     `;})()}
@@ -4574,9 +4591,16 @@ function rFlujo(){try{
           if(collapsed){return;}
         }else if(S.debtGroupCollapsed[lastGrp]){return;}
       }
+      // Badge "✓ Pagada esta qna" si ya se aplicó el pago de esta deuda en
+      // el ciclo activo (resuelve la queja del usuario: "ya apliqué el pago
+      // y sigue apareciendo en deudas"; ahora hay un marcador visual claro).
+      const _ckCur=cycleKey();
+      const _paidEntry=(S.paidItems[_ckCur]||{})['debt_'+d.id];
+      const _appliedThisQ=_paidEntry&&(_paidEntry==='applied'||(typeof _paidEntry==='object'&&_paidEntry.applied));
+      const _intBadge=d.hasInterest&&d.interestAmt>0?'<span class="badge" style="background:rgba(184,92,74,.12);color:var(--terra);border:1px solid rgba(184,92,74,.3)">📊 '+d.interestPct+'% int. · '+fx(d.interestAmt)+'</span>':'';
       html+='<div style="padding:12px 0;border-bottom:1px solid var(--border)">'+
         '<div class="row-b" style="margin-bottom:6px">'+
-          '<div class="row"><span style="font-weight:bold;color:var(--txt);font-size:14px">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+'</div>'+
+          '<div class="row"><span style="font-weight:bold;color:var(--txt);font-size:14px">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+_intBadge+(_appliedThisQ?'<span class="badge bdg-sage">✓ Pagada esta qna</span>':'')+'</div>'+
           '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
@@ -5104,6 +5128,8 @@ function updDebtUnico(){
   show('debtLiqWrap',isU?'none':'');
   show('debtRowMsi',isU?'none':'grid');
   show('debtSaldoWrap',isU?'none':'');
+  show('debtIntSwitch',isU?'none':'block');
+  if(isU)show('debtIntWrap','none');
   const row=document.getElementById('debtRowNomSaldo');
   if(row)row.style.gridTemplateColumns=isU?'1fr':'2fr 1fr';
   const lbl=document.getElementById('dpdLbl');
@@ -5111,7 +5137,54 @@ function updDebtUnico(){
   // Auto-sync liq date with pay date for unico
   if(isU){const pd=document.getElementById('dpd'),lq=document.getElementById('dliq');if(pd&&lq&&pd.value)lq.value=pd.value;}
 }
-function addDebt(){const n=document.getElementById('dn')?.value.trim();const f=document.getElementById('dpf')?.value||'mensual';const pago=+(document.getElementById('dm')?.value)||0;let b=+(document.getElementById('db')?.value)||0;if(f==='unico')b=pago;if(!n||!b)return;const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;const liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');pt({debts:[...S.debts,{id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,note:document.getElementById('dnote')?.value.trim()||'',curPay:f==='unico'?0:(+(document.getElementById('dcur')?.value)||0),totalPays:f==='unico'?0:(+(document.getElementById('dtot')?.value)||0),group:document.getElementById('dgrp')?.value.trim()||''}]});toast(f==='unico'?'💳 Pago único registrado':'⛓️ Deuda registrada');rFlujo();}
+// Toggle del bloque de intereses (con/sin) y cálculo en vivo.
+function updDebtInt(){
+  const cb=document.getElementById('dHasInt');
+  const w=document.getElementById('debtIntWrap');
+  if(!cb||!w)return;
+  w.style.display=cb.checked?'block':'none';
+  if(cb.checked)calcDebtInterest();
+}
+function calcDebtInterest(){
+  const p=+(document.getElementById('dPrinc')?.value)||0;
+  const t=+(document.getElementById('dTotal')?.value)||0;
+  const out=document.getElementById('dIntResult');
+  if(!out)return;
+  if(p<=0||t<=0){out.innerHTML='<span style="color:var(--muted)">Ingresa monto del préstamo y total a pagar.</span>';return;}
+  if(t<=p){out.innerHTML='<span style="color:var(--terra)">El total a pagar debe ser mayor al préstamo.</span>';return;}
+  const intAmt=t-p;
+  const intPct=(intAmt/p)*100;
+  out.innerHTML='<div class="row-b" style="margin-bottom:4px"><span>Interés total ($):</span><strong style="color:var(--terra)">'+fx(intAmt)+'</strong></div>'
+    +'<div class="row-b" style="margin-bottom:4px"><span>Interés total (%):</span><strong style="color:var(--terra)">'+intPct.toFixed(1)+'%</strong></div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Por cada $1,000 que te prestaron, regresas $'+fx(Math.round(1000*t/p))+'.</div>';
+}
+function addDebt(){
+  const n=document.getElementById('dn')?.value.trim();
+  const f=document.getElementById('dpf')?.value||'mensual';
+  const pago=+(document.getElementById('dm')?.value)||0;
+  let b=+(document.getElementById('db')?.value)||0;
+  if(f==='unico')b=pago;
+  if(!n||!b)return;
+  const npDate=document.getElementById('dpd')?.value||'';
+  const pd=npDate?new Date(npDate+'T12:00').getDate():0;
+  const liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');
+  // Campos de interés (solo aplican si freq != 'unico' y el switch está prendido)
+  const hasInt=f!=='unico'&&!!document.getElementById('dHasInt')?.checked;
+  const principal=hasInt?(+(document.getElementById('dPrinc')?.value)||0):0;
+  const totalToPay=hasInt?(+(document.getElementById('dTotal')?.value)||0):0;
+  const interestAmt=hasInt&&totalToPay>principal?totalToPay-principal:0;
+  const interestPct=hasInt&&principal>0?+(interestAmt/principal*100).toFixed(2):0;
+  pt({debts:[...S.debts,{
+    id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,
+    note:document.getElementById('dnote')?.value.trim()||'',
+    curPay:f==='unico'?0:(+(document.getElementById('dcur')?.value)||0),
+    totalPays:f==='unico'?0:(+(document.getElementById('dtot')?.value)||0),
+    group:document.getElementById('dgrp')?.value.trim()||'',
+    hasInterest:hasInt,principal,totalToPay,interestAmt,interestPct
+  }]});
+  toast(f==='unico'?'💳 Pago único registrado':'⛓️ Deuda registrada');
+  rFlujo();
+}
 function addAsset(){
   const n=document.getElementById('an')?.value.trim();
   const v=+(document.getElementById('av')?.value)||0;
@@ -5372,7 +5445,12 @@ function toggleDebtGroup(g){if(!S.debtGroupCollapsed)S.debtGroupCollapsed={};S.d
 function saveDebt(){
   const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;
   const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;
-  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||''}:d)});
+  const hasInt=f!=='unico'&&!!document.getElementById('dHasInt')?.checked;
+  const principal=hasInt?(+(document.getElementById('dPrinc')?.value)||0):0;
+  const totalToPay=hasInt?(+(document.getElementById('dTotal')?.value)||0):0;
+  const interestAmt=hasInt&&totalToPay>principal?totalToPay-principal:0;
+  const interestPct=hasInt&&principal>0?+(interestAmt/principal*100).toFixed(2):0;
+  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||'',hasInterest:hasInt,principal,totalToPay,interestAmt,interestPct}:d)});
   editDebtId=null;toast('✓ Deuda actualizada');rFlujo();
 }
 
@@ -5390,7 +5468,26 @@ function applyPayments(){
     const realAmt=typeof v==='object'?v.realAmt:null;
     if(type==='debt'){
       const d2=S.debts.find(x=>x.id===id);
-      if(d2){amt=+d2.pay||0;if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);d2.bal=Math.max(0,(+d2.bal||0)-amt);appliedDebt++;}
+      if(d2){
+        amt=+d2.pay||0;
+        if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);
+        d2.bal=Math.max(0,(+d2.bal||0)-amt);
+        // Avanza nextPay al siguiente periodo según freq, así la deuda
+        // reaparece en el plan del próximo ciclo. Antes nextPay quedaba
+        // congelado y la deuda "desaparecía" después del primer pago.
+        const f2=d2.freq||'mensual';
+        if(f2!=='unico'&&d2.nextPay){
+          const np=new Date(d2.nextPay+'T12:00');
+          if(!isNaN(np)){
+            if(f2==='semanal')np.setDate(np.getDate()+7);
+            else if(f2==='quincenal')np.setDate(np.getDate()+15);
+            else if(f2==='bimestral')np.setMonth(np.getMonth()+2);
+            else np.setMonth(np.getMonth()+1); // mensual
+            d2.nextPay=np.toISOString().split('T')[0];
+          }
+        }
+        appliedDebt++;
+      }
     }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
@@ -5496,10 +5593,21 @@ try{
   let debtPayQ=0;const debtDetail=[];
   const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
   S.debts.forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
-    if(db.nextPay){const npd=new Date(db.nextPay+'T12:00');if(npd>=cStart&&npd<=cEnd){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npd.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});}return;}
-    if(f==='quincenal'){if(pd>0){if(dayInCycle(pd)){debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:pd,curPay:db.curPay,totalPays:db.totalPays,isLast});}}else{debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast});}}
-    else if(pd>0&&dayInCycle(pd)){debtPayQ+=mo;debtDetail.push({id:db.id,name:db.name,amt:mo,day:pd,curPay:db.curPay,totalPays:db.totalPays,isLast});}
-    else if(!pd){debtPayQ+=mo/2;debtDetail.push({id:db.id,name:db.name,amt:mo/2,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast,noDate:true});}
+    if(db.nextPay){
+      const npd=new Date(db.nextPay+'T12:00');
+      // Cae en el ciclo: la deuda se muestra
+      if(npd>=cStart&&npd<=cEnd){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npd.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});return;}
+      // Después del ciclo: no aplica
+      if(npd>cEnd)return;
+      // npd < cStart (fecha pasada/stale): cae al cálculo por payDay/freq
+      // para que la deuda no se quede invisible si nextPay quedó atrasado
+      // (ej. usuario importó datos viejos o la avanzó manual). El payDay
+      // efectivo se infiere del propio nextPay si payDay no está seteado.
+    }
+    const pdEff=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);
+    if(f==='quincenal'){if(pdEff>0){if(dayInCycle(pdEff)){debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:pdEff,curPay:db.curPay,totalPays:db.totalPays,isLast});}}else{debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast});}}
+    else if(pdEff>0&&dayInCycle(pdEff)){debtPayQ+=mo;debtDetail.push({id:db.id,name:db.name,amt:mo,day:pdEff,curPay:db.curPay,totalPays:db.totalPays,isLast});}
+    else if(!pdEff){debtPayQ+=mo/2;debtDetail.push({id:db.id,name:db.name,amt:mo/2,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast,noDate:true});}
   });
 
   // ── SAVINGS & APARTADOS ──

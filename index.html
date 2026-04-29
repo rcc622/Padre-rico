@@ -360,7 +360,7 @@ const _toValidYMD=(s)=>{
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
@@ -405,6 +405,7 @@ function _normalizeState(st){
   if(!isObj(st.debtGroupCollapsed))st.debtGroupCollapsed={};
   if(!isObj(st.overtimeLog))st.overtimeLog={};
   if(!isObj(st.impulseSpent))st.impulseSpent={};
+  if(!isObj(st.gastoDiarioBudgetByCycle))st.gastoDiarioBudgetByCycle={};
   if(!isObj(st.recurringAch))st.recurringAch={};
   if(!isObj(st.userCategories))st.userCategories={};
   if(!isObj(st.habitoFormado))st.habitoFormado={};
@@ -4142,6 +4143,41 @@ const DIARIO_CATS=[
 ];
 const diarioCat=k=>DIARIO_CATS.find(c=>c.k===k)||DIARIO_CATS[DIARIO_CATS.length-1];
 const isEsencial=g=>g&&g.cat==='esencial';
+
+// Helpers para el "Presupuesto de Innecesarios" del ciclo. El budget puede
+// ser por ciclo (gastoDiarioBudgetByCycle) o un default global heredado
+// (gastoDiarioBudget). Lo gastado excluye categoría 'esencial' por petición
+// del usuario: los esenciales viven en gastos fijos, no tocan este budget.
+function getDiarioBudgetForCycle(ck){
+  const byCk=S.gastoDiarioBudgetByCycle||{};
+  if(byCk[ck]!==undefined&&byCk[ck]!==null&&byCk[ck]!=='')return +byCk[ck]||0;
+  return +(S.gastoDiarioBudget||0);
+}
+function setDiarioBudgetForCycle(ck,v){
+  if(!S.gastoDiarioBudgetByCycle)S.gastoDiarioBudgetByCycle={};
+  S.gastoDiarioBudgetByCycle[ck]=+v||0;
+  sv();
+}
+function diariosCycleSpent(ck){
+  try{
+    const w=cycleWindowFromKey(ck);
+    return (S.gastosDiarios||[])
+      .filter(g=>!g.pending&&!isEsencial(g))
+      .filter(g=>{if(!g.date)return false;const d=new Date(g.date+'T12:00');return d>=w.start&&d<=w.end;})
+      .reduce((a,g)=>a+(+g.amt||0),0);
+  }catch(e){_logErr('diariosCycleSpent',e);return 0;}
+}
+function diariosCycleByCat(ck){
+  try{
+    const w=cycleWindowFromKey(ck);
+    const out={};
+    (S.gastosDiarios||[])
+      .filter(g=>!g.pending&&!isEsencial(g))
+      .filter(g=>{if(!g.date)return false;const d=new Date(g.date+'T12:00');return d>=w.start&&d<=w.end;})
+      .forEach(g=>{const k=g.cat||'otro';out[k]=(out[k]||0)+(+g.amt||0);});
+    return out;
+  }catch(e){_logErr('diariosCycleByCat',e);return {};}
+}
 const QUICK_EXP=[
   {n:'🏠 Renta',a:0,c:'Hogar / Renta'},{n:'🏫 Colegio / Escuela',a:0,c:'Educación / Escuelas'},
   {n:'🚗 Seguro Auto',a:0,c:'Seguro auto'},{n:'🏥 Seguro GM',a:0,c:'Seguro gastos médicos'},
@@ -5134,6 +5170,27 @@ function rmDiario(id){
   pt({gastosDiarios:(S.gastosDiarios||[]).filter(g=>g.id!==id)});
   toast('Gasto eliminado');rFlujo();
 }
+// Editor del presupuesto de innecesarios para un ciclo específico (desde el
+// Plan de Acción). Si el usuario lo deja vacío o en 0, se elimina el override
+// y el ciclo vuelve a heredar el budget global S.gastoDiarioBudget.
+function editDiarioBudget(ck){
+  if(!ck)return;
+  const cur=getDiarioBudgetForCycle(ck);
+  const wLbl=(()=>{try{return fmtCycleRange(ck);}catch(e){return ck;}})();
+  const body='<div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:12px">'
+    +'Define cuánto puedes gastar en <strong>innecesarios</strong> (delivery, café, snacks, impulsos…) durante <strong>'+wLbl+'</strong>.'
+    +'<br><br>El monto se restará del sobrante para reflejar tu disponible real. Lo que no gastes <strong>NO</strong> se suma como ingreso — queda reservado para innecesarios.</div>'
+    +'<label>Presupuesto del ciclo ($)</label>'
+    +'<input type="number" id="dBudCk" placeholder="2000" value="'+(cur||'')+'" style="width:100%;padding:11px;font-size:18px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">'
+    +'<div style="font-size:10px;color:var(--muted);font-style:italic">Tip: deja en 0 si no quieres restringir o quieres heredar el global de Día a día.</div>';
+  showConfirm('🛒 Presupuesto · '+wLbl,body,()=>{
+    const v=+(document.getElementById('dBudCk')?.value)||0;
+    setDiarioBudgetForCycle(ck,v);
+    toast('✓ Presupuesto guardado');
+    closeConfirm();
+    try{rPlan();}catch(e){_logErr('editDiarioBudget',e);}
+  });
+}
 function setDiarioBudget(){
   const v=+(document.getElementById('gdBudget')?.value)||0;
   pt({gastoDiarioBudget:v});toast('Presupuesto actualizado');rFlujo();
@@ -5708,7 +5765,15 @@ try{
   // (el botón ✕ en Diarios o en el viejo flujo sigue disponible para limpieza manual).
 
   // ── BUDGET (FIXED) ──
-  const disponible=incQ-expQ-savQ-totalSavQ-debtPayQ;
+  // Restar también el "presupuesto de innecesarios" del ciclo viendo. Usamos
+  // max(budget, gastado) para evitar que el sobrante se infle si el usuario
+  // todavía no gasta todo el budget asignado: si has gastado menos que el
+  // budget, el "restante" sigue reservado mentalmente y NO debe sumarse al
+  // sobrante. Si gastaste de más, el exceso real se descuenta.
+  const _diariosBudgetQ=getDiarioBudgetForCycle(_viewCk);
+  const _diariosSpentQ=diariosCycleSpent(_viewCk);
+  const _diariosForSubtract=Math.max(_diariosBudgetQ,_diariosSpentQ);
+  const disponible=incQ-expQ-savQ-totalSavQ-debtPayQ-_diariosForSubtract;
 
   // ── CHECKED & APPLIED TRACKING ──
   let checkedAmt=0,appliedAmt2=0;
@@ -5892,6 +5957,47 @@ try{
         ${checkedAmt>0?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
       </div>
     </div>`;
+    })()}
+
+    <!-- ═══ PRESUPUESTO DE INNECESARIOS ═══ -->
+    <!-- Vincula S.gastoDiarioBudgetByCycle (budget por ciclo) con
+         S.gastosDiarios (gastos reales diarios, excluyendo 'esencial').
+         Sirve para ver qué tanto del presupuesto innecesario llevas
+         consumido y qué te queda. Se resta del sobrante automáticamente
+         vía max(budget, gastado) al inicio de rPlan. NO se suma como
+         ingreso extra (eso lo registra el usuario manualmente). -->
+    ${(()=>{
+      const _bud=_diariosBudgetQ;
+      const _spent=showNext?0:_diariosSpentQ; // próxima qna aún no tiene gastos
+      const _rest=Math.max(0,_bud-_spent);
+      const _over=_spent>_bud;
+      const _pct=_bud>0?Math.min(100,Math.round(_spent/_bud*100)):0;
+      const _color=_over?'var(--terra)':_pct>=80?'var(--amber)':_pct>=60?'var(--amber)':'var(--sage)';
+      const _byCat=showNext?{}:diariosCycleByCat(_viewCk);
+      const _catLbl={snack:'🍪 Snack',bebida:'🥤 Bebida',delivery:'🍕 Delivery',transporte:'🚗 Transporte',minisuper:'🛒 Minisuper',impulso:'⚡ Impulso',otro:'📦 Otro'};
+      const _maxCatVal=Math.max(...Object.values(_byCat),1);
+      const _entries=Object.entries(_byCat).sort((a,b)=>b[1]-a[1]);
+      return `<div class="card" style="border-left:3px solid ${_color}">
+        <div class="row-b" style="margin-bottom:8px">
+          <div class="ct" style="margin-bottom:0">🛒 Presupuesto innecesarios${showNext?' · próxima qna':''}</div>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="editDiarioBudget('${_viewCk}')">✏️ Editar</button>
+        </div>
+        ${_bud===0?`<div style="font-size:12px;color:var(--muted);line-height:1.7;padding:8px 0">Aún no defines un presupuesto para esta quincena. Tap <strong>✏️ Editar</strong> para fijar cuánto puedes gastar en innecesarios (delivery, café, impulsos…) y se descontará automáticamente del sobrante.</div>`:`
+        <div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px">
+          <span>Gastado</span>
+          <span>Presupuesto ${fx(_bud)}</span>
+        </div>
+        <div class="row-b" style="margin-bottom:8px">
+          <strong style="font-size:22px;color:${_color};font-family:Georgia,serif">${fx(_spent)}</strong>
+          <span style="font-size:12px;color:${_over?'var(--terra)':'var(--sage)'};font-weight:bold">${_over?'⚠ Excedido por '+fx(_spent-_bud):fx(_rest)+' restante'}</span>
+        </div>
+        <div class="pw" style="height:8px;margin-bottom:10px"><div class="pb" style="width:${_pct}%;background:${_color}"></div></div>
+        ${_entries.length>0?`<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Por categoría</div>${_entries.map(([k,v])=>{
+          const w=Math.min(100,Math.round(v/_maxCatVal*100));
+          return `<div style="margin-bottom:6px"><div class="row-b" style="font-size:11px;margin-bottom:2px"><span>${_catLbl[k]||k}</span><span style="font-weight:bold;color:var(--terra)">${fx(Math.round(v))}</span></div><div class="pw" style="height:4px"><div class="pb" style="width:${w}%;background:var(--terra)"></div></div></div>`;
+        }).join('')}`:`<div style="font-size:10px;color:var(--muted);font-style:italic;text-align:center;padding:6px 0">${showNext?'La próxima quincena aún no tiene gastos registrados.':'Sin gastos diarios todavía esta quincena.'}</div>`}
+        <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5;padding-top:8px;border-top:1px dashed var(--border)">💡 ${_over?'Excediste el presupuesto. El extra se cuenta en tu egreso real.':'El gastado se descuenta del sobrante. El restante NO suma como ingreso extra — sigue reservado para innecesarios.'}</div>`}
+      </div>`;
     })()}
 
     <!-- OVERTIME (only next quincena) -->

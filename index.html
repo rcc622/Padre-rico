@@ -4201,19 +4201,21 @@ function setDiarioBudgetForCycle(ck,v){
 function diariosCycleSpent(ck){
   try{
     const w=cycleWindowFromKey(ck);
+    const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
     return (S.gastosDiarios||[])
       .filter(g=>!g.pending&&!isEsencial(g))
-      .filter(g=>{if(!g.date)return false;const d=new Date(g.date+'T12:00');return d>=w.start&&d<=w.end;})
+      .filter(g=>g.date&&g.date>=startYMD&&g.date<=endYMD)
       .reduce((a,g)=>a+(+g.amt||0),0);
   }catch(e){_logErr('diariosCycleSpent',e);return 0;}
 }
 function diariosCycleByCat(ck){
   try{
     const w=cycleWindowFromKey(ck);
+    const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
     const out={};
     (S.gastosDiarios||[])
       .filter(g=>!g.pending&&!isEsencial(g))
-      .filter(g=>{if(!g.date)return false;const d=new Date(g.date+'T12:00');return d>=w.start&&d<=w.end;})
+      .filter(g=>g.date&&g.date>=startYMD&&g.date<=endYMD)
       .forEach(g=>{const k=g.cat||'otro';out[k]=(out[k]||0)+(+g.amt||0);});
     return out;
   }catch(e){_logErr('diariosCycleByCat',e);return {};}
@@ -6613,7 +6615,6 @@ function rHabitos(){
     const totalAll=totalQ+totalEsen;
     const totalPending=pendingList.reduce((a,g)=>a+(+g.amt||0),0);
     const todayISO=_todayYMD();
-    const todayTotal=confirmedList.filter(g=>g.date===todayISO).reduce((a,g)=>a+(+g.amt||0),0);
     const budget=+S.gastoDiarioBudget||0;
     const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
     const bColor=pctB<60?'var(--sage)':pctB<90?'var(--amber)':'var(--terra)';
@@ -6640,9 +6641,10 @@ function rHabitos(){
       return '<div style="font-size:10px;color:var(--muted);margin-bottom:10px;padding:6px 10px;background:rgba(74,110,140,.06);border-radius:4px;border-left:2px solid var(--sky)">ℹ️ Tienes <strong>'+_totalSaved+'</strong> gastos guardados en total · <strong>'+cycleList.length+'</strong> caen en esta quincena ('+w.start.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+' al '+w.end.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+'). Los demás están en otros ciclos.</div>';
     })()}
     <div class="card card-grn" style="margin-bottom:12px">
-      <div class="row-b" style="margin-bottom:${budget>0?'10px':'0'}">
-        <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Gastado esta quincena</div><div class="stat" style="color:${totalQ>budget&&budget>0?'var(--terra)':'var(--sage)'}">${fx(Math.round(totalQ))}</div>${totalEsen>0?`<div style="font-size:10px;color:var(--muted);margin-top:3px">+ 🧾 Esenciales: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> <span style="opacity:.6">(fuera de presup.)</span></div>`:''}</div>
-        <div style="text-align:right"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Hoy</div><div style="font-size:18px;font-weight:bold;color:var(--txt)">${fx(Math.round(todayTotal))}</div></div>
+      <div style="margin-bottom:${budget>0?'10px':'0'}">
+        <div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Gastado esta quincena</div>
+        <div class="stat" style="color:${totalQ>budget&&budget>0?'var(--terra)':'var(--sage)'}">${fx(Math.round(totalQ))}</div>
+        ${totalEsen>0?`<div style="font-size:10px;color:var(--muted);margin-top:3px">+ 🧾 Esenciales: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> <span style="opacity:.6">(fuera de presup.)</span></div>`:''}
       </div>
       ${budget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctB}%;background:${bColor}"></div></div><div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: ${fx(budget)}</span><span style="color:${bColor};font-weight:bold">${pctB}% usado · ${fx(Math.max(0,budget-totalQ))} restante</span></div>`:''}
     </div>
@@ -8808,7 +8810,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidD';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidE';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

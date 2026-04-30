@@ -601,7 +601,16 @@ function fmtCycleRange(ck){
   }catch(e){return ck;}
 }
 let flujoView='ingresos',debtView='plazos';
-let habitView='retos';
+// Sub-vista de Día a día. Se persiste a localStorage para que al refrescar
+// el usuario regrese al mismo sub-tab donde estaba (Retos / Diarios / etc.)
+const _HABIT_VIEWS=['retos','diarios','impulsos','ahorro'];
+let habitView=(()=>{try{const v=localStorage.getItem('prv5_habitView');return _HABIT_VIEWS.includes(v)?v:'retos';}catch(e){return 'retos';}})();
+function setHabitView(v){
+  if(!_HABIT_VIEWS.includes(v))v='retos';
+  habitView=v;
+  try{localStorage.setItem('prv5_habitView',v);}catch(e){}
+  rHabitos();
+}
 function toggleFlujo(sec){flujoView=sec;rFlujo();}
 function showConfirm(title,body,onConfirm){
   _confirmCb=onConfirm;
@@ -673,10 +682,15 @@ function getCycleWindow(ref){
 }
 function diariosThisCycle(ck){
   const w=ck?cycleWindowFromKey(ck):getCycleWindow();
+  // Comparamos como strings YYYY-MM-DD para evitar el bug donde un gasto
+  // guardado el último día del ciclo (ej. día 14 a las 12:00) caía después
+  // de w.end (día 14 00:00) y desaparecía de la lista — el usuario creía
+  // que no se había guardado.
+  const ymd=d=>{const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');const dd=String(d.getDate()).padStart(2,'0');return y+'-'+m+'-'+dd;};
+  const startYMD=ymd(w.start),endYMD=ymd(w.end);
   return (S.gastosDiarios||[]).filter(g=>{
     if(!g.date)return false;
-    const d=new Date(g.date+'T12:00');
-    return d>=w.start&&d<=w.end;
+    return g.date>=startYMD&&g.date<=endYMD;
   });
 }
 // Returns 2 or 3. Counts Saturdays inside the cycle window.
@@ -2300,10 +2314,23 @@ function obDone(){
 
 // ══ ROUTING ═════════════════════════════════════════
 let cur='dash';
+// Tabs válidos para restaurar tras refresh. 'quincena' queda fuera porque ya
+// es modal, no panel de nav.
+const _NAV_TABS=['dash','flujo','plan','habitos','historia'];
+function _persistNavTab(tab){
+  try{localStorage.setItem('prv5_lastTab',tab);}catch(e){}
+}
+function _restoreNavTab(){
+  try{
+    const t=localStorage.getItem('prv5_lastTab');
+    return _NAV_TABS.includes(t)?t:'dash';
+  }catch(e){return 'dash';}
+}
 function go(tab){
   // Backward compat: 'quincena' ya no es tab de nav, es modal
   if(tab==='quincena'){openCierreModal();return;}
   cur=tab;
+  if(_NAV_TABS.includes(tab))_persistNavTab(tab);
   // Solo toca paneles que están en .content (no los del modal cierreQna)
   document.querySelectorAll('.content .panel').forEach(p=>p.classList.remove('act'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('act'));
@@ -2334,7 +2361,7 @@ function hdrUp(){
   const dtEl=document.getElementById('hdr-date');
   if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+cyc;dtEl.title='v'+(window.APP_BUILD||'?');}
 }
-function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go('dash');}
+function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go(_restoreNavTab());}
 
 // ══ HELPERS ═════════════════════════════════════════
 const kpi=(title,val,color,sub)=>`<div class="card" style="margin-bottom:0;text-align:center"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}</div></div>`;
@@ -4382,7 +4409,7 @@ function rFlujo(){try{
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
   `:''}
 
-  ${flujoView==='diarios'?'<div class="card" style="text-align:center;padding:20px"><div style="font-size:12px;color:var(--muted);line-height:1.6">Diarios se movió a <strong>🧠 Día a día → 🛒 Diarios</strong>.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="habitView=\'diarios\';go(\'habitos\')">Ir a Diarios →</button></div>':''}
+  ${flujoView==='diarios'?'<div class="card" style="text-align:center;padding:20px"><div style="font-size:12px;color:var(--muted);line-height:1.6">Diarios se movió a <strong>🧠 Día a día → 🛒 Diarios</strong>.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="setHabitView(\'diarios\');go(\'habitos\')">Ir a Diarios →</button></div>':''}
 
   ${flujoView==='deudas'?`
   <!-- ═══ WIDGET TDC (Fase 8b) ═══ -->
@@ -4941,16 +4968,24 @@ function selDiarioCat(k){
 // recibido como argumento (desde los botones del form). Reemplaza al flujo
 // viejo de addDiario+modal+_confirmDiario que tenía dos pasos y confundía.
 function addDiarioDirect(method){
-  const n=document.getElementById('gdn')?.value.trim();
-  const a=+(document.getElementById('gda')?.value);
-  const d=document.getElementById('gdd')?.value||new Date().toISOString().split('T')[0];
-  if(!n||!a){toast('⚠ Falta concepto o monto');return;}
+  const nEl=document.getElementById('gdn');
+  const aEl=document.getElementById('gda');
+  const dEl=document.getElementById('gdd');
+  const n=(nEl?.value||'').trim();
+  // Acepta coma como decimal (mexicanos a veces escriben "20,50")
+  const rawA=(aEl?.value||'').replace(',','.').trim();
+  const a=parseFloat(rawA);
+  const d=dEl?.value||new Date().toISOString().split('T')[0];
+  // Mensaje específico — antes solo decía "Falta concepto o monto" y el usuario
+  // no sabía cuál de los dos faltaba.
+  if(!n){toast('⚠ Falta el concepto');nEl?.focus();return;}
+  if(!isFinite(a)||a<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');aEl?.focus();return;}
   const newDiario={id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:method||'debito'};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
   _diarioCat='snack';
   // Limpia el form
-  const nEl=document.getElementById('gdn');if(nEl)nEl.value='';
-  const aEl=document.getElementById('gda');if(aEl)aEl.value='';
+  if(nEl)nEl.value='';
+  if(aEl)aEl.value='';
   toast(method==='tdc'?'✓ '+fx(a)+' · 💳 TDC':'✓ '+fx(a)+' · 💵 Débito');
   try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
@@ -6520,7 +6555,7 @@ function rHabitos(){
   const avoided=resolved.filter(w=>!w.bought);
   const totalSaved=avoided.reduce((a,w)=>a+(+w.price||0),0);
 
-  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','🛟 Retos'],['diarios','🛒 Diarios'],['impulsos','⏳ Impulsos'],['ahorro','💰 Ahorro']].map(([id,l])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="habitView='${id}';rHabitos()">${l}</button>`).join('')}</div>`;
+  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','🛟 Retos'],['diarios','🛒 Diarios'],['impulsos','⏳ Impulsos'],['ahorro','💰 Ahorro']].map(([id,l])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setHabitView('${id}')">${l}</button>`).join('')}</div>`;
 
   document.getElementById('tab-habitos').innerHTML=`
   ${habNav}
@@ -6712,7 +6747,7 @@ function rHabitos(){
   <div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
     <div class="ct">🛍️ Sobre el presupuesto</div>
     <div style="font-size:12px;color:var(--txt2);line-height:1.8">El presupuesto de compras no esenciales ahora vive en <strong>Día a día → 🛒 Diarios</strong>. Un solo techo quincenal cubre tanto los antojitos diarios (chicles, cocas, OXXO) como los impulsos grandes que decidas comprar tras las 48h de espera.</div>
-    <button class="btn btn-sage btn-sm" style="margin-top:10px" onclick="habitView='diarios';rHabitos()">Ir a Diarios →</button>
+    <button class="btn btn-sage btn-sm" style="margin-top:10px" onclick="setHabitView('diarios')">Ir a Diarios →</button>
   </div>
 
   ${totalSaved>0?`<div class="card card-grn" style="text-align:center">
@@ -7061,13 +7096,13 @@ function acceptOvertime(deficit,pendingThis,nextTotal){
     // Don't overwrite — preserve entries, just update target
     S.overtimeLog[ck]={...existing,targetHrs:Math.max(existing.targetHrs||0,hrs),deficit,pendingThis,nextTotal};
     sv();closeConfirm();
-    habitView='retos';go('habitos');
+    setHabitView('retos');go('habitos');
     toast('⏰ Reto actualizado · '+(existing.entries.length)+' registros conservados');
     return;
   }
   S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:hrs,rate:RATE,deficit,pendingThis,nextTotal,committedAt:Date.now(),paid:false};
   sv();closeConfirm();
-  habitView='retos';go('habitos');
+  setHabitView('retos');go('habitos');
   toast('⏰ Reto activado: '+hrs+'h de horas extra');
 }
 function logOvertime(otCk){
@@ -8760,7 +8795,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidB';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidC';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

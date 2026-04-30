@@ -7839,19 +7839,20 @@ function rHistoria(){
     <div class="card" id="simSl"><div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">Ajusta tus hábitos ${ib("simulador","Simulador")}</div><button class="btn btn-sm ${simLocked?'btn-red':'btn-ghost'}" style="padding:5px 10px;font-size:11px" onclick="toggleSimLock()">${simLocked?'🔒 Bloqueado':'🔓 Libre'}</button></div>
       ${simLocked?'<div style="font-size:11px;color:var(--terra);background:rgba(184,92,74,.06);padding:8px 10px;border-radius:6px;margin-bottom:12px;line-height:1.5">🔒 Sliders bloqueados. Tap el botón para desbloquear y ajustar.</div>':''}
       ${(()=>{
-        // Todos los sliders de dinero usan el mismo step ($500) y 5 divisiones.
-        // El max se redondea hacia arriba a múltiplo de (nTicks*step) = $2,500
-        // para que los marcadores caigan EXACTAMENTE en valores del step
-        // (ej. 0, 1K, 2K, 3K, 4K, 5K). Antes se dividía max/5 con resultados
-        // como $900, $1,800 que nunca coincidían con la posición real del slider.
+        // Sliders de dinero: por defecto step $500 ($Online lo conserva). Para
+        // Super y Gastos diarios usamos un step más fino ($100) porque son los
+        // dos donde el usuario quiere ajustar con precisión su presupuesto.
+        // El max sigue redondeado a múltiplo de gridStep ($2,500) para que los
+        // ticks caigan EXACTAMENTE en valores redondos (0, 1K, 2K, …).
         const stepFin=500;
+        const stepFine=100;
         const nTicks=5;
         const gridStep=nTicks*stepFin; // 2500
         const roundMax=(v,floor)=>Math.max(Math.ceil(v/gridStep)*gridStep,floor);
         const maxM=roundMax(mA*2,gridStep);
         const maxR=roundMax(rA*2,gridStep);
         const maxO=roundMax(oA*2,gridStep*2); // online default más alto
-        const snap=(v,mx)=>Math.min(mx,Math.max(0,Math.round(v/stepFin)*stepFin));
+        const snap=(v,mx,step)=>{const s=step||stepFin;return Math.min(mx,Math.max(0,Math.round(v/s)*s));};
         const tickRow=(mx)=>{const st=mx/nTicks;return'<div class="sld-ticks">'+Array.from({length:nTicks+1},(_,i)=>'<span>'+fx(Math.round(st*i))+'</span>').join('')+'</div>';};
         const disAttr=simLocked?'disabled style="width:100%;opacity:.5;cursor:not-allowed"':'style="width:100%"';
         // Preserva valores de sliders entre re-renders (bloquear/desbloquear
@@ -7859,8 +7860,8 @@ function rHistoria(){
         // justo antes de rHistoria(). Sin esto, la UI "se desconfiguraba" al
         // togglear el candado porque volvía al promedio histórico.
         const V=window._simVals||{};
-        const vMi=V.mi!==undefined?Math.min(V.mi,maxM):snap(mA,maxM);
-        const vR=V.rest!==undefined?Math.min(V.rest,maxR):snap(rA,maxR);
+        const vMi=V.mi!==undefined?Math.min(V.mi,maxM):snap(mA,maxM,stepFine);
+        const vR=V.rest!==undefined?Math.min(V.rest,maxR):snap(rA,maxR,stepFine);
         const vO=V.ol!==undefined?Math.min(V.ol,maxO):snap(oA,maxO);
         const vSav=V.sav!==undefined?V.sav:Math.max(1,Math.round(+S.savPct||10));
         const vEx=V.ex!==undefined?V.ex:0;
@@ -7882,8 +7883,8 @@ function rHistoria(){
         };
         const otLblInit=vOt===0?'0 hrs (sin horas extra)':vOt+' hrs/mes · '+fmtDaily(vOt)+' = '+fx(otMoneyInit)+'/mes';
       return`
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vMi)}/qna</span></div><input type="range" min="0" max="${maxM}" step="${stepFin}" value="${vMi}" ${disAttr} oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna · step $${stepFin}</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Gastos diarios</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vR)}/qna</span></div><input type="range" min="0" max="${maxR}" step="${stepFin}" value="${vR}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · presupuesto innecesarios</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Super</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vMi)}/qna</span></div><input type="range" min="0" max="${maxM}" step="${stepFine}" value="${vMi}" ${disAttr} oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna · step $${stepFine}</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Gastos diarios</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vR)}/qna</span></div><input type="range" min="0" max="${maxR}" step="${stepFine}" value="${vR}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · step $${stepFine}</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vO)}/qna</span></div><input type="range" min="0" max="${maxO}" step="${stepFin}" value="${vO}" ${disAttr} oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxO)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(oA)}/qna</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${vSav}%</span></div><input type="range" min="1" max="30" step="1" value="${vSav}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>1%</span><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vEx)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="${vEx}" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>
@@ -8885,7 +8886,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidG';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidH';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

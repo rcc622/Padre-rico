@@ -357,6 +357,19 @@ const _toValidYMD=(s)=>{
   }
   return _isValidYMD(out)?out:'';
 };
+// Devuelve YYYY-MM-DD usando la zona horaria LOCAL del dispositivo. Antes
+// usábamos _todayYMD() que está en UTC, así que
+// usuarios al oeste de UTC veían "mañana" después del horario en que su
+// offset cruzaba medianoche UTC (ej. en CDMX, después de las 18:00 la app
+// pensaba que ya era el día siguiente).
+const _ymdLocal=(d)=>{
+  d=d||new Date();
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  const dd=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+dd;
+};
+const _todayYMD=()=>_ymdLocal(new Date());
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -889,7 +902,7 @@ function _confirmPayment(type,id,method,budgeted){
         if(!S.retoChecks[rk])S.retoChecks[rk]=[];
         S.retoChecks[rk]=S.retoChecks[rk].filter(c=>c.idx!==weekIdx);
         const saved=(budgeted-real)>0;
-        S.retoChecks[rk].push({idx:weekIdx,date:new Date().toISOString().split('T')[0],pass:saved||real<=budgeted,realAmt:real,budgeted});
+        S.retoChecks[rk].push({idx:weekIdx,date:_todayYMD(),pass:saved||real<=budgeted,realAmt:real,budgeted});
       }
     }
   }
@@ -928,7 +941,7 @@ function confirmRealAmt(type,id,budgeted){
           // Remove any existing entry for this idx (overwrite)
           S.retoChecks[rk]=S.retoChecks[rk].filter(c=>c.idx!==weekIdx);
           const saved=diff>0;
-          S.retoChecks[rk].push({idx:weekIdx,date:new Date().toISOString().split('T')[0],pass:saved||real<=budgeted,realAmt:real,budgeted});
+          S.retoChecks[rk].push({idx:weekIdx,date:_todayYMD(),pass:saved||real<=budgeted,realAmt:real,budgeted});
         }
       }
     }
@@ -1343,7 +1356,7 @@ function _confirmDeclareHabito(retoId){
   try{
     if(!S.habitoFormado)S.habitoFormado={};
     S.habitoFormado[retoId]={
-      declaredAt:new Date().toISOString().split('T')[0],
+      declaredAt:_todayYMD(),
       completionsAtDeclaration:_countRetoCompletions(retoId),
       recaidas:[]
     };
@@ -1390,7 +1403,7 @@ function applyRetoToDebt(debtId){
 function applyRetoToGoal(goalId){
   const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
   const g=S.savGoals.find(x=>x.id===goalId);
-  if(g){g.saved=(+g.saved||0)+amt;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt,auto:false,note:'Reto completado'}];if(g.saved>=g.target)g.done=true;sv();}
+  if(g){g.saved=(+g.saved||0)+amt;g.deposits=[...(g.deposits||[]),{date:_todayYMD(),amt,auto:false,note:'Reto completado'}];if(g.saved>=g.target)g.done=true;sv();}
   closeConfirm();toast('✅ '+fx(amt)+' abonado a meta');rHabitos();
 }
 function applyRetoAsExtra(retoId){
@@ -1426,7 +1439,7 @@ function toggleRetoCheck(retoId,idx){
   const reto=allR.find(x=>x.id===retoId);
   
   if(!reto){
-    checks.push({idx,date:new Date().toISOString().split('T')[0],pass:true});
+    checks.push({idx,date:_todayYMD(),pass:true});
     S.retoChecks[k]=checks;sv();rHabitos();return;
   }
   
@@ -1475,7 +1488,7 @@ function toggleRetoCheck(retoId,idx){
 function markRetoPass(retoId,idx){
   const ck=cycleKey();const k=retoId+'_'+ck;
   if(!S.retoChecks[k])S.retoChecks[k]=[];
-  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:true});
+  S.retoChecks[k].push({idx,date:_todayYMD(),pass:true});
   sv();closeConfirm();
   // LOAD NEXT TRIGGER: tell user what's next
   try{
@@ -1509,11 +1522,11 @@ function confirmRetoFail(retoId,idx){
   const note=(document.getElementById('retoFailNote')?.value||'').trim();
   const ck=cycleKey();const k=retoId+'_'+ck;
   if(!S.retoChecks[k])S.retoChecks[k]=[];
-  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:false,spent:amt,note});
+  S.retoChecks[k].push({idx,date:_todayYMD(),pass:false,spent:amt,note});
   // NUEVO: Pre-registrar en Diarios como "pendiente de confirmar" (no aparece ya en Plan de Pagos)
   if(amt>0){
     if(!Array.isArray(S.gastosDiarios))S.gastosDiarios=[];
-    const today=new Date().toISOString().split('T')[0];
+    const today=_todayYMD();
     const retoNames={'surv_nocompras':'Compra impulso','surv_lunch':'Comida fuera','surv_delivery':'Delivery','surv_mini':'OXXO/Minisuper','surv_online':'Compra online','surv_cafe':'Cafetería','surv_nada_credito':'Cargo TDC'};
     const fallback=retoNames[retoId]||'Impulso';
     S.gastosDiarios.push({
@@ -1542,7 +1555,7 @@ function confirmRetoExpense(retoId,idx,expId,budgeted){
   // Record reto check (dedup by idx)
   if(!S.retoChecks[k])S.retoChecks[k]=[];
   S.retoChecks[k]=S.retoChecks[k].filter(c=>c.idx!==idx);
-  S.retoChecks[k].push({idx,date:new Date().toISOString().split('T')[0],pass:passed,spent:real,realAmt:real,budgeted});
+  S.retoChecks[k].push({idx,date:_todayYMD(),pass:passed,spent:real,realAmt:real,budgeted});
   // Sync with fixed expense payment — Sem 1 (idx 0) → exp_, Sem 2 (idx 1) → expw2_, Sem 3 (idx 2) → expw3_
   if(expId){
     if(!S.paidItems[ck])S.paidItems[ck]={};
@@ -1580,7 +1593,7 @@ function depositSavGoal(id,prefix){
   if(!amt){toast('Ingresa un monto');return;}
   pt({savGoals:S.savGoals.map(g=>{
     if(g.id!==id)return g;
-    const dep={date:new Date().toISOString().split('T')[0],amt};
+    const dep={date:_todayYMD(),amt};
     const newSaved=(+g.saved||0)+amt;
     return{...g,saved:newSaved,deposits:[...(g.deposits||[]),dep],done:newSaved>=g.target};
   })});
@@ -1774,8 +1787,8 @@ function cyclePaymentTotals(){
   }
   // From Diarios (filter to current cycle)
   const cw=getCycleWindow();
-  const startStr=cw.start.toISOString().split('T')[0];
-  const endStr=cw.end.toISOString().split('T')[0];
+  const startStr=_ymdLocal(cw.start);
+  const endStr=_ymdLocal(cw.end);
   (S.gastosDiarios||[]).forEach(g=>{
     if(!g.date||g.date<startStr||g.date>endStr)return;
     const method=g.paidWith||'debito';
@@ -1840,7 +1853,7 @@ function tdcChargesByBillingCycle(){
       if(v.tdcCleared)return;
       const at=v.at||Date.now();
       const corte=tdcCorteForDate(new Date(at),cfg);
-      const cKey=corte.toISOString().split('T')[0];
+      const cKey=_ymdLocal(corte);
       let amt=+v.amt||+v.realAmt||0;
       if(!amt){
         const [type,idStr]=key.split('_');const id=+idStr;
@@ -1858,7 +1871,7 @@ function tdcChargesByBillingCycle(){
     if(g.paidWith!=='tdc')return;
     if(g.tdcCleared)return;
     const corte=tdcCorteForDate(new Date(g.date),cfg);
-    const cKey=corte.toISOString().split('T')[0];
+    const cKey=_ymdLocal(corte);
     if(!cycles[cKey])cycles[cKey]={corteDate:corte,charges:[],total:0};
     cycles[cKey].charges.push({diarioId:g.id,amt:+g.amt||0,name:g.name,date:g.date});
     cycles[cKey].total+=+g.amt||0;
@@ -2296,7 +2309,7 @@ const qProj=(days=15)=>{
 
 // ══ ONBOARDING ══════════════════════════════════════
 let obS=1;
-const setDL=()=>{const d=new Date();d.setMonth(d.getMonth()+6);document.getElementById('ob-dl').value=d.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});return d.toISOString().split('T')[0]};
+const setDL=()=>{const d=new Date();d.setMonth(d.getMonth()+6);document.getElementById('ob-dl').value=d.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});return _ymdLocal(d)};
 const drawDots=()=>{document.getElementById('dots').innerHTML=[1,2,3].map(i=>`<div class="dot ${i<obS?'ok':i===obS?'cur':''}"></div>`).join('')};
 function obNext(){
   if(obS===1){const g=document.getElementById('ob-goal').value.trim();if(!g){alert('Escribe tu meta 🎯');return;}pt({goal:g,deadline:setDL()});}
@@ -3491,7 +3504,7 @@ function compressOldSnapshots(targetYear){
       delete stripped.allTxns;
       // Keep top10General, keep hormiga with txns (lightweight by design)
       stripped._compressed=true;
-      stripped._compressedAt=new Date().toISOString().split('T')[0];
+      stripped._compressedAt=_todayYMD();
       compressed++;
       return stripped;
     });
@@ -3679,7 +3692,7 @@ function _dismissRecaida(retoId,amt){
   try{
     if(!S.habitoFormado||!S.habitoFormado[retoId])return closeConfirm();
     if(!S.habitoFormado[retoId].recaidas)S.habitoFormado[retoId].recaidas=[];
-    S.habitoFormado[retoId].recaidas.push({date:new Date().toISOString().split('T')[0],amt,dismissed:true});
+    S.habitoFormado[retoId].recaidas.push({date:_todayYMD(),amt,dismissed:true});
     sv();
     closeConfirm();
     toast('Anotado. El hábito sigue marcado como formado.');
@@ -3692,7 +3705,7 @@ function _reactivateFromRecaida(retoId,amt){
     if(!S.habitoFormado||!S.habitoFormado[retoId])return closeConfirm();
     // Log recaída
     if(!S.habitoFormado[retoId].recaidas)S.habitoFormado[retoId].recaidas=[];
-    S.habitoFormado[retoId].recaidas.push({date:new Date().toISOString().split('T')[0],amt,dismissed:false,reactivated:true});
+    S.habitoFormado[retoId].recaidas.push({date:_todayYMD(),amt,dismissed:false,reactivated:true});
     // Remove from habitoFormado
     delete S.habitoFormado[retoId];
     sv();
@@ -3727,7 +3740,7 @@ function saveSnapshot(txns,source){
 
   const snap={
     id:_uid(),
-    date:new Date().toISOString().split('T')[0],
+    date:_todayYMD(),
     source,
     periodStart:dates[0]||'',
     periodEnd:dates[dates.length-1]||'',
@@ -4365,7 +4378,7 @@ function rFlujo(){try{
       <div><label>Tipo</label><select id="xt" onchange="document.getElementById('xfwrap').style.display=this.value==='recurrente'?'block':'none';document.getElementById('xdwrap').style.display=this.value==='unico'?'block':'none';"><option value="unico">Único</option><option value="recurrente">Recurrente</option></select></div>
     </div>
     <div class="g2" style="margin-bottom:10px">
-      <div id="xdwrap"><label>Fecha del ingreso</label><input type="date" id="xd" value="${new Date().toISOString().split('T')[0]}"></div>
+      <div id="xdwrap"><label>Fecha del ingreso</label><input type="date" id="xd" value="${_todayYMD()}"></div>
       <div id="xfwrap" style="display:none"><label>Periodicidad</label><select id="xf"><option value="quincenal">Quincenal</option><option value="mensual" selected>Mensual</option><option value="bimestral">Bimestral</option></select></div>
     </div>
     <button class="btn btn-sage btn-sm" onclick="addExtra()">+ Agregar ingreso extra</button>
@@ -4773,7 +4786,7 @@ function rFlujo(){try{
 function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
 function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
-function calcNextPayISO(dayNum){if(!dayNum)return'';const t=new Date();t.setHours(0,0,0,0);const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();const np=dayNum>=d?new Date(y,m,dayNum):new Date(y,m+1,dayNum);return np.toISOString().split('T')[0];}
+function calcNextPayISO(dayNum){if(!dayNum)return'';const t=new Date();t.setHours(0,0,0,0);const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();const np=dayNum>=d?new Date(y,m,dayNum):new Date(y,m+1,dayNum);return _ymdLocal(np);}
 function updExpFields(){
   const f=document.getElementById('ef')?.value||'mensual';
   const wrap=document.getElementById('expExtraFields');
@@ -4873,7 +4886,7 @@ function _applyIncChange(mode,sal,bv,bf,bfDate,bfLastDay,bvMes,bvDia){
 // Modal para registrar el bono semestral REAL al recibirlo (monto variable)
 function openBvApply(){
   const estimate=+S.inc.bv||0;
-  const today=new Date().toISOString().split('T')[0];
+  const today=_todayYMD();
   const body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:14px">Registra el bono <strong>tal cual te lo pagaron</strong>. Se agregará como ingreso extra de este ciclo.</div>'
     +(estimate>0?'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Estimado registrado: <strong>'+fx(estimate)+'</strong></div>':'')
     +'<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Monto real recibido ($)</label><input type="number" id="_bvReal" value="'+estimate+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sky);font-family:Georgia,serif;border:1px solid var(--border);border-radius:8px;padding:10px" onclick="this.select()"></div>'
@@ -4953,7 +4966,7 @@ function editExp(id){editExpId=id;flujoView='gastos';rFlujo();setTimeout(()=>{do
 function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const t=document.getElementById('xt')?.value||'unico';if(!n||!a)return;
   const extra={id:Date.now(),name:n,amt:a,tipo:t};
   if(t==='recurrente'){extra.freq=document.getElementById('xf')?.value||'mensual';}
-  else{extra.date=document.getElementById('xd')?.value||new Date().toISOString().split('T')[0];}
+  else{extra.date=document.getElementById('xd')?.value||_todayYMD();}
   pt({extras:[...S.extras,extra]});toast('✓ Ingreso extra registrado');rFlujo();}
 function rmExtra(id){pt({extras:S.extras.filter(x=>x.id!==id)});toast('Ingreso extra eliminado');rFlujo();}
 let _diarioCat='snack';
@@ -4975,7 +4988,7 @@ function addDiarioDirect(method){
   // Acepta coma como decimal (mexicanos a veces escriben "20,50")
   const rawA=(aEl?.value||'').replace(',','.').trim();
   const a=parseFloat(rawA);
-  const d=dEl?.value||new Date().toISOString().split('T')[0];
+  const d=dEl?.value||_todayYMD();
   // Mensaje específico — antes solo decía "Falta concepto o monto" y el usuario
   // no sabía cuál de los dos faltaba.
   if(!n){toast('⚠ Falta el concepto');nEl?.focus();return;}
@@ -4995,7 +5008,7 @@ function addDiarioDirect(method){
 function addDiario(){
   const n=document.getElementById('gdn')?.value.trim();
   const a=+(document.getElementById('gda')?.value);
-  const d=document.getElementById('gdd')?.value||new Date().toISOString().split('T')[0];
+  const d=document.getElementById('gdd')?.value||_todayYMD();
   if(!n||!a){toast('Concepto y monto requeridos');return;}
   // FASE 6b: abrir modal para elegir método (mismo patrón que Plan de Acción)
   const catLabel=({snack:'🍪 Snack',bebida:'🥤 Bebida',delivery:'🍕 Delivery',transporte:'🚗 Transporte',minisuper:'🛒 Minisuper',impulso:'⚡ Impulso',esencial:'📋 Esencial',otro:'📦 Otro'})[_diarioCat]||_diarioCat;
@@ -5069,7 +5082,7 @@ function fabAction(type){
 window._qXtraType='unico';
 function openQuickExtraIncome(){
   window._qXtraType='unico';
-  const today=new Date().toISOString().split('T')[0];
+  const today=_todayYMD();
   const body='<input type="text" id="qxin" placeholder="Concepto (Freelance, venta, bono...)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
     +'<input type="number" id="qxia" placeholder="Monto $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Tipo</div>'
@@ -5106,7 +5119,7 @@ function _qXtraSave(){
   if(t==='recurrente'){
     extra.freq=document.getElementById('qxif')?.value||'mensual';
   }else{
-    extra.date=document.getElementById('qxid')?.value||new Date().toISOString().split('T')[0];
+    extra.date=document.getElementById('qxid')?.value||_todayYMD();
   }
   pt({extras:[...(S.extras||[]),extra]});
   closeConfirm();
@@ -5118,7 +5131,7 @@ function _qXtraSave(){
 // Igual que el modal de Ingreso extra, registra una entrada en S.overtimeLog
 // del ciclo actual sin tener que navegar a Plan > Hrs Xtra.
 function openQuickOvertime(){
-  const today=new Date().toISOString().split('T')[0];
+  const today=_todayYMD();
   const body='<div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:12px">Registra las horas trabajadas. Tarifa por defecto: <strong>$172/hr</strong>. Se agregan a la <strong>minuta de la quincena actual</strong>.</div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'
     +'<div><label>Fecha</label><input type="date" id="qotDate" value="'+today+'"></div>'
@@ -5152,7 +5165,7 @@ function openQuickOvertime(){
 }
 function _qOvertimeSave(){
   const ck=cycleKey();
-  const dateVal=document.getElementById('qotDate')?.value||new Date().toISOString().split('T')[0];
+  const dateVal=document.getElementById('qotDate')?.value||_todayYMD();
   const from=document.getElementById('qotFrom')?.value||'';
   const to=document.getElementById('qotTo')?.value||'';
   const desc=(document.getElementById('qotDesc')?.value||'').trim();
@@ -5175,7 +5188,7 @@ function _qOvertimeSave(){
 // Quick modal for diario (from FAB, without navigating)
 function openQuickDiario(){
   _quickDiarioCat='snack';
-  const today=new Date().toISOString().split('T')[0];
+  const today=_todayYMD();
   const cats=[['snack','🍪 Snack'],['bebida','🥤 Bebida'],['delivery','🍕 Delivery'],['transporte','🚗 Transporte'],['minisuper','🛒 Minisuper'],['impulso','⚡ Impulso'],['esencial','📋 Esencial'],['otro','📦 Otro']];
   const body='<input type="text" id="qdn" placeholder="Concepto (Coca OXXO, Uber...)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
     +'<input type="number" id="qda" placeholder="Monto $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
@@ -5197,7 +5210,7 @@ function openQuickDiario(){
 function _quickDiarioSave(method){
   const n=document.getElementById('qdn')?.value.trim();
   const a=+(document.getElementById('qda')?.value);
-  const d=document.getElementById('qdd')?.value||new Date().toISOString().split('T')[0];
+  const d=document.getElementById('qdd')?.value||_todayYMD();
   if(!n||!a){toast('Concepto y monto requeridos');return;}
   const newDiario={id:Date.now(),name:n,amt:a,cat:_quickDiarioCat,date:d,paidWith:method};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
@@ -5292,10 +5305,10 @@ function cerrarQnaDiarios(){
     ()=>{
       const snap={
         id:_uid(),
-        date:new Date().toISOString().split('T')[0],
+        date:_todayYMD(),
         source:'diarios',
-        periodStart:w.start.toISOString().split('T')[0],
-        periodEnd:w.end.toISOString().split('T')[0],
+        periodStart:_ymdLocal(w.start),
+        periodEnd:_ymdLocal(w.end),
         totalGasto:totalG,
         totalTxns:list.length,
         hormiga:catBreakdown,
@@ -5676,14 +5689,14 @@ function applyPayments(){
             else if(f2==='quincenal')np.setDate(np.getDate()+15);
             else if(f2==='bimestral')np.setMonth(np.getMonth()+2);
             else np.setMonth(np.getMonth()+1); // mensual
-            d2.nextPay=np.toISOString().split('T')[0];
+            d2.nextPay=_ymdLocal(np);
           }
         }
         appliedDebt++;
       }
     }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
-    else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:new Date().toISOString().split('T')[0],amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
+    else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:_todayYMD(),amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
     else if(type==='imp'){
       // Find impulse amount from retoChecks (skip super/gas — those are fixed expenses)
@@ -5932,7 +5945,7 @@ try{
       // Escoger el corte más cercano a dueDate pero ANTES
       if(sameCorte<dueDate&&sameCorte>prevCorte)corteDate=sameCorte;
       else corteDate=prevCorte;
-      const corteKey=corteDate.toISOString().split('T')[0];
+      const corteKey=_ymdLocal(corteDate);
       const cycles=tdcChargesByBillingCycle();
       const bucket=cycles[corteKey];
       if(!bucket||bucket.total<=0)return;
@@ -6314,7 +6327,7 @@ try{
         // Form for adding hours — disponible para CUALQUIER log activo (Fase 4.1)
         // Para logs pasados, el default de fecha es la última fecha registrada (o la más reciente del rango)
         const suf=isCurrentCycle?'':'_'+otCk;
-        let defaultDate=new Date().toISOString().split('T')[0];
+        let defaultDate=_todayYMD();
         if(!isCurrentCycle&&ot.entries.length>0){
           const dates=ot.entries.map(e=>e.date).sort();
           defaultDate=dates[dates.length-1]; // most recent entry date in that past cycle
@@ -6599,7 +6612,7 @@ function rHabitos(){
     const totalQ=budgetList.reduce((a,g)=>a+(+g.amt||0),0);
     const totalAll=totalQ+totalEsen;
     const totalPending=pendingList.reduce((a,g)=>a+(+g.amt||0),0);
-    const todayISO=new Date().toISOString().split('T')[0];
+    const todayISO=_todayYMD();
     const todayTotal=confirmedList.filter(g=>g.date===todayISO).reduce((a,g)=>a+(+g.amt||0),0);
     const budget=+S.gastoDiarioBudget||0;
     const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
@@ -6609,7 +6622,7 @@ function rHabitos(){
     const byCat={};
     budgetList.forEach(g=>{const k=g.cat||'otro';byCat[k]=(byCat[k]||0)+(+g.amt||0);});
     const maxCat=Math.max(...Object.values(byCat),1);
-    const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===y.toISOString().split('T')[0])return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
+    const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===_ymdLocal(y))return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
     const longAuto=isLongCycleAuto();
     const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
     const isLong=longAuto||longManual;
@@ -6706,7 +6719,7 @@ function rHabitos(){
     <div class="ct">🔔 Listas para decidir (48h cumplidas)</div>
     ${ready.map(w=>`<div style="padding:12px 0;border-bottom:1px solid var(--border)">
       <div class="row-b" style="margin-bottom:8px">
-        <div><div style="font-weight:bold;color:var(--txt)">${w.name}</div><div style="font-size:11px;color:var(--muted)">${w.store} · ${fmtDate(new Date(w.createdAt).toISOString().split('T')[0])}</div></div>
+        <div><div style="font-weight:bold;color:var(--txt)">${w.name}</div><div style="font-size:11px;color:var(--muted)">${w.store} · ${fmtDate(_ymdLocal(new Date(w.createdAt)))}</div></div>
         <span style="color:var(--terra);font-weight:bold;font-size:16px">${fx(w.price)}</span>
       </div>
       <div style="font-size:13px;color:var(--txt2);margin-bottom:10px">¿Todavía lo necesitas?</div>
@@ -7108,7 +7121,7 @@ function acceptOvertime(deficit,pendingThis,nextTotal){
 function logOvertime(otCk){
   const ck=otCk||cycleKey();
   const suf=otCk?'_'+otCk:'';
-  const dateVal=document.getElementById('otDate'+suf)?.value||new Date().toISOString().split('T')[0];
+  const dateVal=document.getElementById('otDate'+suf)?.value||_todayYMD();
   const from=document.getElementById('otFrom'+suf)?.value||'';
   const to=document.getElementById('otTo'+suf)?.value||'';
   const desc=document.getElementById('otDesc'+suf)?.value?.trim()||'';
@@ -7217,7 +7230,7 @@ function addCustomHabit(){
   if(!items.length){toast('Agrega al menos un gasto que evitas');return;}
   const dailySave=items.reduce((a,it)=>a+it.cost/it.freqDays,0);
   if(!S.customHabits)S.customHabits=[];
-  const startDate=new Date().toISOString().split('T')[0];
+  const startDate=_todayYMD();
   S.customHabits.push({id:Date.now(),name,items,dailySave:Math.round(dailySave*100)/100,checks:[],createdAt:Date.now(),startDate,durationDays});
   sv();toast('🎯 Hábito creado: '+name);rHabitos();
 }
@@ -7241,7 +7254,7 @@ function loadHabitTemplate(tpl){
 }
 function checkCustomHabit(id,date){
   const h=(S.customHabits||[]).find(x=>x.id===id);if(!h)return;
-  const d=date||new Date().toISOString().split('T')[0];
+  const d=date||_todayYMD();
   const already=h.checks.includes(d);
   if(already){
     // Undo with confirm
@@ -7273,10 +7286,10 @@ function renderCustomHabits(){
   if(!S.customHabits?.length)return'';
   // Migrate old habits without startDate
   S.customHabits.forEach(h=>{
-    if(!h.startDate){h.startDate=new Date(h.createdAt||Date.now()).toISOString().split('T')[0];h.durationDays=h.durationDays||30;sv();}
+    if(!h.startDate){h.startDate=_ymdLocal(new Date(h.createdAt||Date.now()));h.durationDays=h.durationDays||30;sv();}
   });
   const today=new Date();today.setHours(0,0,0,0);
-  const todayISO=today.toISOString().split('T')[0];
+  const todayISO=_ymdLocal(today);
   const shortM=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
   return S.customHabits.map(h=>{
     const startD=h.startDate?new Date(h.startDate+'T12:00'):new Date(h.createdAt);
@@ -7288,12 +7301,12 @@ function renderCustomHabits(){
     const daysLeft=Math.max(0,dur-daysSinceStart);
     const pctProgress=Math.min(100,Math.round(daysSinceStart/dur*100));
     const pctChecked=Math.min(100,Math.round(totalDays/dur*100));
-    const streak=(()=>{let s=0;for(let i=0;i<60;i++){const ds=new Date(today.getTime()-i*864e5).toISOString().split('T')[0];if(h.checks.includes(ds))s++;else if(i>0)break;}return s;})();
+    const streak=(()=>{let s=0;for(let i=0;i<60;i++){const ds=_ymdLocal(new Date(today.getTime()-i*864e5));if(h.checks.includes(ds))s++;else if(i>0)break;}return s;})();
     // Build days grid from startDate for duration
     const days=[];
     for(let i=0;i<dur;i++){
       const d=new Date(startD.getTime()+i*864e5);
-      const iso=d.toISOString().split('T')[0];
+      const iso=_ymdLocal(d);
       const isPast=d<today;
       const isToday2=iso===todayISO;
       const isFuture=d>today;
@@ -7351,7 +7364,7 @@ function resolveWait(id,bought){
 }
 function waitToDiario(id){
   const w=S.waitList.find(x=>x.id===id);if(!w){closeConfirm();return;}
-  const today=new Date().toISOString().split('T')[0];
+  const today=_todayYMD();
   pt({
     waitList:S.waitList.map(x=>x.id===id?{...x,resolved:true,bought:true,destino:'debito'}:x),
     gastosDiarios:[...(S.gastosDiarios||[]),{id:Date.now(),name:w.name,amt:w.price,cat:'impulso',date:today,fromWait:id,paidWith:'debito'}]
@@ -7361,7 +7374,7 @@ function waitToDiario(id){
 function waitToCredit(id){
   const w=S.waitList.find(x=>x.id===id);if(!w){closeConfirm();return;}
   // Ask for corte date
-  const today=new Date().toISOString().split('T')[0];
+  const today=_todayYMD();
   showConfirm('💳 Fecha del cargo',
     '<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px"><strong>'+w.name+'</strong> · '+fx(w.price)+'<br>¿En qué fecha se va a cargar a tu tarjeta?</div>'
     +'<input type="date" id="wtcDate" value="'+today+'" style="width:100%;padding:10px;font-family:Georgia,serif;border:1px solid var(--border);border-radius:8px">'
@@ -7372,7 +7385,7 @@ function waitToCredit(id){
 }
 function _finishWaitToCredit(id){
   const w=S.waitList.find(x=>x.id===id);if(!w){closeConfirm();return;}
-  const dt=document.getElementById('wtcDate')?.value||new Date().toISOString().split('T')[0];
+  const dt=document.getElementById('wtcDate')?.value||_todayYMD();
   const pd=new Date(dt+'T12:00').getDate();
   pt({
     waitList:S.waitList.map(x=>x.id===id?{...x,resolved:true,bought:true,destino:'credito'}:x),
@@ -7548,7 +7561,7 @@ const ACHS=[
   // ══ SECRETOS ══
   {id:'sec_madrugador',cat:'secret',e:'🌅',n:'Madrugador',d:'???',secret:true,info:'Registraste horas extra antes de las 6am. El éxito se construye temprano.',ck:()=>{const ot=S.overtimeLog||{};return Object.values(ot).some(o=>o.entries?.some(e=>{const h=+(e.from||'').split(':')[0];return h<6;}));}},
   {id:'sec_nocturno',cat:'secret',e:'🌙',n:'Búho Nocturno',d:'???',secret:true,info:'Registraste horas extra después de las 10pm.',ck:()=>{const ot=S.overtimeLog||{};return Object.values(ot).some(o=>o.entries?.some(e=>{const h=+(e.from||'').split(':')[0];return h>=22;}));}},
-  {id:'sec_streak7',cat:'secret',e:'🔥',n:'Semana de Fuego',d:'???',secret:true,info:'7 días seguidos marcando un hábito personalizado.',ck:()=>(S.customHabits||[]).some(h=>{let s=0;const d=new Date();d.setHours(0,0,0,0);for(let i=0;i<7;i++){if(h.checks?.includes(new Date(d.getTime()-i*864e5).toISOString().split('T')[0]))s++;else break;}return s>=7;})},
+  {id:'sec_streak7',cat:'secret',e:'🔥',n:'Semana de Fuego',d:'???',secret:true,info:'7 días seguidos marcando un hábito personalizado.',ck:()=>(S.customHabits||[]).some(h=>{let s=0;const d=new Date();d.setHours(0,0,0,0);for(let i=0;i<7;i++){if(h.checks?.includes(_ymdLocal(new Date(d.getTime()-i*864e5))))s++;else break;}return s>=7;})},
   {id:'sec_1000saved',cat:'secret',e:'💰',n:'Club de los $1,000',d:'???',secret:true,info:'Ahorraste $1,000+ evitando impulsos en la sala de espera.',ck:()=>S.waitList.filter(w=>w.resolved&&!w.bought).reduce((a,w)=>a+(+w.price||0),0)>=1000},
   {id:'sec_allpaid',cat:'secret',e:'✅',n:'Quincena Perfecta',d:'???',secret:true,info:'Aplicaste TODOS los pagos de una quincena. Control total.',ck:()=>{const ck2=cycleKey();const items=S.paidItems[ck2]||{};const applied=Object.values(items).filter(v=>v==='applied').length;return applied>=5;}},
   {id:'sec_nodebt',cat:'secret',e:'🕊️',n:'Libre',d:'???',secret:true,info:'Todas tus deudas están en $0. Libre de deuda.',ck:()=>S.debts.length>0&&S.debts.every(d=>(+d.bal||0)<=0)},
@@ -8772,7 +8785,7 @@ function toggleSnapDetail(id){expandedSnap=expandedSnap===id?null:id;rHistoria()
 
 function exportData(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='padre-rico-backup-'+new Date().toISOString().split('T')[0]+'.json';a.click();
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='padre-rico-backup-'+_todayYMD()+'.json';a.click();
   toast('📤 Backup exportado');
 }
 function importData(f){
@@ -8795,7 +8808,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidC';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidD';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

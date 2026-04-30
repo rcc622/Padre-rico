@@ -4970,7 +4970,15 @@ function _confirmDiario(method){
   // Clear form
   const nEl=document.getElementById('gdn');if(nEl)nEl.value='';
   const aEl=document.getElementById('gda');if(aEl)aEl.value='';
-  closeConfirm();rFlujo();
+  closeConfirm();
+  // Refrescar la vista activa. El form vive en Día a día (rHabitos), pero
+  // también puede estar disponible desde Plan/Flujo. Antes sólo se llamaba
+  // rFlujo, así que el gasto se guardaba pero la lista en Día a día no se
+  // actualizaba — el usuario creía que no se había guardado.
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){_logErr('confirmDiario.rHabitos',e);}
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){_logErr('confirmDiario.rFlujo',e);}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){_logErr('confirmDiario.rPlan',e);}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){_logErr('confirmDiario.rDash',e);}
   toast(method==='tdc'?'✓ '+fx(amt)+' registrado · 💳 TDC':'✓ '+fx(amt)+' registrado · 💵 Débito');
 }
 // ══ FAB (Floating Action Button) ═══════════════════
@@ -5141,8 +5149,11 @@ function _quickDiarioSave(method){
   _quickDiarioCat='snack';
   closeConfirm();
   toast(method==='tdc'?'✓ '+fx(a)+' · 💳 TDC':'✓ '+fx(a)+' · 💵 Débito');
-  try{if(typeof rFlujo==='function')rFlujo();}catch(e){}
-  try{if(typeof rDash==='function')rDash();}catch(e){}
+  // Refresca la vista activa para que el gasto recién registrado se vea
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
 }
 // FASE 6 · Toast específico para diarios (key distinta porque vive en S.gastosDiarios)
 function toastSwitchDiarioTDC(msg,diarioId){
@@ -5168,7 +5179,11 @@ function _switchDiarioToTDC(){
 }
 function rmDiario(id){
   pt({gastosDiarios:(S.gastosDiarios||[]).filter(g=>g.id!==id)});
-  toast('Gasto eliminado');rFlujo();
+  toast('Gasto eliminado');
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
 }
 // Editor del presupuesto de innecesarios para un ciclo específico (desde el
 // Plan de Acción). Si el usuario lo deja vacío o en 0, se elimina el override
@@ -5193,7 +5208,11 @@ function editDiarioBudget(ck){
 }
 function setDiarioBudget(){
   const v=+(document.getElementById('gdBudget')?.value)||0;
-  pt({gastoDiarioBudget:v});toast('Presupuesto actualizado');rFlujo();
+  pt({gastoDiarioBudget:v});
+  toast('Presupuesto actualizado');
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
 }
 function cerrarQnaDiarios(){
   const list=diariosThisCycle();

@@ -1726,36 +1726,67 @@ function curSavCommit(){return (S.savCommits||{})[cycleKey()]||null;}
 function calcCycleBalance(ck){
   try{
     const paid=(S.paidItems||{})[ck];if(!paid)return null;
-    // Ingreso del ciclo: salario/2 + bono mensual si cae en este ciclo
-    const incH=getIncForCycle(ck);
-    const sal=+incH.sal||0;
-    const bf=+incH.bf||0;
-    let ingreso=sal/2;
-    // Compute cycle window to check if bonus falls in it
     const w=cycleWindowFromKey(ck);
+    const incH=getIncForCycle(ck);
+    const sal=+incH.sal||0,bf=+incH.bf||0;
+
+    // ── INGRESOS ──
+    let ingreso=sal/2;
     if(bf>0&&bonusInCycle(w.start,w.end,incH))ingreso+=bf;
-    // Sumar gastos applied
+    // Extras (recurrentes prorrateados a quincena, únicos sólo si caen en el ciclo)
+    (S.extras||[]).forEach(x=>{
+      if(x.tipo==='recurrente'){
+        ingreso+=toMonthly(+x.amt||0,x.freq||'mensual')/2;
+      }else if(x.date){
+        const xd=new Date(x.date+'T12:00');
+        if(xd>=w.start&&xd<=w.end)ingreso+=(+x.amt||0);
+      }
+    });
+    // Horas extra del ciclo anterior — si están marcadas como pagadas, ya
+    // entraron como ingreso en ESTE ciclo (payroll).
+    const _otSrcCk=prevCycleKeyOf(ck);
+    const _otSrc=_otSrcCk?(S.overtimeLog||{})[_otSrcCk]:null;
+    if(_otSrc&&_otSrc.accepted&&_otSrc.paid){
+      ingreso+=(_otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+_otSrc.rate||0)),0);
+    }
+
+    // ── EGRESOS ── (mismo desglose que Plan de Acción)
     let gastos=0;
+    // 1) Pagos aplicados del Plan (usa amt real registrado al aplicar)
     for(const k in paid){
       if(k.startsWith('_'))continue;
       const v=paid[k];
-      const st=typeof v==='string'?v:(v?.applied?'applied':'selected');
-      if(st!=='applied')continue;
-      const parts=k.split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
-      if(t==='exp'||t==='expw2'){
-        const e=S.exp.find(x=>x.id===idn);if(!e)continue;
-        const amt=+e.amt||0;const fr=e.freq||'mensual';
-        // Quincenal/semanal: cada marca representa la mitad del total qnal
-        if(fr==='semanal'||fr==='quincenal')gastos+=amt/2;
-        else if(fr==='mensual')gastos+=amt/2;
-        else if(fr==='bimestral')gastos+=amt/4;
-        else if(fr==='anual')gastos+=amt/24;
-        else gastos+=amt;
-      }else if(t==='debt'){
-        const d=S.debts.find(x=>x.id===idn);if(!d)continue;
-        gastos+=+d.pay||0;
+      const applied=typeof v==='object'?v.applied:(v==='applied');
+      if(!applied)continue;
+      let amt=typeof v==='object'?(+v.amt||+v.realAmt||0):0;
+      if(!amt){
+        // Fallback para items legacy sin amt registrado
+        const parts=k.split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
+        if(t==='exp'||t==='expw2'||t==='expw3'){
+          const e=S.exp.find(x=>x.id===idn);if(e)amt=+e.amt||0;
+        }else if(t==='debt'){
+          const d=S.debts.find(x=>x.id===idn);if(d)amt=+d.pay||0;
+        }else if(t==='sav'){
+          const g=S.savGoals.find(x=>x.id===idn);if(g)amt=savGoalPerQ(g);
+        }else if(t==='imp'){
+          const i=S.waitList.find(x=>x.id===idn);if(i)amt=+i.price||0;
+        }
       }
+      gastos+=amt;
     }
+    // 2) Gastos diarios del ciclo (todos los no-pending dentro de la ventana)
+    const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
+    (S.gastosDiarios||[]).forEach(g=>{
+      if(g.pending||!g.date)return;
+      if(g.date<startYMD||g.date>endYMD)return;
+      gastos+=+g.amt||0;
+    });
+    // 3) Ahorro apartado (Págate Primero) si se comprometió en el ciclo
+    const sav=(S.savCommits||{})[ck];
+    if(sav&&(sav.status==='committed'||sav.status==='intact'||sav.status==='emergency-kept')){
+      gastos+=+sav.amount||0;
+    }
+
     return Math.round(ingreso-gastos);
   }catch(e){return null;}
 }
@@ -7782,7 +7813,26 @@ function rHistoria(){
   // ═══ SIMULADOR ═══
   if(histView==='sim'){
     const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return Math.round(v.reduce((a,b)=>a+b,0)/v.length);};
-    const rA=aH('🍔 Restaurantes'),mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
+    // Promedio de gastos diarios por quincena: agrupa por ciclo y promedia.
+    // Reemplaza al promedio de "Restaurantes" — ahora el usuario simula sobre
+    // su métrica real (gastos diarios) en vez de una categoría hormiga vieja.
+    const rA=(()=>{
+      const byCk={};
+      (S.gastosDiarios||[]).forEach(g=>{
+        if(g.pending||isEsencial(g)||!g.date)return;
+        const parts=g.date.split('-');if(parts.length!==3)return;
+        const y=+parts[0],m=+parts[1]-1,d=+parts[2];
+        let ck;
+        if(d>=15&&d<=29)ck=y+'-'+(m+1)+'-2da';
+        else if(d>=30)ck=y+'-'+(m+1)+'-1ra';
+        else ck=y+'-'+m+'-1ra';
+        byCk[ck]=(byCk[ck]||0)+(+g.amt||0);
+      });
+      const totals=Object.values(byCk);
+      if(!totals.length)return 0;
+      return Math.round(totals.reduce((a,b)=>a+b,0)/totals.length);
+    })();
+    const mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
     const simLocked=!!S._simLocked; // candado persistente en el estado
     ct=`<div class="card card-sage"><div class="ct">🔮 ¿Qué Pasa Si...?</div><div style="font-size:12px;color:var(--txt2);line-height:1.7">Mueve los sliders y ve en tiempo real cómo tus decisiones impactan tu futuro a 12 meses.</div></div>
     ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Cierre Qna para calibrar los sliders con tus datos reales.</div></div>':''}
@@ -7812,7 +7862,7 @@ function rHistoria(){
         const vMi=V.mi!==undefined?Math.min(V.mi,maxM):snap(mA,maxM);
         const vR=V.rest!==undefined?Math.min(V.rest,maxR):snap(rA,maxR);
         const vO=V.ol!==undefined?Math.min(V.ol,maxO):snap(oA,maxO);
-        const vSav=V.sav!==undefined?V.sav:Math.max(5,Math.round(S.savPct/5)*5);
+        const vSav=V.sav!==undefined?V.sav:Math.max(1,Math.round(+S.savPct||10));
         const vEx=V.ex!==undefined?V.ex:0;
         const vBon=V.bon?'checked':'';
         const otRate=172;
@@ -7833,9 +7883,9 @@ function rHistoria(){
         const otLblInit=vOt===0?'0 hrs (sin horas extra)':vOt+' hrs/mes · '+fmtDaily(vOt)+' = '+fx(otMoneyInit)+'/mes';
       return`
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Minisuper</span><span id="slMV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vMi)}/qna</span></div><input type="range" min="0" max="${maxM}" step="${stepFin}" value="${vMi}" ${disAttr} oninput="document.getElementById('slMV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxM)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(mA)}/qna · step $${stepFin}</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🍔 Restaurantes</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vR)}/qna</span></div><input type="range" min="0" max="${maxR}" step="${stepFin}" value="${vR}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · ideal para fines de semana</div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">🛒 Gastos diarios</span><span id="slRV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vR)}/qna</span></div><input type="range" min="0" max="${maxR}" step="${stepFin}" value="${vR}" ${disAttr} oninput="document.getElementById('slRV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxR)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(rA)}/qna · presupuesto innecesarios</div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">📦 Online</span><span id="slOV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vO)}/qna</span></div><input type="range" min="0" max="${maxO}" step="${stepFin}" value="${vO}" ${disAttr} oninput="document.getElementById('slOV').textContent=fx(+this.value)+'/qna';runSim()">${tickRow(maxO)}<div style="font-size:10px;color:var(--muted);margin-top:6px">Tu promedio: ${fx(oA)}/qna</div></div>
-      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${vSav}%</span></div><input type="range" min="5" max="30" step="5" value="${vSav}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
+      <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💾 Ahorro %</span><span id="slSV" style="font-size:12px;color:var(--sage);font-weight:bold">${vSav}%</span></div><input type="range" min="1" max="30" step="1" value="${vSav}" ${disAttr} oninput="document.getElementById('slSV').textContent=this.value+'%';runSim()"><div class="sld-ticks"><span>1%</span><span>5%</span><span>10%</span><span>15%</span><span>20%</span><span>25%</span><span>30%</span></div></div>
       <div style="margin-bottom:16px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">💸 Pago extra deuda</span><span id="slEV" style="font-size:12px;color:var(--sage);font-weight:bold">${fx(vEx)}/mes</span></div><input type="range" min="0" max="5000" step="1000" value="${vEx}" ${disAttr} oninput="document.getElementById('slEV').textContent=fx(+this.value)+'/mes';runSim()"><div class="sld-ticks"><span>$0</span><span>$1K</span><span>$2K</span><span>$3K</span><span>$4K</span><span>$5K</span></div></div>
       <div style="margin-bottom:16px;border-top:1px dashed var(--border);padding-top:14px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px">⏰ Horas extra</span><span id="slOtV" style="font-size:12px;color:var(--sky);font-weight:bold">${otLblInit}</span></div><input type="range" min="0" max="120" step="10" value="${vOt}" ${simLocked?'disabled style="width:100%;accent-color:var(--sky);opacity:.5;cursor:not-allowed"':'style="width:100%;accent-color:var(--sky)"'} oninput="runSim()"><div class="sld-ticks"><span>0h</span><span>20h</span><span>40h</span><span>60h</span><span>80h</span><span>100h</span><span>120h</span></div><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:6px">Paso de 10 hrs (total mensual). 30 hrs/mes = 1 hr/día. Tarifa: <strong>$172/hr</strong>.</div></div>
       <label style="display:flex;align-items:center;gap:8px;cursor:${simLocked?'not-allowed':'pointer'};text-transform:none;font-size:12px;color:var(--txt2);opacity:${simLocked?'.5':'1'}"><input type="checkbox" id="slBon" ${simLocked?'disabled':''} ${vBon} onchange="runSim()" style="width:auto;accent-color:var(--sage)">¿Aplicar 70% bono semestral (${fx(S.inc.bv)}) a deuda?</label>
@@ -8835,7 +8885,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidF';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidG';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

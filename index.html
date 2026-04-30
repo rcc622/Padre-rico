@@ -4937,6 +4937,26 @@ function selDiarioCat(k){
     else{c.classList.remove('chip-sel');c.style.cssText='';}
   });
 }
+// Versión directa: guarda el gasto en un solo tap, con método de pago
+// recibido como argumento (desde los botones del form). Reemplaza al flujo
+// viejo de addDiario+modal+_confirmDiario que tenía dos pasos y confundía.
+function addDiarioDirect(method){
+  const n=document.getElementById('gdn')?.value.trim();
+  const a=+(document.getElementById('gda')?.value);
+  const d=document.getElementById('gdd')?.value||new Date().toISOString().split('T')[0];
+  if(!n||!a){toast('⚠ Falta concepto o monto');return;}
+  const newDiario={id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:method||'debito'};
+  pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
+  _diarioCat='snack';
+  // Limpia el form
+  const nEl=document.getElementById('gdn');if(nEl)nEl.value='';
+  const aEl=document.getElementById('gda');if(aEl)aEl.value='';
+  toast(method==='tdc'?'✓ '+fx(a)+' · 💳 TDC':'✓ '+fx(a)+' · 💵 Débito');
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+}
 function addDiario(){
   const n=document.getElementById('gdn')?.value.trim();
   const a=+(document.getElementById('gda')?.value);
@@ -5992,30 +6012,23 @@ try{
       const _over=_spent>_bud;
       const _pct=_bud>0?Math.min(100,Math.round(_spent/_bud*100)):0;
       const _color=_over?'var(--terra)':_pct>=80?'var(--amber)':_pct>=60?'var(--amber)':'var(--sage)';
-      const _byCat=showNext?{}:diariosCycleByCat(_viewCk);
-      const _catLbl={snack:'🍪 Snack',bebida:'🥤 Bebida',delivery:'🍕 Delivery',transporte:'🚗 Transporte',minisuper:'🛒 Minisuper',impulso:'⚡ Impulso',otro:'📦 Otro'};
-      const _maxCatVal=Math.max(...Object.values(_byCat),1);
-      const _entries=Object.entries(_byCat).sort((a,b)=>b[1]-a[1]);
+      // Versión compacta: header + barra + montos en una sola línea visual.
+      // Quité el desglose por categoría (sigue disponible en Día a día > Diarios).
       return `<div class="card" style="border-left:3px solid ${_color}">
         <div class="row-b" style="margin-bottom:8px">
           <div class="ct" style="margin-bottom:0">🛒 Presupuesto innecesarios${showNext?' · próxima qna':''}</div>
           <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="editDiarioBudget('${_viewCk}')">✏️ Editar</button>
         </div>
-        ${_bud===0?`<div style="font-size:12px;color:var(--muted);line-height:1.7;padding:8px 0">Aún no defines un presupuesto para esta quincena. Tap <strong>✏️ Editar</strong> para fijar cuánto puedes gastar en innecesarios (delivery, café, impulsos…) y se descontará automáticamente del sobrante.</div>`:`
-        <div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px">
-          <span>Gastado</span>
-          <span>Presupuesto ${fx(_bud)}</span>
-        </div>
-        <div class="row-b" style="margin-bottom:8px">
-          <strong style="font-size:22px;color:${_color};font-family:Georgia,serif">${fx(_spent)}</strong>
-          <span style="font-size:12px;color:${_over?'var(--terra)':'var(--sage)'};font-weight:bold">${_over?'⚠ Excedido por '+fx(_spent-_bud):fx(_rest)+' restante'}</span>
-        </div>
-        <div class="pw" style="height:8px;margin-bottom:10px"><div class="pb" style="width:${_pct}%;background:${_color}"></div></div>
-        ${_entries.length>0?`<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Por categoría</div>${_entries.map(([k,v])=>{
-          const w=Math.min(100,Math.round(v/_maxCatVal*100));
-          return `<div style="margin-bottom:6px"><div class="row-b" style="font-size:11px;margin-bottom:2px"><span>${_catLbl[k]||k}</span><span style="font-weight:bold;color:var(--terra)">${fx(Math.round(v))}</span></div><div class="pw" style="height:4px"><div class="pb" style="width:${w}%;background:var(--terra)"></div></div></div>`;
-        }).join('')}`:`<div style="font-size:10px;color:var(--muted);font-style:italic;text-align:center;padding:6px 0">${showNext?'La próxima quincena aún no tiene gastos registrados.':'Sin gastos diarios todavía esta quincena.'}</div>`}
-        <div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5;padding-top:8px;border-top:1px dashed var(--border)">💡 ${_over?'Excediste el presupuesto. El extra se cuenta en tu egreso real.':'El gastado se descuenta del sobrante. El restante NO suma como ingreso extra — sigue reservado para innecesarios.'}</div>`}
+        ${_bud===0?`<div style="font-size:12px;color:var(--muted);line-height:1.7;padding:8px 0">Aún no defines un presupuesto para esta quincena. Tap <strong>✏️ Editar</strong> para fijar cuánto puedes gastar en innecesarios.</div>`:`
+        <div class="row" style="gap:10px;align-items:center">
+          <div style="flex:1;min-width:0">
+            <div class="pw" style="height:10px"><div class="pb" style="width:${_pct}%;background:${_color}"></div></div>
+          </div>
+          <div style="flex-shrink:0;text-align:right;line-height:1.2">
+            <div style="font-size:13px;font-weight:bold;color:${_color};font-family:Georgia,serif"><span>${fx(_spent)}</span><span style="color:var(--muted);font-weight:normal"> / ${fx(_bud)}</span></div>
+            <div style="font-size:10px;color:${_over?'var(--terra)':'var(--muted)'};margin-top:2px">${_over?'⚠ Excedido por '+fx(_spent-_bud):fx(_rest)+' restante'}</div>
+          </div>
+        </div>`}
       </div>`;
     })()}
 
@@ -6608,7 +6621,14 @@ function rHabitos(){
       </div>
       <div style="margin-bottom:8px"><label>Categoría</label><div class="chips" id="gdCatChips">${DIARIO_CATS.map(c=>`<button type="button" class="chip" data-cat="${c.k}" style="${_diarioCat===c.k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${c.n}</button>`).join('')}</div><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso.</div></div>
       <div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="gdd" value="${todayISO}"></div>
-      <button class="btn btn-sage" onclick="addDiario()">+ Agregar gasto diario</button>
+      <!-- Antes había un solo botón "+ Agregar" que abría un modal pidiendo
+           con qué método pagaste. Algunos usuarios cancelaban el modal por
+           reflejo y el gasto no se guardaba. Ahora hay dos botones grandes
+           que guardan en un solo tap, con su método explícito. -->
+      <div class="row" style="gap:8px">
+        <button type="button" class="btn btn-sage" style="flex:1;padding:14px;font-size:14px" onclick="addDiarioDirect('debito')">💵 Agregar · Débito</button>
+        <button type="button" class="btn" style="flex:1;padding:14px;font-size:14px;background:rgba(74,110,140,.1);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="addDiarioDirect('tdc')">💳 Agregar · TDC</button>
+      </div>
     </div>
   </div>
 

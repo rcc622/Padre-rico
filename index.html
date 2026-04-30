@@ -6570,6 +6570,14 @@ function rHabitos(){
   <div class="card">
     <div class="ct">🛒 Gastos diarios · ${w.type==='1ra'?'1ra':'2da'} quincena</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Compras del día a día que pagas a débito: OXXO, delivery, transporte, snacks. No son recurrentes ni se pagan después — salen ahora.</div>
+    ${(()=>{
+      // Diagnóstico: muestra el total guardado en S.gastosDiarios vs el que
+      // cae en la quincena actual. Si los números no coinciden y hay gastos
+      // recientes que no aparecen, es problema de filtro de fecha (no de save).
+      const _totalSaved=(S.gastosDiarios||[]).length;
+      if(_totalSaved===cycleList.length)return '';
+      return '<div style="font-size:10px;color:var(--muted);margin-bottom:10px;padding:6px 10px;background:rgba(74,110,140,.06);border-radius:4px;border-left:2px solid var(--sky)">ℹ️ Tienes <strong>'+_totalSaved+'</strong> gastos guardados en total · <strong>'+cycleList.length+'</strong> caen en esta quincena ('+w.start.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+' al '+w.end.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+'). Los demás están en otros ciclos.</div>';
+    })()}
     <div class="card card-grn" style="margin-bottom:12px">
       <div class="row-b" style="margin-bottom:${budget>0?'10px':'0'}">
         <div><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">Gastado esta quincena</div><div class="stat" style="color:${totalQ>budget&&budget>0?'var(--terra)':'var(--sage)'}">${fx(Math.round(totalQ))}</div>${totalEsen>0?`<div style="font-size:10px;color:var(--muted);margin-top:3px">+ 🧾 Esenciales: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> <span style="opacity:.6">(fuera de presup.)</span></div>`:''}</div>

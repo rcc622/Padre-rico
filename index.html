@@ -4689,16 +4689,21 @@ function rFlujo(){try{
       const pd=+(d.payDay)||0;
       let nextPay2='—',nextDays2=999;
       if(d.nextPay){
-        // Use actual stored date
-        const np=new Date(d.nextPay+'T12:00');
+        // Use rolled-forward effective date para deudas no-únicas con nextPay
+        // viejo. Antes mostraba "En -14 días" cuando el pago real ya había
+        // pasado pero el record no se actualizó.
+        const np=_effectiveNextPay(d)||new Date(d.nextPay+'T12:00');
+        np.setHours(0,0,0,0);
         const today2=new Date();today2.setHours(0,0,0,0);
         nextPay2=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
-        nextDays2=Math.ceil((np-today2)/864e5);
+        // Math.round + ambos a midnight: evita el off-by-one (12hrs / 86400s
+        // = 0.5 → ceil daba 1 → mostraba "Mañana" cuando era HOY).
+        nextDays2=Math.round((np-today2)/864e5);
       }else if(pd>0){
         const today2=new Date();today2.setHours(0,0,0,0);const td=today2.getDate(),tm=today2.getMonth(),ty=today2.getFullYear();
         const np=pd>=td?new Date(ty,tm,pd):new Date(ty,tm+1,pd);
         nextPay2=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
-        nextDays2=Math.ceil((np-today2)/864e5);
+        nextDays2=Math.round((np-today2)/864e5);
       }
       const urgent=nextDays2<=3;
       const col=urgent?'var(--terra)':nextDays2<=15?'var(--amber)':'var(--sky)';
@@ -4742,7 +4747,7 @@ function rFlujo(){try{
           '<div style="text-align:right">'+
             '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Próx. pago</div>'+
             '<div style="font-size:14px;font-weight:bold;color:'+(_appliedThisQ?'var(--muted)':col)+'">'+(pd?nextPay2:'sin día')+'</div>'+
-            (pd&&nextDays2<=3&&!_appliedThisQ?'<div style="font-size:10px;color:var(--terra)">'+(nextDays2===0?'¡HOY!':nextDays2===1?'Mañana':'En '+nextDays2+' días')+' ⚠️</div>':'')+
+            (pd&&nextDays2<=3&&!_appliedThisQ?'<div style="font-size:10px;color:var(--terra)">'+(nextDays2<0?'Vencido hace '+Math.abs(nextDays2)+' día'+(nextDays2===-1?'':'s'):nextDays2===0?'¡HOY!':nextDays2===1?'Mañana':'En '+nextDays2+' días')+' ⚠️</div>':'')+
           '</div>'+
         '</div>'+
         '<div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px">'+
@@ -4834,6 +4839,29 @@ function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(fr
 function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function calcNextPayISO(dayNum){if(!dayNum)return'';const t=new Date();t.setHours(0,0,0,0);const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();const np=dayNum>=d?new Date(y,m,dayNum):new Date(y,m+1,dayNum);return _ymdLocal(np);}
+// Devuelve la próxima fecha de pago efectiva para una deuda. Si nextPay está
+// en el pasado y la deuda NO es única, rueda hacia adelante según la
+// frecuencia hasta que caiga >= hoy. Esto cubre el caso de pagos aplicados
+// fuera del flujo normal (legacy, ediciones manuales, importaciones) donde
+// nextPay quedó atrasado y la deuda mostraba "En -14 días" o desaparecía
+// del Plan. Devuelve null si la deuda no tiene nextPay.
+function _effectiveNextPay(d){
+  if(!d||!d.nextPay)return null;
+  const np=new Date(d.nextPay+'T12:00');
+  if(isNaN(np))return null;
+  np.setHours(0,0,0,0);
+  const f=d.freq||'mensual';
+  if(f==='unico')return np;
+  const today=new Date();today.setHours(0,0,0,0);
+  let safety=120;
+  while(np<today&&safety-->0){
+    if(f==='semanal')np.setDate(np.getDate()+7);
+    else if(f==='quincenal')np.setDate(np.getDate()+15);
+    else if(f==='bimestral')np.setMonth(np.getMonth()+2);
+    else np.setMonth(np.getMonth()+1);
+  }
+  return np;
+}
 function updExpFields(){
   const f=document.getElementById('ef')?.value||'mensual';
   const wrap=document.getElementById('expExtraFields');
@@ -5879,15 +5907,17 @@ try{
       return;
     }
     if(db.nextPay){
-      const npd=new Date(db.nextPay+'T12:00');
+      // Para deudas no-únicas con nextPay viejo (pagos legacy, ediciones
+      // manuales), usamos la fecha efectiva rodada al siguiente periodo
+      // válido. Antes el filtro skipeaba o caía a un cálculo por payDay
+      // que no reflejaba el verdadero próximo pago.
+      const npd=_effectiveNextPay(db)||new Date(db.nextPay+'T12:00');
       // Cae en el ciclo: la deuda se muestra
       if(npd>=cStart&&npd<=cEnd){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npd.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});return;}
       // Después del ciclo: no aplica
       if(npd>cEnd)return;
-      // npd < cStart (fecha pasada/stale): cae al cálculo por payDay/freq
-      // para que la deuda no se quede invisible si nextPay quedó atrasado
-      // (ej. usuario importó datos viejos o la avanzó manual). El payDay
-      // efectivo se infiere del propio nextPay si payDay no está seteado.
+      // npd < cStart sólo puede pasar para deudas únicas vencidas. Cae al
+      // cálculo por payDay/freq abajo para no dejarlas invisibles.
     }
     const pdEff=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);
     if(f==='quincenal'){if(pdEff>0){if(dayInCycle(pdEff)){debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:pdEff,curPay:db.curPay,totalPays:db.totalPays,isLast});}}else{debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast});}}
@@ -8886,7 +8916,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidH';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidI';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

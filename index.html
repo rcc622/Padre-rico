@@ -438,6 +438,24 @@ function _normalizeState(st){
       a.yldPct=+(a.inc*12/a.val*100).toFixed(2);
     }
   });
+  // Migración: overtimeLog con paid:true no estaba sumando el dinero a las
+  // extras (el botón "Ya me las pagaron" sólo marcaba paid sin registrar
+  // el ingreso). Creamos el extra retroactivamente para que el balance
+  // refleje el dinero recibido.
+  if(st.overtimeLog&&typeof st.overtimeLog==='object'){
+    Object.entries(st.overtimeLog).forEach(([ck,ot])=>{
+      if(!ot||!ot.paid||ot._extraCreated)return;
+      const totalHrs=(ot.entries||[]).reduce((a,e)=>a+(+e.hours||0),0);
+      const totalMoney=Math.round(totalHrs*(+ot.rate||0));
+      if(totalMoney<=0){ot._extraCreated=true;return;}
+      const exists=(st.extras||[]).some(x=>x&&x.fromOvertime===ck);
+      if(!exists){
+        const paidYMD=ot.paidAt?String(ot.paidAt).split('T')[0]:_ymdLocal(new Date());
+        st.extras.push({id:Date.now()+Math.floor(Math.random()*1000),name:'Horas extra ('+ck+')',amt:totalMoney,tipo:'unico',date:paidYMD,fromOvertime:ck});
+      }
+      ot._extraCreated=true;
+    });
+  }
   if(typeof st.savStreak!=='number')st.savStreak=0;
   if(typeof st.savStreakBest!=='number')st.savStreakBest=0;
   if(typeof st.savPct!=='number')st.savPct=10;
@@ -4466,8 +4484,28 @@ function rFlujo(){try{
     ${S.extras.length>0?`<div style="margin-top:12px">
     ${S.extras.filter(x=>x.tipo==='recurrente').length>0?`<div style="font-size:10px;color:var(--sage);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Recurrentes</div>
     ${S.extras.filter(x=>x.tipo==='recurrente').map(x=>{const mo=toMonthly(x.amt,x.freq||'mensual');return`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-sage">Recurrente</span>${freqName(x.freq||'mensual')?`<span class="badge bdg-sky">${freqName(x.freq)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(Math.round(mo))}/mes</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`;}).join('')}`:''}
-    ${S.extras.filter(x=>x.tipo!=='recurrente').length>0?`<div style="font-size:10px;color:var(--amber);margin:10px 0 6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Únicos</div>
-    ${S.extras.filter(x=>x.tipo!=='recurrente').map(x=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-amber">Único</span>${x.date?`<span style="font-size:10px;color:var(--muted)">${fmtDate(x.date)}</span>`:''}</div><div class="row" style="gap:6px"><span style="color:var(--sage);font-weight:bold">+${fx(x.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`).join('')}`:''}
+    ${(()=>{
+      // Únicos: separar entre "del ciclo actual" (visibles) y "anteriores"
+      // (colapsables como histórico). Antes la lista crecía cada ciclo y al
+      // mes de uso ya tenías 30+ entries de quincenas pasadas saturando la UI.
+      const ones=S.extras.filter(x=>x.tipo!=='recurrente');
+      if(!ones.length)return '';
+      const cw=getCycleWindow();
+      const startYMD=_ymdLocal(cw.start),endYMD=_ymdLocal(cw.end);
+      const inCycle=ones.filter(x=>x.date&&x.date>=startYMD&&x.date<=endYMD);
+      const older=ones.filter(x=>!x.date||x.date<startYMD||x.date>endYMD);
+      const renderRow=x=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${x.name}</span><span class="badge bdg-amber">Único</span>${x.date?`<span style="font-size:10px;color:var(--muted)">${fmtDate(x.date)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:var(--sage);font-weight:bold">+${fx(x.amt)}</span><button class="btn btn-red btn-sm" onclick="rmExtra(${x.id})">✕</button></div></div>`;
+      let html='';
+      if(inCycle.length){
+        html+='<div style="font-size:10px;color:var(--amber);margin:10px 0 6px;letter-spacing:1px;text-transform:uppercase;font-weight:bold">Únicos · Esta quincena ('+inCycle.length+')</div>';
+        html+=inCycle.map(renderRow).join('');
+      }
+      if(older.length){
+        const olderTotal=older.reduce((a,x)=>a+(+x.amt||0),0);
+        html+='<details style="margin-top:10px"><summary style="cursor:pointer;font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;padding:6px 0">📚 Histórico · '+older.length+' anteriores ('+fx(olderTotal)+')</summary><div style="margin-top:6px">'+older.map(renderRow).join('')+'</div></details>';
+      }
+      return html;
+    })()}
     <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total extras/mes:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">+${fx(Math.round(tExtras()))}</span></div></div>`:''}
     </div>
   </details>
@@ -6923,20 +6961,21 @@ function rHabitos(){
   ${habitView==='ahorro'?`
   <div class="card">
     <div class="ct">🪙 Págate Primero ${ib('pagateprimero','Págate Primero')}</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto. Usa el slider en pasos de 5% o escribe el monto exacto.</div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:13px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto. El monto se calcula sobre el ingreso REAL de esta quincena (incluye bono si cae en ella).</div>
     <div class="row-b" style="margin-bottom:12px">
       <div>
         <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Porcentaje</div>
         <div class="row" style="gap:6px;align-items:baseline;margin-top:2px"><input type="number" min="1" max="100" step="1" value="${S.savPct}" id="savPctInput" style="width:68px;font-size:22px;font-weight:bold;color:var(--sage);text-align:center;padding:4px 6px" oninput="setSavPct(+this.value)"><span style="font-size:18px;color:var(--sage);font-weight:bold">%</span></div>
       </div>
       <div style="text-align:right">
-        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Por quincena</div>
-        <div style="font-size:18px;color:var(--sage);font-weight:bold;margin-top:2px">${fx(Math.round(savAmt()/2))}</div>
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Esta quincena</div>
+        <div style="font-size:18px;color:var(--sage);font-weight:bold;margin-top:2px">${fx(Math.round(curQnaInc()*(+S.savPct||0)/100))}</div>
+        <div style="font-size:9px;color:var(--muted);margin-top:1px">de ${fx(curQnaInc())}</div>
       </div>
     </div>
-    <input type="range" min="5" max="50" step="5" value="${Math.max(5,Math.min(50,Math.round(S.savPct/5)*5))}" id="savPctSlider" style="width:100%;margin-bottom:2px" oninput="setSavPct(+this.value)">
-    <div class="sld-ticks"><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span><span>35</span><span>40</span><span>45</span><span>50</span></div>
-    <div style="font-size:11px;color:var(--sage);text-align:center;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(78,124,106,.2)">${S.savPct}% = <strong>${fx(Math.round(savAmt()/2))}</strong>/qna · ${fx(savAmt())}/mes</div>
+    <input type="range" min="1" max="50" step="1" value="${Math.max(1,Math.min(50,+S.savPct||10))}" id="savPctSlider" style="width:100%;margin-bottom:2px" oninput="setSavPct(+this.value)">
+    <div class="sld-ticks"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span><span>40</span><span>50</span></div>
+    <div style="font-size:11px;color:var(--sage);text-align:center;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(78,124,106,.2)">${S.savPct}% de esta qna = <strong>${fx(Math.round(curQnaInc()*(+S.savPct||0)/100))}</strong> · promedio mensual: ${fx(savAmt())}</div>
   </div>
 
   <!-- METAS DE AHORRO -->
@@ -7053,8 +7092,23 @@ function showOvertimeCalc(){
   function dayInC(pd){if(!pd)return false;const tds=[];for(let tm2=cStart.getMonth()-1;tm2<=cEnd.getMonth()+1;tm2++){const mx=new Date(cStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
   S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')thisCycleTotal+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')thisCycleTotal+=(+e.amt||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
   S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')thisCycleTotal+=(db.pay||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
-  // Applied this cycle
-  for(const key in paidItems){if(key.startsWith('_'))continue;if(paidItems[key]==='applied'){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)thisApplied+=(+e.amt||0);}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)thisApplied+=(+db.pay||0);}}}
+  // Applied this cycle. Antes sólo detectaba `paidItems[key]==='applied'` (string),
+  // pero el formato actual guarda objetos {applied:true, amt, paidWith}, así
+  // que el check fallaba y la calculadora mostraba "Pendiente esta qna" sin
+  // descontar nada de lo que ya pagaste.
+  for(const key in paidItems){
+    if(key.startsWith('_'))continue;
+    const v=paidItems[key];
+    const applied=typeof v==='object'?!!v.applied:(v==='applied');
+    if(!applied)continue;
+    let amt=typeof v==='object'?(+v.amt||+v.realAmt||0):0;
+    if(!amt){
+      const[type,idStr]=key.split('_');const id=+idStr;
+      if(type==='exp'||type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
+      else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)amt=+db.pay||0;}
+    }
+    thisApplied+=amt;
+  }
   const pendingThis=Math.max(0,thisCycleTotal-thisApplied);
 
   // ── NEXT QUINCENA ──
@@ -7291,10 +7345,19 @@ function markOtAsPaid(otCk){
   const ot=S.overtimeLog?.[otCk];if(!ot)return;
   const totalHrs=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
   const totalMoney=Math.round(totalHrs*ot.rate);
-  const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a marcar como <strong style="color:var(--sage)">pagadas</strong> las <strong>'+totalHrs.toFixed(1)+' horas</strong> ('+fx(totalMoney)+') del ciclo <strong>'+otCk+'</strong>.<br><br>El log se moverá al historial colapsable. Las entradas no se borran — quedan como referencia.<br><br><em style="font-size:11px;color:var(--muted)">Esto NO suma nada como ingreso extra. Si ya recibiste el dinero y quieres registrarlo, hazlo manualmente desde Ingresos y Gastos.</em></div>';
+  // Antes esto sólo marcaba paid:true y mostraba "Esto NO suma como ingreso
+  // extra — hazlo manualmente". El usuario lo hacía y el dinero se perdía
+  // del balance: la línea "⏰ Horas extra" desaparecía (porque ot.paid=true)
+  // sin que nada lo reemplazara. Ahora al confirmar registramos un ingreso
+  // extra one-shot con fecha de hoy, así el dinero queda contado en el ciclo
+  // donde realmente cayó el payroll.
+  const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a marcar como <strong style="color:var(--sage)">pagadas</strong> las <strong>'+totalHrs.toFixed(1)+' horas</strong> ('+fx(totalMoney)+') del ciclo <strong>'+otCk+'</strong>.<br><br>Se va a registrar automáticamente como <strong style="color:var(--sage)">ingreso extra</strong> con la fecha de hoy, así aparece reflejado en tu balance del ciclo actual.</div>';
   showConfirm('💵 ¿Marcar como pagadas?',body,()=>{
-    S.overtimeLog[otCk]={...ot,paid:true,paidAt:new Date().toISOString()};
-    sv();closeConfirm();toast('💵 Movidas al historial');rPlan();
+    const today=_todayYMD();
+    const newExtra={id:_uid(),name:'Horas extra ('+otCk+')',amt:totalMoney,tipo:'unico',date:today,fromOvertime:otCk};
+    const newOtLog={...S.overtimeLog,[otCk]:{...ot,paid:true,paidAt:new Date().toISOString()}};
+    pt({overtimeLog:newOtLog,extras:[...(S.extras||[]),newExtra]});
+    closeConfirm();toast('💵 +'+fx(totalMoney)+' como ingreso extra');rPlan();
   });
 }
 function toggleOtHistory(){S._otHistColl=S._otHistColl===false;sv();rPlan();}
@@ -8971,7 +9034,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidK';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidL';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

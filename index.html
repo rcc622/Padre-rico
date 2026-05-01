@@ -430,6 +430,14 @@ function _normalizeState(st){
   if(!isObj(st.simSliders))st.simSliders={};
   const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
+  // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
+  // mensual (a.inc). Los convertimos a tasa anual (a.yldPct) para que la
+  // app pueda proyectar a 1/3/6/12 meses. yldPct = inc × 12 / val × 100.
+  st.assets.forEach(a=>{
+    if(a&&a.gen&&a.yldPct===undefined&&(+a.inc||0)>0&&(+a.val||0)>0){
+      a.yldPct=+(a.inc*12/a.val*100).toFixed(2);
+    }
+  });
   if(typeof st.savStreak!=='number')st.savStreak=0;
   if(typeof st.savStreakBest!=='number')st.savStreakBest=0;
   if(typeof st.savPct!=='number')st.savPct=10;
@@ -2238,7 +2246,15 @@ const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
 const tDebt=()=>S.debts.reduce((a,d)=>a+(+d.bal||0),0);
 const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
 const nw=()=>tAss()-tDebt();
-const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+(+x.inc||0),0);
+// Rendimiento mensual de un activo: balance × tasa anual / 12. Antes el
+// usuario tecleaba el monto mensual fijo (a.inc); ahora teclea el % anual
+// (a.yldPct) y la app calcula la ganancia y las proyecciones.
+const _monthlyYield=(a)=>{
+  if(!a||!a.gen)return 0;
+  const v=+a.val||0,p=+a.yldPct||0;
+  return v*p/100/12;
+};
+const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+_monthlyYield(x),0);
 const tExtras=()=>{
   let total=0;
   const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
@@ -4810,7 +4826,7 @@ function rFlujo(){try{
       <div style="flex:1"><div style="font-size:12px;color:var(--txt)">¿Genera rendimiento?</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Activos como BMG, Cetes o Cajita pagan intereses</div></div>
       <label class="switch"><input type="checkbox" id="ag" ${ea?.gen?'checked':''} onchange="document.getElementById('agIncWrap').style.display=this.checked?'block':'none'"><span class="slider"></span></label>
     </div>
-    <div id="agIncWrap" style="display:${ea?.gen?'block':'none'};margin-bottom:10px"><label>Rendimiento mensual estimado ($)</label><input type="number" id="ai" placeholder="0" value="${ea?.inc||''}"></div>
+    <div id="agIncWrap" style="display:${ea?.gen?'block':'none'};margin-bottom:10px"><label>Rendimiento anual (%)</label><input type="number" id="ai" placeholder="0" step="0.1" value="${ea?.yldPct||''}"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Tasa anual neta. Ej: BMG ~9%, Cetes ~10%, Cajita Nu ~13%. La app calcula la ganancia mensual y proyecciones a 1/3/6/12 meses.</div></div>
     ${editAssetId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="saveAsset()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editAssetId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addAsset()">+ Agregar activo</button>`}
     `;})()}
   </div>
@@ -4825,20 +4841,36 @@ function rFlujo(){try{
         ${passInc()>0?`<div style="text-align:right"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Ingreso pasivo</div><div style="font-size:16px;font-weight:bold;color:var(--sage)">${fx(passInc())}/mes</div></div>`:''}
       </div>
     </div>
-    ${S.assets.map(a=>`
-      <div class="row-b" style="padding:12px 0;border-bottom:1px solid var(--border)">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:bold;color:var(--txt);display:flex;align-items:center;gap:6px">${a.gen?'<span style="font-size:11px">📈</span>':''}${a.name}</div>
-          <div style="font-size:11px;color:var(--muted);margin-top:2px">${a.gen&&a.inc?'+'+fx(a.inc)+'/mes pasivo':'Sin rendimiento registrado'}</div>
+    ${S.assets.map(a=>{
+      const my=_monthlyYield(a);
+      const yldLine=a.gen&&my>0?'+'+fx(Math.round(my))+'/mes · '+(+a.yldPct||0)+'% anual':'Sin rendimiento registrado';
+      // Proyecciones a interés simple (sin reinversión). Para BMG/Cetes el
+      // usuario suele cobrar el interés mensual aparte, así que esta vista
+      // refleja "cuánto te pagaría cada periodo" más que un saldo compuesto.
+      const proj=a.gen&&my>0?
+        '<div style="font-size:10px;color:var(--muted);margin-top:6px;padding:6px 8px;background:rgba(78,124,106,.05);border-radius:6px;line-height:1.7">'
+        +'<div class="row-b"><span>1 mes</span><strong style="color:var(--sage)">'+fx(Math.round(my))+'</strong></div>'
+        +'<div class="row-b"><span>3 meses</span><strong style="color:var(--sage)">'+fx(Math.round(my*3))+'</strong></div>'
+        +'<div class="row-b"><span>6 meses</span><strong style="color:var(--sage)">'+fx(Math.round(my*6))+'</strong></div>'
+        +'<div class="row-b"><span>12 meses</span><strong style="color:var(--sage)">'+fx(Math.round(my*12))+'</strong></div>'
+        +'</div>':'';
+      return `
+      <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+        <div class="row-b">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:bold;color:var(--txt);display:flex;align-items:center;gap:6px">${a.gen?'<span style="font-size:11px">📈</span>':''}${a.name}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:2px">${yldLine}</div>
+          </div>
+          <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
+          <div class="row" style="gap:4px">
+            <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Actualizar saldo">🔄</button>
+            <button class="btn btn-ghost btn-sm" onclick="editAssetId=${a.id};rFlujo()" title="Editar">✏️</button>
+            <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
+          </div>
         </div>
-        <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
-        <div class="row" style="gap:4px">
-          <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Actualizar saldo">🔄</button>
-          <button class="btn btn-ghost btn-sm" onclick="editAssetId=${a.id};rFlujo()" title="Editar">✏️</button>
-          <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
-        </div>
+        ${proj}
       </div>
-    `).join('')}
+    `;}).join('')}
     <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;padding-top:10px;border-top:1px dashed var(--border)">
       💡 Usa <strong>🔄</strong> para actualizar el saldo rápido cuando Mercado Pago o Cajita te paguen rendimiento. Tu patrimonio en Inicio se recalcula solo.
     </div>
@@ -5488,9 +5520,9 @@ function addAsset(){
   const n=document.getElementById('an')?.value.trim();
   const v=+(document.getElementById('av')?.value)||0;
   const gen=document.getElementById('ag')?.checked||false;
-  const inc=gen?(+(document.getElementById('ai')?.value)||0):0;
+  const yldPct=gen?(+(document.getElementById('ai')?.value)||0):0;
   if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
-  pt({assets:[...S.assets,{id:Date.now(),name:n,val:v,gen,inc}]});
+  pt({assets:[...S.assets,{id:Date.now(),name:n,val:v,gen,yldPct}]});
   toast('🏦 Activo registrado');
   rFlujo();hdrUp&&hdrUp();
 }
@@ -5499,9 +5531,11 @@ function saveAsset(){
   const n=document.getElementById('an')?.value.trim();
   const v=+(document.getElementById('av')?.value)||0;
   const gen=document.getElementById('ag')?.checked||false;
-  const inc=gen?(+(document.getElementById('ai')?.value)||0):0;
+  const yldPct=gen?(+(document.getElementById('ai')?.value)||0):0;
   if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
-  pt({assets:S.assets.map(a=>a.id===editAssetId?{...a,name:n,val:v,gen,inc}:a)});
+  // Limpieza: ya no usamos a.inc (monto fijo). Lo quito del registro para
+  // que no haya duda sobre cuál fuente manda.
+  pt({assets:S.assets.map(a=>a.id===editAssetId?{...a,name:n,val:v,gen,yldPct,inc:undefined}:a)});
   editAssetId=null;
   toast('✓ Activo actualizado');
   rFlujo();hdrUp&&hdrUp();
@@ -8937,7 +8971,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidJ';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidK';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

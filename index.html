@@ -1659,6 +1659,21 @@ function getExpSavePlan(){
 
 // ══ COMPUTED ════════════════════════════════════════
 const mInc=()=>(+S.inc.sal)+(+S.inc.bf);
+// Ingreso real de la quincena actual (no el promedio mInc/2). Incluye salario
+// quincenal + bono mensual sólo si su día de pago cae dentro del ciclo
+// vigente. El usuario ve este número en "Págate a ti primero" y en los
+// cálculos derivados (sugerido, etc.) — cuadra con el "Total" que muestra
+// "Ingreso real por quincena" en Ingresos y Gastos.
+function curQnaInc(){
+  try{
+    const ck=cycleKey();
+    const w=cycleWindowFromKey(ck);
+    const inc=getIncForCycle(ck);
+    const sal=(+inc.sal||0)/2;
+    const bf=bonusInCycle(w.start,w.end,inc)?(+inc.bf||0):0;
+    return Math.round(sal+bf);
+  }catch(e){return Math.round(mInc()/2);}
+}
 const mBonus=()=>(+S.inc.bv)/6;
 // getIncForCycle: retorna el snapshot de ingresos vigente para un cycleKey dado.
 // Si no hay historial, retorna S.inc (comportamiento actual — sin cambios).
@@ -2648,7 +2663,10 @@ function rDash(){
   ${(()=>{try{
     if(mInc()<=0)return '';
     const c=curSavCommit();
-    const sug=savAmtQ();
+    // Sugerido = % del ingreso REAL de la quincena (incluye bono si cae en ella).
+    // Antes usaba savAmtQ (promedio mensual÷2) y subestimaba la 1ra qna cuando
+    // el bono cae en ella.
+    const sug=Math.round(curQnaInc()*(+S.savPct||10)/100);
     const streak=S.savStreak||0;
     const best=S.savStreakBest||0;
     const streakLine=streak>0?'<div style="font-size:11px;color:var(--amber);margin-top:6px">🔥 Racha: <strong>'+streak+'</strong> quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+(best>streak?' · Mejor: '+best:'')+'</div>':'';
@@ -5535,7 +5553,7 @@ function startSavWizard(){
     return;
   }
   _savWizStep=1;
-  _savWizData={amount:savAmtQ(),assetId:S.assets[0]?.id,pct:S.savPct||10};
+  _savWizData={amount:Math.round(curQnaInc()*(S.savPct||10)/100),assetId:S.assets[0]?.id,pct:S.savPct||10};
   _renderSavWiz();
 }
 function _renderSavWiz(){
@@ -5550,7 +5568,10 @@ function _savWizProgress(n){
 }
 // PASO 1: Monto
 function _savWizStep1(){
-  const incQ=Math.round(mInc()/2);
+  // Antes usaba mInc()/2 (promedio mensual ÷ 2) y mostraba $18,000 cuando la
+  // 1ra qna real del usuario era $23,750 (salario+bono). Ahora muestra el
+  // ingreso REAL de la quincena vigente, así el % aplica al monto correcto.
+  const incQ=curQnaInc();
   const pct=_savWizData.pct;
   const amt=Math.round(incQ*pct/100);
   _savWizData.amount=amt;
@@ -5582,7 +5603,7 @@ function _savWizPct(delta){
 }
 function _savWizSetPct(pct){
   _savWizData.pct=pct;
-  const incQ=Math.round(mInc()/2);
+  const incQ=curQnaInc();
   const amt=Math.round(incQ*pct/100);
   _savWizData.amount=amt;
   const amtEl=document.getElementById('_savWizAmt');
@@ -6301,7 +6322,7 @@ try{
         const asset=S.assets.find(a=>a.id===sc2.assetId);
         h+='<div style="padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px;margin-bottom:10px"><div class="row-b"><div style="font-size:12px"><span style="color:var(--sage);font-weight:bold">✅ Apartado esta qna</span></div><div style="font-size:14px;font-weight:bold;color:var(--sage)">'+fx(sc2.amount)+'</div></div><div style="font-size:10px;color:var(--muted);margin-top:4px">→ '+(asset?asset.name:'activo')+(savSt>0?' · 🔥 Racha '+savSt:'')+'</div></div>';
       }else{
-        const sug=savAmtQ();
+        const sug=Math.round(curQnaInc()*(+S.savPct||10)/100);
         h+='<div style="padding:10px 12px;background:rgba(160,112,48,.06);border-radius:8px;margin-bottom:10px"><div class="row-b"><div style="font-size:12px;color:var(--amber);font-weight:bold">🪙 Sin apartar esta quincena</div><button class="btn btn-sage btn-sm" style="padding:8px 14px;font-size:11px" onclick="openSavCommitModal()">Apartar '+fx(sug)+'</button></div></div>';
       }
       // Activos
@@ -8916,7 +8937,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidI';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidJ';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

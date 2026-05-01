@@ -1631,13 +1631,33 @@ function depositSavGoal(id,prefix){
   const el=document.getElementById(pfx+id);
   const amt=+(el?.value)||0;
   if(!amt){toast('Ingresa un monto');return;}
-  pt({savGoals:S.savGoals.map(g=>{
-    if(g.id!==id)return g;
-    const dep={date:_todayYMD(),amt};
-    const newSaved=(+g.saved||0)+amt;
-    return{...g,saved:newSaved,deposits:[...(g.deposits||[]),dep],done:newSaved>=g.target};
-  })});
-  toast('💰 Abono registrado: '+fx(amt));rHabitos();
+  const g=S.savGoals.find(x=>x.id===id);if(!g)return;
+  // Pedir activo destino. El abono representa dinero que el usuario ya
+  // movió físicamente a una cuenta (Nu, Mercado Pago, etc.) — sin esto, el
+  // dinero "se pierde" del patrimonio: g.saved sube pero ningún asset sube
+  // y el Plan no lo refleja en "Ahorro apartado".
+  if(!S.assets||S.assets.length===0){
+    showInfo('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para registrar el abono necesitas un destino real (Nu, Mercado Pago, efectivo). Créalo en <strong>Ingresos y Gastos → 🏦 Activos</strong>.</div>');
+    return;
+  }
+  const lastAssetId=g.lastAssetId||S.assets[0].id;
+  const body='<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a abonar</div><div style="font-size:24px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+' → '+(g.icon||'🎯')+' '+g.name+'</div></div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿Desde qué activo viene el dinero?</div>'
+    +'<div style="max-height:280px;overflow-y:auto">'
+    +S.assets.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===lastAssetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===lastAssetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_depAsset" value="'+a.id+'" '+(a.id===lastAssetId?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+'</div></div></label>').join('')
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El saldo del activo no se reduce — el dinero ya estaba ahí, sólo lo etiquetamos como reservado para esta meta.</div>';
+  showConfirm('💰 Abono a meta',body,()=>{
+    const sel=document.querySelector('input[name=_depAsset]:checked');
+    const assetId=sel?+sel.value:lastAssetId;
+    pt({savGoals:S.savGoals.map(gx=>{
+      if(gx.id!==id)return gx;
+      const dep={date:_todayYMD(),amt,assetId};
+      const newSaved=(+gx.saved||0)+amt;
+      return{...gx,saved:newSaved,deposits:[...(gx.deposits||[]),dep],done:newSaved>=gx.target,lastAssetId:assetId};
+    })});
+    closeConfirm();toast('💰 +'+fx(amt)+' apartado para '+g.name);rHabitos();
+  });
 }
 function addSavGoalH(){
   const n=document.getElementById('sgnh')?.value.trim();
@@ -1662,6 +1682,22 @@ function savGoalPerQ(g){
   const msLeft=dl-today;
   const qLeft=Math.max(1,Math.ceil(msLeft/(15*864e5))); // quincenas remaining
   return Math.ceil(remaining/qLeft);
+}
+// Suma de los abonos hechos a una meta dentro del ciclo dado (o el actual).
+// Antes el Plan siempre usaba savGoalPerQ (la cuota sugerida) aunque el
+// usuario hubiera abonado más manualmente. Resultado: un abono real de
+// $1,667 se reflejaba como $1,111 (la cuota) y desconcertaba al usuario.
+function metaDepsInCycle(g,ck){
+  if(!g||!g.deposits)return 0;
+  const w=cycleWindowFromKey(ck||planCk());
+  const sYMD=_ymdLocal(w.start),eYMD=_ymdLocal(w.end);
+  return g.deposits.filter(d=>d&&d.date&&d.date>=sYMD&&d.date<=eYMD).reduce((a,d)=>a+(+d.amt||0),0);
+}
+// Cantidad real que la meta aporta al Plan en un ciclo: si ya hubo abonos
+// los usa; si no, devuelve la cuota sugerida savGoalPerQ.
+function metaCycleAmt(g,ck){
+  const dep=metaDepsInCycle(g,ck);
+  return dep>0?dep:savGoalPerQ(g);
 }
 function getExpSavePlan(){
   // Compute which monthly expenses need an "apartado" (save half each quincena)
@@ -5864,7 +5900,25 @@ function applyPayments(){
       }
     }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
     else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
-    else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g){const pq=savGoalPerQ(g);amt=pq;g.saved=(+g.saved||0)+pq;g.deposits=[...(g.deposits||[]),{date:_todayYMD(),amt:pq,auto:true}];if(g.saved>=g.target)g.done=true;}appliedExp++;}
+    else if(type==='sav'){
+      const g=S.savGoals.find(x=>x.id===id);
+      if(g){
+        // Si el usuario ya hizo abonos en este ciclo, usar ese monto y NO
+        // crear otro deposit (evita doble-conteo: antes se sumaban tanto el
+        // abono manual como el auto-deposit del apply).
+        const depExisting=metaDepsInCycle(g,ck);
+        if(depExisting>0){
+          amt=depExisting;
+        }else{
+          const pq=savGoalPerQ(g);
+          amt=pq;
+          g.saved=(+g.saved||0)+pq;
+          g.deposits=[...(g.deposits||[]),{date:_todayYMD(),amt:pq,auto:true}];
+          if(g.saved>=g.target)g.done=true;
+        }
+      }
+      appliedExp++;
+    }
     else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
     else if(type==='imp'){
       // Find impulse amount from retoChecks (skip super/gas — those are fixed expenses)
@@ -6048,7 +6102,7 @@ try{
   if(!showNext){
     expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(isApplied(pt2,e.id))appliedAmt2+=v;else if(isPaid(pt2,e.id))checkedAmt+=v;});
     debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(isApplied('debt',e.id))appliedAmt2+=v;else if(isPaid('debt',e.id))checkedAmt+=v;});
-    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{if(isApplied('sav',g.id))appliedAmt2+=savGoalPerQ(g);else if(isPaid('sav',g.id))checkedAmt+=savGoalPerQ(g);});
+    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{const _ma=metaCycleAmt(g,planCk());if(isApplied('sav',g.id))appliedAmt2+=_ma;else if(isPaid('sav',g.id))checkedAmt+=_ma;});
     expSavePlan.forEach(e=>{if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
     // Impulse items: applied → counted in appliedAmt2, selected → in checkedAmt
     impulseItems.forEach(e=>{if(isApplied('imp',e.id))appliedAmt2+=e.amt;else if(isPaid('imp',e.id))checkedAmt+=e.amt;});
@@ -6084,7 +6138,7 @@ try{
     expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
     debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';mandatory.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
     // Optional: savings, apartados, impulses
-    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{const perQ=savGoalPerQ(g);const paid=!showNext&&isPaid('sav',g.id);optional.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});});
+    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{const perQ=metaCycleAmt(g,planCk());const paid=!showNext&&isPaid('sav',g.id);optional.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});});
     expSavePlan.forEach(e=>{const paid=!showNext&&isPaid('apt',e.id);const label=e.type==='other'?'💰 Apartar '+e.name+' (día '+e.day+' · '+fx(e.amt)+')':'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';optional.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});});
     // FASE 8: TDC payment synthetic entries (paidItems keys starting with 'tdcpay_')
     if(!showNext){
@@ -9034,7 +9088,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidL';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidM';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

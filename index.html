@@ -5838,51 +5838,73 @@ function closeSavCheck(outcome){
 // monto. Default = el monto completo (caso "me lo gasté todo"), pero el
 // usuario puede ajustar si sólo usó parte. Mantiene un campo usedAmount
 // en el savCommit para que el acumulado pueda restarlo.
+// FASE 2: además registra automáticamente el uso como gasto urgente
+// (gastoDiario con cat 'esencial' y flag emergency:true) para que el
+// movimiento sea visible en el ciclo, no sólo se "pierda" del activo.
 function _promptSavUsed(outcome){
   const ck=cycleKey();
   const c=(S.savCommits||{})[ck];if(!c)return;
   const asset=S.assets.find(a=>a.id===c.assetId);
   const assetName=asset?asset.name:'tu activo';
-  const lbl=outcome==='emergency'?'🚨 Emergencia · ¿Cuánto usaste?':'💔 Me rompí · ¿Cuánto usaste?';
-  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Comprometiste <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> a <strong>'+assetName+'</strong>. ¿Cuánto del ahorro <em>realmente</em> usaste? Lo restamos del activo para que tu patrimonio refleje lo que sí queda.</div>'
+  const lbl=outcome==='emergency'?'🚨 Emergencia · ¿En qué lo usaste?':'💔 Me rompí · ¿En qué lo usaste?';
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Comprometiste <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> a <strong>'+assetName+'</strong>. Te ayudo a registrar la salida real para que tu patrimonio cuadre.</div>'
+    +'<div style="margin-bottom:12px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">¿Qué pasó? (concepto)</label><input type="text" id="_savEmergConcept" placeholder="Ej. Gastos médicos, reparación, urgencia familiar…" style="width:100%;font-size:14px;padding:10px"></div>'
     +'<div style="margin-bottom:12px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Monto usado</label><input type="number" id="_savUsed" value="'+c.amount+'" max="'+c.amount+'" min="0" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--terra)" onclick="this.select()"></div>'
-    +'<div class="row" style="gap:6px;margin-bottom:8px"><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value=0">$0 (no usé)</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value='+Math.round(c.amount/2)+'">Mitad</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value='+c.amount+'">Todo</button></div>';
+    +'<div class="row" style="gap:6px;margin-bottom:8px"><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value=0">$0 (no usé)</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value='+Math.round(c.amount/2)+'">Mitad</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value='+c.amount+'">Todo</button></div>'
+    +'<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:6px;line-height:1.5">El monto se resta del activo y se registra como <strong>gasto esencial</strong> del ciclo, así aparece en Plan de Acción y en Día a día → Diarios.</div>';
   showConfirm(lbl,body,()=>{
     const used=Math.max(0,Math.min(+c.amount||0,+document.getElementById('_savUsed')?.value||0));
+    const concept=(document.getElementById('_savEmergConcept')?.value||'').trim()||(outcome==='emergency'?'Emergencia':'Uso del ahorro');
     closeConfirm();
+    window._pendingSavUsed=used;
+    window._pendingSavConcept=concept;
     if(outcome==='emergency'){
       // Segundo paso: ¿mantener racha o reiniciar?
-      window._pendingSavUsed=used;
-      const body2='<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.7">Vas a restar <strong style="color:var(--terra)">'+fx(used)+'</strong> de '+assetName+'. ¿Y tu racha?</div>'
+      const body2='<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.7">Vas a restar <strong style="color:var(--terra)">'+fx(used)+'</strong> de '+assetName+' y registrar <strong>"🚨 '+concept+'"</strong> como gasto del ciclo. ¿Y tu racha?</div>'
         +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="closeSavEmerg(true)">🛡️ Mantener racha · Fue emergencia real</button>'
         +'<button class="btn btn-ghost" style="width:100%;padding:14px" onclick="closeSavEmerg(false)">🔄 Reiniciar racha · Quiero empezar limpio</button>';
       setTimeout(()=>showInfo('🚨 Emergencia · ¿Tu racha?',body2),100);
       return;
     }
     // broken: aplicar directo
-    const newAssets=used>0?S.assets.map(a=>a.id===c.assetId?{...a,val:Math.max(0,(+a.val||0)-used)}:a):S.assets;
-    const newCommits={...S.savCommits,[ck]:{...c,status:'broken',usedAmount:used,closedAt:new Date().toISOString()}};
-    pt({savCommits:newCommits,savStreak:0,assets:newAssets});
-    toast(used>0?'💔 -'+fx(used)+' de '+assetName+' · racha reiniciada':'💔 Racha reiniciada (sin movimiento de saldo)');
-    rDash();
+    _applySavUsed({outcome:'broken',keepStreak:false});
   });
+}
+// Lógica común para aplicar el uso del ahorro: resta del activo, registra
+// gastoDiario y actualiza el savCommit. Usado por broken (directo) y por
+// closeSavEmerg (después del modal de racha).
+function _applySavUsed({outcome,keepStreak}){
+  const ck=cycleKey();
+  const c=(S.savCommits||{})[ck];if(!c)return;
+  const asset=S.assets.find(a=>a.id===c.assetId);
+  const assetName=asset?asset.name:'tu activo';
+  const used=Math.max(0,+window._pendingSavUsed||0);
+  const concept=window._pendingSavConcept||(outcome==='emergency'?'Emergencia':'Uso del ahorro');
+  const newAssets=used>0?S.assets.map(a=>a.id===c.assetId?{...a,val:Math.max(0,(+a.val||0)-used)}:a):S.assets;
+  // Status según outcome+keepStreak
+  let status='broken';
+  if(outcome==='emergency'){status=keepStreak?'emergency-kept':'emergency-broken';}
+  const newCommits={...S.savCommits,[ck]:{...c,status,usedAmount:used,emergencyConcept:concept,closedAt:new Date().toISOString()}};
+  // Registra el gasto urgente como gastoDiario (cat 'esencial', flag emergency)
+  // para que aparezca en Plan/Diarios como salida real del ciclo.
+  let newDiarios=S.gastosDiarios||[];
+  if(used>0){
+    const emergName=(outcome==='emergency'?'🚨 ':'💔 ')+concept;
+    newDiarios=[...newDiarios,{id:Date.now(),name:emergName,amt:used,cat:'esencial',date:_todayYMD(),paidWith:'debito',emergency:true,fromSavCommit:ck}];
+  }
+  const updates={savCommits:newCommits,assets:newAssets,gastosDiarios:newDiarios};
+  if(outcome==='broken'||(outcome==='emergency'&&!keepStreak))updates.savStreak=0;
+  pt(updates);
+  if(outcome==='broken')toast(used>0?'💔 -'+fx(used)+' de '+assetName+' · gasto registrado · racha reiniciada':'💔 Racha reiniciada');
+  else if(keepStreak)toast('🛡️ Racha '+(S.savStreak||0)+' protegida'+(used>0?' · -'+fx(used)+' · gasto registrado':''));
+  else toast('🔄 Racha reiniciada'+(used>0?' · -'+fx(used)+' · gasto registrado':''));
+  window._pendingSavUsed=0;
+  window._pendingSavConcept='';
+  rDash();
 }
 function closeSavEmerg(keepStreak){
   closeConfirm&&closeConfirm();
-  const ck=cycleKey();
-  const c=(S.savCommits||{})[ck];if(!c)return;
-  const used=Math.max(0,+window._pendingSavUsed||0);
-  const newAssets=used>0?S.assets.map(a=>a.id===c.assetId?{...a,val:Math.max(0,(+a.val||0)-used)}:a):S.assets;
-  const newCommits={...S.savCommits,[ck]:{...c,status:keepStreak?'emergency-kept':'emergency-broken',usedAmount:used,closedAt:new Date().toISOString()}};
-  if(keepStreak){
-    pt({savCommits:newCommits,assets:newAssets});
-    toast('🛡️ Racha '+(S.savStreak||0)+' protegida'+(used>0?' · -'+fx(used)+' del activo':''));
-  }else{
-    pt({savCommits:newCommits,savStreak:0,assets:newAssets});
-    toast('🔄 Racha reiniciada con honestidad'+(used>0?' · -'+fx(used)+' del activo':''));
-  }
-  window._pendingSavUsed=0;
-  rDash();
+  _applySavUsed({outcome:'emergency',keepStreak});
 }
 function rmDebt(id){
   const d=S.debts.find(x=>x.id===id);
@@ -9146,7 +9168,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidO';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidP';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

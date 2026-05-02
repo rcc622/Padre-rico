@@ -2746,18 +2746,22 @@ function rDash(){
       const assetName=asset?asset.name:'tu activo';
       const canCheck=c.status==='committed';
       // Acumulado total de ahorro retenido: suma compromisos cerrados como
-      // intact/emergency-kept menos lo usado en emergencias. Da al usuario
-      // visibilidad de cuánto ha construido a lo largo de las quincenas.
+      // intact/emergency-kept menos lo usado en emergencias. Si el usuario
+      // usó MÁS que su compromiso del ciclo (se comió parte del acumulado
+      // previo), la contribución de ese ciclo va negativa y reduce el total.
+      // Clamp al final a 0 (y a asset.val si lo conocemos) para evitar
+      // sobreestimar el ahorro real.
       const allCommits=Object.values(S.savCommits||{});
-      const accumKept=allCommits.reduce((a,sc)=>{
+      let accumKeptRaw=allCommits.reduce((a,sc)=>{
         if(!sc)return a;
         if(sc.status==='intact'||sc.status==='emergency-kept'){
           const used=+sc.usedAmount||0;
-          return a+Math.max(0,(+sc.amount||0)-used);
+          return a+((+sc.amount||0)-used);
         }
         if(sc.status==='committed')return a+(+sc.amount||0);
         return a;
       },0);
+      const accumKept=Math.max(0,accumKeptRaw);
       const keptCount=allCommits.filter(sc=>sc&&(sc.status==='intact'||sc.status==='emergency-kept'||sc.status==='committed')).length;
       const accumLine=keptCount>1?'<div style="font-size:11px;color:var(--sage);margin-top:6px;padding-top:6px;border-top:1px dashed rgba(78,124,106,.3)">📈 Acumulado total: <strong>'+fx(Math.round(accumKept))+'</strong> en '+keptCount+' quincenas</div>':'';
       return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px"><div class="row-b"><div style="flex:1"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;font-weight:bold">✅ Ahorro apartado esta quincena</div><div style="font-size:16px;color:var(--sage);font-weight:bold">'+fx(c.amount)+' → '+assetName+'</div>'+streakLine+accumLine+'</div></div>'+(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')+'</div>';
@@ -5846,14 +5850,32 @@ function _promptSavUsed(outcome){
   const c=(S.savCommits||{})[ck];if(!c)return;
   const asset=S.assets.find(a=>a.id===c.assetId);
   const assetName=asset?asset.name:'tu activo';
+  const assetVal=asset?+asset.val||0:0;
+  // Calcula acumulado disponible del Págate Primero (suma de commits
+  // intact/emergency-kept menos lo ya usado). Sirve como referencia visual:
+  // "tienes $X acumulado de quincenas pasadas, además de los $Y de hoy".
+  const allCommits=Object.values(S.savCommits||{});
+  const accumPrior=allCommits.reduce((acc,sc)=>{
+    if(!sc||sc===c)return acc;
+    if(sc.status==='intact'||sc.status==='emergency-kept'){
+      const used=+sc.usedAmount||0;
+      return acc+((+sc.amount||0)-used);
+    }
+    return acc;
+  },0);
+  const totalSavAvail=Math.max(0,(+c.amount||0)+accumPrior);
   const lbl=outcome==='emergency'?'🚨 Emergencia · ¿En qué lo usaste?':'💔 Me rompí · ¿En qué lo usaste?';
-  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Comprometiste <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> a <strong>'+assetName+'</strong>. Te ayudo a registrar la salida real para que tu patrimonio cuadre.</div>'
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Comprometiste <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> esta quincena'+(accumPrior>0?' y tienes <strong style="color:var(--sage)">'+fx(Math.round(accumPrior))+'</strong> acumulado de quincenas pasadas en <strong>'+assetName+'</strong> ('+fx(Math.round(totalSavAvail))+' total)':' a <strong>'+assetName+'</strong>')+'. Te ayudo a registrar la salida real para que tu patrimonio cuadre.</div>'
     +'<div style="margin-bottom:12px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">¿Qué pasó? (concepto)</label><input type="text" id="_savEmergConcept" placeholder="Ej. Gastos médicos, reparación, urgencia familiar…" style="width:100%;font-size:14px;padding:10px"></div>'
-    +'<div style="margin-bottom:12px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Monto usado</label><input type="number" id="_savUsed" value="'+c.amount+'" max="'+c.amount+'" min="0" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--terra)" onclick="this.select()"></div>'
-    +'<div class="row" style="gap:6px;margin-bottom:8px"><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value=0">$0 (no usé)</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value='+Math.round(c.amount/2)+'">Mitad</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1" onclick="document.getElementById(\'_savUsed\').value='+c.amount+'">Todo</button></div>'
-    +'<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:6px;line-height:1.5">El monto se resta del activo y se registra como <strong>gasto esencial</strong> del ciclo, así aparece en Plan de Acción y en Día a día → Diarios.</div>';
+    +'<div style="margin-bottom:12px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Monto usado</label><input type="number" id="_savUsed" value="'+c.amount+'" min="0" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--terra)" onclick="this.select()"></div>'
+    +'<div class="row" style="gap:6px;margin-bottom:8px;flex-wrap:wrap"><button type="button" class="btn btn-ghost btn-sm" style="flex:1;min-width:60px" onclick="document.getElementById(\'_savUsed\').value=0">$0</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1;min-width:60px" onclick="document.getElementById(\'_savUsed\').value='+Math.round(c.amount/2)+'">Mitad</button><button type="button" class="btn btn-ghost btn-sm" style="flex:1;min-width:60px" onclick="document.getElementById(\'_savUsed\').value='+c.amount+'">Compromiso</button>'+(accumPrior>0?'<button type="button" class="btn btn-ghost btn-sm" style="flex:1;min-width:80px;color:var(--terra)" onclick="document.getElementById(\'_savUsed\').value='+Math.round(totalSavAvail)+'">Todo ('+fx(Math.round(totalSavAvail))+')</button>':'')+'</div>'
+    +'<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:6px;line-height:1.5">Puedes poner más que tu compromiso si usaste también del acumulado. El monto se resta del activo y se registra como <strong>gasto esencial</strong> del ciclo.</div>';
   showConfirm(lbl,body,()=>{
-    const used=Math.max(0,Math.min(+c.amount||0,+document.getElementById('_savUsed')?.value||0));
+    // Sin tope superior: el usuario puede haber usado más que c.amount si se
+    // comió parte de su acumulado de ciclos pasados. Lo cap-eamos al saldo
+    // del activo para no dejarlo en negativo.
+    const raw=+document.getElementById('_savUsed')?.value||0;
+    const used=Math.max(0,Math.min(assetVal>0?assetVal:raw,raw));
     const concept=(document.getElementById('_savEmergConcept')?.value||'').trim()||(outcome==='emergency'?'Emergencia':'Uso del ahorro');
     closeConfirm();
     window._pendingSavUsed=used;
@@ -9168,7 +9190,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidP';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidQ';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

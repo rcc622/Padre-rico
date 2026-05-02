@@ -295,6 +295,7 @@ button:active{transform:scale(.97)}
     <div class="fab-item"><span class="fab-label">🛒 Gasto diario</span><button class="fab-mini" onclick="fabAction('diario')" style="color:var(--terra)">🛒</button></div>
     <div class="fab-item"><span class="fab-label">💵 Ingreso extra</span><button class="fab-mini" onclick="fabAction('ingXtra')" style="color:var(--sage)">💵</button></div>
     <div class="fab-item"><span class="fab-label">⏱️ Horas extra</span><button class="fab-mini" onclick="fabAction('hrsxtra')" style="color:var(--sky)">⏱️</button></div>
+    <div class="fab-item"><span class="fab-label">🏦 Activo</span><button class="fab-mini" onclick="fabAction('activo')" style="color:var(--amber)">🏦</button></div>
   </div>
   <button id="fabMain" class="fab-main" onclick="_fabToggle()" aria-label="Acciones rápidas">+</button>
 </div>
@@ -2749,8 +2750,10 @@ function rDash(){
       // intact/emergency-kept menos lo usado en emergencias. Si el usuario
       // usó MÁS que su compromiso del ciclo (se comió parte del acumulado
       // previo), la contribución de ese ciclo va negativa y reduce el total.
-      // Clamp al final a 0 (y a asset.val si lo conocemos) para evitar
-      // sobreestimar el ahorro real.
+      // Clamp final: no negativo, y no más del saldo combinado de los
+      // activos donde cayeron los commits — si el usuario actualizó Nu a $0
+      // con el botón 🔄, el acumulado debe reflejar esa realidad (no
+      // mantener un memo desincronizado).
       const allCommits=Object.values(S.savCommits||{});
       let accumKeptRaw=allCommits.reduce((a,sc)=>{
         if(!sc)return a;
@@ -2761,7 +2764,11 @@ function rDash(){
         if(sc.status==='committed')return a+(+sc.amount||0);
         return a;
       },0);
-      const accumKept=Math.max(0,accumKeptRaw);
+      const _commitAssetIds=[...new Set(allCommits.filter(sc=>sc&&sc.assetId).map(sc=>sc.assetId))];
+      const _commitAssetTotal=_commitAssetIds.reduce((a,id)=>{const asset=S.assets.find(x=>x.id===id);return a+(asset?+asset.val||0:0);},0);
+      const accumKept=_commitAssetIds.length>0
+        ?Math.min(Math.max(0,accumKeptRaw),_commitAssetTotal)
+        :Math.max(0,accumKeptRaw);
       const keptCount=allCommits.filter(sc=>sc&&(sc.status==='intact'||sc.status==='emergency-kept'||sc.status==='committed')).length;
       const accumLine=keptCount>1?'<div style="font-size:11px;color:var(--sage);margin-top:6px;padding-top:6px;border-top:1px dashed rgba(78,124,106,.3)">📈 Acumulado total: <strong>'+fx(Math.round(accumKept))+'</strong> en '+keptCount+' quincenas</div>':'';
       return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px"><div class="row-b"><div style="flex:1"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;font-weight:bold">✅ Ahorro apartado esta quincena</div><div style="font-size:16px;color:var(--sage);font-weight:bold">'+fx(c.amount)+' → '+assetName+'</div>'+streakLine+accumLine+'</div></div>'+(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')+'</div>';
@@ -5290,7 +5297,31 @@ function fabAction(type){
       // forzaba al usuario a moverse y volver. Ahora se queda donde está.
       if(typeof openQuickOvertime==='function')openQuickOvertime();
     }
+    else if(type==='activo'){
+      if(typeof openQuickAsset==='function')openQuickAsset();
+    }
   },180);
+}
+// ══ Activo rápido desde el FAB ══════════════════════════════════════════
+// Permite registrar un nuevo activo (Nu, Mercado Pago, efectivo, Cetes…)
+// sin salir de la pantalla. Mismo modelo que addAsset() en Flujo, con
+// nombre, saldo, gen + yldPct (anual %).
+function openQuickAsset(){
+  const body='<input type="text" id="qan" placeholder="Nombre (Nu expréss, Mercado Pago BMG, Cetes…)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
+    +'<input type="number" id="qav" placeholder="Saldo actual $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
+    +'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:12px;color:var(--txt2);padding:8px 10px;background:rgba(78,124,106,.05);border-radius:6px;margin-bottom:10px"><input type="checkbox" id="qag" onchange="document.getElementById(\'qayWrap\').style.display=this.checked?\'block\':\'none\'" style="width:auto;accent-color:var(--sage)">¿Genera rendimiento? (BMG, Cetes, Cajita…)</label>'
+    +'<div id="qayWrap" style="display:none;margin-bottom:8px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Rendimiento anual (%)</label><input type="number" id="qay" placeholder="0" step="0.1" style="width:100%;padding:9px;font-size:14px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Ej: BMG ~9%, Cetes ~10%, Cajita Nu ~13%</div></div>';
+  showConfirm('🏦 Nuevo activo',body,()=>{
+    const n=(document.getElementById('qan')?.value||'').trim();
+    const v=+(document.getElementById('qav')?.value)||0;
+    const gen=document.getElementById('qag')?.checked||false;
+    const yldPct=gen?(+(document.getElementById('qay')?.value)||0):0;
+    if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
+    pt({assets:[...(S.assets||[]),{id:Date.now(),name:n,val:v,gen,yldPct}]});
+    closeConfirm();toast('🏦 +'+n+' registrado');
+    try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+    try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  });
 }
 
 // ══ Ingreso extra rápido desde el FAB ══════════════════════════════════
@@ -9190,7 +9221,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidQ';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidR';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

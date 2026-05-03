@@ -7400,6 +7400,19 @@ function rHabitos(){
       const isOverdue=daysLeft<0;
       const isDone=g.done||remaining<=0;
       const dlLbl=g.deadline?fmtDate(g.deadline):'sin fecha';
+      // Si la meta vive en una cajita con rendimiento, calculamos cuánto
+      // gana al mes mientras espera. Es informativo (no auto-suma a g.saved):
+      // el rendimiento llega al activo y el usuario decide si lo "mueve" a la
+      // meta abonando manualmente.
+      const _metaAssetId=g.lastAssetId||(g.deposits||[]).slice().reverse().find(d=>d&&d.assetId)?.assetId;
+      const _metaAsset=_metaAssetId?S.assets.find(a=>a.id===_metaAssetId):null;
+      const _metaSaved=+g.saved||0;
+      const _metaYieldM=(_metaAsset&&_metaAsset.gen&&(+_metaAsset.yldPct||0)>0&&_metaSaved>0)
+        ?Math.round(_metaSaved*(+_metaAsset.yldPct||0)/100/12)
+        :0;
+      const yldBadge=(_metaYieldM>0&&!isDone)
+        ?'<div style="font-size:10px;color:var(--sage);margin-top:6px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;line-height:1.5">💎 Mientras espera en <strong>'+_metaAsset.name+'</strong> ('+(+_metaAsset.yldPct||0)+'% anual) gana ~<strong>'+fx(_metaYieldM)+'/mes</strong></div>'
+        :'';
       return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
         <div class="row-b" style="margin-bottom:8px">
           <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${g.name}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(isDone?'✅ ¡Meta alcanzada!':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div></div></div>
@@ -7407,8 +7420,9 @@ function rHabitos(){
         </div>
         <div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
         <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
+        ${yldBadge}
         ${!isDone?`
-          <div class="row-b" style="margin-bottom:10px">
+          <div class="row-b" style="margin-bottom:10px;margin-top:10px">
             <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(perQ)}</div><div style="font-size:9px;color:var(--muted)">apartar/quincena</div></div>
             <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
           </div>
@@ -9442,7 +9456,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidV';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidW';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

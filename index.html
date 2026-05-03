@@ -2764,84 +2764,92 @@ function rDash(){
     const sug=Math.round(curQnaInc()*(+S.savPct||10)/100);
     const streak=S.savStreak||0;
     const best=S.savStreakBest||0;
-    const streakLine=streak>0?'<div style="font-size:11px;color:var(--amber);margin-top:6px">🔥 Racha: <strong>'+streak+'</strong> quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+(best>streak?' · Mejor: '+best:'')+'</div>':'';
-    if(c&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept')){
+    // Helper: tiempo relativo
+    const _relTime=(iso)=>{
+      if(!iso)return '';
+      try{
+        const d=new Date(iso);
+        const ms=Date.now()-d.getTime();
+        if(ms<60000)return 'hace un momento';
+        if(ms<3600000)return 'hace '+Math.floor(ms/60000)+' min';
+        if(ms<86400000)return 'hace '+Math.floor(ms/3600000)+' hr'+(Math.floor(ms/3600000)!==1?'s':'');
+        const days=Math.floor(ms/86400000);
+        if(days===1)return 'ayer';
+        if(days<7)return 'hace '+days+' días';
+        if(days<30)return 'hace '+Math.floor(days/7)+' sem';
+        return fmtDate(iso.split('T')[0]);
+      }catch(e){return '';}
+    };
+    // Sólo cuentan los commits con assetId que todavía existe. Si el usuario
+    // borró el activo, sus compromisos antiguos se vuelven huérfanos y no
+    // deberían contarse en el acumulado ni mostrarse como racha viva.
+    const allCommits=Object.values(S.savCommits||{});
+    const validCommits=allCommits.filter(sc=>sc&&sc.assetId&&S.assets.find(a=>a.id===sc.assetId));
+    const cIsValid=c&&c.assetId&&S.assets.find(a=>a.id===c.assetId);
+    // Metas activas: cuánto ha ahorrado el usuario en sus cajitas. Se suma
+    // al acumulado total para que el card refleje TODO el ahorro real.
+    const activeMetas=(S.savGoals||[]).filter(g=>!g.done&&(+g.saved||0)>0);
+    const metaSaved=activeMetas.reduce((a,g)=>a+(+g.saved||0),0);
+    // accumKept de los commits válidos (clamp a saldo combinado de sus activos)
+    let accumKeptRaw=validCommits.reduce((a,sc)=>{
+      if(sc.status==='intact'||sc.status==='emergency-kept'){
+        const used=+sc.usedAmount||0;
+        return a+((+sc.amount||0)-used);
+      }
+      if(sc.status==='committed')return a+(+sc.amount||0);
+      return a;
+    },0);
+    const _commitAssetIds=[...new Set(validCommits.map(sc=>sc.assetId))];
+    const _commitAssetTotal=_commitAssetIds.reduce((a,id)=>{const asset=S.assets.find(x=>x.id===id);return a+(asset?+asset.val||0:0);},0);
+    const accumKept=_commitAssetIds.length>0
+      ?Math.min(Math.max(0,accumKeptRaw),_commitAssetTotal)
+      :0;
+    const totalAccum=accumKept+metaSaved;
+    // Eventos de movimiento (commits válidos + abonos a metas activas)
+    const movEvents=[];
+    validCommits.forEach(sc=>{
+      const a=S.assets.find(x=>x.id===sc.assetId);
+      const an=a?a.name:'tu activo';
+      if(sc.date&&(+sc.amount||0)>0)movEvents.push({type:'in',amt:+sc.amount||0,when:sc.date,target:an});
+      if(sc.closedAt&&(+sc.usedAmount||0)>0)movEvents.push({type:'out',amt:+sc.usedAmount||0,when:sc.closedAt,concept:sc.emergencyConcept||'',target:an});
+    });
+    activeMetas.forEach(g=>{
+      (g.deposits||[]).forEach(d=>{
+        if((+d.amt||0)>0&&d.date)movEvents.push({type:'in',amt:+d.amt||0,when:d.date,target:'🎯 '+g.name});
+      });
+    });
+    movEvents.sort((a,b)=>new Date(b.when)-new Date(a.when));
+    const lastMov=movEvents[0]||null;
+    const movLine=lastMov?(
+      '<div style="font-size:11px;margin-top:8px;line-height:1.5">'
+      +(lastMov.type==='in'
+        ?'<span style="color:var(--sage);font-weight:bold">🟢 Ingreso +'+fx(lastMov.amt)+'</span> <span style="color:var(--muted)">'+_relTime(lastMov.when)+' → '+lastMov.target+'</span>'
+        :'<span style="color:var(--terra);font-weight:bold">🔴 Retiro −'+fx(lastMov.amt)+'</span> <span style="color:var(--muted)">'+_relTime(lastMov.when)+(lastMov.concept?' · '+lastMov.concept:'')+'</span>')
+      +'</div>'
+    ):'';
+    // Racha sólo se muestra si hay actividad real (commits válidos)
+    const streakLine=streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--amber);margin-top:6px">🔥 Racha: <strong>'+streak+'</strong> quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+(best>streak?' · Mejor: '+best:'')+'</div>':'';
+    if(cIsValid&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept')){
       // Already committed this cycle — show confirmed state
       const asset=S.assets.find(a=>a.id===c.assetId);
       const assetName=asset?asset.name:'tu activo';
       const canCheck=c.status==='committed';
-      // Acumulado total de ahorro retenido: suma compromisos cerrados como
-      // intact/emergency-kept menos lo usado en emergencias. Si el usuario
-      // usó MÁS que su compromiso del ciclo (se comió parte del acumulado
-      // previo), la contribución de ese ciclo va negativa y reduce el total.
-      // Clamp final: no negativo, y no más del saldo combinado de los
-      // activos donde cayeron los commits — si el usuario actualizó Nu a $0
-      // con el botón 🔄, el acumulado debe reflejar esa realidad (no
-      // mantener un memo desincronizado).
-      const allCommits=Object.values(S.savCommits||{});
-      let accumKeptRaw=allCommits.reduce((a,sc)=>{
-        if(!sc)return a;
-        if(sc.status==='intact'||sc.status==='emergency-kept'){
-          const used=+sc.usedAmount||0;
-          return a+((+sc.amount||0)-used);
-        }
-        if(sc.status==='committed')return a+(+sc.amount||0);
-        return a;
-      },0);
-      const _commitAssetIds=[...new Set(allCommits.filter(sc=>sc&&sc.assetId).map(sc=>sc.assetId))];
-      const _commitAssetTotal=_commitAssetIds.reduce((a,id)=>{const asset=S.assets.find(x=>x.id===id);return a+(asset?+asset.val||0:0);},0);
-      const accumKept=_commitAssetIds.length>0
-        ?Math.min(Math.max(0,accumKeptRaw),_commitAssetTotal)
-        :Math.max(0,accumKeptRaw);
-      // Último movimiento (ingreso o retiro). Para cada commit:
-      //   • date + amount → evento de ingreso (cuando aparté)
-      //   • closedAt + usedAmount → evento de retiro (emergencia/me rompí)
-      // El más reciente se muestra debajo del monto en grande.
-      const movEvents=[];
-      allCommits.forEach(sc=>{
-        if(!sc)return;
-        if(sc.date&&(+sc.amount||0)>0){
-          movEvents.push({type:'in',amt:+sc.amount||0,when:sc.date});
-        }
-        if(sc.closedAt&&(+sc.usedAmount||0)>0){
-          movEvents.push({type:'out',amt:+sc.usedAmount||0,when:sc.closedAt,concept:sc.emergencyConcept||''});
-        }
-      });
-      movEvents.sort((a,b)=>new Date(b.when)-new Date(a.when));
-      const lastMov=movEvents[0]||null;
-      const _relTime=(iso)=>{
-        if(!iso)return '';
-        try{
-          const d=new Date(iso);
-          const ms=Date.now()-d.getTime();
-          if(ms<60000)return 'hace un momento';
-          if(ms<3600000)return 'hace '+Math.floor(ms/60000)+' min';
-          if(ms<86400000)return 'hace '+Math.floor(ms/3600000)+' hr'+(Math.floor(ms/3600000)!==1?'s':'');
-          const days=Math.floor(ms/86400000);
-          if(days===1)return 'ayer';
-          if(days<7)return 'hace '+days+' días';
-          if(days<30)return 'hace '+Math.floor(days/7)+' sem';
-          return fmtDate(iso.split('T')[0]);
-        }catch(e){return '';}
-      };
-      const movLine=lastMov?(
-        '<div style="font-size:11px;margin-top:8px;line-height:1.5">'
-        +(lastMov.type==='in'
-          ?'<span style="color:var(--sage);font-weight:bold">🟢 Ingreso +'+fx(lastMov.amt)+'</span> <span style="color:var(--muted)">'+_relTime(lastMov.when)+' → '+assetName+'</span>'
-          :'<span style="color:var(--terra);font-weight:bold">🔴 Retiro −'+fx(lastMov.amt)+'</span> <span style="color:var(--muted)">'+_relTime(lastMov.when)+(lastMov.concept?' · '+lastMov.concept:'')+'</span>')
-        +'</div>'
-      ):'';
+      // Subtítulo: si hay metas, las menciona también para dar contexto.
+      const subTarget=metaSaved>0?'→ '+assetName+' · '+activeMetas.length+' meta'+(activeMetas.length!==1?'s':''):'→ '+assetName;
       return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px">'
         +'<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">💰 Ahorro acumulado</div>'
-        +'<div class="stat" style="color:var(--sage);font-family:Georgia,serif">'+fx(Math.round(accumKept))+'</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-top:2px">→ '+assetName+'</div>'
+        +'<div class="stat" style="color:var(--sage);font-family:Georgia,serif">'+fx(Math.round(totalAccum))+'</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+subTarget+'</div>'
         +movLine
         +streakLine
         +(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')
         +'</div>';
     }
-    // Not yet committed — show action card
-    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div><div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'%</div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
+    // Sin commit válido este ciclo — mostrar prompt + nota de metas si hay.
+    const metaLine=metaSaved>0?(
+      '<div style="font-size:11px;color:var(--sage);margin:0 0 10px;padding:8px 10px;background:rgba(78,124,106,.06);border-radius:6px;line-height:1.5">🎯 Tienes <strong>'+fx(Math.round(metaSaved))+'</strong> ahorrado en '+activeMetas.length+' meta'+(activeMetas.length!==1?'s':'')+'</div>'
+    ):'';
+    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div>'+metaLine+'<div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'%</div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
   }catch(e){return'';}})()}
 
   <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en ventana del bono) -->
@@ -4989,6 +4997,7 @@ function rFlujo(){try{
     ${(()=>{const ea=editAssetId?S.assets.find(a=>a.id===editAssetId):null;return`
     <div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="an" placeholder="Mercado Pago BMG, Cajita Nu..." value="${ea?ea.name:''}"></div>
     <div style="margin-bottom:10px"><label>Saldo actual ($)</label><input type="number" id="av" placeholder="0" value="${ea?ea.val:''}"></div>
+    ${editAssetId?'':`<div style="margin-bottom:10px"><label>Fecha del registro</label><input type="date" id="ad" value="${_todayYMD()}"><div style="font-size:10px;color:var(--muted);margin-top:4px">Se usará para el primer movimiento "Saldo inicial". Útil si quieres reflejar saldo histórico.</div></div>`}
     <div class="row-b" style="padding:10px 0;margin-bottom:10px;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)">
       <div style="flex:1"><div style="font-size:12px;color:var(--txt)">¿Genera rendimiento?</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Activos como BMG, Cetes o Cajita pagan intereses</div></div>
       <label class="switch"><input type="checkbox" id="ag" ${ea?.gen?'checked':''} onchange="document.getElementById('agIncWrap').style.display=this.checked?'block':'none'"><span class="slider"></span></label>
@@ -5401,7 +5410,9 @@ function fabAction(type){
 // nombre, saldo, gen + yldPct (anual %).
 function openQuickAsset(){
   const body='<input type="text" id="qan" placeholder="Nombre (Nu expréss, Mercado Pago BMG, Cetes…)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
-    +'<input type="number" id="qav" placeholder="Saldo actual $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
+    +'<input type="number" id="qav" placeholder="Saldo actual $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:10px">'
+    +'<label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha del registro</label>'
+    +'<input type="date" id="qad" value="'+_todayYMD()+'" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
     +'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:12px;color:var(--txt2);padding:8px 10px;background:rgba(78,124,106,.05);border-radius:6px;margin-bottom:10px"><input type="checkbox" id="qag" onchange="document.getElementById(\'qayWrap\').style.display=this.checked?\'block\':\'none\'" style="width:auto;accent-color:var(--sage)">¿Genera rendimiento? (BMG, Cetes, Cajita…)</label>'
     +'<div id="qayWrap" style="display:none;margin-bottom:8px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Rendimiento anual (%)</label><input type="number" id="qay" placeholder="0" step="0.1" style="width:100%;padding:9px;font-size:14px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Ej: BMG ~9%, Cetes ~10%, Cajita Nu ~13%</div></div>';
   showConfirm('🏦 Nuevo activo',body,()=>{
@@ -5409,8 +5420,9 @@ function openQuickAsset(){
     const v=+(document.getElementById('qav')?.value)||0;
     const gen=document.getElementById('qag')?.checked||false;
     const yldPct=gen?(+(document.getElementById('qay')?.value)||0):0;
+    const date=document.getElementById('qad')?.value||_todayYMD();
     if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
-    const initEv=_mkAssetEvent('init',v,'Saldo inicial registrado');
+    const initEv=_mkAssetEvent('init',v,'Saldo inicial registrado',date);
     pt({assets:[...(S.assets||[]),{id:Date.now(),name:n,val:v,gen,yldPct,events:[initEv]}]});
     closeConfirm();toast('🏦 +'+n+' registrado');
     try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
@@ -5739,8 +5751,9 @@ function addAsset(){
   const v=+(document.getElementById('av')?.value)||0;
   const gen=document.getElementById('ag')?.checked||false;
   const yldPct=gen?(+(document.getElementById('ai')?.value)||0):0;
+  const date=document.getElementById('ad')?.value||_todayYMD();
   if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
-  const initEvent=_mkAssetEvent('init',v,'Saldo inicial registrado');
+  const initEvent=_mkAssetEvent('init',v,'Saldo inicial registrado',date);
   pt({assets:[...S.assets,{id:Date.now(),name:n,val:v,gen,yldPct,events:[initEvent]}]});
   toast('🏦 Activo registrado');
   rFlujo();hdrUp&&hdrUp();
@@ -9388,7 +9401,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidT';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidU';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

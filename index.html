@@ -438,6 +438,15 @@ function _normalizeState(st){
     if(a&&a.gen&&a.yldPct===undefined&&(+a.inc||0)>0&&(+a.val||0)>0){
       a.yldPct=+(a.inc*12/a.val*100).toFixed(2);
     }
+    // Migración de eventos: arranca el log con un "saldo inicial" para que
+    // el usuario tenga visibilidad histórica desde la creación. Sólo aplica
+    // a activos sin events (los nuevos los crean al registrarse).
+    if(a&&!Array.isArray(a.events)){
+      a.events=[];
+      if((+a.val||0)>0){
+        a.events.push({id:Date.now()+Math.floor(Math.random()*1000),type:'init',amount:+a.val||0,date:_ymdLocal(new Date()),concept:'Saldo inicial registrado'});
+      }
+    }
   });
   // Migración: overtimeLog con paid:true no estaba sumando el dinero a las
   // extras (el botón "Ya me las pagaron" sólo marcaba paid sin registrar
@@ -2309,6 +2318,21 @@ const _monthlyYield=(a)=>{
   const v=+a.val||0,p=+a.yldPct||0;
   return v*p/100/12;
 };
+// Crea un objeto de evento para el log de movimientos del activo. type:
+// 'init' (saldo inicial), 'in' (depósito), 'out' (retiro), 'adjust'
+// (ajuste manual con 🔄), 'yield' (rendimiento aplicado).
+const _mkAssetEvent=(type,amount,concept,date)=>({
+  id:Date.now()+Math.floor(Math.random()*10000),
+  type,
+  amount:+amount||0,
+  date:date||_ymdLocal(new Date()),
+  concept:concept||''
+});
+// Devuelve nuevo array S.assets con el evento agregado al activo dado.
+const _withAssetEvent=(assets,assetId,event)=>assets.map(a=>{
+  if(a.id!==assetId)return a;
+  return {...a,events:[...(a.events||[]),event]};
+});
 const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+_monthlyYield(x),0);
 const tExtras=()=>{
   let total=0;
@@ -4997,6 +5021,31 @@ function rFlujo(){try{
         +'<div class="row-b"><span>6 meses</span><strong style="color:var(--sage)">'+fx(Math.round(my*6))+'</strong></div>'
         +'<div class="row-b"><span>12 meses</span><strong style="color:var(--sage)">'+fx(Math.round(my*12))+'</strong></div>'
         +'</div>':'';
+      // Lista de movimientos (events) — ordenados desc por fecha. Cada uno
+      // se puede editar o eliminar. type 'init' tiene formato distinto.
+      const events=Array.isArray(a.events)?[...a.events].sort((x,y)=>(y.date||'').localeCompare(x.date||'')||y.id-x.id):[];
+      const evIcon={init:'🌱',in:'🟢',out:'🔴',adjust:'🔄',yield:'💎'};
+      const movHtml=events.length>0?(
+        '<details style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:bold;padding:4px 0">📋 Movimientos ('+events.length+')</summary>'
+        +'<div style="margin-top:8px">'
+        +events.map(ev=>{
+          const sign=(+ev.amount||0)>=0?'+':'';
+          const col=ev.type==='out'||(+ev.amount||0)<0?'var(--terra)':'var(--sage)';
+          const ic=evIcon[ev.type]||'•';
+          return '<div class="row-b" style="padding:6px 4px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px">'
+            +'<div style="flex:1;min-width:0">'
+              +'<div style="display:flex;align-items:center;gap:6px"><span>'+ic+'</span><span style="color:var(--txt);font-weight:bold">'+fmtDate(ev.date)+'</span></div>'
+              +(ev.concept?'<div style="color:var(--muted);font-size:10px;margin-top:2px;margin-left:18px">'+ev.concept+'</div>':'')
+            +'</div>'
+            +'<div style="display:flex;align-items:center;gap:4px;flex-shrink:0">'
+              +'<span style="color:'+col+';font-weight:bold">'+sign+fx(+ev.amount||0)+'</span>'
+              +'<button class="btn btn-ghost btn-sm" onclick="editAssetEvent('+a.id+','+ev.id+')" title="Editar" style="padding:2px 6px;font-size:10px">✏️</button>'
+              +'<button class="btn btn-ghost btn-sm" onclick="delAssetEvent('+a.id+','+ev.id+')" title="Eliminar" style="padding:2px 6px;font-size:10px">🗑️</button>'
+            +'</div>'
+          +'</div>';
+        }).join('')
+        +'</div></details>'
+      ):'';
       return `
       <div style="padding:12px 0;border-bottom:1px solid var(--border)">
         <div class="row-b">
@@ -5012,6 +5061,7 @@ function rFlujo(){try{
           </div>
         </div>
         ${proj}
+        ${movHtml}
       </div>
     `;}).join('')}
     <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;padding-top:10px;border-top:1px dashed var(--border)">
@@ -5360,7 +5410,8 @@ function openQuickAsset(){
     const gen=document.getElementById('qag')?.checked||false;
     const yldPct=gen?(+(document.getElementById('qay')?.value)||0):0;
     if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
-    pt({assets:[...(S.assets||[]),{id:Date.now(),name:n,val:v,gen,yldPct}]});
+    const initEv=_mkAssetEvent('init',v,'Saldo inicial registrado');
+    pt({assets:[...(S.assets||[]),{id:Date.now(),name:n,val:v,gen,yldPct,events:[initEv]}]});
     closeConfirm();toast('🏦 +'+n+' registrado');
     try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
     try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
@@ -5689,7 +5740,8 @@ function addAsset(){
   const gen=document.getElementById('ag')?.checked||false;
   const yldPct=gen?(+(document.getElementById('ai')?.value)||0):0;
   if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
-  pt({assets:[...S.assets,{id:Date.now(),name:n,val:v,gen,yldPct}]});
+  const initEvent=_mkAssetEvent('init',v,'Saldo inicial registrado');
+  pt({assets:[...S.assets,{id:Date.now(),name:n,val:v,gen,yldPct,events:[initEvent]}]});
   toast('🏦 Activo registrado');
   rFlujo();hdrUp&&hdrUp();
 }
@@ -5715,16 +5767,78 @@ function delAsset(id){
     toast('Activo eliminado');rFlujo();hdrUp&&hdrUp();
   });
 }
+// Editar un movimiento del activo. Cambios en monto se aplican como delta
+// a asset.val. Los demás campos (fecha, concepto, type) sólo actualizan
+// el evento.
+function editAssetEvent(assetId,evId){
+  const a=S.assets.find(x=>x.id===assetId);if(!a)return;
+  const ev=(a.events||[]).find(e=>e.id===evId);if(!ev)return;
+  const types=[
+    {k:'init',l:'🌱 Saldo inicial'},
+    {k:'in',l:'🟢 Ingreso'},
+    {k:'out',l:'🔴 Retiro'},
+    {k:'adjust',l:'🔄 Ajuste'},
+    {k:'yield',l:'💎 Rendimiento'}
+  ];
+  const body='<div style="margin-bottom:10px"><label>Tipo</label><select id="_eaeType" style="width:100%;padding:9px;font-size:13px">'
+    +types.map(t=>'<option value="'+t.k+'" '+(ev.type===t.k?'selected':'')+'>'+t.l+'</option>').join('')
+    +'</select></div>'
+    +'<div style="margin-bottom:10px"><label>Monto ($)</label><input type="number" id="_eaeAmt" value="'+(+ev.amount||0)+'" style="width:100%;padding:9px;font-size:14px"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4">Positivo = entra al activo, negativo = sale. La diferencia se aplica al saldo.</div></div>'
+    +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_eaeDate" value="'+(ev.date||_todayYMD())+'"></div>'
+    +'<div style="margin-bottom:4px"><label>Concepto</label><input type="text" id="_eaeConcept" value="'+(ev.concept||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:9px;font-size:13px"></div>';
+  showConfirm('✏️ Editar movimiento',body,()=>{
+    const newType=document.getElementById('_eaeType')?.value||ev.type;
+    const newAmt=+(document.getElementById('_eaeAmt')?.value)||0;
+    const newDate=document.getElementById('_eaeDate')?.value||ev.date;
+    const newConcept=(document.getElementById('_eaeConcept')?.value||'').trim();
+    const oldAmt=+ev.amount||0;
+    const delta=newAmt-oldAmt;
+    const newAssets=S.assets.map(x=>{
+      if(x.id!==assetId)return x;
+      const newEvents=(x.events||[]).map(e=>e.id===evId?{...e,type:newType,amount:newAmt,date:newDate,concept:newConcept}:e);
+      return {...x,val:Math.max(0,(+x.val||0)+delta),events:newEvents};
+    });
+    pt({assets:newAssets});
+    toast('✓ Movimiento actualizado'+(delta!==0?' · saldo '+(delta>0?'+':'')+fx(delta):''));
+    rFlujo();hdrUp&&hdrUp();
+  });
+}
+// Eliminar un movimiento. Revierte su efecto en asset.val (resta el monto
+// del evento eliminado).
+function delAssetEvent(assetId,evId){
+  const a=S.assets.find(x=>x.id===assetId);if(!a)return;
+  const ev=(a.events||[]).find(e=>e.id===evId);if(!ev)return;
+  const evAmt=+ev.amount||0;
+  showConfirm('¿Eliminar este movimiento?',
+    '<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a quitar <strong>'+(evAmt>=0?'+':'')+fx(evAmt)+'</strong> ('+(ev.concept||'sin concepto')+'). El saldo del activo se ajusta restando este monto.</div>',
+    ()=>{
+      const newAssets=S.assets.map(x=>{
+        if(x.id!==assetId)return x;
+        const newEvents=(x.events||[]).filter(e=>e.id!==evId);
+        return {...x,val:Math.max(0,(+x.val||0)-evAmt),events:newEvents};
+      });
+      pt({assets:newAssets});
+      toast('Movimiento eliminado');rFlujo();hdrUp&&hdrUp();
+    }
+  );
+}
 function quickUpdAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
   const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza el saldo actual de <strong style="color:var(--sage)">'+a.name+'</strong>. Úsalo cuando te paguen rendimiento o muevas dinero.</div>'
     +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Saldo anterior</label><div style="font-size:14px;color:var(--txt2)">'+fx(a.val)+'</div></div>'
-    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Saldo actual ($)</label><input type="number" id="_quAssetVal" value="'+a.val+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>';
+    +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Saldo actual ($)</label><input type="number" id="_quAssetVal" value="'+a.val+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
+    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quAssetConcept" placeholder="Pago de rendimiento, depósito, retiro…" style="width:100%;padding:8px;font-size:13px"></div>';
   showConfirm('🔄 Actualizar saldo',body,()=>{
     const nv=+(document.getElementById('_quAssetVal')?.value)||0;
     if(nv<0){toast('⚠ Saldo inválido');return;}
     const diff=nv-a.val;
-    pt({assets:S.assets.map(x=>x.id===id?{...x,val:nv}:x)});
+    const concept=(document.getElementById('_quAssetConcept')?.value||'').trim()||(diff>=0?'Ajuste de saldo':'Ajuste de saldo');
+    let newAssets=S.assets.map(x=>x.id===id?{...x,val:nv}:x);
+    if(diff!==0){
+      const ev=_mkAssetEvent(diff>0?'in':'out',diff,concept);
+      newAssets=_withAssetEvent(newAssets,id,ev);
+    }
+    pt({assets:newAssets});
     const msg=diff>0?'📈 +'+fx(diff)+' · Nuevo saldo '+fx(nv):diff<0?'📉 '+fx(diff)+' · Nuevo saldo '+fx(nv):'Sin cambios';
     toast(msg);rFlujo();hdrUp&&hdrUp();
   });
@@ -5836,8 +5950,12 @@ function _savWizStep3(){
   const {amount,assetId}=_savWizData;
   const asset=S.assets.find(a=>a.id===assetId);if(!asset)return;
   // Execute commit
-  const newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amount}:a);
+  let newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amount}:a);
   const ck=cycleKey();
+  // Registra el ingreso en el log del activo para que aparezca en
+  // "Movimientos" del card de Activos.
+  const ev=_mkAssetEvent('in',amount,'Págate Primero · '+ck);
+  newAssets=_withAssetEvent(newAssets,assetId,ev);
   const newCommits={...(S.savCommits||{}),[ck]:{amount,assetId,date:new Date().toISOString(),status:'committed'}};
   const newStreak=(S.savStreak||0)+1;
   const newBest=Math.max(S.savStreakBest||0,newStreak);
@@ -5976,7 +6094,13 @@ function _applySavUsed({outcome,keepStreak}){
   const assetName=asset?asset.name:'tu activo';
   const used=Math.max(0,+window._pendingSavUsed||0);
   const concept=window._pendingSavConcept||(outcome==='emergency'?'Emergencia':'Uso del ahorro');
-  const newAssets=used>0?S.assets.map(a=>a.id===c.assetId?{...a,val:Math.max(0,(+a.val||0)-used)}:a):S.assets;
+  let newAssets=used>0?S.assets.map(a=>a.id===c.assetId?{...a,val:Math.max(0,(+a.val||0)-used)}:a):S.assets;
+  // Log del retiro en el activo para que aparezca en "Movimientos".
+  if(used>0){
+    const evConcept=(outcome==='emergency'?'🚨 ':'💔 ')+concept;
+    const ev=_mkAssetEvent('out',-used,evConcept);
+    newAssets=_withAssetEvent(newAssets,c.assetId,ev);
+  }
   // Status según outcome+keepStreak
   let status='broken';
   if(outcome==='emergency'){status=keepStreak?'emergency-kept':'emergency-broken';}
@@ -9264,7 +9388,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidS';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidT';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

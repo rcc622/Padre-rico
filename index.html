@@ -5016,6 +5016,7 @@ function rFlujo(){try{
         <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Total en activos</div><div class="stat" style="color:var(--sage)">${fx(tAss())}</div></div>
         ${passInc()>0?`<div style="text-align:right"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Ingreso pasivo</div><div style="font-size:16px;font-weight:bold;color:var(--sage)">${fx(passInc())}/mes</div></div>`:''}
       </div>
+      ${tAss()>0?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;color:var(--terra);border:1px solid rgba(184,92,74,.3)" onclick="openRetiroPicker()">📤 Registrar retiro</button>`:''}
     </div>
     ${S.assets.map(a=>{
       const my=_monthlyYield(a);
@@ -5064,8 +5065,6 @@ function rFlujo(){try{
           </div>
           <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
           <div class="row" style="gap:4px">
-            <button class="btn btn-ghost btn-sm" onclick="depositAsset(${a.id})" title="Registrar depósito" style="color:var(--sage)">➕</button>
-            <button class="btn btn-ghost btn-sm" onclick="withdrawAsset(${a.id})" title="Registrar retiro" style="color:var(--terra)">➖</button>
             <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Ajustar saldo">🔄</button>
             <button class="btn btn-ghost btn-sm" onclick="editAssetId=${a.id};rFlujo()" title="Editar">✏️</button>
             <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
@@ -5879,6 +5878,25 @@ function depositAsset(id){
 }
 // Atajo para registrar un retiro explícito. Resta el monto del activo
 // (sin pasar de 0) y crea evento 'out' con monto negativo.
+// Modal global "Registrar retiro" desde el card de Total en activos. Si
+// hay un solo activo con saldo, va directo a withdrawAsset; si hay varios,
+// abre un selector para elegir cuál.
+function openRetiroPicker(){
+  const opts=(S.assets||[]).filter(a=>(+a.val||0)>0);
+  if(opts.length===0){toast('No hay activos con saldo');return;}
+  if(opts.length===1){withdrawAsset(opts[0].id);return;}
+  let sel=opts[0].id;
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.6">¿De qué activo vas a retirar dinero?</div>'
+    +'<div style="max-height:280px;overflow-y:auto">'
+    +opts.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===sel?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===sel?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_retiroAsset" value="'+a.id+'" '+(a.id===sel?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo: '+fx(a.val)+'</div></div></label>').join('')
+    +'</div>';
+  showConfirm('📤 Registrar retiro',body,()=>{
+    const r=document.querySelector('input[name=_retiroAsset]:checked');
+    const id=r?+r.value:opts[0].id;
+    closeConfirm();
+    setTimeout(()=>withdrawAsset(id),100);
+  });
+}
 function withdrawAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
   const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Registra un retiro de <strong style="color:var(--sage)">'+a.name+'</strong> (saldo actual <strong>'+fx(a.val)+'</strong>).</div>'
@@ -9456,7 +9474,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidW';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidX';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

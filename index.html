@@ -2769,9 +2769,52 @@ function rDash(){
       const accumKept=_commitAssetIds.length>0
         ?Math.min(Math.max(0,accumKeptRaw),_commitAssetTotal)
         :Math.max(0,accumKeptRaw);
-      const keptCount=allCommits.filter(sc=>sc&&(sc.status==='intact'||sc.status==='emergency-kept'||sc.status==='committed')).length;
-      const accumLine=keptCount>1?'<div style="font-size:11px;color:var(--sage);margin-top:6px;padding-top:6px;border-top:1px dashed rgba(78,124,106,.3)">📈 Acumulado total: <strong>'+fx(Math.round(accumKept))+'</strong> en '+keptCount+' quincenas</div>':'';
-      return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px"><div class="row-b"><div style="flex:1"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:4px;font-weight:bold">✅ Ahorro apartado esta quincena</div><div style="font-size:16px;color:var(--sage);font-weight:bold">'+fx(c.amount)+' → '+assetName+'</div>'+streakLine+accumLine+'</div></div>'+(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')+'</div>';
+      // Último movimiento (ingreso o retiro). Para cada commit:
+      //   • date + amount → evento de ingreso (cuando aparté)
+      //   • closedAt + usedAmount → evento de retiro (emergencia/me rompí)
+      // El más reciente se muestra debajo del monto en grande.
+      const movEvents=[];
+      allCommits.forEach(sc=>{
+        if(!sc)return;
+        if(sc.date&&(+sc.amount||0)>0){
+          movEvents.push({type:'in',amt:+sc.amount||0,when:sc.date});
+        }
+        if(sc.closedAt&&(+sc.usedAmount||0)>0){
+          movEvents.push({type:'out',amt:+sc.usedAmount||0,when:sc.closedAt,concept:sc.emergencyConcept||''});
+        }
+      });
+      movEvents.sort((a,b)=>new Date(b.when)-new Date(a.when));
+      const lastMov=movEvents[0]||null;
+      const _relTime=(iso)=>{
+        if(!iso)return '';
+        try{
+          const d=new Date(iso);
+          const ms=Date.now()-d.getTime();
+          if(ms<60000)return 'hace un momento';
+          if(ms<3600000)return 'hace '+Math.floor(ms/60000)+' min';
+          if(ms<86400000)return 'hace '+Math.floor(ms/3600000)+' hr'+(Math.floor(ms/3600000)!==1?'s':'');
+          const days=Math.floor(ms/86400000);
+          if(days===1)return 'ayer';
+          if(days<7)return 'hace '+days+' días';
+          if(days<30)return 'hace '+Math.floor(days/7)+' sem';
+          return fmtDate(iso.split('T')[0]);
+        }catch(e){return '';}
+      };
+      const movLine=lastMov?(
+        '<div style="font-size:11px;margin-top:8px;line-height:1.5">'
+        +(lastMov.type==='in'
+          ?'<span style="color:var(--sage);font-weight:bold">🟢 Ingreso +'+fx(lastMov.amt)+'</span> <span style="color:var(--muted)">'+_relTime(lastMov.when)+' → '+assetName+'</span>'
+          :'<span style="color:var(--terra);font-weight:bold">🔴 Retiro −'+fx(lastMov.amt)+'</span> <span style="color:var(--muted)">'+_relTime(lastMov.when)+(lastMov.concept?' · '+lastMov.concept:'')+'</span>')
+        +'</div>'
+      ):'';
+      return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px">'
+        +'<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">💰 Ahorro acumulado</div>'
+        +'<div class="stat" style="color:var(--sage);font-family:Georgia,serif">'+fx(Math.round(accumKept))+'</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:2px">→ '+assetName+'</div>'
+        +movLine
+        +streakLine
+        +(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')
+        +'</div>';
     }
     // Not yet committed — show action card
     return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div><div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'%</div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
@@ -9221,7 +9264,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidR';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidS';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

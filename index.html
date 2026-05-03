@@ -5064,7 +5064,9 @@ function rFlujo(){try{
           </div>
           <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
           <div class="row" style="gap:4px">
-            <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Actualizar saldo">🔄</button>
+            <button class="btn btn-ghost btn-sm" onclick="depositAsset(${a.id})" title="Registrar depósito" style="color:var(--sage)">➕</button>
+            <button class="btn btn-ghost btn-sm" onclick="withdrawAsset(${a.id})" title="Registrar retiro" style="color:var(--terra)">➖</button>
+            <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Ajustar saldo">🔄</button>
             <button class="btn btn-ghost btn-sm" onclick="editAssetId=${a.id};rFlujo()" title="Editar">✏️</button>
             <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
           </div>
@@ -5854,6 +5856,45 @@ function quickUpdAsset(id){
     pt({assets:newAssets});
     const msg=diff>0?'📈 +'+fx(diff)+' · Nuevo saldo '+fx(nv):diff<0?'📉 '+fx(diff)+' · Nuevo saldo '+fx(nv):'Sin cambios';
     toast(msg);rFlujo();hdrUp&&hdrUp();
+  });
+}
+// Atajo para registrar un depósito explícito sin pensar en el saldo
+// final. Suma el monto al activo y crea evento 'in'.
+function depositAsset(id){
+  const a=S.assets.find(x=>x.id===id);if(!a)return;
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Registra un depósito a <strong style="color:var(--sage)">'+a.name+'</strong>.</div>'
+    +'<div style="margin-bottom:10px"><label>Monto del depósito ($)</label><input type="number" id="_depAmt" placeholder="0" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
+    +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_depDate" value="'+_todayYMD()+'"></div>'
+    +'<div style="margin-bottom:4px"><label>Concepto (opcional)</label><input type="text" id="_depConcept" placeholder="Sueldo, transferencia, rendimiento…" style="width:100%;padding:8px;font-size:13px"></div>';
+  showConfirm('➕ Depósito',body,()=>{
+    const amt=+(document.getElementById('_depAmt')?.value)||0;
+    if(amt<=0){toast('⚠ Monto requerido');return;}
+    const date=document.getElementById('_depDate')?.value||_todayYMD();
+    const concept=(document.getElementById('_depConcept')?.value||'').trim()||'Depósito';
+    let newAssets=S.assets.map(x=>x.id===id?{...x,val:(+x.val||0)+amt}:x);
+    newAssets=_withAssetEvent(newAssets,id,_mkAssetEvent('in',amt,concept,date));
+    pt({assets:newAssets});
+    toast('📈 +'+fx(amt)+' · Nuevo saldo '+fx((+a.val||0)+amt));rFlujo();hdrUp&&hdrUp();
+  });
+}
+// Atajo para registrar un retiro explícito. Resta el monto del activo
+// (sin pasar de 0) y crea evento 'out' con monto negativo.
+function withdrawAsset(id){
+  const a=S.assets.find(x=>x.id===id);if(!a)return;
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Registra un retiro de <strong style="color:var(--sage)">'+a.name+'</strong> (saldo actual <strong>'+fx(a.val)+'</strong>).</div>'
+    +'<div style="margin-bottom:10px"><label>Monto del retiro ($)</label><input type="number" id="_wdAmt" placeholder="0" max="'+a.val+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--terra)" onclick="this.select()"></div>'
+    +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_wdDate" value="'+_todayYMD()+'"></div>'
+    +'<div style="margin-bottom:4px"><label>Concepto (opcional)</label><input type="text" id="_wdConcept" placeholder="Pago, transferencia, gasto…" style="width:100%;padding:8px;font-size:13px"></div>';
+  showConfirm('➖ Retiro',body,()=>{
+    const amt=+(document.getElementById('_wdAmt')?.value)||0;
+    if(amt<=0){toast('⚠ Monto requerido');return;}
+    const used=Math.min(amt,+a.val||0);
+    const date=document.getElementById('_wdDate')?.value||_todayYMD();
+    const concept=(document.getElementById('_wdConcept')?.value||'').trim()||'Retiro';
+    let newAssets=S.assets.map(x=>x.id===id?{...x,val:Math.max(0,(+x.val||0)-used)}:x);
+    newAssets=_withAssetEvent(newAssets,id,_mkAssetEvent('out',-used,concept,date));
+    pt({assets:newAssets});
+    toast('📉 −'+fx(used)+' · Nuevo saldo '+fx(Math.max(0,(+a.val||0)-used)));rFlujo();hdrUp&&hdrUp();
   });
 }
 // ══ SAVINGS STREAK (Fase 2 · Hooked) ════════════════════
@@ -9401,7 +9442,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidU';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidV';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

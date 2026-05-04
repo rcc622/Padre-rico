@@ -7921,7 +7921,71 @@ function checkCustomHabit(id,date){
 function markCustomHabit(id,date,ok){
   const h=(S.customHabits||[]).find(x=>x.id===id);if(!h){closeConfirm();return;}
   if(ok&&!h.checks.includes(date))h.checks.push(date);
-  sv();closeConfirm();toast(ok?'✓ Día cumplido':'Registrado como fallado');rHabitos();
+  sv();closeConfirm();toast(ok?'✓ Día cumplido':'Registrado como fallado');
+  // Detecta cuando el hábito se completó (checks >= duración) y dispara la
+  // ventana de celebración con opción de registrar el ahorro como depósito
+  // a un activo. La flag celebrated evita re-disparar si el usuario remarca
+  // días o agrega más allá de la duración.
+  if(ok&&!h.celebrated&&h.checks.length>=(+h.durationDays||30)){
+    h.celebrated=true;sv();
+    setTimeout(()=>showCustomHabitDone(id),350);
+    return;
+  }
+  rHabitos();
+}
+// Modal de celebración cuando un hábito personalizado completa todos sus
+// días. Muestra el ahorro estimado y ofrece registrarlo como depósito a
+// un activo (si hay alguno) — el usuario puede saltárselo con "Solo
+// celebrar".
+function showCustomHabitDone(id){
+  const h=(S.customHabits||[]).find(x=>x.id===id);if(!h)return;
+  const total=Math.round((+h.dailySave||0)*(+h.durationDays||30));
+  const itemsLbl=(h.items||[]).map(it=>it.name).filter(Boolean).join(', ');
+  const body='<div style="text-align:center;padding:8px 0">'
+    +'<div style="font-size:48px;margin-bottom:8px">🎉</div>'
+    +'<div style="font-size:16px;font-weight:bold;color:var(--sage);margin-bottom:6px">¡'+h.name+' completado!</div>'
+    +'<div style="font-size:12px;color:var(--txt2);margin-bottom:14px">Cumpliste '+(+h.durationDays||30)+' días seguidos. La disciplina de Arkad vive en ti.</div>'
+    +(total>0?'<div style="padding:14px;background:rgba(78,124,106,.06);border-radius:10px;margin-bottom:6px">'
+      +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Ahorro estimado</div>'
+      +'<div style="font-size:28px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(total)+'</div>'
+      +(itemsLbl?'<div style="font-size:10px;color:var(--muted);margin-top:4px">Evitando: '+itemsLbl+'</div>':'')
+      +'</div>':'')
+    +'</div>';
+  showConfirm('🏆 Hábito formado',body,()=>{
+    closeConfirm();
+    if(total<=0)return;
+    if(!S.assets||S.assets.length===0){
+      showInfo('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para registrar este ahorro necesitas un activo destino (Nu, Mercado Pago, efectivo). Créalo en <strong>Ingresos y Gastos → 🏦 Activos</strong> y vuelve a marcar.</div>');
+      return;
+    }
+    setTimeout(()=>_promptHabitSavingsRegister(id,total),120);
+  });
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row){
+    row.innerHTML=total>0
+      ?'<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Solo celebrar</button><button class="btn btn-sage" onclick="execConfirm()">💰 Registrar '+fx(total)+'</button>'
+      :'<button class="btn btn-sage" style="width:100%" onclick="closeConfirm();rHabitos()">✓ Cerrar</button>';
+  }
+}
+function _promptHabitSavingsRegister(habitId,amount){
+  const opts=(S.assets||[]);
+  if(opts.length===0)return;
+  let sel=opts[0].id;
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.6">¿A qué activo movemos los <strong style="color:var(--sage)">'+fx(amount)+'</strong> ahorrados?</div>'
+    +'<div style="max-height:280px;overflow-y:auto">'
+    +opts.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===sel?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===sel?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_habAsset" value="'+a.id+'" '+(a.id===sel?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx((+a.val||0)+amount)+'</strong></div></div></label>').join('')
+    +'</div>';
+  showConfirm('💰 Registrar ahorro',body,()=>{
+    const r=document.querySelector('input[name=_habAsset]:checked');
+    const aid=r?+r.value:opts[0].id;
+    const h=(S.customHabits||[]).find(x=>x.id===habitId);
+    let newAssets=S.assets.map(x=>x.id===aid?{...x,val:(+x.val||0)+amount}:x);
+    const ev=_mkAssetEvent('in',amount,'Hábito completado: '+(h?h.name:''));
+    newAssets=_withAssetEvent(newAssets,aid,ev);
+    pt({assets:newAssets});
+    closeConfirm();toast('💰 +'+fx(amount)+' registrado');
+    rHabitos();hdrUp&&hdrUp();
+  });
 }
 function removeCustomHabit(id){
   showConfirm('¿Eliminar hábito?','Se borrará el historial de este hábito.',()=>{
@@ -9474,7 +9538,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidX';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidY';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

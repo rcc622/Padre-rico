@@ -1987,14 +1987,27 @@ function tdcChargesByBillingCycle(){
       const corte=tdcCorteForDate(new Date(at),cfg);
       const cKey=_ymdLocal(corte);
       let amt=+v.amt||+v.realAmt||0;
+      // Resolver el nombre desde el modelo en vez del key crudo. Antes
+      // mostraba "exp_1777669823874" cuando v.name no estaba seteado en
+      // la entrada legacy de paidItems.
+      let displayName=v.name||'';
+      const [type,idStr]=key.split('_');const id=+idStr;
       if(!amt){
-        const [type,idStr]=key.split('_');const id=+idStr;
         if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2)amt=+d2.pay||0;}
         else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
         else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
       }
+      if(!displayName){
+        if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2)displayName='⛓️ '+d2.name;}
+        else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)displayName='📋 '+e.name;}
+        else if(type==='expw2'){const e=S.exp.find(x=>x.id===id);if(e)displayName='📋 '+e.name+' (Sem 2)';}
+        else if(type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)displayName='📋 '+e.name+' (Sem 3)';}
+        else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)displayName='🎯 '+g.name;}
+        else if(type==='imp'){const i=S.waitList.find(x=>x.id===id);if(i)displayName='⚡ '+i.name;}
+      }
+      if(!displayName)displayName='Movimiento sin nombre';
       if(!cycles[cKey])cycles[cKey]={corteDate:corte,charges:[],total:0};
-      cycles[cKey].charges.push({ck,key,amt,name:v.name||key,date:at});
+      cycles[cKey].charges.push({ck,key,amt,name:displayName,date:at});
       cycles[cKey].total+=amt;
     });
   });
@@ -7253,6 +7266,36 @@ function rHabitos(){
       </div>
       ${budget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctB}%;background:${bColor}"></div></div><div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: ${fx(budget)}</span><span style="color:${bColor};font-weight:bold">${pctB}% usado · ${fx(Math.max(0,budget-totalQ))} restante</span></div>`:''}
     </div>
+    ${(()=>{
+      // Resumen compacto de TDC dentro de Diarios — colapsado por default.
+      // El usuario quiere ver el estado de la TDC sin salir de Diarios.
+      const cfg=S.tdcConfig||{};
+      if(!cfg.limit||(!cfg.corteDay&&!cfg.corteUltimoDelMes)||!cfg.dueDay)return '';
+      try{
+        const b=tdcBuckets();
+        const used=b.grandTotal;
+        const limit=+cfg.limit||0;
+        const pct=limit>0?Math.min(100,Math.round(used/limit*100)):0;
+        const avail=Math.max(0,limit-used);
+        const over=used>limit;
+        const barColor=over?'var(--terra)':pct>=80?'var(--amber)':'var(--sky)';
+        const corteDisplay=cfg.corteUltimoDelMes?'último día':cfg.corteDay;
+        return '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:11px;color:var(--sky);padding:8px 10px;background:rgba(74,110,140,.06);border-radius:6px;list-style:none">'
+          +'<div class="row-b"><span style="font-weight:bold">💳 TDC · '+fx(used)+' usado</span><span style="font-size:11px;color:var(--muted)">'+pct+'% · '+fx(avail)+' disp.</span></div>'
+          +'</summary>'
+          +'<div style="padding:12px 10px 4px">'
+          +'<div class="row-b" style="margin-bottom:4px"><span style="font-size:10px;color:var(--muted)">Usado total</span><span style="font-size:10px;color:var(--muted)">Límite '+fx(limit)+'</span></div>'
+          +'<div class="row-b" style="margin-bottom:6px"><strong style="font-size:18px;color:'+barColor+';font-family:Georgia,serif">'+fx(used)+'</strong><span style="font-size:11px;color:'+(over?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(over?'Sobre límite':fx(avail)+' disp.')+'</span></div>'
+          +'<div class="pw" style="height:8px;margin-bottom:10px"><div class="pb" style="width:'+pct+'%;background:'+barColor+'"></div></div>'
+          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">'
+          +'<div style="padding:8px;background:'+(b.billedTotal>0?'rgba(184,92,74,.08)':'rgba(160,140,120,.06)')+';border-radius:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase">📋 Por pagar</div><div style="font-size:14px;font-weight:bold;color:'+(b.billedTotal>0?'var(--terra)':'var(--muted)')+'">'+fx(b.billedTotal)+'</div></div>'
+          +'<div style="padding:8px;background:rgba(74,110,140,.08);border-radius:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase">🔄 Ciclo actual</div><div style="font-size:14px;font-weight:bold;color:var(--sky)">'+fx(b.current.total)+'</div></div>'
+          +'</div>'
+          +'<div style="font-size:10px;color:var(--muted);margin-top:6px">Corte '+corteDisplay+' · pago día '+cfg.dueDay+'</div>'
+          +(b.current.charges.length>0?'<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Movimientos ciclo actual ('+b.current.charges.length+')</div><div style="max-height:150px;overflow-y:auto">'+b.current.charges.map(c=>'<div class="row-b" style="padding:5px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt2);max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</span><strong style="color:var(--sky)">'+fx(c.amt)+'</strong></div>').join('')+'</div></div>':'')
+          +'</div></details>';
+      }catch(e){return '';}
+    })()}
     ${pendingList.length>0?`<div class="card" style="border:2px solid var(--amber);background:rgba(160,112,48,.06);margin-bottom:12px;padding:12px 14px">
       <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:6px">⏳ ${pendingList.length} Pre-registro${pendingList.length!==1?'s':''} desde retos (${fx(Math.round(totalPending))})</div>
       <div style="font-size:11px;color:var(--txt2);line-height:1.6">Cuando fallaste un reto y registraste un gasto, se pre-registró aquí. Confirma (✓) si sí lo gastaste, o cancela (✕) si no. Mientras esté pendiente no cuenta al presupuesto.</div>
@@ -7306,7 +7349,10 @@ function rHabitos(){
           const actions=pend
             ?'<button class="btn btn-sage btn-sm" title="Confirmar gasto" style="padding:4px 8px;font-size:11px" onclick="confirmPendingDiario('+g.id+')">✓</button><button class="btn btn-red btn-sm" title="Cancelar pre-registro" onclick="cancelPendingDiario('+g.id+')">✕</button>'
             :'<button class="btn btn-red btn-sm" onclick="rmDiario('+g.id+')">✕</button>';
-          return`<div class="row-b" style="padding:8px 6px;border-bottom:1px solid var(--border);${rowBg};border-radius:${pend?'6px':'0'};margin-bottom:${pend?'4px':'0'}"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px">${g.name}${badge}</div><div style="font-size:10px;color:${pend?'var(--amber)':'var(--muted)'}">${subLabel}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:${priceColor};font-weight:bold;font-size:13px">-${fx(g.amt)}</span>${actions}</div></div>`;
+          // Icono del método de pago: 💵 débito (default) o 💳 TDC.
+          // Permite distinguir de un vistazo cómo se pagó cada gasto.
+          const methodIcon=g.paidWith==='tdc'?'<span title="Pagado con TDC" style="font-size:11px;margin-right:4px">💳</span>':'<span title="Pagado con débito" style="font-size:11px;margin-right:4px">💵</span>';
+          return`<div class="row-b" style="padding:8px 6px;border-bottom:1px solid var(--border);${rowBg};border-radius:${pend?'6px':'0'};margin-bottom:${pend?'4px':'0'}"><div class="row" style="flex:1;min-width:0;gap:8px"><span style="font-size:15px">${c.e}</span><div style="min-width:0;flex:1"><div style="color:var(--txt);font-size:13px">${methodIcon}${g.name}${badge}</div><div style="font-size:10px;color:${pend?'var(--amber)':'var(--muted)'}">${subLabel}</div></div></div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:${priceColor};font-weight:bold;font-size:13px">-${fx(g.amt)}</span>${actions}</div></div>`;
         }).join('')}
       </div>`;
     }).join('')}
@@ -9538,7 +9584,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidY';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZ';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

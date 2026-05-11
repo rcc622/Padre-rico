@@ -6017,6 +6017,23 @@ function withdrawAsset(id){
 // ══ WIZARD DE AHORRO (Hooked guiado, 3 pasos) ═══════════
 let _savWizStep=1,_savWizData={amount:0,assetId:null,pct:10};
 function openSavCommitModal(){startSavWizard();}
+// Suma un monto adicional al savCommit del ciclo actual, lo registra
+// como evento de ingreso en el activo destino, y actualiza cur.amount.
+// Útil cuando el usuario comprometió un monto pre-cálculo y ahora la
+// sugerencia con bono incluido pide más.
+function _savTopUp(gap){
+  closeConfirm&&closeConfirm();
+  const ck=cycleKey();
+  const c=(S.savCommits||{})[ck];if(!c||gap<=0)return;
+  const asset=S.assets.find(a=>a.id===c.assetId);if(!asset){toast('⚠ Activo destino no existe');return;}
+  let newAssets=S.assets.map(a=>a.id===c.assetId?{...a,val:(+a.val||0)+gap}:a);
+  const ev=_mkAssetEvent('in',gap,'Págate Primero · top-up '+ck);
+  newAssets=_withAssetEvent(newAssets,c.assetId,ev);
+  const newCommits={...S.savCommits,[ck]:{...c,amount:(+c.amount||0)+gap}};
+  pt({assets:newAssets,savCommits:newCommits});
+  toast('💰 +'+fx(gap)+' agregados a '+asset.name);
+  rDash();hdrUp&&hdrUp();
+}
 function startSavWizard(){
   // Pre-condiciones
   if(mInc()<=0){
@@ -6028,7 +6045,17 @@ function startSavWizard(){
     const asset=S.assets.find(a=>a.id===cur.assetId);
     const assetName=asset?asset.name:'tu activo';
     const streak=S.savStreak||0;
-    showInfo('✅ Ya apartaste esta quincena','<div style="font-size:12px;line-height:1.7;color:var(--txt2);text-align:center"><div style="font-size:24px;margin:10px 0">🪙</div><div style="font-size:18px;font-weight:bold;color:var(--sage);margin-bottom:4px">'+fx(cur.amount)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px">→ '+assetName+'</div>'+(streak>0?'<div style="padding:10px;background:rgba(160,112,48,.08);border-radius:8px;margin-top:10px"><strong style="color:var(--amber);font-size:16px">🔥 Racha '+streak+'</strong><div style="font-size:11px;color:var(--muted);margin-top:4px">'+streak+' quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+' al principio</div></div>':'')+'</div>');
+    // Sugerido actual: el % del ingreso real del ciclo (incluye bono).
+    // Si el usuario comprometió un monto MENOR al sugerido actual (ej.
+    // committed cuando la app aún calculaba con el promedio mInc/2),
+    // ofrecemos un botón para "completar" la diferencia. Antes solo
+    // mostrábamos el monto viejo y el usuario veía descuadre entre la
+    // tarjeta de Inicio ($2,375 sugerido) y el modal ($1,800 commit).
+    const sug=Math.round(curQnaInc()*(+S.savPct||10)/100);
+    const gap=Math.max(0,sug-(+cur.amount||0));
+    const streakBlock=streak>0?'<div style="padding:10px;background:rgba(160,112,48,.08);border-radius:8px;margin-top:10px"><strong style="color:var(--amber);font-size:16px">🔥 Racha '+streak+'</strong><div style="font-size:11px;color:var(--muted);margin-top:4px">'+streak+' quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+' al principio</div></div>':'';
+    const gapBlock=gap>0?'<div style="margin-top:12px;padding:10px 12px;background:rgba(74,110,140,.06);border-radius:8px;text-align:left;line-height:1.6;font-size:12px;color:var(--txt2)">📊 Tu sugerencia actual sería <strong style="color:var(--sage)">'+fx(sug)+'</strong> ('+S.savPct+'% de '+fx(curQnaInc())+'). Te faltarían <strong style="color:var(--sage)">'+fx(gap)+'</strong> para alcanzarla.</div><button class="btn btn-sage" style="width:100%;padding:14px;margin-top:10px;font-size:14px" onclick="closeConfirm();_savTopUp('+gap+')">💰 Sumar '+fx(gap)+' más</button>':'';
+    showInfo('✅ Ya apartaste esta quincena','<div style="font-size:12px;line-height:1.7;color:var(--txt2);text-align:center"><div style="font-size:24px;margin:10px 0">🪙</div><div style="font-size:18px;font-weight:bold;color:var(--sage);margin-bottom:4px">'+fx(cur.amount)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:12px">→ '+assetName+'</div>'+streakBlock+gapBlock+'</div>');
     return;
   }
   if(!S.assets||S.assets.length===0){
@@ -9669,7 +9696,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZD';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZE';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

@@ -139,7 +139,7 @@ button:active{transform:scale(.97)}
 .loading{animation:pulse 1.2s infinite}
 @media(max-width:600px){
   .g3{grid-template-columns:1fr 1fr}
-  .content{padding:10px}
+  .content{padding:10px 10px calc(180px + env(safe-area-inset-bottom,0))}
   .card{padding:14px;margin-bottom:10px}
   .stat{font-size:22px}
   .stat-sm{font-size:16px}
@@ -178,7 +178,7 @@ button:active{transform:scale(.97)}
 @media(max-width:420px){
   .g2{grid-template-columns:1fr}
   .g3{grid-template-columns:1fr}
-  .content{padding:8px}
+  .content{padding:8px 8px calc(180px + env(safe-area-inset-bottom,0))}
   .nav{gap:0}
   .nb{padding:8px 10px;font-size:9px}
   .badge{font-size:8px;padding:1px 4px;max-width:70px}
@@ -9721,7 +9721,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZG';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZH';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

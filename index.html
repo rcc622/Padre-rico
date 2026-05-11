@@ -5018,15 +5018,29 @@ function rFlujo(){try{
       const _ckCur=cycleKey();
       const _paidEntry=(S.paidItems[_ckCur]||{})['debt_'+d.id];
       const _appliedThisQ=_paidEntry&&(_paidEntry==='applied'||(typeof _paidEntry==='object'&&_paidEntry.applied));
+      // Distingue dos estados visuales:
+      //   LIQUIDADA (bal=0 o curPay>totalPays): borrón completo (line-through
+      //     + opacidad fuerte + fondo) — la deuda terminó.
+      //   APLICADA ESTA QNA pero no liquidada: sólo más tenue + badge ✓ —
+      //     el usuario pagó la cuota del ciclo pero la deuda sigue viva.
+      //   Antes ambos casos compartían el mismo look, lo que confundía:
+      //   préstamos a meses con cuota aplicada parecían liquidados.
+      const _isLiquidated=(+d.bal||0)<=0||(d.curPay&&d.totalPays&&d.curPay>d.totalPays);
       const _intBadge=d.hasInterest&&d.interestAmt>0?'<span class="badge" style="background:rgba(184,92,74,.12);color:var(--terra);border:1px solid rgba(184,92,74,.3)">📊 '+d.interestPct+'% int. · '+fx(d.interestAmt)+'</span>':'';
-      // Estilos visuales fuertes cuando ya se aplicó el pago en la qna actual:
-      // opacidad reducida, fondo verde tenue, monto tachado, badge grande.
-      const paidWrapStyle=_appliedThisQ
-        ?'padding:12px 0;border-bottom:1px solid var(--border);opacity:.55;background:rgba(78,124,106,.06);border-left:3px solid var(--sage);padding-left:10px'
-        :'padding:12px 0;border-bottom:1px solid var(--border)';
-      const paidAmtStyle=_appliedThisQ?'color:var(--muted);text-decoration:line-through':'color:var(--sky)';
-      const paidName=_appliedThisQ?'color:var(--muted);text-decoration:line-through':'color:var(--txt)';
-      const paidBadgeBig=_appliedThisQ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">✓ Pagada esta qna</span>':'';
+      const paidWrapStyle=_isLiquidated
+        ?'padding:12px 0;border-bottom:1px solid var(--border);opacity:.5;background:rgba(78,124,106,.06);border-left:3px solid var(--sage);padding-left:10px'
+        :(_appliedThisQ
+          ?'padding:12px 0;border-bottom:1px solid var(--border);opacity:.72;background:rgba(78,124,106,.04);border-left:3px solid var(--sage);padding-left:10px'
+          :'padding:12px 0;border-bottom:1px solid var(--border)');
+      // line-through SÓLO cuando está liquidada. Para aplicada-este-ciclo,
+      // mantén el texto legible (la deuda sigue activa).
+      const paidAmtStyle=_isLiquidated?'color:var(--muted);text-decoration:line-through':'color:var(--sky)';
+      const paidName=_isLiquidated?'color:var(--muted);text-decoration:line-through':'color:var(--txt)';
+      const paidBadgeBig=_isLiquidated
+        ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada</span>'
+        :(_appliedThisQ
+          ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">✓ Pagada esta qna</span>'
+          :'');
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
           '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
@@ -9655,7 +9669,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZC';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZD';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

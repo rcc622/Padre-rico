@@ -53,6 +53,11 @@ button:active{transform:scale(.97)}
 .card-sky{border-color:rgba(74,110,140,.28);background:var(--skydim)}
 .card-amber{border-color:rgba(160,112,48,.3);background:var(--amberdim)}
 .ct{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--sage);margin-bottom:13px}
+.card>.ct.card-toggler{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card>.ct.card-toggler .collapse-arrow{font-size:12px;color:var(--muted);transition:transform .2s}
+.card.card-collapsed>.ct{margin-bottom:0}
+.card.card-collapsed>*:not(.ct){display:none !important}
+.card.card-collapsed>.ct .collapse-arrow{transform:rotate(-90deg)}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
@@ -262,9 +267,9 @@ button:active{transform:scale(.97)}
   </header>
   <nav class="nav">
     <button class="nb act" onclick="go('dash')">🏛️ Inicio</button>
+    <button class="nb" onclick="go('habitos')">🧠 Día a día</button>
     <button class="nb" onclick="go('flujo')">💰 Ingresos y Gastos</button>
     <button class="nb" onclick="go('plan')">🎯 Plan de Acción</button>
-    <button class="nb" onclick="go('habitos')">🧠 Día a día</button>
     <button class="nb" onclick="go('historia')">📖 Mi Historia</button>
   </nav>
   <div class="content">
@@ -2520,6 +2525,62 @@ function go(tab){
   document.querySelectorAll('.nb').forEach(b=>{if(b.getAttribute('onclick')?.includes("'"+tab+"'"))b.classList.add('act')});
   ({dash:rDash,quincena:rQuincena,flujo:rFlujo,plan:rPlan,habitos:rHabitos,historia:rHistoria})[tab]?.();
   hdrUp();
+  _enableCardCollapse();
+}
+// Inicializa cards colapsables. Después de cada render busca todos los
+// .card > .ct y los convierte en toggles. Los cards arrancan expandidos.
+// El usuario puede pulsar el título para contraer y aliviar la vista.
+// _collapsedCards persiste en localStorage qué cards quedaron colapsadas
+// (key = combinación tab+orden) para que sobreviva navegación.
+let _cardCollapseObserverInit=false;
+function _initCardCollapseObserver(){
+  if(_cardCollapseObserverInit)return;
+  const content=document.querySelector('.content');
+  if(!content||!window.MutationObserver)return;
+  let pending=false;
+  const obs=new MutationObserver(()=>{
+    if(pending)return;
+    pending=true;
+    requestAnimationFrame(()=>{pending=false;_enableCardCollapse();});
+  });
+  obs.observe(content,{childList:true,subtree:true});
+  _cardCollapseObserverInit=true;
+}
+function _enableCardCollapse(){
+  try{
+    _initCardCollapseObserver();
+    const tabEl=document.querySelector('.content .panel.act');if(!tabEl)return;
+    const tabId=tabEl.id||'';
+    let stored={};
+    try{stored=JSON.parse(localStorage.getItem('prv5_collapsedCards')||'{}');}catch(e){}
+    const cards=tabEl.querySelectorAll('.card');
+    cards.forEach((card,i)=>{
+      if(card.dataset.collapseInit)return;
+      const ct=card.querySelector(':scope > .ct');
+      if(!ct)return;
+      card.dataset.collapseInit='1';
+      const key=tabId+'_'+i;
+      card.dataset.collapseKey=key;
+      if(!ct.classList.contains('card-toggler')){
+        ct.classList.add('card-toggler');
+        const arrow=document.createElement('span');
+        arrow.className='collapse-arrow';
+        arrow.textContent='▾';
+        ct.appendChild(arrow);
+      }
+      if(stored[key])card.classList.add('card-collapsed');
+      ct.addEventListener('click',(e)=>{
+        // Ignora clicks en botones/inputs dentro del título
+        if(e.target.closest('button,input,select,a'))return;
+        const isColl=card.classList.toggle('card-collapsed');
+        try{
+          const m=JSON.parse(localStorage.getItem('prv5_collapsedCards')||'{}');
+          if(isColl)m[key]=1;else delete m[key];
+          localStorage.setItem('prv5_collapsedCards',JSON.stringify(m));
+        }catch(e){}
+      });
+    });
+  }catch(e){_logErr('_enableCardCollapse',e);}
 }
 function openCierreModal(){
   document.getElementById('cierreQnaModal').style.display='block';
@@ -2545,7 +2606,7 @@ function hdrUp(){
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go(_restoreNavTab());}
 
 // ══ HELPERS ═════════════════════════════════════════
-const kpi=(title,val,color,sub)=>`<div class="card" style="margin-bottom:0;text-align:center"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}</div></div>`;
+const kpi=(title,val,color,sub,onclick)=>`<div class="card" style="margin-bottom:0;text-align:center${onclick?';cursor:pointer':''}" ${onclick?`onclick="${onclick}"`:''}><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}${onclick?' ›':''}</div></div>`;
 const fmtDate=(s)=>{if(!s)return'';try{
   // Acepta DD/MM/YYYY o YYYY-MM-DD. Si la fecha no es válida (ej. 31/02)
   // devolvemos el string original para que el usuario note el dato raro en
@@ -2917,14 +2978,14 @@ function rDash(){
     </div>
   </div>
 
-  <!-- KPIs -->
+  <!-- KPIs (cada card es un quick-access a su sección fuente) -->
   <div class="g2" style="margin-bottom:13px">
-    ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna')}
-    ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero')}
+    ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',(isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna'),"flujoView='ingresos';go('flujo')")}
+    ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero',"setHabitView('ahorro');go('habitos')")}
   </div>
   <div class="g2" style="margin-bottom:13px">
-    ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos')}
-    ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.length+' créditos')}
+    ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos',"flujoView='gastos';go('flujo')")}
+    ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.length+' créditos',"flujoView='deudas';go('flujo')")}
   </div>
   <div class="${tExtras()>0?'g3':'g2'}" style="margin-bottom:13px">
     <div class="card" style="margin-bottom:0;text-align:center;${hormigaTotal?'cursor:pointer':''}" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>
@@ -2932,8 +2993,8 @@ function rDash(){
       <div class="stat-sm" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div>
       <div class="lbl" style="margin-top:4px">${lastSnap?(hormigaTotal?'Toca para ver detalle ▾':'Sin hormiga'):'Sube CSV'}</div>
     </div>
-    ${tExtras()>0?kpi('📈 Extras'+pLbl,'+'+fx(Math.round(pExtras)),'var(--sage)',S.extras.length+' fuentes'):''}
-    ${kpi('🌊 Disponible'+pLbl,fx(Math.round(pFlow)),pFlow>=0?'var(--sage)':'var(--terra)',pFlow>=0?'Después de todo':'⚠ Déficit')}
+    ${tExtras()>0?kpi('📈 Extras'+pLbl,'+'+fx(Math.round(pExtras)),'var(--sage)',S.extras.length+' fuentes',"flujoView='ingresos';go('flujo')"):''}
+    ${kpi('🌊 Disponible'+pLbl,fx(Math.round(pFlow)),pFlow>=0?'var(--sage)':'var(--terra)',pFlow>=0?'Después de todo':'⚠ Déficit',"go('plan')")}
   </div>
 
   <!-- HORMIGA DETAIL (expandable) -->
@@ -9584,7 +9645,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZ';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZA';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

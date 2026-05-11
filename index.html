@@ -38,22 +38,25 @@ input[type=range]{background:none;border:none;padding:0;accent-color:var(--sage)
 label{font-size:11px;color:var(--muted);display:block;margin-bottom:5px;letter-spacing:.5px;text-transform:uppercase}
 button{font-family:Georgia,serif;cursor:pointer;transition:opacity .18s,transform .1s;border:none}
 button:active{transform:scale(.97)}
-.btn{padding:9px 20px;border-radius:7px;font-size:13px;font-weight:bold}
+.btn{padding:9px 20px;border-radius:7px;font-size:13px;font-weight:bold;min-height:44px;display:inline-flex;align-items:center;justify-content:center;gap:6px}
 .btn-sage{background:var(--sage);color:#fff;box-shadow:0 2px 8px rgba(78,124,106,.25)}
 .btn-sage:hover{background:var(--sage2)}
 .btn-ghost{background:transparent;border:1px solid rgba(78,124,106,.4);color:var(--sage)}
 .btn-red{background:var(--terradim);border:1px solid rgba(184,92,74,.25);color:var(--terra)}
 .btn-sky{background:var(--skydim);border:1px solid rgba(74,110,140,.25);color:var(--sky)}
-.btn-sm{padding:5px 11px;font-size:11px}
+.btn-sm{padding:5px 11px;font-size:12px;min-height:32px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:18px;margin-bottom:13px;box-shadow:var(--shadow)}
+.card-link{cursor:pointer;transition:transform .12s ease,box-shadow .15s ease}
+.card-link:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(0,0,0,.08)}
+.card-link:active{transform:translateY(0)}
 .card-sage{border-color:rgba(78,124,106,.3);background:linear-gradient(135deg,#fff 0%,rgba(78,124,106,.05) 100%)}
 .card-grn{border-color:rgba(78,124,106,.3);background:rgba(78,124,106,.05)}
 .card-red{border-color:rgba(184,92,74,.28);background:var(--terradim)}
 .card-sky{border-color:rgba(74,110,140,.28);background:var(--skydim)}
 .card-amber{border-color:rgba(160,112,48,.3);background:var(--amberdim)}
-.ct{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--sage);margin-bottom:13px}
-.card>.ct.card-toggler{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.ct{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--sage);margin-bottom:13px}
+.card>.ct.card-toggler{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
 .card>.ct.card-toggler .collapse-arrow{font-size:12px;color:var(--muted);transition:transform .2s}
 .card.card-collapsed>.ct{margin-bottom:0}
 .card.card-collapsed>*:not(.ct){display:none !important}
@@ -64,7 +67,7 @@ button:active{transform:scale(.97)}
 .row-b{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;min-width:0}
 .stat{font-size:26px;font-weight:bold;line-height:1}
 .stat-sm{font-size:18px;font-weight:bold;line-height:1}
-.lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
+.lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
 .pw{background:var(--bg2);border-radius:4px;height:6px;overflow:hidden;margin-top:7px}
 .pb{height:100%;border-radius:4px;transition:width .7s ease}
 .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px}
@@ -73,7 +76,7 @@ button:active{transform:scale(.97)}
 .bdg-sky{background:var(--skydim);color:var(--sky);border:1px solid rgba(74,110,140,.2)}
 .bdg-amber{background:var(--amberdim);color:var(--amber);border:1px solid rgba(160,112,48,.2)}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:13px}
-.chip{padding:5px 11px;border-radius:20px;font-size:11px;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);cursor:pointer;font-family:Georgia,serif;transition:all .15s}
+.chip{padding:7px 12px;border-radius:20px;font-size:12px;background:var(--bg2);border:1px solid var(--border);color:var(--txt2);cursor:pointer;font-family:Georgia,serif;transition:all .15s;min-height:36px;display:inline-flex;align-items:center}
 .chip:hover{background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage)}
 /* Onboarding */
 #onboarding{min-height:100vh;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:20px;background:radial-gradient(ellipse at 50% 0%,rgba(78,124,106,.08) 0%,transparent 65%)}
@@ -188,7 +191,7 @@ button:active{transform:scale(.97)}
 }
 /* Confirm Modal */
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.45);z-index:999;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadeIn .15s ease}
-.modal-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;max-width:380px;width:100%;box-shadow:0 12px 48px rgba(0,0,0,.18);animation:slideUp .2s ease}
+.modal-box{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:28px;max-width:min(380px,92vw);width:100%;box-shadow:0 12px 48px rgba(0,0,0,.18);animation:slideUp .2s ease;max-height:90vh;overflow-y:auto}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
 /* Paid items */
@@ -2606,7 +2609,7 @@ function hdrUp(){
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go(_restoreNavTab());}
 
 // ══ HELPERS ═════════════════════════════════════════
-const kpi=(title,val,color,sub,onclick)=>`<div class="card" style="margin-bottom:0;text-align:center${onclick?';cursor:pointer':''}" ${onclick?`onclick="${onclick}"`:''}><div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}${onclick?' ›':''}</div></div>`;
+const kpi=(title,val,color,sub,onclick)=>`<div class="card${onclick?' card-link':''}" style="margin-bottom:0;text-align:center" ${onclick?`onclick="${onclick}"`:''}><div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">${title}</div><div class="stat-sm" style="color:${color}">${val}</div><div class="lbl" style="margin-top:4px">${sub}${onclick?' ›':''}</div></div>`;
 const fmtDate=(s)=>{if(!s)return'';try{
   // Acepta DD/MM/YYYY o YYYY-MM-DD. Si la fecha no es válida (ej. 31/02)
   // devolvemos el string original para que el usuario note el dato raro en
@@ -2979,6 +2982,13 @@ function rDash(){
   </div>
 
   <!-- KPIs (cada card es un quick-access a su sección fuente) -->
+  <!-- Disponible al frente: es el número más accionable del día a día.
+       Antes vivía abajo y obligaba a scrollear en iPhone SE. -->
+  <div class="card card-link" style="margin-bottom:13px;text-align:center;padding:18px 16px" onclick="go('plan')">
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🌊 Disponible${pLbl}</div>
+    <div class="stat" style="color:${pFlow>=0?'var(--sage)':'var(--terra)'};font-family:Georgia,serif">${fx(Math.round(pFlow))}</div>
+    <div class="lbl" style="margin-top:6px">${pFlow>=0?'Después de todos los compromisos':'⚠ Déficit'} ›</div>
+  </div>
   <div class="g2" style="margin-bottom:13px">
     ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',(isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna'),"flujoView='ingresos';go('flujo')")}
     ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero',"setHabitView('ahorro');go('habitos')")}
@@ -2987,14 +2997,13 @@ function rDash(){
     ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos',"flujoView='gastos';go('flujo')")}
     ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.length+' créditos',"flujoView='deudas';go('flujo')")}
   </div>
-  <div class="${tExtras()>0?'g3':'g2'}" style="margin-bottom:13px">
-    <div class="card" style="margin-bottom:0;text-align:center;${hormigaTotal?'cursor:pointer':''}" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>
-      <div style="font-size:10px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🐜 Gastos hormiga ${ib("hormiga","Gastos Hormiga")}</div>
+  <div class="${tExtras()>0?'g2':''}" style="margin-bottom:13px">
+    <div class="card${hormigaTotal?' card-link':''}" style="margin-bottom:0;text-align:center" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🐜 Gastos hormiga ${ib("hormiga","Gastos Hormiga")}</div>
       <div class="stat-sm" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div>
-      <div class="lbl" style="margin-top:4px">${lastSnap?(hormigaTotal?'Toca para ver detalle ▾':'Sin hormiga'):'Sube CSV'}</div>
+      <div class="lbl" style="margin-top:4px">${lastSnap?(hormigaTotal?'Detalle ▾':'Sin hormiga'):'Sube CSV'}</div>
     </div>
     ${tExtras()>0?kpi('📈 Extras'+pLbl,'+'+fx(Math.round(pExtras)),'var(--sage)',S.extras.length+' fuentes',"flujoView='ingresos';go('flujo')"):''}
-    ${kpi('🌊 Disponible'+pLbl,fx(Math.round(pFlow)),pFlow>=0?'var(--sage)':'var(--terra)',pFlow>=0?'Después de todo':'⚠ Déficit',"go('plan')")}
   </div>
 
   <!-- HORMIGA DETAIL (expandable) -->
@@ -9645,7 +9654,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZA';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZB';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

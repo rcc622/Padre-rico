@@ -1503,10 +1503,19 @@ function toggleRetoCheck(retoId,idx){
   // Show pass/fail modal for all behavior retos
   const allR=genSurvivalRetos(1000);
   const reto=allR.find(x=>x.id===retoId);
-  
+  // Antes: si reto NO estaba en genSurvivalRetos (ID nuevo, custom, o
+  // achievement), se auto-marcaba como pass:true sin preguntar. El
+  // usuario reportó que esto era confuso — quería que SIEMPRE
+  // preguntara antes de cerrar el reto. Ahora cualquier retoId
+  // desconocido cae al modal genérico Sí/No.
   if(!reto){
-    checks.push({idx,date:_todayYMD(),pass:true});
-    S.retoChecks[k]=checks;sv();rHabitos();return;
+    const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:16px;text-align:center;line-height:1.7"><strong>'+retoId.replace(/^[a-z]+_/,'').replace(/_/g,' ')+'</strong><br>¿Cumpliste?</div>'
+      +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="markRetoPass(\''+retoId+'\','+idx+')">✅ Sí, cumplí</button>'
+      +'<button class="btn btn-red" style="width:100%;padding:14px" onclick="markRetoFail(\''+retoId+'\','+idx+')">❌ No cumplí</button>';
+    showConfirm('📋 Registro',body,null);
+    const row2=document.getElementById('confirmModal').querySelector('.row');
+    if(row2)row2.innerHTML='<button class="btn btn-ghost" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
+    return;
   }
   
   // Special flow for super/gas: ask amount and sync with fixed expense
@@ -4887,6 +4896,24 @@ function rFlujo(){try{
     ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?activeDebts.length+' activas':'¡Sin deudas!')}
   </div>
 
+  <!-- ═══ CALCULADORA DE INTERÉS STANDALONE ═══ -->
+  <!-- Widget independiente para que el usuario pueda simular un préstamo
+       SIN tener que registrarlo todavía como deuda. Antes la calculadora
+       sólo aparecía embebida dentro del form de "Registrar deuda" y
+       requería prender el switch de intereses. Ahora vive arriba como
+       herramienta educativa: "¿piensas pedir un préstamo? calcula" -->
+  <details class="card" style="background:linear-gradient(135deg,rgba(74,110,140,.04) 0%,rgba(78,124,106,.02) 100%);border-left:3px solid var(--sky)" open>
+    <summary class="ct" style="cursor:pointer;padding:6px 0;list-style:none">🧮 ¿Piensas pedir un préstamo?</summary>
+    <div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.6">Calcula cuánto pagarías de interés <em>antes</em> de firmar. Te ayuda a comparar ofertas y a entender el costo real.</div>
+    <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:10px">
+      <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">💵 ¿Cuánto te prestarían? ($)</label><input type="number" id="loanCalcPrinc" placeholder="50,000" style="width:100%;font-size:18px;padding:11px;text-align:center;font-weight:bold;color:var(--sky)" oninput="_calcLoanStandalone()"></div>
+      <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">📋 ¿Cuánto regresarías en total? ($)</label><input type="number" id="loanCalcTotal" placeholder="60,000" style="width:100%;font-size:18px;padding:11px;text-align:center;font-weight:bold;color:var(--terra)" oninput="_calcLoanStandalone()"></div>
+      <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">📅 Plazo (meses) · opcional</label><input type="number" id="loanCalcMonths" placeholder="12" style="width:100%;font-size:14px;padding:10px" oninput="_calcLoanStandalone()"></div>
+    </div>
+    <div id="loanCalcResult" style="margin-top:14px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;line-height:1.8;display:none"></div>
+    <div id="loanCalcEmpty" style="margin-top:10px;font-size:11px;color:var(--muted);text-align:center;font-style:italic;padding:8px">Llena préstamo y total para ver el desglose.</div>
+  </details>
+
   <!-- ═══ DEUDAS ═══ -->
   <details class="card" ${editDebtId?'open':''} style="padding:0">
     <summary style="cursor:pointer;padding:14px 18px;list-style:none;display:flex;justify-content:space-between;align-items:center"><span class="ct" style="margin:0">${editDebtId?'✏️ Editando deuda':'⛓️ Registrar deuda'}</span><span style="font-size:14px;color:var(--muted)">▸</span></summary>
@@ -5043,10 +5070,15 @@ function rFlujo(){try{
       // mantén el texto legible (la deuda sigue activa).
       const paidAmtStyle=_isLiquidated?'color:var(--muted);text-decoration:line-through':'color:var(--sky)';
       const paidName=_isLiquidated?'color:var(--muted);text-decoration:line-through':'color:var(--txt)';
+      // Para deudas MSI (mensualidades), el badge "Pagada esta qna" se mal-
+      // interpreta como si la deuda completa estuviera saldada. Aclaramos
+      // qué cuota fue aplicada (curPay-1, porque curPay avanzó tras aplicar).
       const paidBadgeBig=_isLiquidated
         ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada</span>'
         :(_appliedThisQ
-          ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">✓ Pagada esta qna</span>'
+          ?(hasMSI
+            ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sigue activa — falta la siguiente cuota">✓ Cuota '+Math.max(1,(+d.curPay||1)-1)+' aplicada</span>'
+            :'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">✓ Pagada esta qna</span>')
           :'');
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
@@ -5849,6 +5881,49 @@ function calcDebtInterest(){
   out.innerHTML='<div class="row-b" style="margin-bottom:4px"><span>Interés total ($):</span><strong style="color:var(--terra)">'+fx(intAmt)+'</strong></div>'
     +'<div class="row-b" style="margin-bottom:4px"><span>Interés total (%):</span><strong style="color:var(--terra)">'+intPct.toFixed(1)+'%</strong></div>'
     +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Por cada $1,000 que te prestaron, regresas $'+fx(Math.round(1000*t/p))+'.</div>';
+}
+// Calculadora standalone (widget en Deudas, sin necesidad de registrar
+// una deuda). Calcula intereses + tasa anual aproximada + cuota mensual
+// si el usuario provee el plazo. Es educativa: ayuda a comparar ofertas
+// antes de firmar.
+function _calcLoanStandalone(){
+  const p=+(document.getElementById('loanCalcPrinc')?.value)||0;
+  const t=+(document.getElementById('loanCalcTotal')?.value)||0;
+  const m=+(document.getElementById('loanCalcMonths')?.value)||0;
+  const out=document.getElementById('loanCalcResult');
+  const empty=document.getElementById('loanCalcEmpty');
+  if(!out||!empty)return;
+  if(p<=0||t<=0){
+    out.style.display='none';
+    empty.style.display='block';
+    return;
+  }
+  empty.style.display='none';
+  out.style.display='block';
+  if(t<=p){
+    out.innerHTML='<div style="color:var(--terra);text-align:center;padding:6px">⚠ El total a pagar debe ser mayor al préstamo.</div>';
+    return;
+  }
+  const intAmt=t-p;
+  const intPct=(intAmt/p)*100;
+  const ratio=t/p;
+  // CAT aproximado anualizado (solo si dan meses). Fórmula simple para
+  // referencia rápida — la CAT real depende de comisiones y prepago.
+  let catLine='';
+  let cuotaLine='';
+  if(m>0){
+    const cuota=Math.round(t/m);
+    cuotaLine='<div class="row-b" style="margin-bottom:6px"><span>📆 Cuota mensual estimada</span><strong style="color:var(--sky)">'+fx(cuota)+'</strong></div>';
+    const annual=intPct*(12/m);
+    catLine='<div class="row-b" style="margin-bottom:6px"><span>📊 Tasa anual aprox.</span><strong style="color:var(--terra)">~'+annual.toFixed(1)+'%</strong></div>';
+  }
+  out.innerHTML=cuotaLine
+    +'<div class="row-b" style="margin-bottom:6px"><span>💸 Interés total</span><strong style="color:var(--terra)">'+fx(intAmt)+'</strong></div>'
+    +'<div class="row-b" style="margin-bottom:6px"><span>📈 Interés sobre el préstamo</span><strong style="color:var(--terra)">'+intPct.toFixed(1)+'%</strong></div>'
+    +catLine
+    +'<div style="margin-top:10px;padding:10px;background:rgba(160,112,48,.06);border-radius:8px;font-size:11px;color:var(--txt2);line-height:1.6">💡 Por cada <strong>$1,000</strong> que te prestan, vas a regresar <strong style="color:var(--terra)">'+fx(Math.round(1000*ratio))+'</strong>. '
+    +(intPct>50?'Es un costo MUY alto — busca otra oferta si puedes.':intPct>30?'Costo elevado — compara con otras opciones antes de firmar.':intPct>15?'Tasa moderada para crédito al consumo.':'Tasa razonable.')
+    +'</div>';
 }
 function addDebt(){
   const n=document.getElementById('dn')?.value.trim();
@@ -9728,7 +9803,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZI';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZJ';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

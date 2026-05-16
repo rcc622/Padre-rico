@@ -6280,15 +6280,30 @@ function _savWizSetPct(pct){
 // PASO 2: Activo destino
 function _savWizStep2(){
   const amt=_savWizData.amount;
+  // El radio NO re-renderiza el wizard (antes hacía _renderSavWiz() en
+  // onchange, lo que reconstruía el modal mientras el usuario tocaba y
+  // hacía que el siguiente tap en "Apartar" cayera en vacío). Ahora solo
+  // marca la selección y actualiza bordes con _savWizPickAsset, sin
+  // rebuild. El monto definitivo se lee de :checked al confirmar.
   const body=_savWizProgress(2)
     +'<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a apartar</div><div style="font-size:28px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+'</div></div>'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A cuál activo lo mandas?</div>'
     +'<div style="max-height:280px;overflow-y:auto;margin-bottom:4px">'
-    +S.assets.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===_savWizData.assetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===_savWizData.assetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_savAsset" value="'+a.id+'" '+(a.id===_savWizData.assetId?'checked':'')+' onchange="_savWizData.assetId='+a.id+';_renderSavWiz()" style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx(+a.val+amt)+'</strong></div></div></label>').join('')
+    +S.assets.map(a=>'<label class="row _savAssetRow" data-aid="'+a.id+'" style="gap:10px;padding:12px;border:2px solid '+(a.id===_savWizData.assetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===_savWizData.assetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_savAsset" value="'+a.id+'" '+(a.id===_savWizData.assetId?'checked':'')+' onchange="_savWizPickAsset('+a.id+')" style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx(+a.val+amt)+'</strong></div></div></label>').join('')
     +'</div>';
   showConfirm('🪙 Paso 2 — Destino',body,null);
   const row=document.getElementById('confirmModal').querySelector('.row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="_savWizStep=1;_renderSavWiz()" style="flex:0 0 auto;padding:10px 16px">← Atrás</button><button class="btn btn-sage" onclick="_savWizNext()" style="flex:1">Apartar '+fx(amt)+' ✓</button>';
+}
+// Selecciona activo sin reconstruir el modal: solo actualiza assetId y
+// los bordes de las filas.
+function _savWizPickAsset(id){
+  _savWizData.assetId=id;
+  document.querySelectorAll('#confirmModal ._savAssetRow').forEach(el=>{
+    const sel=String(el.getAttribute('data-aid'))===String(id);
+    el.style.borderColor=sel?'var(--sage)':'var(--border)';
+    el.style.background=sel?'rgba(78,124,106,.06)':'transparent';
+  });
 }
 // PASO 3: Confirmación + celebración
 function _savWizStep3(){
@@ -6338,6 +6353,10 @@ function _savWizNext(){
     if(_savWizData.amount<=0){toast('⚠ Monto inválido');return;}
     _savWizStep=2;
   }else if(_savWizStep===2){
+    // Robustez: lee el radio :checked por si el onchange no corrió
+    // (algunos navegadores móviles no disparan onchange en el primer tap).
+    const sel=document.querySelector('#confirmModal input[name=_savAsset]:checked');
+    if(sel)_savWizData.assetId=+sel.value;
     if(!_savWizData.assetId){toast('⚠ Elige un activo');return;}
     _savWizStep=3;
   }
@@ -10135,7 +10154,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZL';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZM';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

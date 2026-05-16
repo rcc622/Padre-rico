@@ -5011,10 +5011,18 @@ function rFlujo(){try{
     </div>
     ${(()=>{try{
       let sorted2=[...S.debts].filter(d2=>{
-        // Hide liquidated debts (bal=0 or fully paid)
-        if((+d2.bal||0)<=0)return false;
-        if(d2.curPay&&d2.totalPays&&d2.curPay>d2.totalPays)return false;
-        return true;
+        const _liq=(+d2.bal||0)<=0||(d2.curPay&&d2.totalPays&&d2.curPay>d2.totalPays);
+        if(!_liq)return true;
+        // Mantener visibles las deudas liquidadas hace ≤16 días para que el
+        // usuario VEA la confirmación "🏁 Liquidada" en vez de que la deuda
+        // desaparezca al instante (queja: "apliqué el pago y no la veo en
+        // ningún lado"). Las liquidadas viejas siguen ocultas — sólo cuentan
+        // en el contador "· N liquidadas".
+        if(!d2.liqDate)return false;
+        const _ld=new Date(d2.liqDate+'T12:00');
+        if(isNaN(_ld))return false;
+        const _t=new Date();_t.setHours(0,0,0,0);
+        return (_t-_ld)<=16*864e5; // incluye hoy y fecha futura cercana
       });
       if(debtSort==='prox'){
         sorted2.sort((a,b)=>{
@@ -5072,8 +5080,11 @@ function rFlujo(){try{
         if(g!==lastGrp){
           const collapsed=S.debtGroupCollapsed[g];
           const grpDebts=sorted2.filter(x=>(x.group||'Sin grupo')===g);
-          const grpTotal=grpDebts.reduce((a,x)=>a+(+x.bal||0),0);
-          const grpPay=grpDebts.reduce((a,x)=>a+toMonthly(+x.pay||0,x.freq||'mensual'),0);
+          // El "/mes" del grupo es la obligación viva: excluye liquidadas
+          // (que ahora pueden seguir visibles unos días tras liquidarse).
+          const grpActive=grpDebts.filter(x=>(+x.bal||0)>0&&!(x.curPay&&x.totalPays&&x.curPay>x.totalPays));
+          const grpTotal=grpActive.reduce((a,x)=>a+(+x.bal||0),0);
+          const grpPay=grpActive.reduce((a,x)=>a+toMonthly(+x.pay||0,x.freq||'mensual'),0);
           lastGrp=g;
           html+='<div class="debt-group-hdr" onclick="toggleDebtGroup(this.dataset.g)" data-g="'+g.replace(/"/g,'&quot;')+'"><div class="row" style="gap:8px"><span style="font-size:14px">'+(collapsed?'▸':'▾')+'</span><span style="font-weight:bold;color:var(--sage2)">'+g+'</span><span class="badge bdg-sage">'+grpDebts.length+'</span></div><div class="row" style="gap:10px"><span style="font-size:11px;color:var(--terra)">'+fx(grpTotal)+'</span><span style="font-size:11px;color:var(--sky)">'+fx(Math.round(grpPay))+'/mes</span></div></div>';
           if(collapsed){return;}
@@ -5106,8 +5117,9 @@ function rFlujo(){try{
       // Para deudas MSI (mensualidades), el badge "Pagada esta qna" se mal-
       // interpreta como si la deuda completa estuviera saldada. Aclaramos
       // qué cuota fue aplicada (curPay-1, porque curPay avanzó tras aplicar).
+      const _liqHoy=_isLiquidated&&d.liqDate===_todayYMD();
       const paidBadgeBig=_isLiquidated
-        ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada</span>'
+        ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada'+(_liqHoy?' hoy':'')+'</span>'
         :(_appliedThisQ
           ?(hasMSI
             ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sigue activa — falta la siguiente cuota">✓ Cuota '+Math.max(1,(+d.curPay||1)-1)+' aplicada</span>'
@@ -6618,10 +6630,18 @@ function adelantarPago(id){
   if(d.curPay&&d.totalPays)d.curPay=d.totalPays+1;
   sv();
   try{checkAch();}catch(e){_logErr('adelantarPago.checkAch',e);}
-  toast('🏁 '+nm+' liquidada');
-  try{rPlan();}catch(e){_logErr('adelantarPago.rPlan',e);}
-  try{if(typeof rFlujo==='function')rFlujo();}catch(e){}
-  try{if(typeof hdrUp==='function')hdrUp();}catch(e){}
+  toast('🏁 '+nm+' liquidada hoy');
+  // Llevar al usuario a Deudas para que VEA la confirmación. Antes se
+  // quedaba en Estrategia, donde la deuda desaparece (las liquidadas se
+  // ocultan del Plan de Ataque) y parecía que "no pasó nada".
+  try{
+    flujoView='deudas';
+    if(typeof go==='function')go('flujo');
+    else{rFlujo&&rFlujo();hdrUp&&hdrUp();}
+  }catch(e){
+    _logErr('adelantarPago.nav',e);
+    try{rPlan&&rPlan();rFlujo&&rFlujo();hdrUp&&hdrUp();}catch(_){}
+  }
 }
 
 function restoreBackup(){

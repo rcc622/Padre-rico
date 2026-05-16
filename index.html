@@ -5128,7 +5128,7 @@ function rFlujo(){try{
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
           '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
-          '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
+          '<div class="row debt-card-actions" style="gap:4px">'+(_isLiquidated?'<button class="btn btn-sm" style="padding:4px 8px;background:rgba(78,124,106,.12);color:var(--sage);border:1px solid rgba(78,124,106,.35)" onclick="reactivarDeuda('+d.id+')">↩️ Reactivar</button>':'')+'<button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
@@ -6654,6 +6654,43 @@ function adelantarPago(id){
     _logErr('adelantarPago.nav',e);
     try{rPlan&&rPlan();rFlujo&&rFlujo();hdrUp&&hdrUp();}catch(_){}
   }
+}
+
+// Revertir una liquidación: vuelve a poner la deuda activa. Recupera el
+// saldo desde el registro que dejó adelantarPago (liqAdelanto) si existe,
+// y quita ese pago auto-registrado para que el usuario aplique el pago
+// REAL que hizo desde Plan de Acción → Pagos (evita doble conteo).
+function reactivarDeuda(id){
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){toast('Deuda no encontrada');return;}
+  let recovered=0,foundCk=null;
+  for(const ck in (S.paidItems||{})){
+    const e=S.paidItems[ck]&&S.paidItems[ck]['debt_'+id];
+    if(e&&typeof e==='object'&&e.liqAdelanto){recovered=+e.amt||0;foundCk=ck;}
+  }
+  const recTxt=recovered>0
+    ?'Volverá a tus deudas activas con saldo <strong>'+fx(recovered)+'</strong> (lo que tenía antes de liquidarla) y se quitará el pago de '+fx(recovered)+' que se había registrado, para que apliques desde Plan de Acción → Pagos el pago real que hiciste.'
+    :'Volverá a tus deudas activas. No tengo registrado su saldo anterior, así que se abrirá la edición para que pongas el saldo correcto.';
+  showConfirm('↩️ ¿Reactivar '+_escH(d.name)+'?',
+    '<div style="font-size:13px;line-height:1.7;color:var(--txt2)">'+recTxt+'</div>',
+    ()=>{
+      try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('reactivarDeuda.backup',e);}
+      if(recovered>0)d.bal=recovered;
+      else if((+d.bal||0)<=0)d.bal=+d.pay||0;
+      if(d.curPay&&d.totalPays&&d.curPay>d.totalPays)d.curPay=d.totalPays;
+      if(d.liqDate===_todayYMD())d.liqDate='';
+      if(foundCk&&S.paidItems[foundCk]&&S.paidItems[foundCk]['debt_'+id]){
+        const amt=+(S.paidItems[foundCk]['debt_'+id].amt)||0;
+        delete S.paidItems[foundCk]['debt_'+id];
+        if(S.paidItems[foundCk]._appliedTotal!==undefined)
+          S.paidItems[foundCk]._appliedTotal=Math.max(0,(+S.paidItems[foundCk]._appliedTotal||0)-amt);
+      }
+      sv();
+      try{checkAch&&checkAch();}catch(e){_logErr('reactivarDeuda.checkAch',e);}
+      toast('↩️ '+d.name+' reactivada');
+      try{flujoView='deudas';if(typeof go==='function')go('flujo');else{rFlujo&&rFlujo();hdrUp&&hdrUp();}}catch(e){rFlujo&&rFlujo();}
+      if(!(recovered>0))setTimeout(()=>{try{editDebt(id);}catch(e){}},350);
+    });
 }
 
 function restoreBackup(){

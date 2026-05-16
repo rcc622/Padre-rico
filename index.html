@@ -5133,9 +5133,7 @@ function rFlujo(){try{
       const paidBadgeBig=_isLiquidated
         ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada'+(_liqHoy?' hoy':'')+'</span>'
         :(_appliedThisQ
-          ?(hasMSI
-            ?'<span class="badge" style="background:var(--sky);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sigue activa — falta la siguiente cuota">✓ Cuota '+Math.max(1,(+d.curPay||1)-1)+' pagada · sigue activa</span>'
-            :'<span class="badge" style="background:var(--sky);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sólo cubriste el periodo actual — la deuda sigue viva">✓ Abono al día'+(_restPagos>0?' · falta'+(_restPagos>1?'n':'')+' '+_restPagos+' pago'+(_restPagos>1?'s':''):'')+'</span>')
+          ?'<span class="badge" style="background:var(--sky);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="'+(hasMSI?'Cuota '+Math.max(1,(+d.curPay||1)-1)+' pagada — la deuda sigue activa, falta la siguiente cuota':'Abono del periodo aplicado — la deuda sigue viva'+(_restPagos>0?', faltan '+_restPagos+' pago'+(_restPagos>1?'s':''):''))+'">✓ Abono</span>'
           :'');
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
@@ -5851,6 +5849,12 @@ function editDiarioBudget(ck){
 }
 function setDiarioBudget(){
   const v=+(document.getElementById('gdBudget')?.value)||0;
+  // Sincroniza ambos editores (Día a día ⇄ Plan de Acción): guarda el
+  // presupuesto de la quincena actual como override del ciclo —que es lo
+  // que lee Plan de Acción— y también como default global.
+  const ck=cycleKey();
+  if(!S.gastoDiarioBudgetByCycle)S.gastoDiarioBudgetByCycle={};
+  S.gastoDiarioBudgetByCycle[ck]=v;
   pt({gastoDiarioBudget:v});
   toast('Presupuesto actualizado');
   try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
@@ -7656,7 +7660,7 @@ function rHabitos(){
     const totalAll=totalQ+totalEsen;
     const totalPending=pendingList.reduce((a,g)=>a+(+g.amt||0),0);
     const todayISO=_todayYMD();
-    const budget=+S.gastoDiarioBudget||0;
+    const budget=getDiarioBudgetForCycle(cycleKey());
     const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
     const bColor=pctB<60?'var(--sage)':pctB<90?'var(--amber)':'var(--terra)';
     const byDay={};

@@ -9496,7 +9496,7 @@ function rHistoria(){
     </div>`:'<div class="card" style="text-align:center;padding:20px"><div style="font-size:30px;margin-bottom:8px">🎯</div><div style="color:var(--muted)">Aún no has liquidado deudas. ¡Sigue adelante!</div></div>'}`;
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para
@@ -9835,6 +9835,238 @@ function exportData(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='padre-rico-backup-'+_todayYMD()+'.json';a.click();
   toast('📤 Backup exportado');
+}
+
+// Copia texto al portapapeles con fallback para WebViews/navegadores viejos.
+function _copyText(txt){
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).catch(()=>{});
+      return true;
+    }
+  }catch(e){_logErr('_copyText.clipboard',e);}
+  try{
+    const ta=document.createElement('textarea');
+    ta.value=txt;ta.setAttribute('readonly','');
+    ta.style.position='fixed';ta.style.top='-9999px';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();ta.setSelectionRange(0,txt.length);
+    const ok=document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  }catch(e){_logErr('_copyText.fallback',e);return false;}
+}
+
+// ══ EXPORTAR PARA ANÁLISIS CON IA ════════════════════
+// Genera un reporte legible (Markdown) optimizado para pegar en un chat con
+// una IA (Claude / ChatGPT) y pedirle un análisis financiero profundo y
+// estratégico. A diferencia de exportData() — que vuelca el JSON crudo para
+// restaurar — esto produce un documento curado, con contexto, métricas
+// derivadas, evolución por capítulos y una petición explícita de análisis.
+function buildAIReport(){
+  const L=[];
+  const fxn=(n)=>fx(n||0);
+  const pad=(s,n)=>String(s).padEnd(n);
+  // ── 0. Encabezado / instrucciones para la IA ──────────
+  L.push('# 📊 HISTORIAL FINANCIERO — APP "PADRE RICO"');
+  L.push('');
+  L.push('> **Instrucciones para la IA que lee esto:** Soy usuario de una app de');
+  L.push('> finanzas personales basada en *Padre Rico Padre Pobre* (Kiyosaki) y');
+  L.push('> *El Hombre Más Rico de Babilonia*. Abajo está mi historial financiero');
+  L.push('> real. Quiero que actúes como un **asesor financiero estratégico** y me');
+  L.push('> des un análisis **profundo, honesto y accionable**:');
+  L.push('> ');
+  L.push('> 1. Diagnóstico de mi salud financiera (fortalezas y focos rojos).');
+  L.push('> 2. Análisis de tendencia: ¿voy mejorando o empeorando, y por qué?');
+  L.push('> 3. Mis fugas de dinero (gastos hormiga / patrones) y cuánto me cuestan al año.');
+  L.push('> 4. Estrategia de deudas (¿bola de nieve o avalancha en mi caso concreto?).');
+  L.push('> 5. Plan para salir de la "carrera de la rata": construir activos e ingreso pasivo.');
+  L.push('> 6. 3 acciones concretas y priorizadas para los próximos 90 días.');
+  L.push('> ');
+  L.push('> Sé directo, usa mis números reales y dame metas medibles.');
+  L.push('');
+  L.push('_Exportado: '+_todayYMD()+' · Cadencia de capítulos: '+cycleLabel()+'_');
+  L.push('');
+  // ── 1. Foto actual ────────────────────────────────────
+  const inc=mInc(),ext=tExtras(),exp=tExp(),dPay=tDebtPay(),sav=savAmt();
+  const fl=flow(),deuda=tDebt(),act=tAss(),patr=nw(),pasivo=passInc(),sc=score();
+  const rk=getRank(sc);
+  const drA=deuda/Math.max(inc*12,1);
+  L.push('## 1 · Foto financiera de hoy');
+  L.push('');
+  if(S.goal)L.push('- **Meta:** '+S.goal+(S.deadline?' · fecha límite '+fmtDate(S.deadline)+' ('+dLeft()+' días)':''));
+  L.push('- **Score de salud financiera:** '+sc+'/100 — rango '+rk.emoji+' '+rk.name+(rk.stars?' ('+rk.stars+'★ prestigio)':''));
+  L.push('- **Ingreso mensual:** '+fxn(inc)+'  (salario '+fxn(+S.inc.sal||0)+' + bono fijo '+fxn(+S.inc.bf||0)+')'+((+S.inc.bv||0)>0?' · bono variable estimado '+fxn(+S.inc.bv||0):''));
+  if(ext>0)L.push('- **Ingresos extra (prom. mensual):** '+fxn(ext));
+  L.push('- **Gastos fijos mensuales:** '+fxn(exp));
+  L.push('- **Pago de deudas mensual:** '+fxn(dPay));
+  L.push('- **Ahorro programado:** '+fxn(sav)+' ('+(S.savPct||0)+'% del ingreso) · racha de ahorro: '+(S.savStreak||0)+' (récord '+(S.savStreakBest||0)+')');
+  L.push('- **Flujo libre mensual:** '+fxn(fl)+(fl<0?'  ⚠️ DÉFICIT':''));
+  L.push('- **Activos totales:** '+fxn(act)+' · **Deuda total:** '+fxn(deuda));
+  L.push('- **Patrimonio neto:** '+fxn(patr)+(patr<0?'  (negativo — debes más de lo que tienes)':''));
+  L.push('- **Ingreso pasivo (rendimiento de activos):** '+fxn(pasivo)+'/mes');
+  L.push('- **Ratio deuda / ingreso anual:** '+(drA*100).toFixed(0)+'%');
+  L.push('- **Capítulos registrados:** '+(S.snapshots||[]).length+' · racha: '+qStreak()+' consecutivos');
+  L.push('');
+  L.push('_El score (0-100) pondera: flujo libre 30, deuda/ingreso 20, ahorro 15, patrimonio 15, constancia 10, ingreso pasivo 10; penaliza déficit hasta −15._');
+  L.push('');
+  // ── 2. Gastos fijos por categoría ─────────────────────
+  const expByCat={};
+  (S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';expByCat[k]=(expByCat[k]||0)+toMonthly(+e.amt||0,e.freq||'mensual');});
+  const ecRows=Object.entries(expByCat).sort((a,b)=>b[1]-a[1]);
+  if(ecRows.length){
+    L.push('## 2 · Gastos fijos por categoría (mensual)');
+    L.push('');
+    L.push('| Categoría | Mensual | % del ingreso |');
+    L.push('|---|--:|--:|');
+    ecRows.forEach(([k,v])=>L.push('| '+k+' | '+fxn(v)+' | '+(inc>0?(v/inc*100).toFixed(1):'—')+'% |'));
+    L.push('| **Total** | **'+fxn(exp)+'** | **'+(inc>0?(exp/inc*100).toFixed(1):'—')+'%** |');
+    L.push('');
+  }
+  // ── 3. Deudas ─────────────────────────────────────────
+  const debts=(S.debts||[]);
+  const actDebts=debts.filter(d=>(+d.bal||0)>0);
+  const liqDebts=debts.filter(d=>(+d.bal||0)<=0);
+  L.push('## 3 · Deudas');
+  L.push('');
+  if(actDebts.length){
+    L.push('### Activas');
+    L.push('');
+    L.push('| Deuda | Grupo | Saldo | Pago | Frec. | Interés | Liquida |');
+    L.push('|---|---|--:|--:|---|---|---|');
+    actDebts.slice().sort((a,b)=>(+b.bal||0)-(+a.bal||0)).forEach(d=>{
+      const intr=d.hasInterest&&d.interestPct?(d.interestPct+'% · '+fxn(d.interestAmt||0)):'—';
+      L.push('| '+(d.name||'?')+' | '+(d.group||'—')+' | '+fxn(+d.bal||0)+' | '+fxn(+d.pay||0)+' | '+freqShort(d.freq||'mensual')+' | '+intr+' | '+(d.liqDate?fmtDate(d.liqDate):'—')+' |');
+    });
+    L.push('| **Total activo** | | **'+fxn(actDebts.reduce((a,d)=>a+(+d.bal||0),0))+'** | **'+fxn(dPay)+'/mes** | | | |');
+    L.push('');
+  }else{
+    L.push('_Sin deudas activas. 🎉_');
+    L.push('');
+  }
+  if(liqDebts.length){
+    L.push('### Liquidadas');
+    L.push('');
+    liqDebts.forEach(d=>L.push('- ✅ '+(d.name||'?')+(d.liqDate?' — liquidada '+fmtDate(d.liqDate):'')+(d.pay?' (liberó '+fxn(+d.pay||0)+'/'+freqShort(d.freq||'mensual')+')':'')));
+    L.push('');
+  }
+  // ── 4. Activos ────────────────────────────────────────
+  const assets=(S.assets||[]);
+  if(assets.length){
+    L.push('## 4 · Activos');
+    L.push('');
+    L.push('| Activo | Valor | ¿Genera? | Tasa anual | Rend. mensual |');
+    L.push('|---|--:|---|--:|--:|');
+    assets.forEach(a=>{
+      const my=a.gen?(+a.val||0)*(+a.yldPct||0)/100/12:0;
+      L.push('| '+(a.gen?'📈 ':'')+(a.name||'?')+' | '+fxn(+a.val||0)+' | '+(a.gen?'Sí':'No')+' | '+(a.gen?((+a.yldPct||0)+'%'):'—')+' | '+(a.gen?fxn(my):'—')+' |');
+    });
+    L.push('| **Total** | **'+fxn(act)+'** | | | **'+fxn(pasivo)+'/mes** |');
+    L.push('');
+  }
+  // ── 5. Metas de ahorro ────────────────────────────────
+  const goals=(S.savGoals||[]);
+  if(goals.length){
+    L.push('## 5 · Metas de ahorro');
+    L.push('');
+    goals.forEach(g=>{
+      const tgt=+g.target||0,svd=+g.saved||0,pct=tgt>0?Math.round(svd/tgt*100):0;
+      L.push('- **'+(g.name||'Meta')+'** — '+fxn(svd)+' / '+fxn(tgt)+' ('+pct+'%)'+(g.deadline?' · meta '+fmtDate(g.deadline):''));
+    });
+    L.push('');
+  }
+  // ── 6. Historial por capítulos ────────────────────────
+  const snaps=[...(S.snapshots||[])].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
+  if(snaps.length){
+    const hTot=(sn)=>Object.values(sn.hormiga||{}).reduce((a,v)=>a+((v&&v.total)||0),0);
+    L.push('## 6 · Evolución por capítulos');
+    L.push('');
+    L.push('| # | Periodo | Origen | Gasto | Hormiga | Deuda | Patrimonio | Score |');
+    L.push('|--:|---|---|--:|--:|--:|--:|--:|');
+    snaps.forEach((sn,i)=>{
+      const per=sn.periodStart?fmtDate(sn.periodStart)+'→'+fmtDate(sn.periodEnd):fmtDate(sn.date);
+      const src=sn.source==='debit'?'Débito':sn.source==='credit'?'Crédito':'EC';
+      L.push('| '+(i+1)+' | '+per+' | '+src+' | '+fxn(sn.totalGasto)+' | '+fxn(hTot(sn))+' | '+fxn(sn.deudaTotal)+' | '+fxn(sn.patrimonio)+' | '+(sn.score||0)+' |');
+    });
+    L.push('');
+    // Tendencia (primer vs último capítulo)
+    const f=snaps[0],lst=snaps[snaps.length-1];
+    if(snaps.length>1){
+      const dlt=(a,b)=>{const d=(b||0)-(a||0);return (d>=0?'+':'')+fxn(d);};
+      L.push('**Tendencia (capítulo 1 → '+snaps.length+'):** Patrimonio '+dlt(f.patrimonio,lst.patrimonio)+' · Deuda '+dlt(f.deudaTotal,lst.deudaTotal)+' · Score '+((lst.score||0)-(f.score||0)>=0?'+':'')+((lst.score||0)-(f.score||0))+' pts.');
+      L.push('');
+    }
+    // Detalle de los últimos capítulos (máx 6 para que sea pegable)
+    const detail=snaps.slice(-6);
+    L.push('### Detalle de los últimos '+detail.length+' capítulos');
+    L.push('');
+    detail.forEach((sn,idx)=>{
+      const capNum=snaps.length-detail.length+idx+1;
+      const per=sn.periodStart?fmtDate(sn.periodStart)+' → '+fmtDate(sn.periodEnd):fmtDate(sn.date);
+      L.push('**Capítulo '+capNum+'** ('+per+') — gasto '+fxn(sn.totalGasto)+' en '+(sn.totalTxns||0)+' movimientos · score '+(sn.score||0)+' · patrimonio '+fxn(sn.patrimonio));
+      const hcats=Object.entries(sn.hormiga||{}).filter(([,d])=>d&&d.total>0).sort((a,b)=>b[1].total-a[1].total).slice(0,6);
+      if(hcats.length){
+        L.push('- 🐜 Gastos hormiga: '+hcats.map(([c,d])=>c+' '+fxn(d.total)+' ('+d.count+')').join(' · '));
+      }
+      const top=(sn.topByAmt||[]).slice(0,6);
+      if(top.length){
+        L.push('- 💸 Top gastos: '+top.map(t=>t.desc+' '+fxn(t.amt)).join(' · '));
+      }
+      const com=(sn.topCommerces||[]).slice(0,5);
+      if(com.length){
+        L.push('- 🏪 Comercios frecuentes: '+com.map(c=>c.name+' ×'+c.count).join(' · '));
+      }
+      L.push('');
+    });
+  }else{
+    L.push('## 6 · Evolución por capítulos');
+    L.push('');
+    L.push('_Aún no hay capítulos. Sube un estado de cuenta (CSV) en Cierre de quincena para empezar a registrar tu historia._');
+    L.push('');
+  }
+  // ── 7. Petición de análisis ───────────────────────────
+  L.push('---');
+  L.push('');
+  L.push('## 🎯 Lo que quiero que analices');
+  L.push('');
+  L.push('1. **Diagnóstico:** ¿Qué tan sana está mi situación HOY? Mis 3 mayores fortalezas y mis 3 focos rojos.');
+  L.push('2. **Tendencia:** Viendo la evolución de los capítulos, ¿voy hacia la libertad financiera o hacia la carrera de la rata? Justifícalo con mis números.');
+  L.push('3. **Fugas:** Identifica mis gastos hormiga/patrones de fuga y cuánto me cuestan proyectados a 12 meses.');
+  L.push('4. **Deudas:** Dado mi caso, ¿bola de nieve o avalancha? Dame un orden concreto de ataque.');
+  L.push('5. **Activos:** ¿Cómo acelero la construcción de activos e ingreso pasivo para cubrir mis gastos?');
+  L.push('6. **Plan 90 días:** 3 acciones priorizadas, medibles y realistas con mi flujo libre actual.');
+  L.push('');
+  L.push('_Fuente: app Padre Rico 🪙 — datos 100% reales del usuario._');
+  return L.join('\n');
+}
+
+function exportForAI(){
+  let txt='';
+  try{txt=buildAIReport();}
+  catch(e){_logErr('exportForAI.build',e);toast('Error al generar el reporte');return;}
+  // 1) Descargar como .md (sirve para adjuntar al chat)
+  try{
+    const blob=new Blob([txt],{type:'text/markdown;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;a.download='padre-rico-analisis-'+_todayYMD()+'.md';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(e){_logErr('exportForAI.download',e);}
+  // 2) Copiar al portapapeles (para pegarlo directo en el chat)
+  const copied=_copyText(txt);
+  const kb=Math.max(1,Math.round(txt.length/1024));
+  showInfo('🧠 Reporte para IA listo',
+    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">'
+    +'Generé un reporte de tu historia financiera ('+kb+' KB) optimizado para que una IA lo analice.'
+    +(copied?'<br><br>✅ <strong>Ya está copiado en tu portapapeles.</strong>':'')
+    +'<br><br>📎 También lo descargué como <strong>.md</strong> por si prefieres adjuntar el archivo.'
+    +'<br><br><strong>Cómo usarlo:</strong><br>'
+    +'1. Abre un chat con tu IA (Claude, ChatGPT…).<br>'
+    +'2. '+(copied?'Pega el reporte (Ctrl/Cmd-V) o adjunta el .md.':'Adjunta el archivo .md descargado.')+'<br>'
+    +'3. Envía. El reporte ya incluye la petición de análisis.'
+    +'<br><br><span style="font-size:11px;color:var(--muted)">Solo se exporta tu información financiera (montos, deudas, gastos, capítulos). No se envía nada automáticamente — el control es 100% tuyo.</span>'
+    +'</div>');
+  toast(copied?'🧠 Reporte copiado y descargado':'🧠 Reporte descargado');
 }
 function importData(f){
   if(!f)return;

@@ -1860,6 +1860,14 @@ function bonusInCycle(cStart,cEnd,inc){
 const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;if(freq==='bimestral')return amt/2;if(freq==='unico')return amt;return amt;};
 const freqShort=(f)=>f==='semanal'?'sem':f==='quincenal'?'qna':f==='bimestral'?'bim':f==='unico'?'único':'mes';
 const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bimestral'?'Bimestral':f==='unico'?'Pago único':'';
+// Etiqueta corta capitalizada para mostrar el pago en su periodicidad real
+// (NO normalizado a mensual): "$250 / Qna", "$1,000 / Sem", etc.
+const freqCap=(f)=>f==='semanal'?'Sem':f==='quincenal'?'Qna':f==='bimestral'?'Bim':f==='unico'?'Único':'Mes';
+const payPeriodLabel=(f)=>f==='semanal'?'Pago semanal':f==='quincenal'?'Pago quincenal':f==='bimestral'?'Pago bimestral':f==='unico'?'Pago único':'Pago mensual';
+// Única fuente de verdad para "deuda liquidada" (saldo en 0 o MSI completo).
+// Distinta de "abono/cuota de este ciclo pagada": esa NO liquida la deuda,
+// sólo cubre el periodo actual y la deuda sigue viva con saldo pendiente.
+const isDebtLiquidated=(d)=>(+d.bal||0)<=0||!!(d.curPay&&d.totalPays&&d.curPay>d.totalPays);
 const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
 const savAmt=()=>mInc()*S.savPct/100;
 // Quincenal savings amount (half of monthly plan)
@@ -3094,14 +3102,13 @@ function rDash(){
   ${urgentLiqs.length>0?`
   <div class="card" style="border-left:3px solid var(--sage)">
     <div class="ct">🏁 Últimos pagos este ciclo</div>
-    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Estas deudas terminan en los próximos 15 días. El monto es la mensualidad (ya incluida en tus pagos de deuda).</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">Estas deudas terminan en los próximos 15 días. El monto es el pago de su periodo (ya incluido en tus pagos de deuda).</div>
     ${urgentLiqs.map(d=>{
-      const mo=toMonthly(d.pay||0,d.freq||'mensual');
       const col=d.daysLeft<=3?'var(--terra)':'var(--sage)';
       return`<div class="ql-item">
         <div class="ql-dot" style="background:${col}"></div>
         <div style="flex:1">
-          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}<span style="color:var(--sky);font-weight:bold">${fx(Math.round(mo))}</span></div>
+          <div class="row-b"><span style="font-weight:bold;color:var(--txt)">${d.name}</span>${d.curPay&&d.totalPays?`<span class="badge bdg-sky">${d.curPay} de ${d.totalPays}</span>`:''}<span style="color:var(--sky);font-weight:bold">${fx(d.pay||0)}<span style="font-size:10px;font-weight:normal;color:var(--muted)"> /${freqCap(d.freq||'mensual')}</span></span></div>
           <div style="font-size:11px;color:var(--muted);margin-top:2px">Último pago: ${fmtDate(d.liqDate)} · <span style="color:var(--sage)">✓ Terminas esta deuda</span></div>
         </div>
       </div>`;
@@ -5100,7 +5107,7 @@ function rFlujo(){try{
       //     el usuario pagó la cuota del ciclo pero la deuda sigue viva.
       //   Antes ambos casos compartían el mismo look, lo que confundía:
       //   préstamos a meses con cuota aplicada parecían liquidados.
-      const _isLiquidated=(+d.bal||0)<=0||(d.curPay&&d.totalPays&&d.curPay>d.totalPays);
+      const _isLiquidated=isDebtLiquidated(d);
       const _intBadge=d.hasInterest&&d.interestAmt>0?'<span class="badge" style="background:rgba(184,92,74,.12);color:var(--terra);border:1px solid rgba(184,92,74,.3)">📊 '+d.interestPct+'% int. · '+fx(d.interestAmt)+'</span>':'';
       const paidWrapStyle=_isLiquidated
         ?'padding:12px 0;border-bottom:1px solid var(--border);opacity:.5;background:rgba(78,124,106,.06);border-left:3px solid var(--sage);padding-left:10px'
@@ -5114,12 +5121,14 @@ function rFlujo(){try{
       // Para deudas MSI (mensualidades), el badge "Pagada esta qna" se mal-
       // interpreta como si la deuda completa estuviera saldada. Aclaramos
       // qué cuota fue aplicada (curPay-1, porque curPay avanzó tras aplicar).
+      // Pagos que faltan para liquidar (no-MSI): saldo / cuota del periodo.
+      const _restPagos=(!hasMSI&&(+d.bal||0)>0&&(+d.pay||0)>0)?Math.ceil((+d.bal||0)/(+d.pay||0)):0;
       const paidBadgeBig=_isLiquidated
         ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada</span>'
         :(_appliedThisQ
           ?(hasMSI
-            ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sigue activa — falta la siguiente cuota">✓ Cuota '+Math.max(1,(+d.curPay||1)-1)+' aplicada</span>'
-            :'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">✓ Pagada esta qna</span>')
+            ?'<span class="badge" style="background:var(--sky);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sigue activa — falta la siguiente cuota">✓ Cuota '+Math.max(1,(+d.curPay||1)-1)+' pagada · sigue activa</span>'
+            :'<span class="badge" style="background:var(--sky);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sólo cubriste el periodo actual — la deuda sigue viva">✓ Abono al día'+(_restPagos>0?' · falta'+(_restPagos>1?'n':'')+' '+_restPagos+' pago'+(_restPagos>1?'s':''):'')+'</span>')
           :'');
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
@@ -5128,8 +5137,8 @@ function rFlujo(){try{
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
-            '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Pago mensualidad</div>'+
-            '<div class="debt-pago-big" style="font-size:22px;font-weight:bold;'+paidAmtStyle+'">'+fx(moP)+((d.freq&&d.freq!=='mensual')?'<span style="font-size:11px;color:var(--muted);font-weight:normal"> ('+fx(d.pay)+'/'+freqShort(d.freq)+')</span>':'')+'</div>'+
+            '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'+payPeriodLabel(d.freq||'mensual')+'</div>'+
+            '<div class="debt-pago-big" style="font-size:22px;font-weight:bold;'+paidAmtStyle+'">'+fx(d.pay||0)+'<span style="font-size:12px;color:var(--muted);font-weight:normal"> /'+freqCap(d.freq||'mensual')+'</span>'+((d.freq&&d.freq!=='mensual'&&d.freq!=='unico')?'<span style="font-size:10px;color:var(--muted);font-weight:normal"> · ≈'+fx(Math.round(moP))+'/mes</span>':'')+'</div>'+
           '</div>'+
           '<div style="text-align:right">'+
             '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Próx. pago</div>'+
@@ -6536,6 +6545,10 @@ function applyPayments(){
         amt=+d2.pay||0;
         if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);
         d2.bal=Math.max(0,(+d2.bal||0)-amt);
+        // Si este abono dejó la deuda en saldo 0 (o completó el MSI), quedó
+        // LIQUIDADA: fija la fecha de liquidación a hoy si no tenía, para
+        // que salga de la lista activa y entre limpia al historial.
+        if(isDebtLiquidated(d2)&&!d2.liqDate)d2.liqDate=_todayYMD();
         // Avanza nextPay al siguiente periodo según freq, así la deuda
         // reaparece en el plan del próximo ciclo. Antes nextPay quedaba
         // congelado y la deuda "desaparecía" después del primer pago.
@@ -6601,6 +6614,7 @@ function applyPayments(){
   sv();
   const total=appliedExp+appliedDebt;
   if(total>0){
+    try{checkAch();}catch(e){_logErr('applyPayments.checkAch',e);}
     rPlan();rFlujo();hdrUp();
     toast('✅ '+total+' pago'+(total>1?'s':'')+' aplicado'+(total>1?'s':''));
   }
@@ -6733,7 +6747,7 @@ try{
     // en el ciclo viendo. Por eso en próxima qna no reaparecen, pero en la
     // qna actual siguen contando como egreso.
     const _appliedInView=!!(S.paidItems[_viewCk]&&S.paidItems[_viewCk]['debt_'+db.id]);
-    const _isLiquidated=(+db.bal||0)<=0||(db.curPay&&db.totalPays&&db.curPay>db.totalPays);
+    const _isLiquidated=isDebtLiquidated(db);
     if(_isLiquidated&&!_appliedInView)return;
     const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
     // Si ya se aplicó en este ciclo, inclúyela directo: el dinero salió y
@@ -7200,7 +7214,9 @@ try{
       </div>
 
       ${sortedActive.map((db,i)=>{
-        const moP=toMonthly(db.pay||0,db.freq||'mensual');
+        // Aquí TODAS las deudas siguen activas (saldo > 0). "paidThisCycle"
+        // significa SÓLO que el abono del ciclo ya se aplicó — la deuda NO
+        // está liquidada. Por eso ya no se tacha ni se marca "PAGADA".
         const paidThisCycle=debtsPaidThisCycle.has(db.id);
         const isFirst=i===0&&!paidThisCycle;
         const hasMSI=db.curPay&&db.totalPays;
@@ -7209,19 +7225,24 @@ try{
         if(db.nextPay){npLabel='pago día '+new Date(db.nextPay+'T12:00').getDate();}
         else if(pd2){npLabel='pago día '+pd2;}
         const liqLabel=db.liqDate?'Liquida: '+fmtDate(db.liqDate):'';
-        const fqLabel=freqShort(db.freq||'mensual');
+        const fqLabel=freqCap(db.freq||'mensual');
+        const _bal=Math.max(0,+db.bal||0);
+        const _restP=hasMSI?Math.max(0,(+db.totalPays||0)-Math.max(0,(+db.curPay||1)-1)):((+db.pay||0)>0?Math.ceil(_bal/(+db.pay||1)):0);
+        const _restTxt=_restP>0?'falta'+(_restP>1?'n':'')+' '+_restP+' pago'+(_restP>1?'s':''):'';
         const clickable=!paidThisCycle;
-        return`<div ${clickable?'onclick="confirmAdelantarPago('+db.id+')" role="button" tabindex="0" ':''}style="padding:14px 0;border-bottom:1px solid var(--border);${paidThisCycle?'opacity:.5':'cursor:pointer'}">
+        return`<div ${clickable?'onclick="confirmAdelantarPago('+db.id+')" role="button" tabindex="0" ':''}style="padding:14px 0;border-bottom:1px solid var(--border);${paidThisCycle?'opacity:.62':'cursor:pointer'}">
           <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px">
-              ${paidThisCycle?'<span style="background:var(--sage);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">✓ PAGADA</span>':isFirst?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
-              <span style="font-weight:bold;color:var(--txt);font-size:15px;${paidThisCycle?'text-decoration:line-through':''}">${db.name}</span>
+              ${paidThisCycle?'<span style="background:var(--sky);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px" title="Sólo cubriste el abono de este ciclo — la deuda sigue viva">✓ ABONO</span>':isFirst?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
+              <span style="font-weight:bold;color:var(--txt);font-size:15px">${db.name}</span>
               ${hasMSI?'<span class="badge bdg-sky">'+db.curPay+' de '+db.totalPays+'</span>':''}
             </div>
-            <strong style="color:${paidThisCycle?'var(--sage)':'var(--sky)'};font-size:18px">${fx(Math.round(moP))}</strong>
+            <strong style="color:var(--sky);font-size:18px">${fx(db.pay||0)}<span style="font-size:11px;font-weight:normal;color:var(--muted)"> /${fqLabel}</span></strong>
           </div>
           <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:32px">
-            ${paidThisCycle?'✓ Pagada este ciclo':'Pago: '+fx(db.pay)+'/'+fqLabel+(npLabel?' · '+npLabel:'')+(liqLabel?' · '+liqLabel:'')+'<br><span style="color:var(--sage);font-weight:bold">🏁 Toca para adelantar y liquidar</span>'}
+            ${paidThisCycle
+              ?'✓ Abono de este ciclo aplicado — <strong style="color:var(--sky)">sigue activa</strong> · queda saldo <strong style="color:var(--terra)">'+fx(_bal)+'</strong>'+(_restTxt?' · '+_restTxt:'')
+              :'Pago: '+fx(db.pay)+'/'+fqLabel+' · saldo '+fx(_bal)+(_restTxt?' ('+_restTxt+')':'')+(npLabel?' · '+npLabel:'')+(liqLabel?' · '+liqLabel:'')+'<br><span style="color:var(--sage);font-weight:bold">🏁 Toca para adelantar y liquidar</span>'}
           </div>
         </div>`;
       }).join('')}
@@ -9461,14 +9482,8 @@ function rHistoria(){
   }
 
   if(histView==='liq'){
-    // Debts where bal<=0 or curPay>totalPays or liqDate has passed
-    const today2=new Date();today2.setHours(0,0,0,0);
-    const liqDebts=S.debts.filter(d=>{
-      if((+d.bal||0)<=0)return true;
-      if(d.curPay&&d.totalPays&&d.curPay>d.totalPays)return true;
-      if(d.liqDate&&new Date(d.liqDate+'T12:00')<=today2&&(+d.bal||0)<=0)return true;
-      return false;
-    });
+    // Deuda liquidada = saldo 0 o MSI completo (fuente única: isDebtLiquidated)
+    const liqDebts=S.debts.filter(d=>isDebtLiquidated(d));
     const activeDebts=S.debts.filter(d=>!liqDebts.includes(d));
 
     // Categorize by pattern
@@ -9551,7 +9566,7 @@ function rHistoria(){
           </div>
           <div style="text-align:right">
             <div style="font-size:14px;font-weight:bold;color:var(--sage);text-decoration:line-through">${fx(d.pay)}</div>
-            <div style="font-size:9px;color:var(--sage)">/${freqShort(d.freq||'mensual')}</div>
+            <div style="font-size:9px;color:var(--sage)">/${freqCap(d.freq||'mensual')}</div>
           </div>
         </div>
       </div>`;}).join('')}

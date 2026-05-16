@@ -882,6 +882,33 @@ function undoApply(type,id){
   const key=type+'_'+id;
   const v=S.paidItems[ck][key];
   if(!v)return;
+  // Si el pago aplicado era de una DEUDA, revertir también lo que
+  // applyPayments() le modificó (saldo, cuota MSI, liqDate, nextPay).
+  // Sin esto, deshacer el pago de una deuda única dejaba bal=0 → la
+  // deuda seguía "liquidada" y, al quitar el registro, desaparecía del
+  // plan: el usuario no podía reaparecerla para corregir el monto.
+  if(type==='debt'&&typeof v==='object'&&v.applied){
+    const d=S.debts.find(x=>x.id===id);
+    if(d){
+      const back=(+v.amt)|| (+d.pay)||0;
+      d.bal=(+d.bal||0)+back;
+      if(d.curPay&&d.totalPays&&d.curPay>1)d.curPay=d.curPay-1;
+      if(d.liqDate===_todayYMD())d.liqDate='';
+      const f=d.freq||'mensual';
+      if(f!=='unico'&&d.nextPay){
+        const np=new Date(d.nextPay+'T12:00');
+        if(!isNaN(np)){
+          if(f==='semanal')np.setDate(np.getDate()-7);
+          else if(f==='quincenal')np.setDate(np.getDate()-15);
+          else if(f==='bimestral')np.setMonth(np.getMonth()-2);
+          else np.setMonth(np.getMonth()-1);
+          d.nextPay=_ymdLocal(np);
+        }
+      }
+    }
+    if(S.paidItems[ck]._appliedTotal!==undefined)
+      S.paidItems[ck]._appliedTotal=Math.max(0,(+S.paidItems[ck]._appliedTotal||0)-(+v.amt||0));
+  }
   // Revert: if it was applied with realAmt, keep as selected with realAmt
   if(typeof v==='object'&&v.realAmt!==undefined){
     S.paidItems[ck][key]={at:v.at,realAmt:v.realAmt,budgeted:v.budgeted};

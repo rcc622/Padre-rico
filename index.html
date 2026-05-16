@@ -6625,9 +6625,21 @@ function adelantarPago(id){
   const d=S.debts.find(x=>x.id===id);
   if(!d){toast('Deuda no encontrada');return;}
   const nm=d.name;
+  const prevBal=Math.max(0,+d.bal||0);
   d.bal=0;
   d.liqDate=_todayYMD();
   if(d.curPay&&d.totalPays)d.curPay=d.totalPays+1;
+  // Registrar el adelanto como pago APLICADO del ciclo. Sin esto la deuda
+  // se liquidaba pero el pago "desaparecía del registro": no salía en
+  // Plan de Acción → Pagos ni contaba en el estado de cuenta. Mismo shape
+  // que applyPayments() para que la UI lo trate como pago aplicado.
+  try{
+    const ck=(typeof planCk==='function'?planCk():cycleKey());
+    if(!S.paidItems)S.paidItems={};
+    if(!S.paidItems[ck])S.paidItems[ck]={};
+    S.paidItems[ck]['debt_'+id]={at:Date.now(),applied:true,amt:prevBal,realAmt:prevBal,paidWith:'debito',liqAdelanto:true};
+    S.paidItems[ck]._appliedTotal=((+S.paidItems[ck]._appliedTotal)||0)+prevBal;
+  }catch(e){_logErr('adelantarPago.registro',e);}
   sv();
   try{checkAch();}catch(e){_logErr('adelantarPago.checkAch',e);}
   toast('🏁 '+nm+' liquidada hoy');

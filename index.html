@@ -5013,16 +5013,11 @@ function rFlujo(){try{
       let sorted2=[...S.debts].filter(d2=>{
         const _liq=(+d2.bal||0)<=0||(d2.curPay&&d2.totalPays&&d2.curPay>d2.totalPays);
         if(!_liq)return true;
-        // Mantener visibles las deudas liquidadas hace ≤16 días para que el
-        // usuario VEA la confirmación "🏁 Liquidada" en vez de que la deuda
-        // desaparezca al instante (queja: "apliqué el pago y no la veo en
-        // ningún lado"). Las liquidadas viejas siguen ocultas — sólo cuentan
-        // en el contador "· N liquidadas".
-        if(!d2.liqDate)return false;
-        const _ld=new Date(d2.liqDate+'T12:00');
-        if(isNaN(_ld))return false;
-        const _t=new Date();_t.setHours(0,0,0,0);
-        return (_t-_ld)<=16*864e5; // incluye hoy y fecha futura cercana
+        // Sólo se mantiene visible la deuda liquidada HOY (confirmación
+        // inmediata tras liquidar). El resto de liquidadas vive en
+        // Mi Historia → 🏁 Liquidadas (con su botón Reactivar) para no
+        // saturar visualmente esta sección.
+        return d2.liqDate===_todayYMD();
       });
       if(debtSort==='prox'){
         sorted2.sort((a,b)=>{
@@ -5128,7 +5123,7 @@ function rFlujo(){try{
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
           '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
-          '<div class="row debt-card-actions" style="gap:4px">'+(_isLiquidated?'<button class="btn btn-sm" style="padding:4px 8px;background:rgba(78,124,106,.12);color:var(--sage);border:1px solid rgba(78,124,106,.35)" onclick="reactivarDeuda('+d.id+')">↩️ Reactivar</button>':'')+'<button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
+          '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
@@ -9595,6 +9590,9 @@ function rHistoria(){
             <div style="font-size:14px;font-weight:bold;color:var(--sage);text-decoration:line-through">${fx(d.pay)}</div>
             <div style="font-size:9px;color:var(--sage)">/${freqShort(d.freq||'mensual')}</div>
           </div>
+        </div>
+        <div class="row" style="justify-content:flex-end;margin-top:6px">
+          <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:rgba(78,124,106,.12);color:var(--sage);border:1px solid rgba(78,124,106,.35)" onclick="reactivarDeuda(${d.id})">↩️ Reactivar</button>
         </div>
       </div>`;}).join('')}
       <div class="row-b" style="padding-top:10px;margin-top:6px;border-top:2px solid var(--sage)">

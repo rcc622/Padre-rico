@@ -5026,10 +5026,18 @@ function rFlujo(){try{
     </div>
     ${(()=>{try{
       let sorted2=[...S.debts].filter(d2=>{
-        // Hide liquidated debts (bal=0 or fully paid)
-        if((+d2.bal||0)<=0)return false;
-        if(d2.curPay&&d2.totalPays&&d2.curPay>d2.totalPays)return false;
-        return true;
+        const _liq=(+d2.bal||0)<=0||(d2.curPay&&d2.totalPays&&d2.curPay>d2.totalPays);
+        if(!_liq)return true;
+        // Mantener visibles las deudas liquidadas hace ≤16 días para que el
+        // usuario VEA la confirmación "🏁 Liquidada" en vez de que la deuda
+        // desaparezca al instante (queja: "apliqué el pago y no la veo en
+        // ningún lado"). Las liquidadas viejas siguen ocultas — sólo cuentan
+        // en el contador "· N liquidadas".
+        if(!d2.liqDate)return false;
+        const _ld=new Date(d2.liqDate+'T12:00');
+        if(isNaN(_ld))return false;
+        const _t=new Date();_t.setHours(0,0,0,0);
+        return (_t-_ld)<=16*864e5; // incluye hoy y fecha futura cercana
       });
       if(debtSort==='prox'){
         sorted2.sort((a,b)=>{
@@ -5087,8 +5095,11 @@ function rFlujo(){try{
         if(g!==lastGrp){
           const collapsed=S.debtGroupCollapsed[g];
           const grpDebts=sorted2.filter(x=>(x.group||'Sin grupo')===g);
-          const grpTotal=grpDebts.reduce((a,x)=>a+(+x.bal||0),0);
-          const grpPay=grpDebts.reduce((a,x)=>a+toMonthly(+x.pay||0,x.freq||'mensual'),0);
+          // El "/mes" del grupo es la obligación viva: excluye liquidadas
+          // (que ahora pueden seguir visibles unos días tras liquidarse).
+          const grpActive=grpDebts.filter(x=>(+x.bal||0)>0&&!(x.curPay&&x.totalPays&&x.curPay>x.totalPays));
+          const grpTotal=grpActive.reduce((a,x)=>a+(+x.bal||0),0);
+          const grpPay=grpActive.reduce((a,x)=>a+toMonthly(+x.pay||0,x.freq||'mensual'),0);
           lastGrp=g;
           html+='<div class="debt-group-hdr" onclick="toggleDebtGroup(this.dataset.g)" data-g="'+g.replace(/"/g,'&quot;')+'"><div class="row" style="gap:8px"><span style="font-size:14px">'+(collapsed?'▸':'▾')+'</span><span style="font-weight:bold;color:var(--sage2)">'+g+'</span><span class="badge bdg-sage">'+grpDebts.length+'</span></div><div class="row" style="gap:10px"><span style="font-size:11px;color:var(--terra)">'+fx(grpTotal)+'</span><span style="font-size:11px;color:var(--sky)">'+fx(Math.round(grpPay))+'/mes</span></div></div>';
           if(collapsed){return;}
@@ -5123,8 +5134,9 @@ function rFlujo(){try{
       // qué cuota fue aplicada (curPay-1, porque curPay avanzó tras aplicar).
       // Pagos que faltan para liquidar (no-MSI): saldo / cuota del periodo.
       const _restPagos=(!hasMSI&&(+d.bal||0)>0&&(+d.pay||0)>0)?Math.ceil((+d.bal||0)/(+d.pay||0)):0;
+      const _liqHoy=_isLiquidated&&d.liqDate===_todayYMD();
       const paidBadgeBig=_isLiquidated
-        ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada</span>'
+        ?'<span class="badge" style="background:var(--sage);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none">🏁 Liquidada'+(_liqHoy?' hoy':'')+'</span>'
         :(_appliedThisQ
           ?(hasMSI
             ?'<span class="badge" style="background:var(--sky);color:#fff;font-weight:bold;padding:3px 8px;text-decoration:none" title="Sigue activa — falta la siguiente cuota">✓ Cuota '+Math.max(1,(+d.curPay||1)-1)+' pagada · sigue activa</span>'
@@ -5133,7 +5145,7 @@ function rFlujo(){try{
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
           '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+d.name+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+d.note+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+d.group+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
-          '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
+          '<div class="row debt-card-actions" style="gap:4px">'+(_isLiquidated?'<button class="btn btn-sm" style="padding:4px 8px;background:rgba(78,124,106,.12);color:var(--sage);border:1px solid rgba(78,124,106,.35)" onclick="reactivarDeuda('+d.id+')">↩️ Reactivar</button>':'')+'<button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
@@ -6654,15 +6666,72 @@ function adelantarPago(id){
   const d=S.debts.find(x=>x.id===id);
   if(!d){toast('Deuda no encontrada');return;}
   const nm=d.name;
+  const prevBal=Math.max(0,+d.bal||0);
   d.bal=0;
   d.liqDate=_todayYMD();
   if(d.curPay&&d.totalPays)d.curPay=d.totalPays+1;
+  // Registrar el adelanto como pago APLICADO del ciclo. Sin esto la deuda
+  // se liquidaba pero el pago "desaparecía del registro": no salía en
+  // Plan de Acción → Pagos ni contaba en el estado de cuenta. Mismo shape
+  // que applyPayments() para que la UI lo trate como pago aplicado.
+  try{
+    const ck=(typeof planCk==='function'?planCk():cycleKey());
+    if(!S.paidItems)S.paidItems={};
+    if(!S.paidItems[ck])S.paidItems[ck]={};
+    S.paidItems[ck]['debt_'+id]={at:Date.now(),applied:true,amt:prevBal,realAmt:prevBal,paidWith:'debito',liqAdelanto:true};
+    S.paidItems[ck]._appliedTotal=((+S.paidItems[ck]._appliedTotal)||0)+prevBal;
+  }catch(e){_logErr('adelantarPago.registro',e);}
   sv();
   try{checkAch();}catch(e){_logErr('adelantarPago.checkAch',e);}
-  toast('🏁 '+nm+' liquidada');
-  try{rPlan();}catch(e){_logErr('adelantarPago.rPlan',e);}
-  try{if(typeof rFlujo==='function')rFlujo();}catch(e){}
-  try{if(typeof hdrUp==='function')hdrUp();}catch(e){}
+  toast('🏁 '+nm+' liquidada hoy');
+  // Llevar al usuario a Deudas para que VEA la confirmación. Antes se
+  // quedaba en Estrategia, donde la deuda desaparece (las liquidadas se
+  // ocultan del Plan de Ataque) y parecía que "no pasó nada".
+  try{
+    flujoView='deudas';
+    if(typeof go==='function')go('flujo');
+    else{rFlujo&&rFlujo();hdrUp&&hdrUp();}
+  }catch(e){
+    _logErr('adelantarPago.nav',e);
+    try{rPlan&&rPlan();rFlujo&&rFlujo();hdrUp&&hdrUp();}catch(_){}
+  }
+}
+
+// Revertir una liquidación: vuelve a poner la deuda activa. Recupera el
+// saldo desde el registro que dejó adelantarPago (liqAdelanto) si existe,
+// y quita ese pago auto-registrado para que el usuario aplique el pago
+// REAL que hizo desde Plan de Acción → Pagos (evita doble conteo).
+function reactivarDeuda(id){
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){toast('Deuda no encontrada');return;}
+  let recovered=0,foundCk=null;
+  for(const ck in (S.paidItems||{})){
+    const e=S.paidItems[ck]&&S.paidItems[ck]['debt_'+id];
+    if(e&&typeof e==='object'&&e.liqAdelanto){recovered=+e.amt||0;foundCk=ck;}
+  }
+  const recTxt=recovered>0
+    ?'Volverá a tus deudas activas con saldo <strong>'+fx(recovered)+'</strong> (lo que tenía antes de liquidarla) y se quitará el pago de '+fx(recovered)+' que se había registrado, para que apliques desde Plan de Acción → Pagos el pago real que hiciste.'
+    :'Volverá a tus deudas activas. No tengo registrado su saldo anterior, así que se abrirá la edición para que pongas el saldo correcto.';
+  showConfirm('↩️ ¿Reactivar '+_escH(d.name)+'?',
+    '<div style="font-size:13px;line-height:1.7;color:var(--txt2)">'+recTxt+'</div>',
+    ()=>{
+      try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('reactivarDeuda.backup',e);}
+      if(recovered>0)d.bal=recovered;
+      else if((+d.bal||0)<=0)d.bal=+d.pay||0;
+      if(d.curPay&&d.totalPays&&d.curPay>d.totalPays)d.curPay=d.totalPays;
+      if(d.liqDate===_todayYMD())d.liqDate='';
+      if(foundCk&&S.paidItems[foundCk]&&S.paidItems[foundCk]['debt_'+id]){
+        const amt=+(S.paidItems[foundCk]['debt_'+id].amt)||0;
+        delete S.paidItems[foundCk]['debt_'+id];
+        if(S.paidItems[foundCk]._appliedTotal!==undefined)
+          S.paidItems[foundCk]._appliedTotal=Math.max(0,(+S.paidItems[foundCk]._appliedTotal||0)-amt);
+      }
+      sv();
+      try{checkAch&&checkAch();}catch(e){_logErr('reactivarDeuda.checkAch',e);}
+      toast('↩️ '+d.name+' reactivada');
+      try{flujoView='deudas';if(typeof go==='function')go('flujo');else{rFlujo&&rFlujo();hdrUp&&hdrUp();}}catch(e){rFlujo&&rFlujo();}
+      if(!(recovered>0))setTimeout(()=>{try{editDebt(id);}catch(e){}},350);
+    });
 }
 
 function restoreBackup(){

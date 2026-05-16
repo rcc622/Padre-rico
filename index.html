@@ -6586,6 +6586,44 @@ function confirmApply(){
     '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se aplicarán los <strong>'+pc+'</strong> pago'+(pc>1?'s':'')+' seleccionado'+(pc>1?'s':'')+'. Se creará un respaldo automático.<br><br><strong style="color:var(--terra)">Esta acción no se puede deshacer</strong> (pero puedes restaurar el respaldo).</div><div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:6px" onclick="exportData();closeConfirm()">📤 Exportar respaldo primero</button></div>',
     applyPayments);
 }
+
+// ══ ADELANTAR PAGO / LIQUIDAR DESDE PLAN DE ATAQUE ══════
+// Desde la lista del Plan de Ataque, tocar una deuda abre una confirmación
+// para adelantar el pago completo y dejarla liquidada (saldo 0). Hace
+// respaldo automático antes de tocar el estado, igual que applyPayments().
+function confirmAdelantarPago(id){
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){toast('Deuda no encontrada');return;}
+  const bal=Math.max(0,+d.bal||0);
+  const moP=toMonthly(+d.pay||0,d.freq||'mensual');
+  showConfirm('🏁 ¿Liquidar '+_escH(d.name)+'?',
+    '<div style="font-size:13px;line-height:1.7;color:var(--txt2)">'
+    +'Vas a <strong>adelantar el pago completo</strong> de esta deuda y dejarla <strong style="color:var(--sage)">liquidada</strong> hoy.'
+    +'<div style="margin:14px 0;padding:12px 14px;background:var(--bg);border-radius:10px">'
+    +'<div class="row-b" style="font-size:12px;margin-bottom:6px"><span style="color:var(--muted)">Saldo a liquidar</span><strong style="color:var(--terra);font-size:16px">'+fx(bal)+'</strong></div>'
+    +'<div class="row-b" style="font-size:12px"><span style="color:var(--muted)">Liberas</span><strong style="color:var(--sage)">'+fx(Math.round(moP))+'/mes</strong></div>'
+    +'</div>'
+    +'Se marcará como liquidada hoy ('+fmtDate(_todayYMD())+') y saldrá de tu Plan de Ataque.'
+    +'<br><br><span style="font-size:11px;color:var(--muted)">Se crea un respaldo automático. Si te equivocas, restáuralo desde Mi Historia.</span>'
+    +'</div>',
+    ()=>adelantarPago(id));
+}
+function adelantarPago(id){
+  try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('adelantarPago.backup',e);}
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){toast('Deuda no encontrada');return;}
+  const nm=d.name;
+  d.bal=0;
+  d.liqDate=_todayYMD();
+  if(d.curPay&&d.totalPays)d.curPay=d.totalPays+1;
+  sv();
+  try{checkAch();}catch(e){_logErr('adelantarPago.checkAch',e);}
+  toast('🏁 '+nm+' liquidada');
+  try{rPlan();}catch(e){_logErr('adelantarPago.rPlan',e);}
+  try{if(typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(typeof hdrUp==='function')hdrUp();}catch(e){}
+}
+
 function restoreBackup(){
   const bk=localStorage.getItem('prv5_backup');
   if(!bk){toast('No hay respaldo disponible');return;}
@@ -7131,7 +7169,7 @@ try{
         </div>
       </div>
       <div style="background:var(--skydim);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--sky);line-height:1.7;margin-bottom:16px">
-        💡 Cuando termines de pagar la <strong>#1</strong>, toma ese pago y súmalo a la <strong>#2</strong>. El pago crece como bola de nieve y cada deuda cae más rápido.
+        💡 Cuando termines de pagar la <strong>#1</strong>, toma ese pago y súmalo a la <strong>#2</strong>. El pago crece como bola de nieve y cada deuda cae más rápido.<br><br>🏁 ¿Vas a adelantar un pago? <strong>Toca cualquier deuda</strong> para liquidarla por completo: te pedirá confirmación antes de aplicarla.
       </div>
 
       ${sortedActive.map((db,i)=>{
@@ -7145,7 +7183,8 @@ try{
         else if(pd2){npLabel='pago día '+pd2;}
         const liqLabel=db.liqDate?'Liquida: '+fmtDate(db.liqDate):'';
         const fqLabel=freqShort(db.freq||'mensual');
-        return`<div style="padding:14px 0;border-bottom:1px solid var(--border);${paidThisCycle?'opacity:.5':''}">
+        const clickable=!paidThisCycle;
+        return`<div ${clickable?'onclick="confirmAdelantarPago('+db.id+')" role="button" tabindex="0" ':''}style="padding:14px 0;border-bottom:1px solid var(--border);${paidThisCycle?'opacity:.5':'cursor:pointer'}">
           <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px">
               ${paidThisCycle?'<span style="background:var(--sage);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">✓ PAGADA</span>':isFirst?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
@@ -7155,7 +7194,7 @@ try{
             <strong style="color:${paidThisCycle?'var(--sage)':'var(--sky)'};font-size:18px">${fx(Math.round(moP))}</strong>
           </div>
           <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:32px">
-            ${paidThisCycle?'✓ Pagada este ciclo':'Pago: '+fx(db.pay)+'/'+fqLabel+(npLabel?' · '+npLabel:'')+(liqLabel?' · '+liqLabel:'')}
+            ${paidThisCycle?'✓ Pagada este ciclo':'Pago: '+fx(db.pay)+'/'+fqLabel+(npLabel?' · '+npLabel:'')+(liqLabel?' · '+liqLabel:'')+'<br><span style="color:var(--sage);font-weight:bold">🏁 Toca para adelantar y liquidar</span>'}
           </div>
         </div>`;
       }).join('')}

@@ -2648,6 +2648,14 @@ function closeCierreModal(){
   try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
   try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
 }
+// Refresca SOLO el panel activo. Antes varias acciones (ej. el wizard de
+// Págate Primero) llamaban siempre rDash(), así que si el usuario estaba
+// en Activos (rFlujo) el cambio no se reflejaba hasta cambiar de pestaña.
+function _refreshActive(){
+  try{
+    ({dash:rDash,flujo:rFlujo,plan:rPlan,habitos:rHabitos,historia:rHistoria})[cur]?.();
+  }catch(e){_logErr&&_logErr('_refreshActive',e);}
+}
 function hdrUp(){
   const s=score(),r=getRank(s),el=document.getElementById('hdr-score');
   el.textContent=`${r.emoji} ${r.name}`;
@@ -6172,7 +6180,7 @@ function _savTopUp(gap){
   const newCommits={...S.savCommits,[ck]:{...c,amount:(+c.amount||0)+gap}};
   pt({assets:newAssets,savCommits:newCommits});
   toast('💰 +'+fx(gap)+' agregados a '+asset.name);
-  rDash();hdrUp&&hdrUp();
+  _refreshActive();hdrUp&&hdrUp();
 }
 function startSavWizard(){
   // Pre-condiciones
@@ -6322,8 +6330,8 @@ function _savWizStep3(){
     +'</div>';
   showConfirm('🎉 ¡Hecho!',body,null);
   const row=document.getElementById('confirmModal').querySelector('.row');
-  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();_savWizStep=1;rDash()" style="flex:1">Cerrar</button><button class="btn btn-sage" onclick="closeConfirm();_savWizStep=1;go(\'plan\')" style="flex:1">Ir a pagos →</button>';
-  rDash();hdrUp&&hdrUp();
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();_savWizStep=1;_refreshActive()" style="flex:1">Cerrar</button><button class="btn btn-sage" onclick="closeConfirm();_savWizStep=1;go(\'plan\')" style="flex:1">Ir a pagos →</button>';
+  _refreshActive();hdrUp&&hdrUp();
 }
 function _savWizNext(){
   if(_savWizStep===1){
@@ -6353,7 +6361,7 @@ function closeSavCheck(outcome){
     const newCommits={...S.savCommits,[ck]:{...c,status:'intact',closedAt:new Date().toISOString()}};
     pt({savCommits:newCommits});
     toast('🔥 Racha '+(S.savStreak||0)+' confirmada · Fiel a ti mismo');
-    rDash();return;
+    _refreshActive();return;
   }
   if(outcome==='emergency'){
     // Pregunta cuánto usó antes de decidir racha. Antes saltaba directo al
@@ -6457,7 +6465,7 @@ function _applySavUsed({outcome,keepStreak}){
   else toast('🔄 Racha reiniciada'+(used>0?' · -'+fx(used)+' · gasto registrado':''));
   window._pendingSavUsed=0;
   window._pendingSavConcept='';
-  rDash();
+  _refreshActive();
 }
 function closeSavEmerg(keepStreak){
   closeConfirm&&closeConfirm();
@@ -9856,7 +9864,7 @@ function importData(f){
 function initPWA(){
   const man={name:'Padre Rico — Libertad Financiera',short_name:'Padre Rico',start_url:'.',display:'standalone',background_color:'#F5F2EC',theme_color:'#F5F2EC',icons:[{src:`data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23F5F2EC'/><text y='.9em' font-size='78' text-anchor='middle' x='50'>🪙</text></svg>`,sizes:'512x512',type:'image/svg+xml'}]};
   try{const mb=new Blob([JSON.stringify(man)],{type:'application/json'});document.getElementById('pwa-manifest').href=URL.createObjectURL(mb);}catch{}
-  try{const sw=`const C='prv5-consolidZK';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
+  try{const sw=`const C='prv5-consolidZL';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).catch(()=>new Response('')))));`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
 // ══ INIT ════════════════════════════════════════════

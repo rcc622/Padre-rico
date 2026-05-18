@@ -8271,13 +8271,13 @@ function acceptOvertime(deficit,pendingThis,nextTotal){
     // Don't overwrite — preserve entries, just update target
     S.overtimeLog[ck]={...existing,targetHrs:Math.max(existing.targetHrs||0,hrs),deficit,pendingThis,nextTotal};
     sv();closeConfirm();
-    setHabitView('retos');go('habitos');
+    planView='hrsxtra';go('plan');
     toast('⏰ Reto actualizado · '+(existing.entries.length)+' registros conservados');
     return;
   }
   S.overtimeLog[ck]={entries:[],accepted:true,targetHrs:hrs,rate:RATE,deficit,pendingThis,nextTotal,committedAt:Date.now(),paid:false};
   sv();closeConfirm();
-  setHabitView('retos');go('habitos');
+  planView='hrsxtra';go('plan');
   toast('⏰ Reto activado: '+hrs+'h de horas extra');
 }
 function logOvertime(otCk){

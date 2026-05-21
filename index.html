@@ -388,6 +388,7 @@ const _ymdLocal=(d)=>{
 };
 const _todayYMD=()=>_ymdLocal(new Date());
 let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
+  cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
@@ -445,7 +446,7 @@ function _normalizeState(st){
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
   if(!isObj(st.simSliders))st.simSliders={};
-  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms'];
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
   // mensual (a.inc). Los convertimos a tasa anual (a.yldPct) para que la
@@ -4821,6 +4822,43 @@ function rFlujo(){try{
     <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total extras/mes:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">+${fx(Math.round(tExtras()))}</span></div></div>`:''}
     </div>
   </details>
+
+  <!-- ═══ COBRANZA · vista de Ingresos (read-only + aplicar) ═══ -->
+  ${(()=>{
+    const cobs=S.cobranzas||[];
+    const pend=cobs.filter(c=>!c.paid).sort((a,b)=>(a.dateExpected||'9999').localeCompare(b.dateExpected||'9999'));
+    const done=cobs.filter(c=>c.paid).sort((a,b)=>String(b.paidAt||'').localeCompare(String(a.paidAt||'')));
+    const totalPend=pend.reduce((a,c)=>a+(+c.amount||0),0);
+    const histColl=S._cobHistColl!==false;
+    const today=_todayYMD();
+    return `<details class="card" style="border:1px solid rgba(74,110,140,.25);background:rgba(74,110,140,.03);padding:10px 14px"${pend.length>0?' open':''}>
+      <summary style="cursor:pointer;font-size:12px;color:var(--sky);font-weight:bold;letter-spacing:1px;text-transform:uppercase;padding:6px 0">💵 Cobranza por recibir <span style="font-weight:normal;color:var(--muted);font-size:10px;text-transform:none;letter-spacing:0">(${pend.length} pendiente${pend.length!==1?'s':''}${totalPend>0?' · '+fx(totalPend):''})</span></summary>
+      <div style="margin-top:10px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Dinero que te deben (préstamos o deudas absorbidas). Cuando te paguen, toca <strong>"Ya me pagaron"</strong> y se registra como ingreso extra. Para agregar o editar, ve a <strong>📋 Gastos Fijos → 💸 Cobranza</strong>.</div>
+      ${pend.length===0?'<div style="font-size:12px;color:var(--muted);padding:14px;text-align:center;background:rgba(74,110,140,.04);border-radius:8px;line-height:1.6">No tienes cobranzas pendientes.</div>':pend.map(c=>{
+        const vencida=c.dateExpected&&c.dateExpected<today;
+        const hoy=c.dateExpected===today;
+        const tagColor=vencida?'var(--terra)':hoy?'var(--amber)':'var(--muted)';
+        const tagText=c.dateExpected?(vencida?'⚠ Vencida · '+fmtDate(c.dateExpected):hoy?'⏰ Hoy':'📅 '+fmtDate(c.dateExpected)):'Sin fecha';
+        return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">
+          <div class="row-b" style="margin-bottom:6px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}</div>
+              ${c.concept?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${_escH(c.concept)}</div>`:''}
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:15px;font-weight:bold;color:var(--sky);font-family:Georgia,serif">+${fx(+c.amount||0)}</div>
+              <div style="font-size:10px;color:${tagColor};margin-top:2px">${tagText}</div>
+            </div>
+          </div>
+          <button class="btn btn-sage btn-sm" style="width:100%;margin-top:4px" onclick="applyCobranza('${c.id}')">💵 Ya me pagaron</button>
+        </div>`;
+      }).join('')}
+      ${done.length>0?`<div style="margin-top:12px"><div class="row-b" style="cursor:pointer;padding:6px 0" onclick="toggleCobHistory()"><span style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold">📚 Historial · ${done.length} cobrada${done.length!==1?'s':''}</span><span style="font-size:11px;color:var(--muted)">${histColl?'▶':'▼'}</span></div>${!histColl?done.map(c=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border);font-size:11px"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${_escH(c.debtor)}</span>${c.concept?`<span style="color:var(--muted);font-size:10px">· ${_escH(c.concept)}</span>`:''}${c.paidDate?`<span style="color:var(--muted);font-size:10px">${fmtDate(c.paidDate)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:var(--sage);font-weight:bold">+${fx(+c.paidActual||+c.amount||0)}</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 6px" onclick="unapplyCobranza('${c.id}')" title="Deshacer cobro">↩</button></div></div>`).join(''):''}</div>`:''}
+      ${pend.length>0?`<div class="row-b" style="padding-top:8px;margin-top:8px;border-top:1px solid var(--sky)"><span style="font-size:12px;color:var(--sky);font-weight:bold">Total por cobrar:</span><span style="font-size:14px;color:var(--sky);font-weight:bold">${fx(totalPend)}</span></div>`:''}
+      </div>
+    </details>`;
+  })()}
   `:''}
 
   ${flujoView==='gastos'?`
@@ -4851,6 +4889,61 @@ function rFlujo(){try{
   ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
+
+  <!-- ═══ COBRANZA · vista de Gastos (CRUD completo) ═══ -->
+  ${(()=>{
+    const cobs=S.cobranzas||[];
+    const pend=cobs.filter(c=>!c.paid).sort((a,b)=>(a.dateExpected||'9999').localeCompare(b.dateExpected||'9999'));
+    const done=cobs.filter(c=>c.paid).sort((a,b)=>String(b.paidAt||'').localeCompare(String(a.paidAt||'')));
+    const totalPend=pend.reduce((a,c)=>a+(+c.amount||0),0);
+    const totalDone=done.reduce((a,c)=>a+(+c.paidActual||+c.amount||0),0);
+    const histColl=S._cobHistColl!==false;
+    const today=_todayYMD();
+    return `<details class="card" style="border:1px solid rgba(74,110,140,.25);background:rgba(74,110,140,.03);padding:10px 14px"${pend.length>0||cobs.length===0?' open':''}>
+      <summary style="cursor:pointer;font-size:12px;color:var(--sky);font-weight:bold;letter-spacing:1px;text-transform:uppercase;padding:6px 0">💸 Cobranza <span style="font-weight:normal;color:var(--muted);font-size:10px;text-transform:none;letter-spacing:0">(${pend.length} pendiente${pend.length!==1?'s':''}${totalPend>0?' · '+fx(totalPend)+' por recibir':''})</span></summary>
+      <div style="margin-top:10px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Registra el dinero que prestaste o las deudas que absorbiste con promesa de que te paguen. Cuando te paguen, podrás marcarlo como cobrado desde aquí o desde <strong>💰 Ingresos → 💵 Cobranza por recibir</strong>, y se registrará como ingreso extra.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div><label>¿Quién te debe?</label><input type="text" id="cbDebtor" placeholder="Nombre de la persona"></div>
+        <div><label>Monto a cobrar $</label><input type="number" id="cbAmount" placeholder="0"></div>
+      </div>
+      <div style="margin-bottom:10px"><label>Concepto (opcional)</label><input type="text" id="cbConcept" placeholder="Préstamo, absorbí su deuda de X..."></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+        <div><label>Fecha del préstamo</label><input type="date" id="cbDateLent" value="${_todayYMD()}"></div>
+        <div><label>Fecha esperada de pago</label><input type="date" id="cbDateExp"></div>
+      </div>
+      <button class="btn" style="width:100%;background:var(--sky);color:#fff;padding:11px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="addCobranza()">+ Registrar cobranza</button>
+
+      ${pend.length>0?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes (${pend.length})</div>${pend.map(c=>{
+        const vencida=c.dateExpected&&c.dateExpected<today;
+        const hoy=c.dateExpected===today;
+        const tagColor=vencida?'var(--terra)':hoy?'var(--amber)':'var(--muted)';
+        const tagText=c.dateExpected?(vencida?'⚠ Vencida · '+fmtDate(c.dateExpected):hoy?'⏰ Hoy':'📅 '+fmtDate(c.dateExpected)):'Sin fecha';
+        return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">
+          <div class="row-b" style="margin-bottom:6px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}</div>
+              ${c.concept?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${_escH(c.concept)}</div>`:''}
+              <div style="font-size:10px;color:${tagColor};margin-top:4px">${tagText}${c.dateLent?` · prestado ${fmtDate(c.dateLent)}`:''}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:15px;font-weight:bold;color:var(--sky);font-family:Georgia,serif">${fx(+c.amount||0)}</div>
+            </div>
+          </div>
+          <div class="row" style="gap:6px;margin-top:6px">
+            <button class="btn btn-sage btn-sm" style="flex:1" onclick="applyCobranza('${c.id}')">💵 Ya me pagaron</button>
+            <button class="btn btn-ghost btn-sm" onclick="editCobranza('${c.id}')">✏️</button>
+            <button class="btn btn-red btn-sm" onclick="rmCobranza('${c.id}')">✕</button>
+          </div>
+        </div>`;
+      }).join('')}</div>`:''}
+
+      ${done.length>0?`<div style="margin-top:12px"><div class="row-b" style="cursor:pointer;padding:6px 0" onclick="toggleCobHistory()"><span style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold">📚 Historial · ${done.length} cobrada${done.length!==1?'s':''} (${fx(totalDone)})</span><span style="font-size:11px;color:var(--muted)">${histColl?'▶':'▼'}</span></div>${!histColl?done.map(c=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border);font-size:11px"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${_escH(c.debtor)}</span>${c.concept?`<span style="color:var(--muted);font-size:10px">· ${_escH(c.concept)}</span>`:''}${c.paidDate?`<span style="color:var(--muted);font-size:10px">${fmtDate(c.paidDate)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:var(--sage);font-weight:bold">+${fx(+c.paidActual||+c.amount||0)}</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 6px" onclick="unapplyCobranza('${c.id}')" title="Deshacer cobro">↩</button><button class="btn btn-red btn-sm" style="font-size:10px;padding:3px 6px" onclick="rmCobranza('${c.id}')">✕</button></div></div>`).join(''):''}</div>`:''}
+
+      ${pend.length>0?`<div class="row-b" style="padding-top:8px;margin-top:8px;border-top:1px solid var(--sky)"><span style="font-size:12px;color:var(--sky);font-weight:bold">Total por cobrar:</span><span style="font-size:14px;color:var(--sky);font-weight:bold">${fx(totalPend)}</span></div>`:''}
+      </div>
+    </details>`;
+  })()}
   `:''}
 
   ${flujoView==='diarios'?'<div class="card" style="text-align:center;padding:20px"><div style="font-size:12px;color:var(--muted);line-height:1.6">Diarios se movió a <strong>🧠 Día a día → 🛒 Diarios</strong>.</div><button class="btn btn-sage btn-sm" style="margin-top:12px" onclick="setHabitView(\'diarios\');go(\'habitos\')">Ir a Diarios →</button></div>':''}
@@ -5566,6 +5659,100 @@ function editExtra(id){
     rFlujo();
   });
 }
+
+// ══ COBRANZA ═════════════════════════════════════════
+// Préstamos hechos a terceros o deudas absorbidas con promesa de cobro.
+// Se llevan en su propio array para no contaminar S.extras (que solo
+// guarda ingresos ya recibidos). Al marcar como cobrado se genera un
+// extra one-shot — mismo patrón que markOtAsPaid para horas extra.
+function addCobranza(){
+  const debtor=document.getElementById('cbDebtor')?.value.trim();
+  const concept=document.getElementById('cbConcept')?.value.trim();
+  const amount=+(document.getElementById('cbAmount')?.value)||0;
+  const dateLent=document.getElementById('cbDateLent')?.value||_todayYMD();
+  const dateExpected=document.getElementById('cbDateExp')?.value||'';
+  if(!debtor){toast('¿Quién te debe?');return;}
+  if(amount<=0){toast('Monto inválido');return;}
+  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false};
+  pt({cobranzas:[...(S.cobranzas||[]),c]});
+  toast('✓ Cobranza registrada · '+fx(amount)+' por cobrar');
+  rFlujo();
+}
+function rmCobranza(id){
+  const c=(S.cobranzas||[]).find(x=>String(x.id)===String(id));
+  if(!c)return;
+  const msg=c.paid
+    ?'<div style="font-size:12px;color:var(--txt2);line-height:1.7">Esta cobranza ya está marcada como cobrada y generó un ingreso extra. Si la eliminas <strong>también se borrará el ingreso extra asociado</strong>.</div>'
+    :'<div style="font-size:12px;color:var(--txt2);line-height:1.7">¿Eliminar esta cobranza pendiente?</div>';
+  showConfirm('🗑 ¿Eliminar cobranza?',msg,()=>{
+    const newCob=(S.cobranzas||[]).filter(x=>String(x.id)!==String(id));
+    const newExt=c.extraId?(S.extras||[]).filter(x=>String(x.id)!==String(c.extraId)):S.extras;
+    pt({cobranzas:newCob,extras:newExt});
+    closeConfirm();toast('Cobranza eliminada');rFlujo();
+  });
+}
+function editCobranza(id){
+  const c=(S.cobranzas||[]).find(x=>String(x.id)===String(id));
+  if(!c){toast('Cobranza no encontrada');return;}
+  const body='<label style="font-size:11px;color:var(--muted)">¿Quién te debe?</label>'
+    +'<input type="text" id="cbEdDebtor" value="'+_escA(c.debtor||'')+'" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
+    +'<label style="font-size:11px;color:var(--muted)">Concepto</label>'
+    +'<input type="text" id="cbEdConcept" value="'+_escA(c.concept||'')+'" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
+    +'<label style="font-size:11px;color:var(--muted)">Monto a cobrar $</label>'
+    +'<input type="number" id="cbEdAmount" value="'+(+c.amount||0)+'" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-weight:bold;color:var(--sky);font-family:Georgia,serif">'
+    +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:11px;color:var(--muted)">Fecha del préstamo</label><input type="date" id="cbEdDateLent" value="'+_escA(c.dateLent||_todayYMD())+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif"></div>'
+    +'<div style="flex:1"><label style="font-size:11px;color:var(--muted)">Fecha esperada de pago</label><input type="date" id="cbEdDateExp" value="'+_escA(c.dateExpected||'')+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif"></div></div>';
+  showConfirm('✏️ Editar cobranza',body,()=>{
+    const debtor=(document.getElementById('cbEdDebtor')?.value||'').trim();
+    const concept=(document.getElementById('cbEdConcept')?.value||'').trim();
+    const amount=+(document.getElementById('cbEdAmount')?.value)||0;
+    const dateLent=document.getElementById('cbEdDateLent')?.value||c.dateLent||_todayYMD();
+    const dateExpected=document.getElementById('cbEdDateExp')?.value||'';
+    if(!debtor){toast('¿Quién te debe?');return;}
+    if(amount<=0){toast('Monto inválido');return;}
+    const patch={...c,debtor,concept,amount,dateLent,dateExpected};
+    pt({cobranzas:(S.cobranzas||[]).map(x=>String(x.id)===String(id)?patch:x)});
+    closeConfirm();toast('✓ Cobranza actualizada');rFlujo();
+  });
+}
+// Marca una cobranza como cobrada y registra el ingreso como extra
+// (mismo patrón que markOtAsPaid para horas extra).
+function applyCobranza(id){
+  const c=(S.cobranzas||[]).find(x=>String(x.id)===String(id));
+  if(!c){toast('Cobranza no encontrada');return;}
+  if(c.paid){toast('Esta cobranza ya está cobrada');return;}
+  const today=_todayYMD();
+  const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2);margin-bottom:12px">Vas a marcar como <strong style="color:var(--sage)">cobrada</strong> la deuda de <strong>'+_escH(c.debtor)+'</strong>'+(c.concept?' ('+_escH(c.concept)+')':'')+' por <strong>'+fx(+c.amount||0)+'</strong>.<br><br>Se va a registrar como <strong style="color:var(--sage)">ingreso extra</strong> con la fecha de hoy.</div>'
+    +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Monto real recibido ($)</label>'
+    +'<input type="number" id="cbPaidAmount" value="'+(+c.amount||0)+'" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">'
+    +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Fecha del cobro</label>'
+    +'<input type="date" id="cbPaidDate" value="'+today+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif">';
+  showConfirm('💵 ¿Marcar cobranza como cobrada?',body,()=>{
+    const paidActual=+(document.getElementById('cbPaidAmount')?.value)||0;
+    const paidDate=document.getElementById('cbPaidDate')?.value||today;
+    if(paidActual<=0){toast('⚠ Monto inválido');return;}
+    const extraId=_uid();
+    const conceptLabel=c.concept?' · '+c.concept:'';
+    const newExtra={id:extraId,name:'💵 Cobranza · '+c.debtor+conceptLabel,amt:paidActual,tipo:'unico',date:paidDate,fromCobranza:c.id};
+    const newCob=(S.cobranzas||[]).map(x=>String(x.id)===String(id)?{...x,paid:true,paidAt:new Date().toISOString(),paidActual,paidDate,extraId}:x);
+    pt({cobranzas:newCob,extras:[...(S.extras||[]),newExtra]});
+    closeConfirm();toast('💵 +'+fx(paidActual)+' como ingreso extra');rFlujo();
+  });
+}
+// Deshace el cobro: marca la cobranza como pendiente otra vez y elimina
+// el extra que se había generado. Útil si el usuario se equivocó.
+function unapplyCobranza(id){
+  const c=(S.cobranzas||[]).find(x=>String(x.id)===String(id));
+  if(!c||!c.paid)return;
+  showConfirm('↩ ¿Deshacer cobro?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">La cobranza volverá a estar pendiente y se eliminará el ingreso extra asociado.</div>',()=>{
+    const newCob=(S.cobranzas||[]).map(x=>String(x.id)===String(id)?{...x,paid:false,paidAt:null,paidActual:null,paidDate:null,extraId:null}:x);
+    const newExt=c.extraId?(S.extras||[]).filter(x=>String(x.id)!==String(c.extraId)):S.extras;
+    pt({cobranzas:newCob,extras:newExt});
+    closeConfirm();toast('↩ Cobro deshecho');rFlujo();
+  });
+}
+function toggleCobHistory(){S._cobHistColl=!S._cobHistColl;sv();rFlujo();}
+
 let _diarioCat='snack';
 function selDiarioCat(k){
   _diarioCat=k;

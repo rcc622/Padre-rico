@@ -311,6 +311,7 @@ button:active{transform:scale(.97)}
     <div class="fab-item"><span class="fab-label">🛒 Gasto diario</span><button class="fab-mini" onclick="fabAction('diario')" style="color:var(--terra)">🛒</button></div>
     <div class="fab-item"><span class="fab-label">💵 Ingreso extra</span><button class="fab-mini" onclick="fabAction('ingXtra')" style="color:var(--sage)">💵</button></div>
     <div class="fab-item"><span class="fab-label">⏱️ Horas extra</span><button class="fab-mini" onclick="fabAction('hrsxtra')" style="color:var(--sky)">⏱️</button></div>
+    <div class="fab-item"><span class="fab-label">🤝 Cobranza</span><button class="fab-mini" onclick="fabAction('cobranza')" style="color:var(--sky)">🤝</button></div>
     <div class="fab-item"><span class="fab-label">🏦 Activo</span><button class="fab-mini" onclick="fabAction('activo')" style="color:var(--amber)">🏦</button></div>
   </div>
   <button id="fabMain" class="fab-main" onclick="_fabToggle()" aria-label="Acciones rápidas">+</button>
@@ -4847,29 +4848,53 @@ function rFlujo(){try{
       </div>
       <button class="btn" style="width:100%;background:var(--sky);color:#fff;padding:11px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="addCobranza()">+ Registrar cobranza</button>
 
-      ${pend.length>0?`<div style="margin-top:14px"><div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes (${pend.length})</div>${pend.map(c=>{
-        const vencida=c.dateExpected&&c.dateExpected<today;
-        const hoy=c.dateExpected===today;
-        const tagColor=vencida?'var(--terra)':hoy?'var(--amber)':'var(--muted)';
-        const tagText=c.dateExpected?(vencida?'⚠ Vencida · '+fmtDate(c.dateExpected):hoy?'⏰ Hoy':'📅 '+fmtDate(c.dateExpected)):'Sin fecha';
-        return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">
-          <div class="row-b" style="margin-bottom:6px">
-            <div style="flex:1;min-width:0">
-              <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}</div>
-              ${c.concept?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${_escH(c.concept)}</div>`:''}
-              <div style="font-size:10px;color:${tagColor};margin-top:4px">${tagText}${c.dateLent?` · prestado ${fmtDate(c.dateLent)}`:''}</div>
+      ${pend.length>0?(()=>{
+        // Agrupa pendientes por fecha esperada de pago. Las que no tienen
+        // fecha caen en el grupo "Sin fecha" al final. Cada grupo muestra
+        // header con la fecha, etiqueta vencida/hoy/próxima y subtotal.
+        const groups={};
+        pend.forEach(c=>{const k=c.dateExpected||'__sf';(groups[k]=groups[k]||[]).push(c);});
+        const keys=Object.keys(groups).sort((a,b)=>a==='__sf'?1:b==='__sf'?-1:a.localeCompare(b));
+        const renderItem=c=>{
+          const vencida=c.dateExpected&&c.dateExpected<today;
+          const hoy=c.dateExpected===today;
+          const tagColor=vencida?'var(--terra)':hoy?'var(--amber)':'var(--muted)';
+          const tagText=c.dateExpected?(vencida?'⚠ Vencida · '+fmtDate(c.dateExpected):hoy?'⏰ Hoy':'📅 '+fmtDate(c.dateExpected)):'Sin fecha';
+          return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">
+            <div class="row-b" style="margin-bottom:6px">
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}</div>
+                ${c.concept?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${_escH(c.concept)}</div>`:''}
+                <div style="font-size:10px;color:${tagColor};margin-top:4px">${tagText}${c.dateLent?` · prestado ${fmtDate(c.dateLent)}`:''}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:15px;font-weight:bold;color:var(--sky);font-family:Georgia,serif">+${fx(+c.amount||0)}</div>
+              </div>
             </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div style="font-size:15px;font-weight:bold;color:var(--sky);font-family:Georgia,serif">+${fx(+c.amount||0)}</div>
+            <div class="row" style="gap:6px;margin-top:6px">
+              <button class="btn btn-sage btn-sm" style="flex:1" onclick="applyCobranza('${c.id}')">💵 Ya me pagaron</button>
+              <button class="btn btn-ghost btn-sm" onclick="editCobranza('${c.id}')">✏️</button>
+              <button class="btn btn-red btn-sm" onclick="rmCobranza('${c.id}')">✕</button>
             </div>
-          </div>
-          <div class="row" style="gap:6px;margin-top:6px">
-            <button class="btn btn-sage btn-sm" style="flex:1" onclick="applyCobranza('${c.id}')">💵 Ya me pagaron</button>
-            <button class="btn btn-ghost btn-sm" onclick="editCobranza('${c.id}')">✏️</button>
-            <button class="btn btn-red btn-sm" onclick="rmCobranza('${c.id}')">✕</button>
-          </div>
-        </div>`;
-      }).join('')}</div>`:''}
+          </div>`;
+        };
+        let html='<div style="margin-top:14px"><div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Pendientes ('+pend.length+')</div>';
+        keys.forEach(k=>{
+          const items=groups[k];
+          const subtotal=items.reduce((a,c)=>a+(+c.amount||0),0);
+          const noFecha=k==='__sf';
+          const vencida=!noFecha&&k<today;
+          const hoy=k===today;
+          const headColor=noFecha?'var(--muted)':vencida?'var(--terra)':hoy?'var(--amber)':'var(--sky)';
+          const headIcon=noFecha?'❔':vencida?'⚠':hoy?'⏰':'📅';
+          const headText=noFecha?'Sin fecha':fmtDate(k);
+          const headSuffix=vencida?' · vencida':hoy?' · hoy':'';
+          html+='<div class="row-b" style="margin:10px 0 6px;padding:4px 0;border-bottom:1px dashed '+headColor+'"><span style="font-size:11px;color:'+headColor+';font-weight:bold;letter-spacing:.5px">'+headIcon+' '+headText+headSuffix+' · '+items.length+'</span><span style="font-size:11px;color:'+headColor+';font-weight:bold">'+fx(subtotal)+'</span></div>';
+          html+=items.map(renderItem).join('');
+        });
+        html+='</div>';
+        return html;
+      })():''}
 
       ${done.length>0?`<div style="margin-top:12px"><div class="row-b" style="cursor:pointer;padding:6px 0" onclick="toggleCobHistory()"><span style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold">📚 Historial · ${done.length} cobrada${done.length!==1?'s':''} (${fx(totalDone)})</span><span style="font-size:11px;color:var(--muted)">${histColl?'▶':'▼'}</span></div>${!histColl?done.map(c=>`<div class="row-b" style="padding:7px 0;border-bottom:1px solid var(--border);font-size:11px"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${_escH(c.debtor)}</span>${c.concept?`<span style="color:var(--muted);font-size:10px">· ${_escH(c.concept)}</span>`:''}${c.paidDate?`<span style="color:var(--muted);font-size:10px">${fmtDate(c.paidDate)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><span style="color:var(--sage);font-weight:bold">+${fx(+c.paidActual||+c.amount||0)}</span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 6px" onclick="unapplyCobranza('${c.id}')" title="Deshacer cobro">↩</button><button class="btn btn-red btn-sm" style="font-size:10px;padding:3px 6px" onclick="rmCobranza('${c.id}')">✕</button></div></div>`).join(''):''}</div>`:''}
 
@@ -5827,10 +5852,44 @@ function fabAction(type){
       // forzaba al usuario a moverse y volver. Ahora se queda donde está.
       if(typeof openQuickOvertime==='function')openQuickOvertime();
     }
+    else if(type==='cobranza'){
+      if(typeof openQuickCobranza==='function')openQuickCobranza();
+    }
     else if(type==='activo'){
       if(typeof openQuickAsset==='function')openQuickAsset();
     }
   },180);
+}
+// ══ Cobranza rápida desde el FAB ════════════════════════════════════════
+// Registra un préstamo o deuda absorbida sin salir de la pantalla actual.
+// Empuja a S.cobranzas con la misma estructura que addCobranza(); aparece
+// en 💰 Ingresos → 💵 Cobranza por recibir agrupada por fecha esperada.
+function openQuickCobranza(){
+  const today=_todayYMD();
+  const body='<input type="text" id="qcbDebtor" placeholder="¿Quién te debe? (nombre de la persona)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
+    +'<input type="number" id="qcbAmount" placeholder="Monto a cobrar $" inputmode="decimal" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sky);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:10px">'
+    +'<input type="text" id="qcbConcept" placeholder="Concepto (opcional)" style="width:100%;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha del préstamo</label><input type="date" id="qcbDateLent" value="'+today+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
+    +'<div><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha esperada de pago</label><input type="date" id="qcbDateExp" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div></div>';
+  showConfirm('🤝 Registrar cobranza',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="_qCobranzaSave()">+ Registrar</button>';
+}
+function _qCobranzaSave(){
+  const debtor=(document.getElementById('qcbDebtor')?.value||'').trim();
+  const concept=(document.getElementById('qcbConcept')?.value||'').trim();
+  const amount=+(document.getElementById('qcbAmount')?.value)||0;
+  const dateLent=document.getElementById('qcbDateLent')?.value||_todayYMD();
+  const dateExpected=document.getElementById('qcbDateExp')?.value||'';
+  if(!debtor){toast('¿Quién te debe?');return;}
+  if(amount<=0){toast('Monto debe ser mayor a 0');return;}
+  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false};
+  pt({cobranzas:[...(S.cobranzas||[]),c]});
+  closeConfirm();
+  toast('🤝 Cobranza registrada · '+fx(amount)+' por cobrar');
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
 }
 // ══ Activo rápido desde el FAB ══════════════════════════════════════════
 // Permite registrar un nuevo activo (Nu, Mercado Pago, efectivo, Cetes…)

@@ -6125,33 +6125,23 @@ function _openQuickDiarioNewCat(){
     cat:_quickDiarioCat
   };
   const before=(S.diarioUserCats||[]).map(c=>c.k);
-  // Reabre el modal rápido; si se creó una categoría nueva la deja elegida.
+  // Reabre el modal rápido. Si openDiarioCatModal creó una categoría nueva,
+  // la dejamos elegida (es la que no estaba en "before"); openDiarioCatModal
+  // ya pone _diarioCat en la nueva, así que también lo aprovechamos.
   const reopen=()=>{
     const added=(S.diarioUserCats||[]).find(c=>before.indexOf(c.k)===-1);
-    openQuickDiario({...prefill,cat:added?added.k:prefill.cat});
+    const cat=added?added.k:prefill.cat;
+    openQuickDiario({...prefill,cat});
   };
+  // Reutilizamos el MISMO modal de "+ Nueva categoría" de la pantalla
+  // principal (openDiarioCatModal), que crea la categoría en S.diarioUserCats
+  // vía su callback. Como todos comparten el único #confirmModal, envolvemos
+  // su callback (_confirmCb) para, después de que se cree la categoría,
+  // reabrir el modal rápido con los datos restaurados. El botón Cancelar del
+  // modal compartido llama a closeConfirm(); reabrimos al detectar el cierre.
   openDiarioCatModal();
-  // Mismo modal compartido: redirigimos Confirmar/Cancelar para volver al
-  // modal rápido en vez de quedarnos en una pantalla vacía.
-  const modal=document.getElementById('confirmModal');
-  const yesBtn=document.getElementById('confirmYes');
-  const noBtn=document.getElementById('confirmNo');
-  if(yesBtn){
-    const prevYes=yesBtn.onclick;
-    yesBtn.onclick=()=>{
-      const e=(document.getElementById('dcEmoji')?.value||'').trim()||'🏷️';
-      const n=(document.getElementById('dcName')?.value||'').trim();
-      if(!n){toast('Pon un nombre');return;}
-      const key='u_'+Date.now().toString(36);
-      const newCat={k:key,n:n,e:e,esencial:document.getElementById('dcEsencial')?.checked||false};
-      pt({diarioUserCats:[...(S.diarioUserCats||[]),newCat]});
-      toast('✓ Categoría "'+n+'" agregada');
-      try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
-      try{if(typeof rFlujo==='function'&&cur==='flujo')rFlujo();}catch(e){}
-      openQuickDiario({...prefill,cat:key});
-    };
-  }
-  if(noBtn){noBtn.onclick=()=>reopen();}
+  const innerCb=_confirmCb;
+  _confirmCb=function(){ if(typeof innerCb==='function')innerCb(); reopen(); };
 }
 function _quickDiarioSave(method){
   const n=document.getElementById('qdn')?.value.trim();

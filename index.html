@@ -6087,17 +6087,21 @@ function _qOvertimeSave(){
 }
 
 // Quick modal for diario (from FAB, without navigating)
-function openQuickDiario(){
-  _quickDiarioCat='snack';
+function openQuickDiario(prefill){
+  prefill=prefill||{};
+  // _quickDiarioCat: la categoría seleccionada. Si venimos de crear una
+  // categoría nueva desde este mismo modal, respetamos la que quedó elegida.
+  _quickDiarioCat=prefill.cat||'snack';
   const today=_todayYMD();
   const cats=_allDiarioCats();
-  const body='<input type="text" id="qdn" placeholder="Concepto (Coca OXXO, Uber...)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
-    +'<input type="number" id="qda" placeholder="Monto $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
+  const body='<input type="text" id="qdn" placeholder="Concepto (Coca OXXO, Uber...)" value="'+_escA(prefill.name||'')+'" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
+    +'<input type="number" id="qda" placeholder="Monto $" value="'+(prefill.amt!=null&&prefill.amt!==''?_escA(String(prefill.amt)):'')+'" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Categoría</div>'
     +'<div id="qdCats" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">'
-    +cats.map(c=>'<button type="button" class="chip'+(c.k==='snack'?' chip-sel':'')+'" data-cat="'+c.k+'" style="font-size:11px;padding:6px 10px;'+(c.k==='snack'?'background:var(--sagedim);color:var(--sage);font-weight:bold':'')+'" onclick="_quickDiarioCat=\''+c.k+'\';document.querySelectorAll(\'#qdCats button\').forEach(b=>{b.classList.remove(\'chip-sel\');b.style.background=\'\';b.style.color=\'\';b.style.fontWeight=\'\';});this.classList.add(\'chip-sel\');this.style.background=\'var(--sagedim)\';this.style.color=\'var(--sage)\';this.style.fontWeight=\'bold\'">'+c.e+' '+_escH(c.n)+(c.custom&&c.esencial?' 🧾':'')+'</button>').join('')
+    +cats.map(c=>'<button type="button" class="chip'+(c.k===_quickDiarioCat?' chip-sel':'')+'" data-cat="'+c.k+'" style="font-size:11px;padding:6px 10px;'+(c.k===_quickDiarioCat?'background:var(--sagedim);color:var(--sage);font-weight:bold':'')+'" onclick="_quickDiarioCat=\''+c.k+'\';document.querySelectorAll(\'#qdCats button\').forEach(b=>{b.classList.remove(\'chip-sel\');b.style.background=\'\';b.style.color=\'\';b.style.fontWeight=\'\';});this.classList.add(\'chip-sel\');this.style.background=\'var(--sagedim)\';this.style.color=\'var(--sage)\';this.style.fontWeight=\'bold\'">'+c.e+' '+_escH(c.n)+(c.custom&&c.esencial?' 🧾':'')+'</button>').join('')
+    +'<button type="button" class="chip" style="font-size:11px;padding:6px 10px;border-style:dashed;color:var(--sage);font-weight:bold" onclick="_openQuickDiarioNewCat()">+ Nueva</button>'
     +'</div>'
-    +'<input type="date" id="qdd" value="'+today+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:14px;font-family:Georgia,serif">'
+    +'<input type="date" id="qdd" value="'+(prefill.date||today)+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:14px;font-family:Georgia,serif">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
     +'<div style="display:flex;gap:10px">'
     +'<button type="button" class="btn btn-sage" style="flex:1;padding:14px;font-size:14px" onclick="_quickDiarioSave(\'debito\')">💵 Débito</button>'
@@ -6107,6 +6111,47 @@ function openQuickDiario(){
   const row=document.getElementById('confirmModal').querySelector('.row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
   setTimeout(()=>document.getElementById('qdn')?.focus(),150);
+}
+// Permite crear una categoría nueva sin salir del modal de Gasto diario
+// rápido. Guarda lo que el usuario ya escribió (concepto, monto, fecha),
+// abre el mismo modal de "+ Nueva categoría" que usa la pantalla principal
+// (openDiarioCatModal) y, al terminar, reabre el modal rápido restaurando
+// los datos y dejando seleccionada la categoría recién creada.
+function _openQuickDiarioNewCat(){
+  const prefill={
+    name:(document.getElementById('qdn')?.value||'').trim(),
+    amt:document.getElementById('qda')?.value||'',
+    date:document.getElementById('qdd')?.value||_todayYMD(),
+    cat:_quickDiarioCat
+  };
+  const before=(S.diarioUserCats||[]).map(c=>c.k);
+  // Reabre el modal rápido; si se creó una categoría nueva la deja elegida.
+  const reopen=()=>{
+    const added=(S.diarioUserCats||[]).find(c=>before.indexOf(c.k)===-1);
+    openQuickDiario({...prefill,cat:added?added.k:prefill.cat});
+  };
+  openDiarioCatModal();
+  // Mismo modal compartido: redirigimos Confirmar/Cancelar para volver al
+  // modal rápido en vez de quedarnos en una pantalla vacía.
+  const modal=document.getElementById('confirmModal');
+  const yesBtn=document.getElementById('confirmYes');
+  const noBtn=document.getElementById('confirmNo');
+  if(yesBtn){
+    const prevYes=yesBtn.onclick;
+    yesBtn.onclick=()=>{
+      const e=(document.getElementById('dcEmoji')?.value||'').trim()||'🏷️';
+      const n=(document.getElementById('dcName')?.value||'').trim();
+      if(!n){toast('Pon un nombre');return;}
+      const key='u_'+Date.now().toString(36);
+      const newCat={k:key,n:n,e:e,esencial:document.getElementById('dcEsencial')?.checked||false};
+      pt({diarioUserCats:[...(S.diarioUserCats||[]),newCat]});
+      toast('✓ Categoría "'+n+'" agregada');
+      try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+      try{if(typeof rFlujo==='function'&&cur==='flujo')rFlujo();}catch(e){}
+      openQuickDiario({...prefill,cat:key});
+    };
+  }
+  if(noBtn){noBtn.onclick=()=>reopen();}
 }
 function _quickDiarioSave(method){
   const n=document.getElementById('qdn')?.value.trim();

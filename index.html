@@ -392,7 +392,7 @@ let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},diarioUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
@@ -447,7 +447,7 @@ function _normalizeState(st){
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
   if(!isObj(st.simSliders))st.simSliders={};
-  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas'];
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
   // mensual (a.inc). Los convertimos a tasa anual (a.yldPct) para que la
@@ -4592,28 +4592,21 @@ const DIARIO_CATS=[
   {k:'esencial',n:'Esencial (fuera de presup.)',e:'🧾'},
   {k:'otro',n:'Otro',e:'📦'}
 ];
-const diarioCat=k=>DIARIO_CATS.find(c=>c.k===k)||DIARIO_CATS[DIARIO_CATS.length-1];
-const isEsencial=g=>g&&g.cat==='esencial';
-// Reconoce un gasto diario como "complemento del súper" — compras adicionales
-// al gasto fijo del super (más fruta, verdura, faltantes). Patrón doble:
-// menciona una tienda (super/smart/heb/etc.) Y la palabra "complementario"
-// abreviada o completa. Detección por nombre para retro-compatibilidad con
-// entradas viejas; nuevas pueden traer la bandera explícita g.superComp.
-// Categoría asociada al gasto fijo: 'Súper / Despensa'.
-const SUPER_COMP_EXP_CAT='Súper / Despensa';
-function _isSuperComp(g){
-  if(!g)return false;
-  if(g.superComp===true)return true;
-  if(g.superComp===false)return false; // override manual
-  const n=(g.name||'').toLowerCase();
-  if(!n)return false;
-  const tienda=/(?:^|[\s\-,.])(s[uúü]per|smart|heb|walmart|chedraui|soriana|aurrera|costco|sam'?s|sams|comercial)(?:[\s\-,.]|$)/.test(n);
-  // "compl", "complementario", "complement" o "comp" como palabra suelta
-  // ("Tortilla comp super"). Evita falsos positivos como "compra" o
-  // "compañía" exigiendo "l" o separador después de "comp".
-  const compl=/(?:^|[\s\-,.])comp(?:l|[\s\-,.]|$)/.test(n);
-  return tienda&&compl;
-}
+// Categorías personalizadas por usuario: se mezclan con DIARIO_CATS para
+// que el usuario pueda agregar las suyas (Skincare, Cigarros, Lo que sea)
+// y elegir si cuentan como esencial (fuera de presup. hormiga/impulso).
+// Estructura: {k:'<uid>', n:'<nombre>', e:'<emoji>', esencial:<bool>, custom:true}
+const _allDiarioCats=()=>[...DIARIO_CATS,...(S.diarioUserCats||[])];
+const diarioCat=k=>_allDiarioCats().find(c=>c.k===k)||DIARIO_CATS[DIARIO_CATS.length-1];
+// Esencial = la categoría default 'esencial' o cualquier custom marcada
+// como esencial. Buscamos en runtime para que editar la categoría
+// afecte a entradas viejas sin tener que migrarlas.
+const isEsencial=g=>{
+  if(!g||!g.cat)return false;
+  if(g.cat==='esencial')return true;
+  const c=(S.diarioUserCats||[]).find(x=>x.k===g.cat);
+  return !!(c&&c.esencial);
+};
 
 // Helpers para el "Presupuesto de Innecesarios" del ciclo. El budget puede
 // ser por ciclo (gastoDiarioBudgetByCycle) o un default global heredado
@@ -4949,35 +4942,7 @@ function rFlujo(){try{
     `;})()}
   </div>
 
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${(()=>{
-    // Pre-calcula los complementos del súper del ciclo actual una sola vez
-    // para anotar la sumatoria debajo de cada gasto fijo de 'Súper / Despensa'.
-    const cw=getCycleWindow();
-    const cwStart=_ymdLocal(cw.start),cwEnd=_ymdLocal(cw.end);
-    const superComps=(S.gastosDiarios||[]).filter(g=>!g.pending&&_isSuperComp(g)&&(g.date||'')>=cwStart&&(g.date||'')<=cwEnd);
-    const compsTotal=superComps.reduce((a,g)=>a+(+g.amt||0),0);
-    return S.exp.map(e=>{
-      const f=e.freq||'mensual';
-      const mo=toMonthly(e.amt,f);
-      const fBdg=freqName(f);
-      const np=nextPayDate(e);
-      const npStr=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
-      const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);
-      const urgente=daysUntil<=3;
-      const row=`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;
-      // Anotación de complementos solo para los gastos fijos del súper.
-      if(e.cat===SUPER_COMP_EXP_CAT&&superComps.length>0){
-        // Tomamos como "planeado del ciclo" lo que toca este ciclo según la
-        // frecuencia: quincenal = total; mensual = total/2; bimestral = /4...
-        // Es aproximado, sirve como referencia.
-        const planCycle=f==='quincenal'?(+e.amt||0):f==='semanal'?(+e.amt||0)*2.17:f==='mensual'?(+e.amt||0)/2:f==='bimestral'?(+e.amt||0)/4:+e.amt||0;
-        const totalReal=planCycle+compsTotal;
-        const note=`<div style="padding:6px 10px 10px;font-size:10px;color:var(--muted);line-height:1.6;background:rgba(78,124,106,.04);border-left:3px solid var(--sage);border-radius:0 4px 4px 0;margin-bottom:8px"><div style="color:var(--sage);font-weight:bold;font-size:10px;letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px">🛒 Complementos este ciclo (${superComps.length})</div>Planeado del ciclo: <strong style="color:var(--txt)">${fx(Math.round(planCycle))}</strong> · complementos: <strong style="color:var(--terra)">+${fx(Math.round(compsTotal))}</strong> · <span style="color:var(--sage)">total real: <strong>${fx(Math.round(totalReal))}</strong></span></div>`;
-        return row+note;
-      }
-      return row;
-    }).join('');
-  })()}</div>`:''}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${e.name}</span><span class="badge bdg-sage">${e.cat}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
   `:''}
@@ -5805,31 +5770,55 @@ function selDiarioCat(k){
     else{c.classList.remove('chip-sel');c.style.cssText='';}
   });
 }
+// ══ Categorías personalizadas de gastos diarios ══════════════════════
+// El usuario puede agregar sus propias categorías (Skincare, Cigarros, lo
+// que sea) y elegir si cuentan como esencial (fuera de presup. hormiga).
+// Las defaults (DIARIO_CATS) no se tocan; las custom viven en
+// S.diarioUserCats. Se mezclan via _allDiarioCats().
+function openDiarioCatModal(editKey){
+  const editing=editKey?(S.diarioUserCats||[]).find(c=>c.k===editKey):null;
+  const body='<label style="font-size:11px;color:var(--muted)">Nombre</label>'
+    +'<input type="text" id="dcName" placeholder="Skincare, cigarros, mascota..." value="'+_escA(editing?.n||'')+'" maxlength="32" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
+    +'<label style="font-size:11px;color:var(--muted)">Emoji <span style="color:var(--muted)">(opcional)</span></label>'
+    +'<input type="text" id="dcEmoji" placeholder="📦" value="'+_escA(editing?.e||'')+'" maxlength="4" style="width:100%;padding:11px;font-size:20px;text-align:center;border:1px solid var(--border);border-radius:6px;margin:4px 0 12px;font-family:Georgia,serif">'
+    +'<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(120,120,120,.06);border-radius:8px;cursor:pointer;text-transform:none;font-size:13px;color:var(--txt2);margin-bottom:4px"><input type="checkbox" id="dcEsen" '+(editing?.esencial?'checked':'')+' style="width:auto;accent-color:var(--muted)"><span>🧾 <strong>Es esencial</strong> (queda fuera del presupuesto hormiga/impulso)</span></label>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Marca esto si son gastos necesarios que pagaste a débito y no quieres que peguen al presupuesto de innecesarios.</div>';
+  showConfirm(editing?'✏️ Editar categoría':'+ Nueva categoría',body,()=>{
+    const n=(document.getElementById('dcName')?.value||'').trim();
+    const e=(document.getElementById('dcEmoji')?.value||'').trim()||'📦';
+    const esencial=document.getElementById('dcEsen')?.checked||false;
+    if(!n){toast('Falta el nombre');return;}
+    if(editing){
+      pt({diarioUserCats:(S.diarioUserCats||[]).map(c=>c.k===editKey?{...c,n,e,esencial}:c)});
+      toast('✓ Categoría actualizada');
+    }else{
+      const newCat={k:_uid(),n,e,esencial,custom:true};
+      pt({diarioUserCats:[...(S.diarioUserCats||[]),newCat]});
+      _diarioCat=newCat.k;
+      toast('✓ Categoría "'+n+'" agregada');
+    }
+    closeConfirm();
+    try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(_){}
+  });
+}
+function rmDiarioUserCat(k){
+  const cat=(S.diarioUserCats||[]).find(c=>c.k===k);
+  if(!cat)return;
+  const using=(S.gastosDiarios||[]).filter(g=>g.cat===k).length;
+  const warn=using>0?'<div style="font-size:12px;color:var(--terra);background:rgba(184,92,74,.08);padding:8px 10px;border-radius:6px;margin-bottom:10px;line-height:1.6">⚠ <strong>'+using+'</strong> gasto'+(using!==1?'s':'')+' usa'+(using===1?'':'n')+' esta categoría. Si la borras esos gastos quedarán mostrando "Otro" hasta que los edites.</div>':'';
+  showConfirm('🗑 ¿Eliminar categoría?',warn+'<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar la categoría <strong>'+_escH(cat.e+' '+cat.n)+'</strong>. Los gastos existentes no se borran.</div>',()=>{
+    pt({diarioUserCats:(S.diarioUserCats||[]).filter(c=>c.k!==k)});
+    if(_diarioCat===k)_diarioCat='snack';
+    if(_quickDiarioCat===k)_quickDiarioCat='snack';
+    closeConfirm();toast('Categoría eliminada');
+    try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(_){}
+  });
+}
+// Toggle del panel de gestión bajo los chips
+function toggleDiarioCatManage(){S._dcManageOpen=!S._dcManageOpen;sv();try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(_){}}
 // Versión directa: guarda el gasto en un solo tap, con método de pago
 // recibido como argumento (desde los botones del form). Reemplaza al flujo
 // viejo de addDiario+modal+_confirmDiario que tenía dos pasos y confundía.
-// Pre-llena el form para registrar un complemento del súper: nombre base,
-// categoría 'esencial' (queda fuera del presupuesto hormiga) y enfoca el
-// monto. El flag superComp se asigna en _applySuperCompFlags al guardar.
-function _setSuperComp(){
-  const nEl=document.getElementById('gdn');
-  if(nEl&&!nEl.value.trim())nEl.value='Súper complementario - ';
-  selDiarioCat('esencial');
-  const aEl=document.getElementById('gda');
-  if(aEl)aEl.focus();
-}
-// Si el nombre describe un complemento del súper, fuerza categoría esencial
-// y marca el flag. Pasa cualquier objeto diario antes de guardar.
-function _applySuperCompFlags(g){
-  if(!g)return g;
-  if(_isSuperComp(g)){
-    g.cat='esencial';
-    g.superComp=true;
-  }else if(g.superComp){
-    delete g.superComp;
-  }
-  return g;
-}
 function addDiarioDirect(method){
   const nEl=document.getElementById('gdn');
   const aEl=document.getElementById('gda');
@@ -5843,7 +5832,7 @@ function addDiarioDirect(method){
   // no sabía cuál de los dos faltaba.
   if(!n){toast('⚠ Falta el concepto');nEl?.focus();return;}
   if(!isFinite(a)||a<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');aEl?.focus();return;}
-  const newDiario=_applySuperCompFlags({id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:method||'debito'});
+  const newDiario={id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:method||'debito'};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
   _diarioCat='snack';
   // Limpia el form
@@ -5881,7 +5870,7 @@ let _pendingDiario=null;
 function _confirmDiario(method){
   if(!_pendingDiario){closeConfirm();return;}
   const {name,amt,cat,date}=_pendingDiario;
-  const newDiario=_applySuperCompFlags({id:Date.now(),name,amt,cat,date,paidWith:method});
+  const newDiario={id:Date.now(),name,amt,cat,date,paidWith:method};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
   _diarioCat='snack';
   _pendingDiario=null;
@@ -6101,12 +6090,12 @@ function _qOvertimeSave(){
 function openQuickDiario(){
   _quickDiarioCat='snack';
   const today=_todayYMD();
-  const cats=[['snack','🍪 Snack'],['bebida','🥤 Bebida'],['delivery','🍕 Delivery'],['transporte','🚗 Transporte'],['minisuper','🛒 Minisuper'],['impulso','⚡ Impulso'],['esencial','📋 Esencial'],['otro','📦 Otro']];
+  const cats=_allDiarioCats();
   const body='<input type="text" id="qdn" placeholder="Concepto (Coca OXXO, Uber...)" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
     +'<input type="number" id="qda" placeholder="Monto $" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Categoría</div>'
     +'<div id="qdCats" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">'
-    +cats.map(([id,l])=>'<button type="button" class="chip'+(id==='snack'?' chip-sel':'')+'" style="font-size:11px;padding:6px 10px;'+(id==='snack'?'background:var(--sagedim);color:var(--sage);font-weight:bold':'')+'" onclick="_quickDiarioCat=\''+id+'\';document.querySelectorAll(\'#qdCats button\').forEach(b=>{b.classList.remove(\'chip-sel\');b.style.background=\'\';b.style.color=\'\';b.style.fontWeight=\'\';});this.classList.add(\'chip-sel\');this.style.background=\'var(--sagedim)\';this.style.color=\'var(--sage)\';this.style.fontWeight=\'bold\'">'+l+'</button>').join('')
+    +cats.map(c=>'<button type="button" class="chip'+(c.k==='snack'?' chip-sel':'')+'" data-cat="'+c.k+'" style="font-size:11px;padding:6px 10px;'+(c.k==='snack'?'background:var(--sagedim);color:var(--sage);font-weight:bold':'')+'" onclick="_quickDiarioCat=\''+c.k+'\';document.querySelectorAll(\'#qdCats button\').forEach(b=>{b.classList.remove(\'chip-sel\');b.style.background=\'\';b.style.color=\'\';b.style.fontWeight=\'\';});this.classList.add(\'chip-sel\');this.style.background=\'var(--sagedim)\';this.style.color=\'var(--sage)\';this.style.fontWeight=\'bold\'">'+c.e+' '+_escH(c.n)+(c.custom&&c.esencial?' 🧾':'')+'</button>').join('')
     +'</div>'
     +'<input type="date" id="qdd" value="'+today+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:14px;font-family:Georgia,serif">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
@@ -6124,7 +6113,7 @@ function _quickDiarioSave(method){
   const a=+(document.getElementById('qda')?.value);
   const d=document.getElementById('qdd')?.value||_todayYMD();
   if(!n||!a){toast('Concepto y monto requeridos');return;}
-  const newDiario=_applySuperCompFlags({id:Date.now(),name:n,amt:a,cat:_quickDiarioCat,date:d,paidWith:method});
+  const newDiario={id:Date.now(),name:n,amt:a,cat:_quickDiarioCat,date:d,paidWith:method};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
   _quickDiarioCat='snack';
   closeConfirm();
@@ -6176,7 +6165,7 @@ function editDiario(id){
     +'<label style="font-size:11px;color:var(--muted)">Monto $</label>'
     +'<input type="number" id="gdEdA" value="'+(+g.amt||0)+'" inputmode="decimal" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-weight:bold;color:var(--terra);font-family:Georgia,serif">'
     +'<label style="font-size:11px;color:var(--muted)">Categoría</label>'
-    +'<select id="gdEdC" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif;background:#fff">'+DIARIO_CATS.map(c=>'<option value="'+c.k+'"'+((g.cat||'otro')===c.k?' selected':'')+'>'+c.e+' '+c.n+'</option>').join('')+'</select>'
+    +'<select id="gdEdC" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif;background:#fff">'+_allDiarioCats().map(c=>'<option value="'+c.k+'"'+((g.cat||'otro')===c.k?' selected':'')+'>'+c.e+' '+c.n+(c.custom&&c.esencial?' (esencial)':'')+'</option>').join('')+'</select>'
     +'<label style="font-size:11px;color:var(--muted)">Fecha</label>'
     +'<input type="date" id="gdEdD" value="'+_escA(g.date||_todayYMD())+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
     +'<label style="font-size:11px;color:var(--muted)">Método de pago</label>'
@@ -6189,7 +6178,7 @@ function editDiario(id){
     const m=document.getElementById('gdEdM')?.value||g.paidWith||'debito';
     if(!n){toast('⚠ Falta el concepto');return;}
     if(!isFinite(a)||a<=0){toast('⚠ Monto inválido');return;}
-    pt({gastosDiarios:(S.gastosDiarios||[]).map(x=>x.id===id?_applySuperCompFlags({...x,name:n,amt:a,cat:c,date:d,paidWith:m,superComp:undefined}):x)});
+    pt({gastosDiarios:(S.gastosDiarios||[]).map(x=>x.id===id?{...x,name:n,amt:a,cat:c,date:d,paidWith:m}:x)});
     closeConfirm();toast('✓ Gasto actualizado');
     try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
     try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
@@ -8111,16 +8100,15 @@ function rHabitos(){
     </details>
     <div style="border-top:1px solid var(--border);padding-top:12px">
       <div style="font-size:11px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:8px">+ Registrar gasto</div>
-      <div style="margin-bottom:8px;padding:8px 10px;background:rgba(78,124,106,.05);border-radius:6px;border-left:3px solid var(--sage)">
-        <div style="font-size:10px;color:var(--muted);letter-spacing:.5px;text-transform:uppercase;margin-bottom:6px;font-weight:bold">⚡ Atajo</div>
-        <button type="button" class="chip" style="font-size:11px;padding:6px 10px;background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.25);color:var(--sage);font-weight:bold" onclick="_setSuperComp()">🛒 Súper complementario</button>
-        <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Compras que tuviste que complementar al gasto fijo del súper (faltó fruta, verdura, etc). Se marca como <strong>Esencial</strong> y suma en la fila del súper en Gastos Fijos.</div>
-      </div>
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
         <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..."></div>
         <div><label>Monto $</label><input type="number" id="gda" placeholder="0" inputmode="decimal"></div>
       </div>
-      <div style="margin-bottom:8px"><label>Categoría</label><div class="chips" id="gdCatChips">${DIARIO_CATS.map(c=>`<button type="button" class="chip" data-cat="${c.k}" style="${_diarioCat===c.k?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${c.n}</button>`).join('')}</div><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso.</div></div>
+      <div style="margin-bottom:8px"><label>Categoría</label>
+        <div class="chips" id="gdCatChips">${_allDiarioCats().map(c=>{const sel=_diarioCat===c.k;const esBdg=c.custom&&c.esencial?'<span style="font-size:8px;color:var(--muted);margin-left:3px;letter-spacing:.3px">🧾</span>':'';return `<button type="button" class="chip" data-cat="${c.k}" style="${sel?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${_escH(c.n)}${esBdg}</button>`;}).join('')}<button type="button" class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold" onclick="openDiarioCatModal()">+ Nueva</button></div>
+        ${(S.diarioUserCats||[]).length>0?`<div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="toggleDiarioCatManage()">⚙️ Gestionar mis categorías (${(S.diarioUserCats||[]).length}) ${S._dcManageOpen?'▲':'▼'}</button>${S._dcManageOpen?`<div style="margin-top:8px;padding:10px;background:rgba(120,120,120,.04);border-radius:6px;border:1px solid var(--border)">${(S.diarioUserCats||[]).map(c=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${c.e} ${_escH(c.n)}</span>${c.esencial?'<span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">🧾 esencial</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioCatModal('${c.k}')">✏️</button><button type="button" class="btn btn-red btn-sm" style="padding:3px 6px;font-size:11px" onclick="rmDiarioUserCat('${c.k}')">✕</button></div></div>`).join('')}</div>`:''}</div>`:''}
+        <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso. Puedes crear tus propias categorías y elegir si cuentan como esenciales.</div>
+      </div>
       <div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="gdd" value="${todayISO}"></div>
       <!-- Antes había un solo botón "+ Agregar" que abría un modal pidiendo
            con qué método pagaste. Algunos usuarios cancelaban el modal por
@@ -8170,16 +8158,13 @@ function rHabitos(){
         ${byDay[dk].map(g=>{
           const c=diarioCat(g.cat);
           const esen=isEsencial(g);
-          const sComp=_isSuperComp(g);
           const pend=!!g.pending;
-          const rowBg=pend?'background:rgba(160,112,48,.06);border-left:3px solid var(--amber)':sComp?'background:rgba(78,124,106,.05);border-left:3px solid var(--sage)':(esen?'background:rgba(120,120,120,.04)':'');
-          const priceColor=pend?'var(--amber)':sComp?'var(--sage)':(esen?'var(--muted)':'var(--terra)');
+          const rowBg=pend?'background:rgba(160,112,48,.06);border-left:3px solid var(--amber)':(esen?'background:rgba(120,120,120,.04)':'');
+          const priceColor=pend?'var(--amber)':(esen?'var(--muted)':'var(--terra)');
           const badge=pend
             ?' <span style="font-size:9px;background:rgba(160,112,48,.15);color:var(--amber);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">⏳ pendiente</span>'
-            :sComp
-              ?' <span style="font-size:9px;background:rgba(78,124,106,.18);color:var(--sage);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">🛒 super compl.</span>'
-              :(esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':'');
-          const subLabel=pend?'⏳ Pre-registrado desde reto · confirma o cancela':sComp?'🛒 Complemento del súper · vinculado al gasto fijo':c.n;
+            :(esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':'');
+          const subLabel=pend?'⏳ Pre-registrado desde reto · confirma o cancela':c.n;
           const actions=pend
             ?'<button class="btn btn-sage btn-sm" title="Confirmar gasto" style="padding:4px 8px;font-size:11px" onclick="confirmPendingDiario('+g.id+')">✓</button><button class="btn btn-red btn-sm" title="Cancelar pre-registro" onclick="cancelPendingDiario('+g.id+')">✕</button>'
             :'<button class="btn btn-ghost btn-sm" title="Editar gasto" style="padding:4px 8px" onclick="editDiario('+g.id+')">✏️</button><button class="btn btn-red btn-sm" onclick="rmDiario('+g.id+')">✕</button>';

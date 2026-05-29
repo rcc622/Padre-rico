@@ -5765,10 +5765,8 @@ function toggleCobHistory(){S._cobHistColl=!S._cobHistColl;sv();_refreshCobranza
 let _diarioCat='snack';
 function selDiarioCat(k){
   _diarioCat=k;
-  document.querySelectorAll('#gdCatChips .chip').forEach(c=>{
-    if(c.dataset.cat===k){c.classList.add('chip-sel');c.style.cssText='background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold';}
-    else{c.classList.remove('chip-sel');c.style.cssText='';}
-  });
+  const sel=document.getElementById('gdCatSel');
+  if(sel&&sel.value!==k)sel.value=k;
 }
 // ══ Categorías personalizadas de gastos diarios ══════════════════════
 // El usuario puede agregar sus propias categorías (Skincare, Cigarros, lo
@@ -6097,9 +6095,11 @@ function openQuickDiario(prefill){
   const body='<input type="text" id="qdn" placeholder="Concepto (Coca OXXO, Uber...)" value="'+_escA(prefill.name||'')+'" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
     +'<input type="number" id="qda" placeholder="Monto $" value="'+(prefill.amt!=null&&prefill.amt!==''?_escA(String(prefill.amt)):'')+'" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Categoría</div>'
-    +'<div id="qdCats" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px">'
-    +cats.map(c=>'<button type="button" class="chip'+(c.k===_quickDiarioCat?' chip-sel':'')+'" data-cat="'+c.k+'" style="font-size:11px;padding:6px 10px;'+(c.k===_quickDiarioCat?'background:var(--sagedim);color:var(--sage);font-weight:bold':'')+'" onclick="_quickDiarioCat=\''+c.k+'\';document.querySelectorAll(\'#qdCats button\').forEach(b=>{b.classList.remove(\'chip-sel\');b.style.background=\'\';b.style.color=\'\';b.style.fontWeight=\'\';});this.classList.add(\'chip-sel\');this.style.background=\'var(--sagedim)\';this.style.color=\'var(--sage)\';this.style.fontWeight=\'bold\'">'+c.e+' '+_escH(c.n)+(c.custom&&c.esencial?' 🧾':'')+'</button>').join('')
-    +'<button type="button" class="chip" style="font-size:11px;padding:6px 10px;border-style:dashed;color:var(--sage);font-weight:bold" onclick="_openQuickDiarioNewCat()">+ Nueva</button>'
+    +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">'
+    +'<select id="qdCatSel" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="_quickDiarioCat=this.value">'
+    +cats.map(c=>'<option value="'+c.k+'"'+(c.k===_quickDiarioCat?' selected':'')+'>'+c.e+' '+_escH(c.n)+(c.custom&&c.esencial?' 🧾':'')+'</option>').join('')
+    +'</select>'
+    +'<button type="button" class="chip" style="font-size:11px;padding:9px 11px;border-style:dashed;color:var(--sage);font-weight:bold;white-space:nowrap" onclick="_openQuickDiarioNewCat()">+ Nueva</button>'
     +'</div>'
     +'<input type="date" id="qdd" value="'+(prefill.date||today)+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;margin-bottom:14px;font-family:Georgia,serif">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Con qué pagaste?</div>'
@@ -8140,7 +8140,10 @@ function rHabitos(){
         <div><label>Monto $</label><input type="number" id="gda" placeholder="0" inputmode="decimal"></div>
       </div>
       <div style="margin-bottom:8px"><label>Categoría</label>
-        <div class="chips" id="gdCatChips">${_allDiarioCats().map(c=>{const sel=_diarioCat===c.k;const esBdg=c.custom&&c.esencial?'<span style="font-size:8px;color:var(--muted);margin-left:3px;letter-spacing:.3px">🧾</span>':'';return `<button type="button" class="chip" data-cat="${c.k}" style="${sel?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="selDiarioCat('${c.k}')">${c.e} ${_escH(c.n)}${esBdg}</button>`;}).join('')}<button type="button" class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold" onclick="openDiarioCatModal()">+ Nueva</button></div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="gdCatSel" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="selDiarioCat(this.value)">${_allDiarioCats().map(c=>{const sel=_diarioCat===c.k;const esBdg=c.custom&&c.esencial?' 🧾':'';return `<option value="${c.k}"${sel?' selected':''}>${c.e} ${_escH(c.n)}${esBdg}</option>`;}).join('')}</select>
+          <button type="button" class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold;white-space:nowrap;padding:9px 11px" onclick="openDiarioCatModal()">+ Nueva</button>
+        </div>
         ${(S.diarioUserCats||[]).length>0?`<div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="toggleDiarioCatManage()">⚙️ Gestionar mis categorías (${(S.diarioUserCats||[]).length}) ${S._dcManageOpen?'▲':'▼'}</button>${S._dcManageOpen?`<div style="margin-top:8px;padding:10px;background:rgba(120,120,120,.04);border-radius:6px;border:1px solid var(--border)">${(S.diarioUserCats||[]).map(c=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${c.e} ${_escH(c.n)}</span>${c.esencial?'<span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">🧾 esencial</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioCatModal('${c.k}')">✏️</button><button type="button" class="btn btn-red btn-sm" style="padding:3px 6px;font-size:11px" onclick="rmDiarioUserCat('${c.k}')">✕</button></div></div>`).join('')}</div>`:''}</div>`:''}
         <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso. Puedes crear tus propias categorías y elegir si cuentan como esenciales.</div>
       </div>

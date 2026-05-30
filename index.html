@@ -1756,27 +1756,44 @@ function depositSavGoal(id,prefix){
     closeConfirm();toast('💰 +'+fx(amt)+' apartado para '+g.name);rHabitos();
   });
 }
+// Tipos de retiro de una meta. Diferenciar es clave: un enganche/pago a
+// proveedor es un gasto planeado; una emergencia es un imprevisto. Guardamos
+// dep.kind para poder mostrarlo y sumarlo por separado.
+const SAVGOAL_WD_KINDS={
+  emergencia:{e:'🚨',n:'Emergencia',c:'var(--terra)'},
+  enganche:{e:'🧾',n:'Enganche / proveedor o servicio',c:'var(--amber)'},
+  ajuste:{e:'✏️',n:'Otro ajuste',c:'var(--muted)'}
+};
+const savGoalWdKind=k=>SAVGOAL_WD_KINDS[k]||null;
 // Actualiza directamente el monto ahorrado de una meta (igual que "Actualizar
-// saldo" en Activos). Útil cuando tocó hacer retiros por emergencia: el monto
-// puede BAJAR. La diferencia se registra en el historial (negativa si fue
-// retiro) y, si la meta está ligada a un activo, ajusta también su saldo para
-// que el patrimonio siga cuadrando.
+// saldo" en Activos). Útil cuando tocó hacer retiros: el monto puede BAJAR. Al
+// retirar se pide el TIPO (emergencia vs enganche/proveedor vs ajuste). La
+// diferencia se registra en el historial (negativa si fue retiro) y, si la
+// meta está ligada a un activo, ajusta también su saldo para que el patrimonio
+// siga cuadrando.
 function updSavGoalSaved(id){
   const g=S.savGoals.find(x=>x.id===id);if(!g)return;
   const cur=Math.round(+g.saved||0);
   const _metaAssetId=g.lastAssetId||(g.deposits||[]).slice().reverse().find(d=>d&&d.assetId)?.assetId;
   const _metaAsset=_metaAssetId&&S.assets?S.assets.find(a=>a.id===_metaAssetId):null;
-  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza lo que llevas ahorrado en <strong style="color:var(--sage)">'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>. Úsalo si hiciste un retiro por emergencia o quieres ajustar el monto.</div>'
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza lo que llevas ahorrado en <strong style="color:var(--sage)">'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>. Úsalo si hiciste un retiro o quieres ajustar el monto.</div>'
     +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Ahorrado anterior</label><div style="font-size:14px;color:var(--txt2)">'+fx(cur)+'</div></div>'
-    +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Ahorrado actual ($)</label><input type="number" id="_quSavVal" value="'+cur+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
-    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Retiro por emergencia, ajuste…" style="width:100%;padding:8px;font-size:13px"></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Ahorrado actual ($)</label><input type="number" id="_quSavVal" value="'+cur+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()" oninput="_quSavToggleKind('+cur+')"></div>'
+    +'<div id="_quSavWdBox" style="display:none;margin-bottom:10px;padding:10px;background:rgba(184,92,74,.05);border:1px solid rgba(184,92,74,.2);border-radius:8px">'
+    +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">📉 Es un retiro · ¿de qué tipo?</label>'
+    +'<select id="_quSavKind" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
+    +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'">'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
+    +'</select></div>'
+    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Enganche bodega, retiro urgente…" style="width:100%;padding:8px;font-size:13px"></div>'
     +(_metaAsset?'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El ajuste también se reflejará en el saldo de tu activo <strong>'+_escH(_metaAsset.name)+'</strong>.</div>':'');
   showConfirm('🔄 Actualizar monto ahorrado',body,()=>{
     const nv=Math.round(+(document.getElementById('_quSavVal')?.value)||0);
     if(nv<0){toast('⚠ Monto inválido');return;}
     const diff=nv-cur;
     if(diff===0){closeConfirm();toast('Sin cambios');return;}
-    const concept=(document.getElementById('_quSavConcept')?.value||'').trim()||(diff<0?'Retiro / ajuste':'Ajuste de monto');
+    const kind=diff<0?(document.getElementById('_quSavKind')?.value||'ajuste'):null;
+    const kindMeta=kind?savGoalWdKind(kind):null;
+    const concept=(document.getElementById('_quSavConcept')?.value||'').trim()||(kindMeta?kindMeta.n:'Ajuste de monto');
     let newAssets=S.assets;
     if(_metaAsset){
       const ev=_mkAssetEvent(diff>0?'in':'out',Math.abs(diff),concept);
@@ -1787,14 +1804,23 @@ function updSavGoalSaved(id){
       savGoals:S.savGoals.map(gx=>{
         if(gx.id!==id)return gx;
         const dep={date:_todayYMD(),amt:diff,note:concept};
+        if(kind)dep.kind=kind;
         if(_metaAsset)dep.assetId=_metaAsset.id;
         return{...gx,saved:nv,deposits:[...(gx.deposits||[]),dep],done:nv>=gx.target};
       })
     });
     closeConfirm();
-    toast(diff<0?'📉 '+fx(diff)+' · Ahorrado '+fx(nv):'📈 +'+fx(diff)+' · Ahorrado '+fx(nv));
+    toast(diff<0?(kindMeta?kindMeta.e+' ':'📉 ')+fx(diff)+' · Ahorrado '+fx(nv):'📈 +'+fx(diff)+' · Ahorrado '+fx(nv));
     rHabitos();hdrUp&&hdrUp();
   });
+  _quSavToggleKind(cur);
+}
+// Muestra/oculta el selector de tipo de retiro según si el monto nuevo es
+// menor que el actual (es decir, si es un retiro).
+function _quSavToggleKind(cur){
+  const v=+(document.getElementById('_quSavVal')?.value);
+  const box=document.getElementById('_quSavWdBox');
+  if(box)box.style.display=(!isNaN(v)&&v<cur)?'block':'none';
 }
 function addSavGoalH(){
   const n=document.getElementById('sgnh')?.value.trim();
@@ -8381,6 +8407,12 @@ function rHabitos(){
         </div>
         <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
         <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
+        ${(()=>{
+          // Resumen de retiros separando emergencias vs enganches/proveedores.
+          const wd={};(g.deposits||[]).forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
+          const keys=Object.keys(wd);if(!keys.length)return '';
+          return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'+keys.map(k=>{const km=savGoalWdKind(k);return '<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(120,120,120,.08);color:'+(km?km.c:'var(--muted)')+';font-weight:bold">'+(km?km.e+' '+km.n.split(' ')[0]:k)+': −'+fx(wd[k])+'</span>';}).join('')+'</div>';
+        })()}
         ${yldBadge}
         ${!isDone?`
           <div class="row-b" style="margin-bottom:10px;margin-top:10px">
@@ -8391,7 +8423,7 @@ function rHabitos(){
             <input type="number" id="sgdeph_${g.id}" placeholder="Monto a abonar" style="flex:1">
             <button class="btn btn-sage btn-sm" onclick="depositSavGoal(${g.id},'sgdeph_')">+ Abonar</button>
           </div>
-          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>{const neg=(+d.amt||0)<0;return '<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(neg?'':'+')+fx(d.amt)+'</span></div>';}).join('')}</div>`:''}
+          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>{const neg=(+d.amt||0)<0;const km=d.kind?savGoalWdKind(d.kind):null;const tag=km?'<span style="font-size:8px;margin-left:4px;padding:1px 5px;border-radius:4px;background:rgba(120,120,120,.12);color:'+km.c+';font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+km.e+' '+km.n.split(' ')[0]+'</span>':'';return '<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+tag+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(neg?'':'+')+fx(d.amt)+'</span></div>';}).join('')}</div>`:''}
         `:`<div style="text-align:center;font-size:12px;color:var(--sage)">🎉 Ahorraste ${fx(Math.round(+g.saved||0))} — ¡disfruta!</div>`}
       </div>`;
     }).join(''):''}

@@ -1756,6 +1756,46 @@ function depositSavGoal(id,prefix){
     closeConfirm();toast('💰 +'+fx(amt)+' apartado para '+g.name);rHabitos();
   });
 }
+// Actualiza directamente el monto ahorrado de una meta (igual que "Actualizar
+// saldo" en Activos). Útil cuando tocó hacer retiros por emergencia: el monto
+// puede BAJAR. La diferencia se registra en el historial (negativa si fue
+// retiro) y, si la meta está ligada a un activo, ajusta también su saldo para
+// que el patrimonio siga cuadrando.
+function updSavGoalSaved(id){
+  const g=S.savGoals.find(x=>x.id===id);if(!g)return;
+  const cur=Math.round(+g.saved||0);
+  const _metaAssetId=g.lastAssetId||(g.deposits||[]).slice().reverse().find(d=>d&&d.assetId)?.assetId;
+  const _metaAsset=_metaAssetId&&S.assets?S.assets.find(a=>a.id===_metaAssetId):null;
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza lo que llevas ahorrado en <strong style="color:var(--sage)">'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>. Úsalo si hiciste un retiro por emergencia o quieres ajustar el monto.</div>'
+    +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Ahorrado anterior</label><div style="font-size:14px;color:var(--txt2)">'+fx(cur)+'</div></div>'
+    +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Ahorrado actual ($)</label><input type="number" id="_quSavVal" value="'+cur+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
+    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Retiro por emergencia, ajuste…" style="width:100%;padding:8px;font-size:13px"></div>'
+    +(_metaAsset?'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El ajuste también se reflejará en el saldo de tu activo <strong>'+_escH(_metaAsset.name)+'</strong>.</div>':'');
+  showConfirm('🔄 Actualizar monto ahorrado',body,()=>{
+    const nv=Math.round(+(document.getElementById('_quSavVal')?.value)||0);
+    if(nv<0){toast('⚠ Monto inválido');return;}
+    const diff=nv-cur;
+    if(diff===0){closeConfirm();toast('Sin cambios');return;}
+    const concept=(document.getElementById('_quSavConcept')?.value||'').trim()||(diff<0?'Retiro / ajuste':'Ajuste de monto');
+    let newAssets=S.assets;
+    if(_metaAsset){
+      const ev=_mkAssetEvent(diff>0?'in':'out',Math.abs(diff),concept);
+      newAssets=_withAssetEvent(S.assets.map(a=>a.id===_metaAsset.id?{...a,val:(+a.val||0)+diff}:a),_metaAsset.id,ev);
+    }
+    pt({
+      assets:newAssets,
+      savGoals:S.savGoals.map(gx=>{
+        if(gx.id!==id)return gx;
+        const dep={date:_todayYMD(),amt:diff,note:concept};
+        if(_metaAsset)dep.assetId=_metaAsset.id;
+        return{...gx,saved:nv,deposits:[...(gx.deposits||[]),dep],done:nv>=gx.target};
+      })
+    });
+    closeConfirm();
+    toast(diff<0?'📉 '+fx(diff)+' · Ahorrado '+fx(nv):'📈 +'+fx(diff)+' · Ahorrado '+fx(nv));
+    rHabitos();hdrUp&&hdrUp();
+  });
+}
 function addSavGoalH(){
   const n=document.getElementById('sgnh')?.value.trim();
   const t=+(document.getElementById('sgth')?.value)||0;
@@ -8339,7 +8379,7 @@ function rHabitos(){
           <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${g.name}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(isDone?'✅ ¡Meta alcanzada!':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div></div></div>
           <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
         </div>
-        <div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
+        <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
         <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
         ${yldBadge}
         ${!isDone?`
@@ -8351,7 +8391,7 @@ function rHabitos(){
             <input type="number" id="sgdeph_${g.id}" placeholder="Monto a abonar" style="flex:1">
             <button class="btn btn-sage btn-sm" onclick="depositSavGoal(${g.id},'sgdeph_')">+ Abonar</button>
           </div>
-          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>'<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+'</span><span style="color:var(--sage);font-weight:bold">+'+fx(d.amt)+'</span></div>').join('')}</div>`:''}
+          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>{const neg=(+d.amt||0)<0;return '<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(neg?'':'+')+fx(d.amt)+'</span></div>';}).join('')}</div>`:''}
         `:`<div style="text-align:center;font-size:12px;color:var(--sage)">🎉 Ahorraste ${fx(Math.round(+g.saved||0))} — ¡disfruta!</div>`}
       </div>`;
     }).join(''):''}

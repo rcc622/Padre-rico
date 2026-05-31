@@ -1869,8 +1869,8 @@ function editSavGoalDep(goalId,idx){
     +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'"'+(dep.kind===k?' selected':'')+'>'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
     +'</select></div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto</label><input type="text" id="_esdConcept" value="'+_escA(dep.note||'')+'" style="width:100%;padding:9px"></div>'
-    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha</label><input type="date" id="_esdDate" value="'+(dep.date||_todayYMD())+'"></div>'
-    +(dep.assetId&&dep.evId!=null?'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El cambio se reflejará en el saldo del activo ligado.</div>':'');
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha</label><input type="date" id="_esdDate" value="'+(dep.date||_todayYMD())+'"></div>'
+    +((S.assets&&S.assets.length)?'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">🏦 Activo ligado</label><select id="_esdAsset" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif"><option value="">— Sin activo (no afecta saldos) —</option>'+S.assets.map(a=>'<option value="'+a.id+'"'+(dep.assetId===a.id?' selected':'')+'>'+(a.gen?'📈 ':'')+_escH(a.name)+' · '+fx(a.val)+'</option>').join('')+'</select><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">'+((dep.assetId&&dep.evId!=null)?'El cambio se reflejará en el saldo del activo ligado.':'💡 Liga un activo para que este movimiento (antiguo) empiece a ajustar su saldo.')+'</div></div>':'');
   showConfirm('✏️ Editar movimiento',body,()=>{
     const g2=S.savGoals.find(x=>x.id===goalId);if(!g2)return;
     const dep2=(g2.deposits||[])[idx];if(!dep2)return;
@@ -1882,13 +1882,19 @@ function editSavGoalDep(goalId,idx){
     const newNote=(document.getElementById('_esdConcept')?.value||'').trim()||(newKind?savGoalWdKind(newKind).n:(type==='out'?'Retiro':'Abono'));
     const newDate=document.getElementById('_esdDate')?.value||dep2.date||_todayYMD();
     const oldAmt=+dep2.amt||0;
-    // Sólo re-sincronizamos el activo si el movimiento YA estaba ligado (tenía
-    // evId). Los movimientos antiguos sin evId se quedan sin tocar el activo.
-    const wasLinked=dep2.assetId&&dep2.evId!=null;
-    let assets=S.assets,newEvId=dep2.evId!=null?dep2.evId:null;
-    if(wasLinked){
-      assets=_savRevertFromAsset(assets,dep2.assetId,dep2.evId,oldAmt);
-      const r=_savApplyToAsset(assets,dep2.assetId,newAmt,newNote,newDate);
+    // Activo elegido en el selector (puede ser el mismo, otro, o ninguno).
+    const newAssetIdRaw=document.getElementById('_esdAsset')?.value;
+    const newAssetId=newAssetIdRaw?+newAssetIdRaw:null;
+    // Re-sincronización del saldo del activo:
+    // 1) Si el movimiento YA estaba ligado (tenía evId), revertimos su efecto
+    //    en el activo viejo. Los antiguos sin evId no tocaban saldo, no se
+    //    revierte nada (pero SÍ se pueden ligar ahora).
+    // 2) Si se eligió un activo, aplicamos el movimiento a ese activo. Esto
+    //    permite religar movimientos antiguos para que empiecen a contar.
+    let assets=S.assets,newEvId=null;
+    if(dep2.assetId&&dep2.evId!=null)assets=_savRevertFromAsset(assets,dep2.assetId,dep2.evId,oldAmt);
+    if(newAssetId){
+      const r=_savApplyToAsset(assets,newAssetId,newAmt,newNote,newDate);
       assets=r.assets;newEvId=r.evId;
     }
     pt({assets,savGoals:S.savGoals.map(gx=>{
@@ -1896,11 +1902,12 @@ function editSavGoalDep(goalId,idx){
       const saved=(+gx.saved||0)-oldAmt+newAmt;
       const deposits=(gx.deposits||[]).map((d,i)=>{
         if(i!==idx)return d;
-        const nd={...d,amt:newAmt,note:newNote,date:newDate,evId:newEvId};
+        const nd={...d,amt:newAmt,note:newNote,date:newDate};
+        if(newAssetId){nd.assetId=newAssetId;nd.evId=newEvId;}else{delete nd.assetId;delete nd.evId;}
         if(newKind)nd.kind=newKind;else delete nd.kind;
         return nd;
       });
-      return{...gx,saved,deposits,done:saved>=gx.target};
+      return{...gx,saved,deposits,done:saved>=gx.target,lastAssetId:newAssetId||gx.lastAssetId};
     })});
     closeConfirm();toast('✏️ Movimiento actualizado');rHabitos();hdrUp&&hdrUp();
   });

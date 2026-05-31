@@ -694,7 +694,7 @@ function showConfirm(title,body,onConfirm){
 }
 function closeConfirm(){document.getElementById('confirmModal').style.display='none';_confirmCb=null;}
 function execConfirm(){if(_confirmCb)_confirmCb();closeConfirm();}
-function showInfo(title,body){showConfirm(title,body,null);document.getElementById('confirmModal').querySelector('.row').innerHTML='<button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Entendido</button>';}
+function showInfo(title,body){showConfirm(title,body,null);document.getElementById('confirmModal').querySelector('.modal-box > .row').innerHTML='<button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Entendido</button>';}
 const INFO={
   patrimonio:'<strong>Patrimonio neto</strong> = lo que tienes (activos) menos lo que debes (deudas).<br><br>Si es negativo, debes más de lo que tienes. Es normal cuando estás pagando deudas. Cada pago que haces lo acerca a $0 y después a positivo.<br><br><strong>Meta:</strong> llevar tu patrimonio a positivo.',
   score:'<strong>Score de salud financiera</strong> (0-100) mide qué tan sano está tu flujo de dinero.<br><br>Considera: <strong>flujo libre</strong> (30 pts — lo más importante), relación deuda/ingreso (20 pts), ahorro real (15 pts), patrimonio neto (15 pts), constancia (10 pts), ingreso pasivo (10 pts). <strong>Penaliza déficit activo</strong> (hasta −15 pts).<br><br><strong>Rangos:</strong><br>0-19: Aprendiz 🐣<br>20-34: Constructor 🧱<br>35-49: Guardián ⚖️<br>50-64: Inversor 📈<br>65-79: Arquitecto 🏛️<br>80-89: Padre Rico 👑<br>90-100: Libre 🌟',
@@ -955,7 +955,7 @@ function togglePaid(type,id){
     +'<button type="button" class="btn" style="flex:1;padding:16px;font-size:15px;background:rgba(74,110,140,.1);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_confirmPayment(\''+type+'\','+id+',\'tdc\','+budgeted+')">💳 TDC</button>'
     +'</div>';
   showConfirm('✓ Marcar como pagado',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
   setTimeout(()=>{
     const inp=document.getElementById('realAmtInput');
@@ -1243,7 +1243,7 @@ function completeSurvival(retoId){
     +'</div>'
     +nextRetoHtml;
   showConfirm('🏆 ¿Completar este reto?',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();rHabitos()">Cancelar</button>'
     +'<button class="btn btn-sage btn-sm" onclick="_confirmCompleteReto(\''+retoId+'\')">✓ Sí, completar</button>';
 }
@@ -1383,7 +1383,7 @@ function _editCompletedReto(retoId,cycle){
       +'<div style="margin-bottom:12px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Ahorro real ($)</label><input type="number" id="_editRetoAmt" value="'+curAmt+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
       +'<div style="font-size:10px;color:var(--muted);text-align:center;font-style:italic">Nota: esto NO modifica el ingreso extra que ya quedó registrado en su momento. Solo actualiza el número del archivo.</div>';
     showConfirm('✏️ Editar monto registrado',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
       +'<button class="btn btn-sage btn-sm" onclick="_saveEditedReto(\''+retoId+'\',\''+cycle+'\')">💾 Guardar</button>';
   }catch(e){toast('Error al editar');}
@@ -1420,7 +1420,7 @@ function _reactivateCompletedReto(retoId,cycle){
       +'• El ingreso extra que ya registraste en su momento NO se elimina (tendrías que borrarlo manualmente desde Ingresos y Gastos si quieres)'
       +'</div>';
     showConfirm('↩️ ¿Reactivar reto?',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
       +'<button class="btn btn-red btn-sm" onclick="_confirmReactivateReto(\''+retoId+'\',\''+cycle+'\')">↩️ Sí, reactivar</button>';
   }catch(e){toast('Error');}
@@ -1474,7 +1474,7 @@ function _offerDeclareHabito(retoId){
       +'• Si más adelante detecto recaída en tu CSV, la app te ofrecerá reactivarlo (próximamente)'
       +'</div>';
     showConfirm('👑 ¿Declarar hábito formado?',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();rHabitos()">Todavía no</button>'
       +'<button class="btn btn-sage btn-sm" onclick="_confirmDeclareHabito(\''+retoId+'\')">👑 Sí, es parte de mí</button>';
   }catch(e){}
@@ -1506,7 +1506,7 @@ function _undeclareHabito(retoId){
       +'</div>'
       +'<div style="font-size:11px;color:var(--txt2);line-height:1.6">El reto volverá a aparecer en la lista de retos disponibles de Mis Hábitos. Tus completaciones pasadas se conservan.</div>';
     showConfirm('🔓 ¿Quitar hábito formado?',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
       +'<button class="btn btn-red btn-sm" onclick="_confirmUndeclareHabito(\''+retoId+'\')">🔓 Sí, quitar</button>';
   }catch(e){}
@@ -1575,7 +1575,7 @@ function toggleRetoCheck(retoId,idx){
       +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="markRetoPass(\''+retoId+'\','+idx+')">✅ Sí, cumplí</button>'
       +'<button class="btn btn-red" style="width:100%;padding:14px" onclick="markRetoFail(\''+retoId+'\','+idx+')">❌ No cumplí</button>';
     showConfirm('📋 Registro',body,null);
-    const row2=document.getElementById('confirmModal').querySelector('.row');
+    const row2=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row2)row2.innerHTML='<button class="btn btn-ghost" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
     return;
   }
@@ -1596,7 +1596,7 @@ function toggleRetoCheck(retoId,idx){
       +'<input type="number" id="retoExpAmt" value="'+budgeted+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">'
       +'<div id="retoExpDiff" style="font-size:11px;color:var(--muted);text-align:center;margin-top:6px"></div>';
     showConfirm('💸 Gasto de '+label,body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     // retoId es un identificador interno — lo pasamos por _xref para evitar
     // cualquier riesgo si a futuro alguna ruta lo derivase de input de usuario.
     const _retoRef=_xref(retoId);
@@ -1619,7 +1619,7 @@ function toggleRetoCheck(retoId,idx){
     +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="markRetoPass(\''+retoId+'\','+idx+')">✅ Sí, cumplí</button>'
     +'<button class="btn btn-red" style="width:100%;padding:14px" onclick="markRetoFail(\''+retoId+'\','+idx+')">❌ No, gasté</button>';
   showConfirm('📋 Registro',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
 }
 function markRetoPass(retoId,idx){
@@ -1651,7 +1651,7 @@ function markRetoFail(retoId,idx){
     +'<input type="text" id="retoFailNote" placeholder="¿En qué? (ej: OXXO, Uber Eats)" style="width:100%;font-size:13px;text-align:center;color:var(--txt);font-family:Georgia,serif;padding:8px;border:1px solid var(--border);border-radius:8px">'
     +'<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:6px">Se registrará en Diarios como <strong>pendiente de confirmar</strong>.</div>';
   showConfirm('💸 Gasto no planeado',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Cancelar</button><button class="btn btn-red" onclick="confirmRetoFail(\''+retoId+'\','+idx+')">Registrar</button>';
 }
 function confirmRetoFail(retoId,idx){
@@ -3714,7 +3714,7 @@ function showSangradorDetail(merchantKey){
     });
     body+='</div>';
     showConfirm('🔍 Desglose de '+_escH(String(sangra.name||'').slice(0,20)),body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
   }catch(e){toast('Error: '+e.message);}
 }
@@ -3797,7 +3797,7 @@ function showReconcileModal(matches){
   body+='</div>';
   body+='<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:10px;line-height:1.5">🔒 Esto marca los gastos en Plan de Acción con el monto real. Puedes revertir desde ahí en cualquier momento.</div>';
   showConfirm('🔍 Reconciliación automática',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();_pendingMatches=[]">Cancelar</button>'
     +'<button class="btn btn-sage" onclick="_applyReconcileChecked()">Aplicar seleccionados</button>';
 }
@@ -3839,7 +3839,7 @@ function showHormigaDetail(idx){
       body+='</div>';
     }
     showConfirm(_escH(cat),body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
   }catch(e){toast('Error al mostrar detalle');}
 }
@@ -3891,7 +3891,7 @@ function _renderCatStep1(){
       +'</div>';
   }
   showConfirm('✏️ Categorizar gasto',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();window._pendingCat=null">Cancelar</button>';
 }
 
@@ -3966,7 +3966,7 @@ function _renderCatStep2(group){
   }
   body+='</div>';
   showConfirm('✏️ Categorizar gasto',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="_renderCatStep1()">← Atrás</button><button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._pendingCat=null">Cancelar</button>';
 }
 
@@ -4039,7 +4039,7 @@ function checkFugaCritica(txns){
       +'<div style="background:var(--sagedim);border-left:3px solid var(--sage);padding:12px 14px;border-radius:6px;margin-bottom:12px;font-size:11px;color:var(--txt2);line-height:1.65;font-style:italic">"Los deseos germinan libremente en el espíritu del hombre cada vez que hay una posibilidad de satisfacerlos... los deseos son muchos pero los que pueden ser satisfechos, pocos." — Arkad, 2da Manera</div>'
       +'<div style="font-size:11px;color:var(--txt2);line-height:1.7;margin-bottom:12px">👉 Activa un reto de supervivencia en <strong>Mis Hábitos → Retos</strong> para atacar esta fuga específicamente.</div>';
     showConfirm('🚨 Alerta de fuga',body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Entendido</button><button class="btn btn-sage" onclick="closeConfirm();go(\'habitos\')">Ir a retos →</button>';
   }catch(e){}
 }
@@ -4134,7 +4134,7 @@ function showCompressionWarning(targetYear){
     +'</div>'
     +'<div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.6">Estado actual: '+curKB+' KB</div>';
   showConfirm('🗄️ ¿Optimizar memoria?',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="_compressionReject()">No, ahora no</button>'
     +'<button class="btn btn-sky btn-sm" onclick="_compressionBackupAndRun('+targetYear+')">📤 Backup + Comprimir</button>';
 }
@@ -4268,7 +4268,7 @@ function _showRecaidaAlert(alert){
       +'<div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:4px">¿Fue un gasto excepcional o estás retomando el hábito viejo?</div>'
       +(recaidasCount>0?'<div style="font-size:10px;color:var(--muted);margin-top:8px;font-style:italic">Ya habías tenido '+recaidasCount+' '+(recaidasCount===1?'recaída previa':'recaídas previas')+' en este hábito.</div>':'');
     showConfirm('⚠️ '+alert.info.name,body,null);
-    const row=document.getElementById('confirmModal').querySelector('.row');
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
     if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="_dismissRecaida(\''+alert.retoId+'\','+alert.currentAmt+')">Fue excepcional</button>'
       +'<button class="btn btn-amber btn-sm" onclick="_reactivateFromRecaida(\''+alert.retoId+'\','+alert.currentAmt+')">↩️ Reactivar reto</button>';
   }catch(e){}
@@ -4738,7 +4738,7 @@ function onFileType(f,type){if(!f)return;
   showConfirm('💾 Respaldo antes de analizar',
     '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Antes de leer el CSV te recomiendo exportar un respaldo. El análisis <strong>nunca</strong> modifica tu Plan de Acción, diarios ni deudas — solo muestra lo que detecta y te deja decidir. Pero el respaldo es tu red de seguridad.</div>',
     ()=>{_doFileRead(f,type);});
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
     +'<button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Respaldar</button>'
     +'<button class="btn btn-sage btn-sm" onclick="execConfirm()">Continuar</button>';
@@ -5694,7 +5694,7 @@ function saveIncomeChanges(){
     +'<div style="font-size:10px;color:var(--muted);margin-top:2px">Recalcula todas las quincenas con el nuevo monto y limpia el historial de ingresos</div></button>'
     +'</div>';
   showConfirm('💰 Guardar cambios de ingreso',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
 }
 function _applyIncChange(mode,sal,bv,bf,bfDate,bfLastDay,bvMes,bvDia){
@@ -6037,7 +6037,7 @@ function addDiario(){
     +'</div>';
   _pendingDiario={name:n,amt:a,cat:_diarioCat,date:d};
   showConfirm('🛒 Registrar gasto diario',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm();_pendingDiario=null">Cancelar</button>';
 }
 let _pendingDiario=null;
@@ -6105,7 +6105,7 @@ function openQuickCobranza(){
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha del préstamo</label><input type="date" id="qcbDateLent" value="'+today+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
     +'<div><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha esperada de pago</label><input type="date" id="qcbDateExp" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div></div>';
   showConfirm('🤝 Registrar cobranza',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="_qCobranzaSave()">+ Registrar</button>';
 }
 function _qCobranzaSave(){
@@ -6170,7 +6170,7 @@ function openQuickExtraIncome(){
     +'<div id="qxiRec" style="display:none"><div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Frecuencia</div>'
     +'<select id="qxif" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif;background:#fff"><option value="mensual">Mensual</option><option value="quincenal">Quincenal</option><option value="semanal">Semanal</option><option value="bimestral">Bimestral</option></select></div>';
   showConfirm('💵 Ingreso extra',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="_qXtraSave()">✓ Registrar</button>';
 }
 function _qXtraSetType(t){
@@ -6216,7 +6216,7 @@ function openQuickOvertime(){
     +'<div style="margin-bottom:6px"><label>¿Qué hiciste?</label><input type="text" id="qotDesc" placeholder="Instalación, cableado..." style="width:100%"></div>'
     +'<div id="qotPrev" style="font-size:11px;color:var(--muted);margin-top:4px"></div>';
   showConfirm('⏱️ Registrar horas extra',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="_qOvertimeSave()">⏰ Registrar</button>';
   // Preview en vivo del total de horas y el monto estimado
   setTimeout(()=>{
@@ -6284,7 +6284,7 @@ function openQuickDiario(prefill){
     +'<button type="button" class="btn" style="flex:1;padding:14px;font-size:14px;background:rgba(74,110,140,.1);color:var(--sky);border:1px solid rgba(74,110,140,.3);border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="_quickDiarioSave(\'tdc\')">💳 TDC</button>'
     +'</div>';
   showConfirm('🛒 Gasto diario rápido',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
   setTimeout(()=>document.getElementById('qdn')?.focus(),150);
 }
@@ -6845,7 +6845,7 @@ function _savWizStep1(){
     +'• En 5 años: <strong style="color:var(--sage)">'+fx(fiveY)+'</strong> <span style="color:var(--muted)">(sin contar rendimientos)</span>'
     +'</div>';
   showConfirm('🪙 Págate a ti primero',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();_savWizStep=1" style="flex:0 0 auto;padding:10px 16px">Después</button><button class="btn btn-sage" onclick="_savWizNext()" style="flex:1">Siguiente →</button>';
 }
 function _savWizPct(delta){
@@ -6883,7 +6883,10 @@ function _savWizStep2(){
     +S.assets.map(a=>'<label class="row _savAssetRow" data-aid="'+a.id+'" style="gap:10px;padding:12px;border:2px solid '+(a.id===_savWizData.assetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===_savWizData.assetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_savAsset" value="'+a.id+'" '+(a.id===_savWizData.assetId?'checked':'')+' onchange="_savWizPickAsset('+a.id+')" style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx(+a.val+amt)+'</strong></div></div></label>').join('')
     +'</div>';
   showConfirm('🪙 Paso 2 — Destino',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  // Importante: las etiquetas de activo usan class="row", así que
+  // querySelector('.row') agarraría la primera (un activo) en vez de la fila
+  // de botones. Apuntamos a la hija directa de .modal-box (la fila de botones).
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="_savWizStep=1;_renderSavWiz()" style="flex:0 0 auto;padding:10px 16px">← Atrás</button><button class="btn btn-sage" onclick="_savWizNext()" style="flex:1">Apartar '+fx(amt)+' ✓</button>';
 }
 // Selecciona activo sin reconstruir el modal: solo actualiza assetId y
@@ -6935,7 +6938,7 @@ function _savWizStep3(){
     +'<div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:10px">Este dinero es <strong style="color:var(--sage)">sagrado</strong>. No se toca salvo emergencia real.</div>'
     +'</div>';
   showConfirm('🎉 ¡Hecho!',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm();_savWizStep=1;_refreshActive()" style="flex:1">Cerrar</button><button class="btn btn-sage" onclick="closeConfirm();_savWizStep=1;go(\'plan\')" style="flex:1">Ir a pagos →</button>';
   _refreshActive();hdrUp&&hdrUp();
 }
@@ -8674,7 +8677,7 @@ function showOvertimeCalc(){
     +'<div style="font-size:11px;color:var(--muted);margin-top:6px">= <span id="otCalcMoney">'+fx(Math.round((hoursNeeded||5)*RATE))+'</span> a $'+RATE+'/hr</div>'
     +'</div>';
   showConfirm('⏰ Calculadora de Horas Extra',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row){
     row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="acceptOvertime('+Math.round(totalDeficit)+','+Math.round(pendingThis)+','+Math.round(nextTotal)+')">⏰ Aceptar reto</button>';
   }
@@ -8714,7 +8717,7 @@ function cancelPendingDiario(id){
     toast('✕ Pre-registro cancelado');
     try{rHabitos();}catch(e){}
   });
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Volver</button><button class="btn btn-red" onclick="execConfirm()">✕ Cancelar</button>';
 }
 
@@ -8731,7 +8734,7 @@ function confirmDeleteImpulse(rid,ck,idx,impId,impName,impAmt){
   showConfirm('🗑 Eliminar gasto impulso',body,()=>{
     deleteImpulse(rid,ck,idx,impId);
   });
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-red" onclick="execConfirm()">🗑 Eliminar</button>';
 }
 function deleteImpulse(rid,ck,idx,impId){
@@ -8816,7 +8819,7 @@ function recalcOvertime(otCk){
     S.overtimeLog[ck]={...ot,targetHrs:newTargetH,deficit:Math.round(totalDeficit),pendingThis:Math.round(pendingThis),nextTotal:Math.round(nextTotal)};
     sv();rPlan();toast('⏰ Target actualizado: '+newTargetH.toFixed(1)+'h');
   });
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="execConfirm()">✓ Actualizar target</button>';
 }
 
@@ -8895,7 +8898,7 @@ function editOtEntry(idx,otCk){
     +'<div style="display:flex;gap:8px;margin-bottom:10px"><div style="flex:1"><label>De</label><input type="time" id="oeFrom" value="'+e.from+'"></div><div style="flex:1"><label>A</label><input type="time" id="oeTo" value="'+e.to+'"></div></div>'
     +'<div style="margin-bottom:10px"><label>Actividad</label><input type="text" id="oeDesc" value="'+(e.desc||'').replace(/"/g,'&quot;')+'" style="width:100%"></div>';
   showConfirm('✏️ Editar registro · '+ck,body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="saveOtEntry('+idx+',\''+ck+'\')">Guardar</button>';
 }
 function saveOtEntry(idx,otCk){
@@ -8998,7 +9001,7 @@ function checkCustomHabit(id,date){
   const dt=new Date(d+'T12:00');
   const fmt=dt.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
   showConfirm('¿Cumpliste el '+fmt+'?','<strong>'+h.name+'</strong><br><br>¿Lograste evitarlo este día?',null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button>'
     +'<button class="btn btn-red btn-sm" onclick="markCustomHabit('+h.id+',\''+d+'\',false)">No cumplí</button>'
     +'<button class="btn btn-sage btn-sm" onclick="markCustomHabit('+h.id+',\''+d+'\',true)">Sí cumplí</button>';
@@ -9045,7 +9048,7 @@ function showCustomHabitDone(id){
     }
     setTimeout(()=>_promptHabitSavingsRegister(id,total),120);
   });
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row){
     row.innerHTML=total>0
       ?'<button class="btn btn-ghost" onclick="closeConfirm();rHabitos()">Solo celebrar</button><button class="btn btn-sage" onclick="execConfirm()">💰 Registrar '+fx(total)+'</button>'
@@ -9152,7 +9155,7 @@ function resolveWait(id,bought){
   showConfirm('¿Cómo lo pagaste?',
     '<div style="font-size:12px;line-height:1.7;color:var(--txt2)"><strong>'+w.name+'</strong> · '+fx(w.price)+'<br><br>Elige el destino:</div>'
     +'<div style="font-size:11px;color:var(--muted);line-height:1.5;margin-top:10px"><strong>Débito:</strong> sale hoy de tu cuenta → se registra en 🛒 Diarios como impulso.<br><strong>Crédito:</strong> pago diferido → se registra en ⛓️ Deudas como pago único agendado.</div>',null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
     +'<button class="btn btn-sage btn-sm" onclick="waitToDiario('+id+')">💰 Débito</button>'
     +'<button class="btn btn-sky btn-sm" onclick="waitToCredit('+id+')">💳 Crédito</button>';
@@ -9174,7 +9177,7 @@ function waitToCredit(id){
     '<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px"><strong>'+w.name+'</strong> · '+fx(w.price)+'<br>¿En qué fecha se va a cargar a tu tarjeta?</div>'
     +'<input type="date" id="wtcDate" value="'+today+'" style="width:100%;padding:10px;font-family:Georgia,serif;border:1px solid var(--border);border-radius:8px">'
     +'<div style="font-size:10px;color:var(--muted);margin-top:6px">Tip: usa la fecha de corte de tu TDC para que aparezca en Plan de Acción cuando toque pagarlo.</div>',null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()">Cancelar</button>'
     +'<button class="btn btn-sage btn-sm" onclick="_finishWaitToCredit('+id+')">Registrar</button>';
 }
@@ -9416,7 +9419,7 @@ function showRecurringUnlockModal(r){
     +'<div style="background:var(--sagedim);border-left:3px solid var(--sage);padding:12px 14px;border-radius:6px;margin-bottom:12px;font-size:11px;color:var(--txt2);line-height:1.65;font-style:italic">'+r.info+'</div>'
     +'<div style="font-size:11px;color:var(--muted);text-align:center;line-height:1.6">Este logro es <strong>recursivo</strong>: se renueva cada '+r.per+' '+(r.id==='rec_cajita'?'pesos':'unidades')+'. Sigue para desbloquear el Nivel '+(r.tier+1)+'.</div>';
   showConfirm('🔁 Logro Renovado',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Continuar</button>';
 }
 
@@ -9500,7 +9503,7 @@ function showAchUnlockedModal(a){
       +'<div class="row" style="gap:10px;align-items:center"><span style="font-size:24px">'+next.e+'</span><div style="flex:1"><div style="font-size:12px;font-weight:bold;color:var(--txt)">'+next.n+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+hint+'</div></div></div>'
       +'</div>':'');
   showConfirm('🏆 ¡Logro desbloqueado!',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Continuar</button>';
 }
 
@@ -10344,7 +10347,7 @@ function openSimCustomModal(id){
     +'<input type="number" id="scMax" value="'+(curMax||8)+'" style="width:100%;padding:10px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:6px;font-family:Georgia,serif" min="1" max="30">'
     +'<div style="font-size:10px;color:var(--muted);line-height:1.5;margin-bottom:4px">Ejemplos: 4 ≈ semanal, 2 ≈ quincenal, 1 = mensual, 8 ≈ 2×/sem</div>';
   showConfirm(isEdit?'✏️ Editar concepto':'➕ Agregar concepto',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.row');
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button>'
     +(isEdit?'<button class="btn btn-red btn-sm" onclick="delSimCustom(_xget('+_xref(String(id))+'))">🗑 Eliminar</button>':'')
     +'<button class="btn btn-sage" onclick="saveSimCustom('+(isEdit?'_xget('+_xref(String(id))+')':'null')+')">Guardar</button>';

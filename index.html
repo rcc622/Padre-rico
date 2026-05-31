@@ -1803,7 +1803,8 @@ function updSavGoalSaved(id){
   const cur=Math.round(+g.saved||0);
   const _metaAssetId=g.lastAssetId||(g.deposits||[]).slice().reverse().find(d=>d&&d.assetId)?.assetId;
   const _metaAsset=_metaAssetId&&S.assets?S.assets.find(a=>a.id===_metaAssetId):null;
-  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza lo que llevas ahorrado en <strong style="color:var(--sage)">'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>. Úsalo si hiciste un retiro o quieres ajustar el monto.</div>'
+  const assetOpts=(S.assets&&S.assets.length)?('<option value="">— Sin activo (no afecta saldos) —</option>'+S.assets.map(a=>'<option value="'+a.id+'"'+(a.id===_metaAssetId?' selected':'')+'>'+(a.gen?'📈 ':'')+_escH(a.name)+' · '+fx(a.val)+'</option>').join('')):'';
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza lo que llevas ahorrado en <strong style="color:var(--sage)">'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>. Si <strong>subes</strong> el monto es un abono; si lo <strong>bajas</strong>, un retiro (te pido el tipo). En ambos casos puedes anotar concepto, fecha y a qué activo afecta.</div>'
     +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Ahorrado anterior</label><div style="font-size:14px;color:var(--txt2)">'+fx(cur)+'</div></div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Ahorrado actual ($)</label><input type="number" id="_quSavVal" value="'+cur+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()" oninput="_quSavToggleKind('+cur+')"></div>'
     +'<div id="_quSavWdBox" style="display:none;margin-bottom:10px;padding:10px;background:rgba(184,92,74,.05);border:1px solid rgba(184,92,74,.2);border-radius:8px">'
@@ -1811,9 +1812,9 @@ function updSavGoalSaved(id){
     +'<select id="_quSavKind" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
     +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'">'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
     +'</select></div>'
-    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Enganche bodega, retiro urgente…" style="width:100%;padding:8px;font-size:13px"></div>'
-    +'<div style="margin-top:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_quSavDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
-    +(_metaAsset?'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El ajuste también se reflejará en el saldo de tu activo <strong>'+_escH(_metaAsset.name)+'</strong>.</div>':'');
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Abono nómina, enganche bodega, retiro…" style="width:100%;padding:8px;font-size:13px"></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_quSavDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
+    +(assetOpts?'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">🏦 Activo afectado</label><select id="_quSavAsset" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'+assetOpts+'</select><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">El abono/retiro se reflejará en el saldo del activo elegido.</div></div>':'');
   showConfirm('🔄 Actualizar monto ahorrado',body,()=>{
     const nv=Math.round(+(document.getElementById('_quSavVal')?.value)||0);
     if(nv<0){toast('⚠ Monto inválido');return;}
@@ -1821,17 +1822,19 @@ function updSavGoalSaved(id){
     if(diff===0){closeConfirm();toast('Sin cambios');return;}
     const kind=diff<0?(document.getElementById('_quSavKind')?.value||'ajuste'):null;
     const kindMeta=kind?savGoalWdKind(kind):null;
-    const concept=(document.getElementById('_quSavConcept')?.value||'').trim()||(kindMeta?kindMeta.n:'Ajuste de monto');
+    const concept=(document.getElementById('_quSavConcept')?.value||'').trim()||(kindMeta?kindMeta.n:(diff>0?'Abono':'Ajuste de monto'));
     const date=document.getElementById('_quSavDate')?.value||_todayYMD();
-    const r=_metaAsset?_savApplyToAsset(S.assets,_metaAsset.id,diff,concept,date):{assets:S.assets,evId:null};
+    const assetIdRaw=document.getElementById('_quSavAsset')?.value;
+    const assetId=assetIdRaw?+assetIdRaw:null;
+    const r=assetId?_savApplyToAsset(S.assets,assetId,diff,concept,date):{assets:S.assets,evId:null};
     pt({
       assets:r.assets,
       savGoals:S.savGoals.map(gx=>{
         if(gx.id!==id)return gx;
         const dep={id:_savDepId(),date,amt:diff,note:concept};
         if(kind)dep.kind=kind;
-        if(_metaAsset){dep.assetId=_metaAsset.id;dep.evId=r.evId;}
-        return{...gx,saved:nv,deposits:[...(gx.deposits||[]),dep],done:nv>=gx.target,lastAssetId:_metaAsset?_metaAsset.id:gx.lastAssetId};
+        if(assetId){dep.assetId=assetId;dep.evId=r.evId;}
+        return{...gx,saved:nv,deposits:[...(gx.deposits||[]),dep],done:nv>=gx.target,lastAssetId:assetId||gx.lastAssetId};
       })
     });
     closeConfirm();
@@ -1839,6 +1842,22 @@ function updSavGoalSaved(id){
     rHabitos();hdrUp&&hdrUp();
   });
   _quSavToggleKind(cur);
+}
+// Marca/desmarca una meta como completada sin borrarla. Útil cuando el saldo
+// se mueve por pagos a proveedores y el usuario quiere cerrarla manualmente.
+// No toca activos ni el monto ahorrado: solo cambia el flag g.done.
+function toggleSavGoalDone(id){
+  const g=S.savGoals.find(x=>x.id===id);if(!g)return;
+  if(g.done){
+    pt({savGoals:S.savGoals.map(gx=>gx.id===id?{...gx,done:false}:gx)});
+    toast('↩ Meta reabierta');rHabitos();
+    return;
+  }
+  const saved=Math.round(+g.saved||0);
+  showConfirm('✅ Completar meta','<div style="font-size:13px;line-height:1.6;color:var(--txt2)">¿Marcar <strong>'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong> como completada?<br><span style="font-size:11px;color:var(--muted)">Llevas '+fx(saved)+' de '+fx(g.target)+'. Puedes reabrirla después. No afecta tus activos ni el monto ahorrado.</span></div>',()=>{
+    pt({savGoals:S.savGoals.map(gx=>gx.id===id?{...gx,done:true}:gx)});
+    closeConfirm();toast('🎉 Meta completada');rHabitos();
+  });
 }
 // Muestra/oculta el selector de tipo de retiro según si el monto nuevo es
 // menor que el actual (es decir, si es un retiro).
@@ -8563,10 +8582,13 @@ function rHabitos(){
             <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
           </div>
           <div class="row" style="gap:8px">
-            <input type="number" id="sgdeph_${g.id}" placeholder="Monto a abonar" style="flex:1">
-            <button class="btn btn-sage btn-sm" onclick="depositSavGoal(${g.id},'sgdeph_')">+ Abonar</button>
+            <button class="btn btn-sage btn-sm" style="flex:1" onclick="updSavGoalSaved(${g.id})">💰 Registrar movimiento</button>
+            <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Marcar como completada sin borrarla">✓ Completar</button>
           </div>
-        `:`<div style="text-align:center;font-size:12px;color:var(--sage)">🎉 Ahorraste ${fx(Math.round(+g.saved||0))} — ¡disfruta!</div>`}
+        `:`<div class="row" style="gap:8px;align-items:center;margin-top:6px">
+            <div style="flex:1;text-align:center;font-size:12px;color:var(--sage)">🎉 Meta completada — ¡disfruta!</div>
+            <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Reabrir esta meta">↩ Reabrir</button>
+          </div>`}
         ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Movimientos</div><div style="max-height:180px;overflow-y:auto">${(g.deposits||[]).map((d,i)=>({d,i})).reverse().map(({d,i})=>{const neg=(+d.amt||0)<0;const km=d.kind?savGoalWdKind(d.kind):null;const tag=km?'<span style="font-size:8px;margin-left:4px;padding:1px 5px;border-radius:4px;background:rgba(120,120,120,.12);color:'+km.c+';font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+km.e+' '+km.n.split(' ')[0]+'</span>':'';return '<div class="row-b" style="padding:4px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px;gap:6px"><span style="color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+tag+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold;white-space:nowrap">'+(neg?'':'+')+fx(d.amt)+'</span><span class="row" style="gap:2px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:10px" onclick="editSavGoalDep('+g.id+','+i+')" title="Editar">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 5px;font-size:10px" onclick="delSavGoalDep('+g.id+','+i+')" title="Eliminar">✕</button></span></div>';}).join('')}</div></div>`:''}
       </div>`;
     }).join(''):''}

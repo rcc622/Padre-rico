@@ -1723,39 +1723,66 @@ function addSavGoal(){
   pt({savGoals:[...S.savGoals,goal]});
   toast('🎯 Meta de ahorro creada');rHabitos();
 }
+// ══ Movimientos de metas ↔ activos ═══════════════════════════════════
+// Un movimiento de meta (abono + o retiro −) que tenga activo ligado crea/
+// borra un evento en ese activo y ajusta su saldo, para que el patrimonio
+// siempre cuadre. El id del evento se guarda en dep.evId para poder
+// editar/eliminar el movimiento y sincronizar ambos lados.
+const _savDepId=()=>Date.now()+Math.floor(Math.random()*100000);
+// Aplica un movimiento a su activo ligado. amt es con signo (+entra/−sale).
+// Devuelve {assets, evId}.
+function _savApplyToAsset(assets,assetId,amt,concept,date){
+  if(!assetId)return{assets,evId:null};
+  const ev=_mkAssetEvent(amt>=0?'in':'out',Math.abs(amt),concept,date);
+  const next=_withAssetEvent(assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amt}:a),assetId,ev);
+  return{assets:next,evId:ev.id};
+}
+// Revierte un movimiento de su activo ligado: quita el evento y deshace su
+// efecto en el saldo. amt con signo (el mismo que se aplicó).
+function _savRevertFromAsset(assets,assetId,evId,amt){
+  if(!assetId||evId==null)return assets;
+  return assets.map(a=>{
+    if(a.id!==assetId)return a;
+    const hasEv=(a.events||[]).some(e=>e.id===evId);
+    return{...a,val:(+a.val||0)-(hasEv?amt:0),events:(a.events||[]).filter(e=>e.id!==evId)};
+  });
+}
 function depositSavGoal(id,prefix){
   const pfx=prefix||'sgdep_';
   const el=document.getElementById(pfx+id);
   const amt=+(el?.value)||0;
   if(!amt){toast('Ingresa un monto');return;}
   const g=S.savGoals.find(x=>x.id===id);if(!g)return;
-  // Pedir activo destino. El abono representa dinero que el usuario ya
-  // movió físicamente a una cuenta (Nu, Mercado Pago, etc.) — sin esto, el
-  // dinero "se pierde" del patrimonio: g.saved sube pero ningún asset sube
-  // y el Plan no lo refleja en "Ahorro apartado".
+  // Pedir activo destino: el abono entra a una cuenta real (Nu, Mercado Pago,
+  // efectivo). Suma al saldo de ese activo para que el patrimonio lo refleje.
   if(!S.assets||S.assets.length===0){
     showInfo('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para registrar el abono necesitas un destino real (Nu, Mercado Pago, efectivo). Créalo en <strong>Ingresos y Gastos → 🏦 Activos</strong>.</div>');
     return;
   }
   const lastAssetId=g.lastAssetId||S.assets[0].id;
   const body='<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a abonar</div><div style="font-size:24px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+' → '+(g.icon||'🎯')+' '+g.name+'</div></div>'
-    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿Desde qué activo viene el dinero?</div>'
-    +'<div style="max-height:280px;overflow-y:auto">'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A qué activo entra el dinero?</div>'
+    +'<div style="max-height:240px;overflow-y:auto">'
     +S.assets.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===lastAssetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===lastAssetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_depAsset" value="'+a.id+'" '+(a.id===lastAssetId?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+a.name+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+'</div></div></label>').join('')
     +'</div>'
-    +'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El saldo del activo no se reduce — el dinero ya estaba ahí, sólo lo etiquetamos como reservado para esta meta.</div>';
+    +'<div style="margin-top:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_depDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El abono se suma al saldo del activo seleccionado.</div>';
   showConfirm('💰 Abono a meta',body,()=>{
     const sel=document.querySelector('input[name=_depAsset]:checked');
     const assetId=sel?+sel.value:lastAssetId;
-    pt({savGoals:S.savGoals.map(gx=>{
+    const date=document.getElementById('_depDate')?.value||_todayYMD();
+    const concept='Abono · '+g.name;
+    const r=_savApplyToAsset(S.assets,assetId,amt,concept,date);
+    pt({assets:r.assets,savGoals:S.savGoals.map(gx=>{
       if(gx.id!==id)return gx;
-      const dep={date:_todayYMD(),amt,assetId};
+      const dep={id:_savDepId(),date,amt,assetId,evId:r.evId,note:concept};
       const newSaved=(+gx.saved||0)+amt;
       return{...gx,saved:newSaved,deposits:[...(gx.deposits||[]),dep],done:newSaved>=gx.target,lastAssetId:assetId};
     })});
-    closeConfirm();toast('💰 +'+fx(amt)+' apartado para '+g.name);rHabitos();
+    closeConfirm();toast('💰 +'+fx(amt)+' apartado para '+g.name);rHabitos();hdrUp&&hdrUp();
   });
 }
+
 // Tipos de retiro de una meta. Diferenciar es clave: un enganche/pago a
 // proveedor es un gasto planeado; una emergencia es un imprevisto. Guardamos
 // dep.kind para poder mostrarlo y sumarlo por separado.
@@ -1785,6 +1812,7 @@ function updSavGoalSaved(id){
     +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'">'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
     +'</select></div>'
     +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Enganche bodega, retiro urgente…" style="width:100%;padding:8px;font-size:13px"></div>'
+    +'<div style="margin-top:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_quSavDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
     +(_metaAsset?'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El ajuste también se reflejará en el saldo de tu activo <strong>'+_escH(_metaAsset.name)+'</strong>.</div>':'');
   showConfirm('🔄 Actualizar monto ahorrado',body,()=>{
     const nv=Math.round(+(document.getElementById('_quSavVal')?.value)||0);
@@ -1794,19 +1822,16 @@ function updSavGoalSaved(id){
     const kind=diff<0?(document.getElementById('_quSavKind')?.value||'ajuste'):null;
     const kindMeta=kind?savGoalWdKind(kind):null;
     const concept=(document.getElementById('_quSavConcept')?.value||'').trim()||(kindMeta?kindMeta.n:'Ajuste de monto');
-    let newAssets=S.assets;
-    if(_metaAsset){
-      const ev=_mkAssetEvent(diff>0?'in':'out',Math.abs(diff),concept);
-      newAssets=_withAssetEvent(S.assets.map(a=>a.id===_metaAsset.id?{...a,val:(+a.val||0)+diff}:a),_metaAsset.id,ev);
-    }
+    const date=document.getElementById('_quSavDate')?.value||_todayYMD();
+    const r=_metaAsset?_savApplyToAsset(S.assets,_metaAsset.id,diff,concept,date):{assets:S.assets,evId:null};
     pt({
-      assets:newAssets,
+      assets:r.assets,
       savGoals:S.savGoals.map(gx=>{
         if(gx.id!==id)return gx;
-        const dep={date:_todayYMD(),amt:diff,note:concept};
+        const dep={id:_savDepId(),date,amt:diff,note:concept};
         if(kind)dep.kind=kind;
-        if(_metaAsset)dep.assetId=_metaAsset.id;
-        return{...gx,saved:nv,deposits:[...(gx.deposits||[]),dep],done:nv>=gx.target};
+        if(_metaAsset){dep.assetId=_metaAsset.id;dep.evId=r.evId;}
+        return{...gx,saved:nv,deposits:[...(gx.deposits||[]),dep],done:nv>=gx.target,lastAssetId:_metaAsset?_metaAsset.id:gx.lastAssetId};
       })
     });
     closeConfirm();
@@ -1821,6 +1846,84 @@ function _quSavToggleKind(cur){
   const v=+(document.getElementById('_quSavVal')?.value);
   const box=document.getElementById('_quSavWdBox');
   if(box)box.style.display=(!isNaN(v)&&v<cur)?'block':'none';
+}
+// Muestra/oculta el selector de tipo de retiro en el modal de editar
+// movimiento según el tipo (sólo aplica a salidas).
+function _eSavToggleKind(){
+  const t=document.getElementById('_esdType')?.value;
+  const box=document.getElementById('_esdKindBox');
+  if(box)box.style.display=t==='out'?'block':'none';
+}
+// Editar un movimiento de una meta (igual que editar movimiento en Activos).
+// Opera por índice dentro de g.deposits (robusto con datos previos sin id).
+// Si el movimiento estaba ligado a un activo, re-sincroniza su saldo.
+function editSavGoalDep(goalId,idx){
+  const g=S.savGoals.find(x=>x.id===goalId);if(!g)return;
+  const dep=(g.deposits||[])[idx];if(!dep)return;
+  const isOut=(+dep.amt||0)<0;
+  const body='<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Tipo</label>'
+    +'<select id="_esdType" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="_eSavToggleKind()"><option value="in"'+(!isOut?' selected':'')+'>📈 Abono (suma)</option><option value="out"'+(isOut?' selected':'')+'>📉 Retiro (resta)</option></select></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Monto ($)</label><input type="number" id="_esdAmt" value="'+Math.abs(+dep.amt||0)+'" style="width:100%;padding:9px;font-size:16px;text-align:center;font-weight:bold"></div>'
+    +'<div id="_esdKindBox" style="display:'+(isOut?'block':'none')+';margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Tipo de retiro</label>'
+    +'<select id="_esdKind" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
+    +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'"'+(dep.kind===k?' selected':'')+'>'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
+    +'</select></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto</label><input type="text" id="_esdConcept" value="'+_escA(dep.note||'')+'" style="width:100%;padding:9px"></div>'
+    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha</label><input type="date" id="_esdDate" value="'+(dep.date||_todayYMD())+'"></div>'
+    +(dep.assetId&&dep.evId!=null?'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El cambio se reflejará en el saldo del activo ligado.</div>':'');
+  showConfirm('✏️ Editar movimiento',body,()=>{
+    const g2=S.savGoals.find(x=>x.id===goalId);if(!g2)return;
+    const dep2=(g2.deposits||[])[idx];if(!dep2)return;
+    const type=document.getElementById('_esdType')?.value==='out'?'out':'in';
+    const absAmt=Math.abs(+(document.getElementById('_esdAmt')?.value)||0);
+    if(!absAmt){toast('Ingresa un monto');return;}
+    const newAmt=type==='out'?-absAmt:absAmt;
+    const newKind=type==='out'?(document.getElementById('_esdKind')?.value||'ajuste'):null;
+    const newNote=(document.getElementById('_esdConcept')?.value||'').trim()||(newKind?savGoalWdKind(newKind).n:(type==='out'?'Retiro':'Abono'));
+    const newDate=document.getElementById('_esdDate')?.value||dep2.date||_todayYMD();
+    const oldAmt=+dep2.amt||0;
+    // Sólo re-sincronizamos el activo si el movimiento YA estaba ligado (tenía
+    // evId). Los movimientos antiguos sin evId se quedan sin tocar el activo.
+    const wasLinked=dep2.assetId&&dep2.evId!=null;
+    let assets=S.assets,newEvId=dep2.evId!=null?dep2.evId:null;
+    if(wasLinked){
+      assets=_savRevertFromAsset(assets,dep2.assetId,dep2.evId,oldAmt);
+      const r=_savApplyToAsset(assets,dep2.assetId,newAmt,newNote,newDate);
+      assets=r.assets;newEvId=r.evId;
+    }
+    pt({assets,savGoals:S.savGoals.map(gx=>{
+      if(gx.id!==goalId)return gx;
+      const saved=(+gx.saved||0)-oldAmt+newAmt;
+      const deposits=(gx.deposits||[]).map((d,i)=>{
+        if(i!==idx)return d;
+        const nd={...d,amt:newAmt,note:newNote,date:newDate,evId:newEvId};
+        if(newKind)nd.kind=newKind;else delete nd.kind;
+        return nd;
+      });
+      return{...gx,saved,deposits,done:saved>=gx.target};
+    })});
+    closeConfirm();toast('✏️ Movimiento actualizado');rHabitos();hdrUp&&hdrUp();
+  });
+}
+// Eliminar un movimiento de una meta. Revierte su efecto en saved y, si estaba
+// ligado a un activo, también en el saldo de ese activo.
+function delSavGoalDep(goalId,idx){
+  const g=S.savGoals.find(x=>x.id===goalId);if(!g)return;
+  const dep=(g.deposits||[])[idx];if(!dep)return;
+  const neg=(+dep.amt||0)<0;
+  showConfirm('🗑️ Eliminar movimiento','<div style="font-size:13px;line-height:1.6;color:var(--txt2)">¿Eliminar <strong>'+_escH(dep.note||(neg?'Retiro':'Abono'))+'</strong> de <strong>'+(neg?'':'+')+fx(dep.amt)+'</strong>?<br><span style="font-size:11px;color:var(--muted)">Se ajustará el monto ahorrado'+(dep.assetId&&dep.evId!=null?' y el saldo del activo ligado':'')+'.</span></div>',()=>{
+    const g2=S.savGoals.find(x=>x.id===goalId);if(!g2)return;
+    const dep2=(g2.deposits||[])[idx];if(!dep2)return;
+    let assets=S.assets;
+    if(dep2.assetId&&dep2.evId!=null)assets=_savRevertFromAsset(assets,dep2.assetId,dep2.evId,+dep2.amt||0);
+    pt({assets,savGoals:S.savGoals.map(gx=>{
+      if(gx.id!==goalId)return gx;
+      const saved=(+gx.saved||0)-(+dep2.amt||0);
+      const deposits=(gx.deposits||[]).filter((_,i)=>i!==idx);
+      return{...gx,saved,deposits,done:saved>=gx.target};
+    })});
+    closeConfirm();toast('🗑️ Movimiento eliminado');rHabitos();hdrUp&&hdrUp();
+  });
 }
 function addSavGoalH(){
   const n=document.getElementById('sgnh')?.value.trim();
@@ -8423,8 +8526,8 @@ function rHabitos(){
             <input type="number" id="sgdeph_${g.id}" placeholder="Monto a abonar" style="flex:1">
             <button class="btn btn-sage btn-sm" onclick="depositSavGoal(${g.id},'sgdeph_')">+ Abonar</button>
           </div>
-          ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Historial de abonos</div>${(g.deposits||[]).slice(-5).reverse().map(d=>{const neg=(+d.amt||0)<0;const km=d.kind?savGoalWdKind(d.kind):null;const tag=km?'<span style="font-size:8px;margin-left:4px;padding:1px 5px;border-radius:4px;background:rgba(120,120,120,.12);color:'+km.c+';font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+km.e+' '+km.n.split(' ')[0]+'</span>':'';return '<div class="row-b" style="padding:3px 0;font-size:11px"><span style="color:var(--muted)">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+tag+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(neg?'':'+')+fx(d.amt)+'</span></div>';}).join('')}</div>`:''}
         `:`<div style="text-align:center;font-size:12px;color:var(--sage)">🎉 Ahorraste ${fx(Math.round(+g.saved||0))} — ¡disfruta!</div>`}
+        ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Movimientos</div><div style="max-height:180px;overflow-y:auto">${(g.deposits||[]).map((d,i)=>({d,i})).reverse().map(({d,i})=>{const neg=(+d.amt||0)<0;const km=d.kind?savGoalWdKind(d.kind):null;const tag=km?'<span style="font-size:8px;margin-left:4px;padding:1px 5px;border-radius:4px;background:rgba(120,120,120,.12);color:'+km.c+';font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+km.e+' '+km.n.split(' ')[0]+'</span>':'';return '<div class="row-b" style="padding:4px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px;gap:6px"><span style="color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+tag+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold;white-space:nowrap">'+(neg?'':'+')+fx(d.amt)+'</span><span class="row" style="gap:2px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:10px" onclick="editSavGoalDep('+g.id+','+i+')" title="Editar">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 5px;font-size:10px" onclick="delSavGoalDep('+g.id+','+i+')" title="Eliminar">✕</button></span></div>';}).join('')}</div></div>`:''}
       </div>`;
     }).join(''):''}
     <div style="${S.savGoals.length>0?'border-top:1px solid var(--border);padding-top:14px;margin-top:4px':''}">

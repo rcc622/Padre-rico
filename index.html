@@ -393,7 +393,7 @@ let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},diarioUserCats:[],habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
@@ -448,7 +448,7 @@ function _normalizeState(st){
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
   if(!isObj(st.simSliders))st.simSliders={};
-  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats'];
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
   // mensual (a.inc). Los convertimos a tasa anual (a.yldPct) para que la
@@ -5167,12 +5167,15 @@ function rFlujo(){try{
   <!-- ═══ GASTOS FIJOS ═══ -->
   <div class="card">
     <div class="ct">${editExpId?'✏️ Editando gasto':'📋 Agregar gasto fijo'}</div>
-    ${!editExpId?`<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Acceso rápido:</div>
-    <div class="chips">${QUICK_EXP.map(q=>`<button class="chip" onclick="preExp('${q.n.replace(/'/g,"\\'")}','${q.c}')">${q.n}</button>`).join('')}</div>`:''}
-    ${(()=>{const ee=editExpId?S.exp.find(e=>e.id===editExpId):null;const freq=ee?.freq||'mensual';return`
-    <div style="display:grid;grid-template-columns:2fr 1fr;gap:10px;margin-bottom:10px">
-      <div><label>Concepto</label><input type="text" id="en" placeholder="Nombre del gasto..." value="${ee?ee.name:''}"></div>
-      <div><label>Categoría</label><select id="ec">${EXP_CATS.map(c=>`<option${ee&&ee.cat===c?' selected':''}>${c}</option>`).join('')}</select></div>
+    ${(()=>{const ee=editExpId?S.exp.find(e=>e.id===editExpId):null;const freq=ee?.freq||'mensual';const allCats=[...EXP_CATS,...(S.expUserCats||[])];return`
+    <div style="margin-bottom:10px"><label>Concepto</label><input type="text" id="en" placeholder="Nombre del gasto..." value="${ee?_escA(ee.name):''}"></div>
+    <div style="margin-bottom:10px">
+      <label>Categoría</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <select id="ec" style="flex:1">${allCats.map(c=>`<option${ee&&ee.cat===c?' selected':''}>${_escH(c)}</option>`).join('')}</select>
+        <button type="button" class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold;white-space:nowrap;padding:9px 11px" onclick="openExpCatModal()">+ Nueva</button>
+      </div>
+      ${(S.expUserCats||[]).length>0?`<div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="toggleExpCatManage()">⚙️ Gestionar mis categorías (${(S.expUserCats||[]).length}) ${S._ecManageOpen?'▲':'▼'}</button>${S._ecManageOpen?`<div style="margin-top:8px;padding:10px;background:rgba(120,120,120,.04);border-radius:6px;border:1px solid var(--border)">${(S.expUserCats||[]).map(c=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><span>${_escH(c)}</span><button type="button" class="btn btn-red btn-sm" style="padding:3px 6px;font-size:11px" onclick="rmExpUserCat('${_escA(c)}')">✕</button></div>`).join('')}</div>`:''}</div>`:''}
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Monto $</label><input type="number" id="ea" placeholder="0" value="${ee?ee.amt:''}" oninput="prevExpMo()"></div>
@@ -5719,6 +5722,34 @@ function nextPayDate(e){
   return today;
 }
 function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
+// Categorías personalizadas de gastos fijos (mismo patrón que los diarios):
+// dropdown con defaults (EXP_CATS) + las del usuario (S.expUserCats) y un
+// botón "+ Nueva". Al crear una, la agregamos al <select> SIN re-render para
+// no perder lo que el usuario ya tecleó en concepto/monto.
+function openExpCatModal(){
+  const body='<div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:6px">Nombre de la categoría</label><input type="text" id="newExpCatInput" placeholder="Ej: Mascota, Suscripciones, Diezmo..." maxlength="40" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>';
+  showConfirm('➕ Nueva categoría de gasto',body,()=>{
+    const v=(document.getElementById('newExpCatInput')?.value||'').trim();
+    if(!v){toast('Escribe un nombre');return;}
+    const all=[...EXP_CATS,...(S.expUserCats||[])];
+    if(!all.some(c=>c.toLowerCase()===v.toLowerCase())){
+      S.expUserCats=[...(S.expUserCats||[]),v];sv();
+    }
+    const sel=document.getElementById('ec');
+    if(sel){
+      if(!Array.from(sel.options).some(o=>o.value===v)){const o=document.createElement('option');o.value=v;o.textContent=v;sel.appendChild(o);}
+      sel.value=v;
+    }
+    toast('✓ Categoría creada');
+  });
+  setTimeout(()=>document.getElementById('newExpCatInput')?.focus(),120);
+}
+function toggleExpCatManage(){S._ecManageOpen=!S._ecManageOpen;sv();if(cur==='flujo')rFlujo();}
+function rmExpUserCat(name){
+  pt({expUserCats:(S.expUserCats||[]).filter(c=>c!==name)});
+  toast('Categoría eliminada');
+  if(cur==='flujo')rFlujo();
+}
 // ══ INCOME HISTORY ══════════════════════════════════
 let _incEdited=false;
 function _refreshIncSaveBtn(){

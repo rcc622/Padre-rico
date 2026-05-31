@@ -808,7 +808,12 @@ function toggleLongCycle(){
   }
   sv();rFlujo();rPlan();rHabitos();
 }
-function totalDiariosCycle(ck){return diariosThisCycle(ck).filter(g=>!g.pending).reduce((a,g)=>a+(+g.amt||0),0);}
+// Total de gastos diarios del ciclo que SALIERON DE EFECTIVO (débito). Los
+// pagados con TDC NO se incluyen: no tocan tu efectivo ahora, se descuentan
+// vía "💳 Pago TDC" (modelo de flujo de efectivo, evita doble conteo).
+function totalDiariosCycle(ck){return diariosThisCycle(ck).filter(g=>!g.pending&&g.paidWith!=='tdc').reduce((a,g)=>a+(+g.amt||0),0);}
+// Igual que totalDiariosCycle pero solo el conteo (para etiquetas).
+function diariosCashCount(ck){return diariosThisCycle(ck).filter(g=>!g.pending&&g.paidWith!=='tdc').length;}
 function calcImpulseSpent(ck){
   let total=0;
   Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
@@ -7473,12 +7478,22 @@ try{
   // apartado → Nu express"), no mezclado con Pagos aplicados.
   let metaAppliedAmt=0,metaCheckedAmt=0;
   if(!showNext){
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(isApplied(pt2,e.id))appliedAmt2+=v;else if(isPaid(pt2,e.id))checkedAmt+=v;});
-    debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(isApplied('debt',e.id))appliedAmt2+=v;else if(isPaid('debt',e.id))checkedAmt+=v;});
+    // Modelo de flujo de efectivo: un gasto pagado con TDC NO sale de tu
+    // efectivo al aplicarlo (queda en la tarjeta); sale cuando registras el
+    // "💳 Pago TDC". Por eso los items con paidWith==='tdc' se EXCLUYEN aquí y
+    // en su lugar sumamos el Pago TDC (items 'tdcpay_'). Así evitamos el doble
+    // conteo y el monto cuadra con la lista de PAGADOS.
+    const _isTdc=(type,id)=>getPaidMethod(type,id)==='tdc';
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(_isTdc(pt2,e.id))return;if(isApplied(pt2,e.id))appliedAmt2+=v;else if(isPaid(pt2,e.id))checkedAmt+=v;});
+    debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(_isTdc('debt',e.id))return;if(isApplied('debt',e.id))appliedAmt2+=v;else if(isPaid('debt',e.id))checkedAmt+=v;});
     S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{const _ma=metaCycleAmt(g,planCk());if(isApplied('sav',g.id))metaAppliedAmt+=_ma;else if(isPaid('sav',g.id))metaCheckedAmt+=_ma;});
-    expSavePlan.forEach(e=>{if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
+    expSavePlan.forEach(e=>{if(_isTdc('apt',e.id))return;if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
     // Impulse items: applied → counted in appliedAmt2, selected → in checkedAmt
-    impulseItems.forEach(e=>{if(isApplied('imp',e.id))appliedAmt2+=e.amt;else if(isPaid('imp',e.id))checkedAmt+=e.amt;});
+    impulseItems.forEach(e=>{if(_isTdc('imp',e.id))return;if(isApplied('imp',e.id))appliedAmt2+=e.amt;else if(isPaid('imp',e.id))checkedAmt+=e.amt;});
+    // Pago TDC (items sintéticos 'tdcpay_'): dinero real que SÍ salió de tu
+    // efectivo al pagar la tarjeta. Suma al monto de aplicados.
+    const _itemsTdcPay=(S.paidItems||{})[planCk()]||{};
+    Object.keys(_itemsTdcPay).forEach(k=>{if(!k.startsWith('tdcpay_'))return;const v=_itemsTdcPay[k];if(v&&typeof v==='object'&&v.applied)appliedAmt2+=(+v.amt||0);});
   }
   const impPendingTotal=impulseItems.filter(p=>!isPaid('imp',p.id)&&!isApplied('imp',p.id)).reduce((a,p)=>a+p.amt,0);
   const impAllTotal=impulseItems.reduce((a,p)=>a+p.amt,0);
@@ -7645,10 +7660,10 @@ try{
       <div style="font-size:13px;line-height:2.2">
         <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
         ${_otEarned>0?`<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra ${showNext?'(este ciclo → próx. payroll)':'(ciclo anterior · por cobrar)'}</span><strong style="color:var(--sky)">+${fx(_otEarned)}</strong></div>`:''}
-        ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.filter(p=>p.ptype!=='sav').length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
-        ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
+        ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
+        ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
         ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
-        ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosThisCycle(planCk()).length})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
+        ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosCashCount(planCk())})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
         ${_metaOut>0?`<div class="row-b"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount})</span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></div>`:''}
         ${_savAmt>0?`<div class="row-b"><span style="color:var(--sage)">🪙 Ahorro apartado${_savAsset?' → '+_savAsset.name:''}</span><strong style="color:var(--sage)">−${fx(Math.round(_savAmt))}</strong></div>`:''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
@@ -7768,7 +7783,7 @@ try{
         }).join('');
         return `<div style="margin-top:10px;padding-top:10px;border-top:2px dashed var(--terra)">
           <div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:4px">🛒 Gastos diarios del ciclo (${ds.length})</div>
-          <div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.5">Solo informativo. Estos gastos ya están contados arriba en "🛒 Gastos diarios" — no se aplican ni se suman aquí.</div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.5">Solo informativo. Los pagados con débito ya están contados arriba en "🛒 Gastos diarios". Los pagados con 💳 TDC no tocan tu efectivo ahora — se descuentan cuando registras el "💳 Pago TDC".</div>
           ${rows}
           <div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px solid var(--terra)"><span style="font-size:10px;color:var(--muted);font-style:italic">Total diarios (ya incluido arriba):</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(total))}</span></div>
         </div>`;

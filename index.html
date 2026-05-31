@@ -6612,9 +6612,13 @@ function calcDebtInterest(){
   if(t<=p){out.innerHTML='<span style="color:var(--terra)">El total a pagar debe ser mayor al préstamo.</span>';return;}
   const intAmt=t-p;
   const intPct=(intAmt/p)*100;
+  const meses=+(document.getElementById('dtot')?.value)||0;
+  const perPayLine=meses>0?'<div class="row-b" style="margin-bottom:4px"><span>Interés por pago:</span><strong style="color:var(--terra)">'+fx(Math.round(intAmt/meses))+'</strong></div>':'';
   out.innerHTML='<div class="row-b" style="margin-bottom:4px"><span>Interés total ($):</span><strong style="color:var(--terra)">'+fx(intAmt)+'</strong></div>'
     +'<div class="row-b" style="margin-bottom:4px"><span>Interés total (%):</span><strong style="color:var(--terra)">'+intPct.toFixed(1)+'%</strong></div>'
-    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Por cada $1,000 que te prestaron, regresas $'+fx(Math.round(1000*t/p))+'.</div>';
+    +perPayLine
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Por cada $1,000 que te prestaron, regresas $'+fx(Math.round(1000*t/p))+'.</div>'
+    +'<div style="font-size:10px;color:var(--sage);margin-top:6px;line-height:1.5;font-weight:bold">✓ Este interés se guardará con tu deuda (verás el badge 📊 con cuánto se te va en interés).</div>';
 }
 // Calculadora standalone (widget en Deudas, sin necesidad de registrar
 // una deuda). Calcula intereses + tasa anual aproximada + cuota mensual
@@ -6657,7 +6661,33 @@ function _calcLoanStandalone(){
     +catLine
     +'<div style="margin-top:10px;padding:10px;background:rgba(160,112,48,.06);border-radius:8px;font-size:11px;color:var(--txt2);line-height:1.6">💡 Por cada <strong>$1,000</strong> que te prestan, vas a regresar <strong style="color:var(--terra)">'+fx(Math.round(1000*ratio))+'</strong>. '
     +(intPct>50?'Es un costo MUY alto — busca otra oferta si puedes.':intPct>30?'Costo elevado — compara con otras opciones antes de firmar.':intPct>15?'Tasa moderada para crédito al consumo.':'Tasa razonable.')
-    +'</div>';
+    +'</div>'
+    +'<button type="button" class="btn btn-sage btn-sm" style="width:100%;margin-top:12px" onclick="_applyLoanCalcToDebt()">➕ Registrar como deuda con este interés</button>';
+}
+// Puente informativa → funcional: toma lo que el usuario ya calculó en el
+// widget "¿Piensas pedir un préstamo?" y precarga el form "Registrar deuda"
+// con el interés aplicado (saldo, cuota mensual, plazo, % de interés).
+function _applyLoanCalcToDebt(){
+  const p=+(document.getElementById('loanCalcPrinc')?.value)||0;
+  const t=+(document.getElementById('loanCalcTotal')?.value)||0;
+  const m=+(document.getElementById('loanCalcMonths')?.value)||0;
+  if(p<=0||t<=0||t<=p){toast('Primero calcula un préstamo válido (total > préstamo)');return;}
+  editDebtId=null;flujoView='deudas';
+  rFlujo();
+  setTimeout(()=>{
+    const setV=(id,v)=>{const el=document.getElementById(id);if(el)el.value=(v===''||v==null)?'':v;};
+    setV('db',p);
+    if(m>0){const dpf=document.getElementById('dpf');if(dpf)dpf.value='mensual';try{updDebtUnico&&updDebtUnico();}catch(_){}}
+    setV('dm',m>0?Math.round(t/m):'');
+    setV('dtot',m>0?m:'');
+    const cb=document.getElementById('dHasInt');if(cb){cb.checked=true;updDebtInt();}
+    setV('dPrinc',p);setV('dTotal',t);
+    calcDebtInterest();
+    const det=document.getElementById('dn')?.closest('details');if(det)det.open=true;
+    const dn=document.getElementById('dn');
+    if(dn){dn.scrollIntoView({behavior:'smooth',block:'center'});dn.focus();}
+    toast('✓ Datos copiados al registro — ponle nombre y guarda');
+  },80);
 }
 function addDebt(){
   const n=document.getElementById('dn')?.value.trim();
@@ -8741,12 +8771,7 @@ function rHabitos(){
       <div style="margin-bottom:10px"><label>Fecha esperada de pago</label><input type="date" id="cbgDateExp"></div>
       <button type="button" class="btn" style="width:100%;background:var(--sky);color:#fff;padding:12px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="addCobranza('gd')">+ Registrar cobranza</button>
     </div>
-    ${pend.length>0?`<div class="card">
-      <div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">💵 Por cobrar (${pend.length})</div><span style="font-size:11px;color:${vencidas>0?'var(--terra)':'var(--muted)'}">${vencidas>0?vencidas+' vencida'+(vencidas!==1?'s':''):''}</span></div>
-      ${pend.map(renderItem).join('')}
-      <div class="row-b" style="padding-top:8px;margin-top:4px;border-top:1px solid var(--sky)"><span style="font-size:12px;color:var(--sky);font-weight:bold">Total por cobrar:</span><span style="font-size:14px;color:var(--sky);font-weight:bold">${fx(totalPend)}</span></div>
-      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="flujoView='cobranza';go('flujo')">Ver historial completo en Ingresos y Gastos →</button>
-    </div>`:`<div class="card" style="text-align:center;padding:18px"><div style="font-size:12px;color:var(--muted);line-height:1.6">Sin cobranzas pendientes. Registra una arriba o revisa el historial en <strong>💰 Ingresos y Gastos → 💵 Cobranza</strong>.</div></div>`}
+    ${`<div class="card card-link" onclick="flujoView='cobranza';go('flujo')" style="text-align:center;padding:16px;cursor:pointer"><div style="font-size:13px;color:var(--sky);font-weight:bold">🤝 Ver todas mis cobranzas${pend.length>0?` (${pend.length} por cobrar · ${fx(totalPend)})`:''} →</div><div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Gestiónalas, cóbralas y revisa el historial en 💰 Ingresos y Gastos → Cobranza</div></div>`}
   `;})():''}
   `;
 }

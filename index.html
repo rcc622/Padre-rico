@@ -7722,6 +7722,36 @@ try{
           <div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px solid var(--terra)"><span style="font-size:10px;color:var(--terra)">Total impulsos:</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(impTotal))}</span></div>
         </div>`;
       })()}
+      ${(()=>{
+        // Subsección INFORMATIVA: detalle de los gastos diarios del ciclo.
+        // OJO: NO suma a ningún total ni se aplica — es solo el desglose del
+        // mismo monto que ya aparece arriba en "🛒 Gastos diarios" del Estado
+        // de cuenta. Sin checkbox a propósito (los diarios ya están contados).
+        if(showNext)return'';
+        const ds=diariosThisCycle(planCk()).filter(g=>!g.pending);
+        if(!ds.length)return'';
+        const total=ds.reduce((a,g)=>a+(+g.amt||0),0);
+        const rows=ds.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(g=>{
+          const c=diarioCat(g.cat);
+          const esen=isEsencial(g);
+          return `<div class="row-b" style="padding:5px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px;gap:8px">
+            <div class="row" style="gap:6px;flex:1;min-width:0">
+              <span style="flex-shrink:0">${c.e}</span>
+              <div style="min-width:0;overflow:hidden">
+                <div style="color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escH(g.name||c.n)}${esen?' <span style="font-size:8px;color:var(--muted);letter-spacing:.3px">🧾</span>':''}</div>
+                <div style="font-size:9px;color:var(--muted)">${fmtDate(g.date)} · ${_escH(c.n)}${g.paidWith==='tdc'?' · 💳':''}</div>
+              </div>
+            </div>
+            <span style="color:var(--terra);font-weight:bold;white-space:nowrap;flex-shrink:0">−${fx(Math.round(+g.amt||0))}</span>
+          </div>`;
+        }).join('');
+        return `<div style="margin-top:10px;padding-top:10px;border-top:2px dashed var(--terra)">
+          <div style="font-size:10px;color:var(--terra);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:4px">🛒 Gastos diarios del ciclo (${ds.length})</div>
+          <div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.5">Solo informativo. Estos gastos ya están contados arriba en "🛒 Gastos diarios" — no se aplican ni se suman aquí.</div>
+          ${rows}
+          <div class="row-b" style="padding-top:4px;margin-top:4px;border-top:1px solid var(--terra)"><span style="font-size:10px;color:var(--muted);font-style:italic">Total diarios (ya incluido arriba):</span><span style="font-size:11px;color:var(--terra);font-weight:bold">${fx(Math.round(total))}</span></div>
+        </div>`;
+      })()}
     </div>
 
     <!-- AHORROS OPCIONAL -->

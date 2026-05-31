@@ -65,8 +65,9 @@ button:active{transform:scale(.97)}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
 .row-b{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;min-width:0}
-.stat{font-size:26px;font-weight:bold;line-height:1}
-.stat-sm{font-size:18px;font-weight:bold;line-height:1}
+.stat{font-size:26px;font-weight:bold;line-height:1;font-variant-numeric:tabular-nums}
+.stat-sm{font-size:18px;font-weight:bold;line-height:1;font-variant-numeric:tabular-nums}
+.score-chip{font-variant-numeric:tabular-nums}
 .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-top:3px}
 .pw{background:var(--bg2);border-radius:4px;height:6px;overflow:hidden;margin-top:7px}
 .pb{height:100%;border-radius:4px;transition:width .7s ease}
@@ -809,6 +810,36 @@ function toggleLongCycle(){
     toast('✓ Marcada como quincena larga · Sem 3 disponible');
   }
   sv();rFlujo();rPlan();rHabitos();
+}
+// Fuente de verdad: ¿el día-del-mes `pd` cae dentro de la ventana de ciclo
+// `w` (={start,end})? Misma lógica que los dayInC/dayInN locales del Plan,
+// centralizada para que Dashboard y Plan coincidan.
+function dayInWindow(pd,w){
+  if(!pd||!w)return false;
+  const s=w.start,e=w.end;const tds=[];
+  for(let tm=s.getMonth()-1;tm<=e.getMonth()+1;tm++){
+    const mx=new Date(s.getFullYear(),tm+1,0).getDate();
+    if(pd<=mx)tds.push(new Date(s.getFullYear(),tm,pd));
+  }
+  return tds.some(td=>td>=s&&td<=e);
+}
+// Gasto fijo que CAE en un ciclo (quincena), replicando exactamente la
+// lógica del Plan de Acción: los gastos semanales se cuentan por las
+// SEMANAS REALES del ciclo (2 ó 3), no por el promedio mensual ×4.33. Así
+// el Dashboard cuadra con el Plan en la misma quincena. Sin argumento usa
+// el ciclo actual (y respeta el override de "quincena larga").
+function cycleExpenseTotal(w){
+  const win=w||getCycleWindow();
+  const isCurrent=!w;
+  let total=0;
+  (S.exp||[]).forEach(e=>{
+    const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
+    if(f==='semanal')total+=(+e.amt||0)*(isCurrent?getWeeksInCycle():getWeeksInCycle(win));
+    else if(f==='quincenal')total+=(+e.amt||0);
+    else if(pd>0&&dayInWindow(pd,win))total+=mo;
+    else if(!pd)total+=mo/2;
+  });
+  return total;
 }
 // Total de gastos diarios del ciclo que SALIERON DE EFECTIVO (débito). Los
 // pagados con TDC NO se incluyen: no tocan tu efectivo ahora, se descuentan
@@ -3109,7 +3140,10 @@ function rDash(){
   const div=isQ?2:1;
   const pLbl=isQ?'/qna':'/mes';
   const pInc=mInc()/div;
-  const pExp=tExp()/div;
+  // Gastos fijos: en vista quincenal usamos el gasto REAL del ciclo (mismas
+  // semanas que el Plan), no el promedio mensual÷2, para que el KPI "/qna"
+  // cuadre con el Plan de Acción. En vista mensual seguimos con el mensual.
+  const pExp=isQ?cycleExpenseTotal():tExp();
   const pDebtPay=tDebtPay()/div;
   const pSav=savAmt()/div;
   const pExtras=tExtras()/div;
@@ -3117,9 +3151,6 @@ function rDash(){
   const pFlow=pInc+pExtras-pExp-pSav-pSavGoals-pDebtPay;
 
   document.getElementById('tab-dash').innerHTML=`
-  <!-- FRENTE 4 · SABIDURÍA DEL DÍA (Hooked: Hunt reward diario) -->
-  ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:14px 16px;margin-bottom:13px;background:linear-gradient(135deg,rgba(78,124,106,.04) 0%,rgba(74,110,140,.02) 100%)"><div class="row" style="gap:12px;align-items:flex-start"><div style="font-size:30px;line-height:1;flex-shrink:0">${w.icon}</div><div style="flex:1;min-width:0"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px;font-weight:bold">💡 Sabiduría del día · ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.65">${w.text}</div></div></div></div>`;}catch(e){return'';}})()}
-
   <!-- CIERRE INMINENTE (≤2 días) -->
   ${(()=>{try{
     const w=getCycleWindow();
@@ -3425,6 +3456,9 @@ function rDash(){
       <span>${S.waitList.filter(w=>!w.bought&&w.resolved).length} compras impulsivas evitadas</span>
     </div>
   </div>
+
+  <!-- FRENTE 4 · SABIDURÍA DEL DÍA (al final: primero el dinero, luego la inspiración) -->
+  ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:14px 16px;margin-bottom:13px;background:linear-gradient(135deg,rgba(78,124,106,.04) 0%,rgba(74,110,140,.02) 100%)"><div class="row" style="gap:12px;align-items:flex-start"><div style="font-size:30px;line-height:1;flex-shrink:0">${w.icon}</div><div style="flex:1;min-width:0"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px;font-weight:bold">💡 Sabiduría del día · ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.65">${w.text}</div></div></div></div>`;}catch(e){return'';}})()}
   `;
 }
 

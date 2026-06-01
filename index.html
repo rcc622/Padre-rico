@@ -1367,15 +1367,20 @@ function _isRetoSavings(retoId){
 // Bridge: when a savings reto completes, offer to deposit the amount via Fase 2 flow
 function _offerSavingsDeposit(amt,retoName,retoId){
   if(!amt||amt<=0)return;
+  window._offerSavCtx={amt,retoName,retoId};
   const chainHabito=()=>{if(retoId)setTimeout(()=>{try{_offerDeclareHabito(retoId);}catch(e){}},500);};
   if(!S.assets||S.assets.length===0){
-    showInfo('🏦 Reto de ahorro completado','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Completaste un reto de <strong>'+fx(amt)+'</strong> de ahorro real.<br><br>Para registrarlo en tu patrimonio, primero necesitas crear un activo (Mercado Pago, Cajita Nu, etc) en <strong>Ingresos y Gastos → 🏦 Activos</strong>.<br><br>Una vez creado, puedes registrar el depósito desde Inicio con <em>"Págate a ti primero"</em>.</div>');
-    chainHabito();
+    // Antes era un callejón sin salida (te mandaba a crear el activo en otra
+    // pantalla y perdías el depósito). Ahora creamos la cuenta aquí mismo y
+    // reanudamos el depósito del reto.
+    quickCreateAsset(()=>{const c=window._offerSavCtx;if(c)_offerSavingsDeposit(c.amt,c.retoName,c.retoId);},{title:'🏦 Tu primera cuenta',intro:'Completaste un reto de ahorro de '+fx(amt)+'. Para sumarlo a tu patrimonio crea la cuenta donde lo guardas y lo registramos al instante.'});
     return;
   }
   const assetOptions=S.assets.map(a=>'<label class="row" style="gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_retoSavAsset" value="'+a.id+'" style="margin:0"><div style="flex:1"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:10px;color:var(--muted)">Saldo actual: '+fx(a.val)+'</div></div></label>').join('');
-  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.6">Completaste un reto de ahorro: <strong style="color:var(--sage)">'+retoName+'</strong> · <strong>'+fx(amt)+'</strong>.<br><br>¿A cuál activo lo depositaste?</div>'
-    +'<div style="max-height:240px;overflow-y:auto;margin-bottom:4px">'+assetOptions+'</div>'
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.6">Completaste un reto de ahorro: <strong style="color:var(--sage)">'+_escH(retoName)+'</strong> · <strong>'+fx(amt)+'</strong>.<br><br>¿A cuál cuenta lo depositaste?</div>'
+    +'<div style="max-height:240px;overflow-y:auto;margin-bottom:4px">'+assetOptions
+    +'<button type="button" class="row" style="width:100%;gap:10px;padding:10px 12px;border:2px dashed rgba(78,124,106,.4);border-radius:8px;margin-bottom:6px;cursor:pointer;background:transparent;color:var(--sage);font-weight:bold;font-family:Georgia,serif;font-size:13px;justify-content:center" onclick="quickCreateAsset(()=>{const c=window._offerSavCtx;if(c)_offerSavingsDeposit(c.amt,c.retoName,c.retoId);})">+ Nueva cuenta</button>'
+    +'</div>'
     +'<div style="font-size:10px;color:var(--muted);margin-top:8px;text-align:center">O cierra esta ventana si no moviste dinero real.</div>';
   showConfirm('🏦 ¿Depositar ahorro?',body,()=>{
     const radio=document.querySelector('input[name="_retoSavAsset"]:checked');
@@ -1794,14 +1799,17 @@ function depositSavGoal(id,prefix){
   // Pedir activo destino: el abono entra a una cuenta real (Nu, Mercado Pago,
   // efectivo). Suma al saldo de ese activo para que el patrimonio lo refleje.
   if(!S.assets||S.assets.length===0){
-    showInfo('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para registrar el abono necesitas un destino real (Nu, Mercado Pago, efectivo). Créalo en <strong>Ingresos y Gastos → 🏦 Activos</strong>.</div>');
+    // Sin cuenta no hay dónde registrar el abono. Creamos una aquí mismo y al
+    // terminar reanudamos el abono (el monto tecleado sigue en su campo).
+    quickCreateAsset(()=>{ depositSavGoal(id,prefix); },{title:'🌱 Tu primera cuenta',intro:'Para registrar el abono primero necesitas una cuenta donde entre el dinero (Nu, Mercado Pago, efectivo…). Créala aquí y seguimos.'});
     return;
   }
   const lastAssetId=g.lastAssetId||S.assets[0].id;
   const body='<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a abonar</div><div style="font-size:24px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+' → '+(g.icon||'🎯')+' '+g.name+'</div></div>'
-    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A qué activo entra el dinero?</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A qué cuenta entra el dinero?</div>'
     +'<div style="max-height:240px;overflow-y:auto">'
     +S.assets.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===lastAssetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===lastAssetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_depAsset" value="'+a.id+'" '+(a.id===lastAssetId?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+'</div></div></label>').join('')
+    +'<button type="button" class="row" style="width:100%;gap:10px;padding:12px;border:2px dashed rgba(78,124,106,.4);border-radius:8px;margin-bottom:6px;cursor:pointer;background:transparent;color:var(--sage);font-weight:bold;font-family:Georgia,serif;font-size:13px;justify-content:center" onclick="quickCreateAsset(()=>{depositSavGoal('+id+',\''+pfx+'\')})">+ Nueva cuenta</button>'
     +'</div>'
     +'<div style="margin-top:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_depDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
     +'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6;font-style:italic">El abono se suma al saldo del activo seleccionado.</div>';
@@ -5559,8 +5567,8 @@ function rFlujo(){try{
   </details>
 
   <!-- REGISTRAR / EDITAR ACTIVO -->
-  <div class="card">
-    <div class="ct">${editAssetId?'✏️ Editando activo':'+ Registrar activo'}</div>
+  <div class="card" style="${editAssetId?'border:2px solid var(--amber);background:rgba(160,112,48,.05);box-shadow:0 0 0 4px rgba(160,112,48,.08)':''}">
+    <div class="ct" style="${editAssetId?'color:var(--amber)':''}">${editAssetId?'✏️ Editando: '+_escH((S.assets.find(a=>a.id===editAssetId)||{}).name||'activo'):'+ Registrar activo'}</div>
     ${(()=>{const ea=editAssetId?S.assets.find(a=>a.id===editAssetId):null;return`
     <div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="an" placeholder="Mercado Pago BMG, Cajita Nu..." value="${ea?ea.name:''}"></div>
     <div style="margin-bottom:10px"><label>Saldo actual ($)</label><input type="number" id="av" placeholder="0" value="${ea?ea.val:''}"></div>
@@ -5658,7 +5666,7 @@ function rFlujo(){try{
           <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
           <div class="row" style="gap:4px">
             <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Ajustar saldo">🔄</button>
-            <button class="btn btn-ghost btn-sm" onclick="editAssetId=${a.id};rFlujo()" title="Editar">✏️</button>
+            <button class="btn btn-ghost btn-sm" onclick="editAsset(${a.id})" title="Editar">✏️</button>
             <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
           </div>
         </div>
@@ -6300,6 +6308,45 @@ function openQuickAsset(){
   });
 }
 
+// Creador de cuenta/activo INLINE y reutilizable. A diferencia de la sección
+// "Activos", éste vive dentro de otros flujos (Págate Primero, abono a meta)
+// para que el usuario NO tenga que salir, crear el activo y perder el hilo.
+// onCreated(id) se ejecuta DESPUÉS de cerrar el modal, así que puede reabrir
+// el flujo de origen sin que closeConfirm lo tape.
+let _qcaOnCreated=null;
+function quickCreateAsset(onCreated,opts){
+  opts=opts||{};
+  _qcaOnCreated=onCreated||null;
+  const intro=opts.intro||'Una <strong>cuenta</strong> es el lugar real donde vive tu dinero: Nu, Mercado Pago, una inversión o hasta efectivo en una caja. Tu ahorro y tus metas entran aquí.';
+  const body='<div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:12px;padding:10px;background:rgba(78,124,106,.05);border-radius:8px">🏦 '+intro+'</div>'
+    +'<div style="margin-bottom:8px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">¿Cómo se llama?</label><input type="text" id="qcaName" placeholder="Cajita Nu, Mercado Pago, efectivo…" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">¿Cuánto hay hoy? ($)</label><input type="number" id="qcaVal" placeholder="0" inputmode="decimal" style="width:100%;padding:11px;font-size:18px;text-align:center;font-weight:bold;color:var(--sage);border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"><div style="font-size:10px;color:var(--muted);margin-top:4px">Puede ser 0 si la abres ahora. Después le sumas tu ahorro.</div></div>'
+    +'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:12px;color:var(--txt2);padding:8px 10px;background:rgba(78,124,106,.05);border-radius:6px;margin-bottom:8px"><input type="checkbox" id="qcaGen" onchange="document.getElementById(\'qcaYieldWrap\').style.display=this.checked?\'block\':\'none\'" style="width:auto;accent-color:var(--sage)">¿Genera rendimiento? (BMG, Cetes, Cajita…)</label>'
+    +'<div id="qcaYieldWrap" style="display:none;margin-bottom:4px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Rendimiento anual (%)</label><input type="number" id="qcaYield" placeholder="0" step="0.1" style="width:100%;padding:9px;font-size:14px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>';
+  showConfirm(opts.title||'🏦 Crea tu cuenta',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="quickCreateAssetCancel()" style="flex:0 0 auto;padding:10px 16px">Cancelar</button><button class="btn btn-sage" onclick="_quickCreateAssetSave()" style="flex:1">✓ Crear cuenta</button>';
+  setTimeout(()=>document.getElementById('qcaName')?.focus(),120);
+}
+function quickCreateAssetCancel(){_qcaOnCreated=null;closeConfirm();}
+function _quickCreateAssetSave(){
+  const n=(document.getElementById('qcaName')?.value||'').trim();
+  if(!n){toast('Ponle un nombre a la cuenta');return;}
+  const v=+(document.getElementById('qcaVal')?.value)||0;
+  const gen=!!document.getElementById('qcaGen')?.checked;
+  const yldPct=gen?(+(document.getElementById('qcaYield')?.value)||0):0;
+  const id=Date.now();
+  const ev=_mkAssetEvent('init',v,'Saldo inicial registrado',_todayYMD());
+  S.assets=[...(S.assets||[]),{id,name:n,val:v,gen,yldPct,events:v>0?[ev]:[]}];
+  sv();
+  const cb=_qcaOnCreated;_qcaOnCreated=null;
+  closeConfirm();
+  toast('🏦 Cuenta "'+n+'" creada');
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  if(typeof cb==='function')cb(id);
+}
+
 // ══ Ingreso extra rápido desde el FAB ══════════════════════════════════
 // Permite registrar un ingreso extra (único o recurrente) sin salir de la
 // pantalla actual. Empuja a S.extras con la misma estructura que usa addExtra()
@@ -6764,6 +6811,20 @@ function addDebt(){
   toast(f==='unico'?'💳 Pago único registrado':'⛓️ Deuda registrada');
   rFlujo();
 }
+// Entra a modo edición de un activo con feedback claro: re-renderiza, hace
+// scroll al formulario (que ahora muestra "Editando…" resaltado), enfoca el
+// nombre y avisa con un toast. Antes el botón ✏️ solo hacía editAssetId=…;
+// rFlujo() y el cambio ocurría arriba, fuera de vista, sin ninguna señal.
+function editAsset(id){
+  editAssetId=id;flujoView='activos';
+  if(cur!=='flujo')go('flujo');else rFlujo();
+  const a=(S.assets||[]).find(x=>x.id===id);
+  toast('✏️ Editando '+(a?a.name:'activo'));
+  setTimeout(()=>{
+    const el=document.getElementById('an');
+    if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}
+  },140);
+}
 function addAsset(){
   const n=document.getElementById('an')?.value.trim();
   const v=+(document.getElementById('av')?.value)||0;
@@ -6978,9 +7039,10 @@ function startSavWizard(){
     return;
   }
   if(!S.assets||S.assets.length===0){
-    showConfirm('🌱 Primero crea un activo','<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Para apartar tu ahorro necesitas un destino real donde guardarlo.<br><br>Ejemplos: <strong>Mercado Pago BMG</strong>, <strong>Cajita Nu</strong>, <strong>efectivo</strong> en una caja fuerte.<br><br>¿Lo creamos ahora?</div>',()=>{
-      closeConfirm();flujoView='activos';go('flujo');setTimeout(()=>{document.getElementById('an')?.focus();document.getElementById('an')?.scrollIntoView({behavior:'smooth',block:'center'});},200);
-    });
+    // Sin cuenta no hay dónde apartar. En vez de mandar al usuario a otra
+    // pantalla (y perder el hilo del ahorro), creamos la cuenta aquí mismo y
+    // al terminar reanudamos el wizard automáticamente.
+    quickCreateAsset(()=>{ startSavWizard(); },{title:'🌱 Tu primera cuenta',intro:'Para apartar tu ahorro primero necesitas una cuenta donde guardarlo (Nu, Mercado Pago, efectivo…). Créala aquí y seguimos sin perder el paso.'});
     return;
   }
   _savWizStep=1;
@@ -7058,9 +7120,10 @@ function _savWizStep2(){
   // rebuild. El monto definitivo se lee de :checked al confirmar.
   const body=_savWizProgress(2)
     +'<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a apartar</div><div style="font-size:28px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+'</div></div>'
-    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A cuál activo lo mandas?</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A cuál cuenta lo mandas?</div>'
     +'<div style="max-height:280px;overflow-y:auto;margin-bottom:4px">'
     +S.assets.map(a=>'<label class="row _savAssetRow" data-aid="'+a.id+'" style="gap:10px;padding:12px;border:2px solid '+(a.id===_savWizData.assetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===_savWizData.assetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_savAsset" value="'+a.id+'" '+(a.id===_savWizData.assetId?'checked':'')+' onchange="_savWizPickAsset('+a.id+')" style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx(+a.val+amt)+'</strong></div></div></label>').join('')
+    +'<button type="button" class="row" style="width:100%;gap:10px;padding:12px;border:2px dashed rgba(78,124,106,.4);border-radius:8px;margin-bottom:6px;cursor:pointer;background:transparent;color:var(--sage);font-weight:bold;font-family:Georgia,serif;font-size:13px;justify-content:center" onclick="quickCreateAsset(id=>{_savWizData.assetId=id;_savWizStep=2;_renderSavWiz();})">+ Nueva cuenta</button>'
     +'</div>';
   showConfirm('🪙 Paso 2 — Destino',body,null);
   // Importante: las etiquetas de activo usan class="row", así que

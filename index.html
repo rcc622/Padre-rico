@@ -5106,6 +5106,11 @@ function rFlujo(){try{
         <div><label>Fecha del préstamo</label><input type="date" id="cbDateLent" value="${today}"></div>
         <div><label>Fecha esperada de pago</label><input type="date" id="cbDateExp"></div>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px">
+        <div><label>🔁 Repetir</label><select id="cbRepeat" onchange="_cobRepeatHint('cb')"><option value="none">No repetir</option><option value="semanal">Cada semana</option><option value="quincenal">Cada quincena</option><option value="mensual">Cada mes</option></select></div>
+        <div id="cbRepeatCountWrap" style="display:none"><label>¿Cuántas veces? <span style="color:var(--muted);font-weight:normal;text-transform:none">(finita)</span></label><input type="number" id="cbRepeatCount" value="3" min="2" max="52" inputmode="numeric" oninput="_cobRepeatHint('cb')"></div>
+      </div>
+      <div id="cbRepeatHint" style="display:none;font-size:10px;color:var(--sky);margin-bottom:10px;line-height:1.5"></div>
       <button class="btn" style="width:100%;background:var(--sky);color:#fff;padding:11px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="addCobranza()">+ Registrar cobranza</button>
 
       ${pend.length>0?(()=>{
@@ -5123,7 +5128,7 @@ function rFlujo(){try{
           return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">
             <div class="row-b" style="margin-bottom:6px">
               <div style="flex:1;min-width:0">
-                <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}</div>
+                <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}${c.repeatId?`<span style="font-size:9px;margin-left:6px;padding:1px 5px;border-radius:4px;background:rgba(74,110,140,.12);color:var(--sky);font-weight:bold;letter-spacing:.3px">🔁 ${c.repeatIdx||''}/${c.repeatTotal||''}</span>`:''}</div>
                 ${c.concept?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${_escH(c.concept)}</div>`:''}
                 <div style="font-size:10px;color:${tagColor};margin-top:4px">${tagText}${c.dateLent?` · prestado ${fmtDate(c.dateLent)}`:''}</div>
               </div>
@@ -5950,19 +5955,62 @@ function _refreshCobranza(){
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
   try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
 }
+// Avanza una fecha YYYY-MM-DD por un periodo (semanal/quincenal/mensual).
+// Devuelve '' si la fecha de entrada es vacía (para no inventar fechas).
+function _cobAdvanceDate(ymd,freq,steps){
+  if(!ymd)return '';
+  const d=new Date(ymd+'T12:00');
+  if(isNaN(d))return '';
+  if(freq==='semanal')d.setDate(d.getDate()+7*steps);
+  else if(freq==='quincenal')d.setDate(d.getDate()+15*steps);
+  else if(freq==='mensual')d.setMonth(d.getMonth()+steps);
+  return _ymdLocal(d);
+}
+// Muestra/oculta el campo "¿cuántas veces?" y un hint con la fecha final de
+// la serie. p='cb' (Ingresos) o 'cbg' (Día a día). La repetición es finita:
+// el usuario define cuántas ocurrencias quiere.
+function _cobRepeatHint(p){
+  const freq=document.getElementById(p+'Repeat')?.value||'none';
+  const wrap=document.getElementById(p+'RepeatCountWrap');
+  const hint=document.getElementById(p+'RepeatHint');
+  if(wrap)wrap.style.display=freq==='none'?'none':'block';
+  if(!hint)return;
+  if(freq==='none'){hint.style.display='none';hint.textContent='';return;}
+  const count=Math.max(1,Math.min(52,Math.round(+(document.getElementById(p+'RepeatCount')?.value)||1)));
+  const base=document.getElementById(p+'DateExp')?.value||document.getElementById(p+'DateLent')?.value||_todayYMD();
+  const last=_cobAdvanceDate(base,freq,count-1);
+  const lbl={semanal:'semanal',quincenal:'quincenal',mensual:'mensual'}[freq];
+  hint.style.display='block';
+  hint.textContent='🔁 Se crearán '+count+' cobranzas ('+lbl+'). '+(last?'La última caería ~'+fmtDate(last)+'.':'');
+}
 function addCobranza(src){
-  // src='gd' → widget de Diarios (ids con prefijo cbg); default → Ingresos (cb)
+  // src='gd' → widget de Día a día (ids con prefijo cbg); default → Ingresos (cb)
   const p=src==='gd'?'cbg':'cb';
   const debtor=document.getElementById(p+'Debtor')?.value.trim();
   const concept=document.getElementById(p+'Concept')?.value.trim();
   const amount=+(document.getElementById(p+'Amount')?.value)||0;
   const dateLent=document.getElementById(p+'DateLent')?.value||_todayYMD();
   const dateExpected=document.getElementById(p+'DateExp')?.value||'';
+  const repeat=document.getElementById(p+'Repeat')?.value||'none';
+  let count=repeat==='none'?1:Math.max(1,Math.min(52,Math.round(+(document.getElementById(p+'RepeatCount')?.value)||1)));
   if(!debtor){toast('¿Quién te debe?');return;}
   if(amount<=0){toast('Monto inválido');return;}
-  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false};
-  pt({cobranzas:[...(S.cobranzas||[]),c]});
-  toast('✓ Cobranza registrada · '+fx(amount)+' por cobrar');
+  // Genera N ocurrencias con la misma config; cada una avanza fecha de
+  // préstamo y de pago esperado según el periodo. La primera (steps=0) usa
+  // las fechas tal cual. Un repeatId común las vincula como serie.
+  const repeatId=repeat==='none'?null:_uid();
+  const nuevas=[];
+  for(let i=0;i<count;i++){
+    nuevas.push({
+      id:_uid(),debtor,concept,amount,
+      dateLent:_cobAdvanceDate(dateLent,repeat,i)||dateLent,
+      dateExpected:_cobAdvanceDate(dateExpected,repeat,i),
+      paid:false,
+      ...(repeatId?{repeatId,repeatFreq:repeat,repeatIdx:i+1,repeatTotal:count}:{})
+    });
+  }
+  pt({cobranzas:[...(S.cobranzas||[]),...nuevas]});
+  toast(count>1?'✓ '+count+' cobranzas registradas · '+fx(amount)+' c/u':'✓ Cobranza registrada · '+fx(amount)+' por cobrar');
   _refreshCobranza();
 }
 function rmCobranza(id){
@@ -8665,10 +8713,30 @@ function rHabitos(){
         <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
         <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
         ${(()=>{
-          // Resumen de retiros separando emergencias vs enganches/proveedores.
-          const wd={};(g.deposits||[]).forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
-          const keys=Object.keys(wd);if(!keys.length)return '';
-          return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">'+keys.map(k=>{const km=savGoalWdKind(k);return '<span style="font-size:10px;padding:3px 8px;border-radius:6px;background:rgba(120,120,120,.08);color:'+(km?km.c:'var(--muted)')+';font-weight:bold">'+(km?km.e+' '+km.n.split(' ')[0]:k)+': −'+fx(wd[k])+'</span>';}).join('')+'</div>';
+          // Barra apilada por concepto: del total ABONADO (bruto), muestra
+          // cuánto QUEDÓ neto (verde) y cuánto salió por cada tipo de retiro
+          // (cada concepto con su color). Da una lectura visual de qué mermó
+          // el ahorro y cuánto entró de verdad a la cuenta al final.
+          const deps=g.deposits||[];
+          const totalIn=deps.filter(d=>(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
+          const wd={};deps.forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
+          const totalOut=Object.values(wd).reduce((a,v)=>a+v,0);
+          const net=Math.round((+g.saved||0));
+          if(totalIn<=0&&totalOut<=0)return '';
+          // El "todo" de la barra es el bruto abonado (net + salidas). Si por
+          // datos viejos net+out != totalIn, usamos el mayor para no romper %.
+          const base=Math.max(totalIn,net+totalOut,1);
+          const segs=[];
+          if(net>0)segs.push({c:'var(--sage)',v:net,lbl:'💰 Quedó neto'});
+          Object.keys(wd).forEach(k=>{const km=savGoalWdKind(k);segs.push({c:km?km.c:'var(--muted)',v:wd[k],lbl:(km?km.e+' '+km.n.split(' ')[0]:k)});});
+          const bar='<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:6px;background:rgba(120,120,120,.1)">'
+            +segs.map(s=>'<div title="'+s.lbl+': '+fx(s.v)+'" style="width:'+(s.v/base*100).toFixed(1)+'%;background:'+s.c+'"></div>').join('')
+            +'</div>';
+          const legend='<div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:8px">'
+            +segs.map(s=>'<span style="font-size:10px;color:var(--txt2);display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.c+';display:inline-block"></span>'+s.lbl+' <strong>'+fx(s.v)+'</strong></span>').join('')
+            +'</div>';
+          const netLine='<div class="row-b" style="font-size:11px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;margin-bottom:8px"><span style="color:var(--muted)">Abonado bruto <strong style="color:var(--sage)">'+fx(totalIn)+'</strong>'+(totalOut>0?' · salió <strong style="color:var(--terra)">−'+fx(totalOut)+'</strong>':'')+'</span><span style="color:var(--txt);font-weight:bold">Entró neto: '+fx(net)+'</span></div>';
+          return bar+legend+netLine;
         })()}
         ${yldBadge}
         ${!isDone?`
@@ -8747,7 +8815,7 @@ function rHabitos(){
       return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff">
         <div class="row-b" style="margin-bottom:6px">
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}</div>
+            <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}${c.repeatId?`<span style="font-size:9px;margin-left:6px;padding:1px 5px;border-radius:4px;background:rgba(74,110,140,.12);color:var(--sky);font-weight:bold;letter-spacing:.3px">🔁 ${c.repeatIdx||''}/${c.repeatTotal||''}</span>`:''}</div>
             ${c.concept?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${_escH(c.concept)}</div>`:''}
             <div style="font-size:10px;color:${tagColor};margin-top:4px">${tagText}</div>
           </div>
@@ -8769,6 +8837,11 @@ function rHabitos(){
       </div>
       <div style="margin-bottom:8px"><label>Concepto (opcional)</label><input type="text" id="cbgConcept" placeholder="Préstamo, absorbí su deuda..."></div>
       <div style="margin-bottom:10px"><label>Fecha esperada de pago</label><input type="date" id="cbgDateExp"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:4px">
+        <div><label>🔁 Repetir</label><select id="cbgRepeat" onchange="_cobRepeatHint('cbg')"><option value="none">No repetir</option><option value="semanal">Cada semana</option><option value="quincenal">Cada quincena</option><option value="mensual">Cada mes</option></select></div>
+        <div id="cbgRepeatCountWrap" style="display:none"><label>¿Cuántas veces? <span style="color:var(--muted);font-weight:normal;text-transform:none">(finita)</span></label><input type="number" id="cbgRepeatCount" value="3" min="2" max="52" inputmode="numeric" oninput="_cobRepeatHint('cbg')"></div>
+      </div>
+      <div id="cbgRepeatHint" style="display:none;font-size:10px;color:var(--sky);margin-bottom:10px;line-height:1.5"></div>
       <button type="button" class="btn" style="width:100%;background:var(--sky);color:#fff;padding:12px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="addCobranza('gd')">+ Registrar cobranza</button>
     </div>
     ${`<div class="card card-link" onclick="flujoView='cobranza';go('flujo')" style="text-align:center;padding:16px;cursor:pointer"><div style="font-size:13px;color:var(--sky);font-weight:bold">🤝 Ver todas mis cobranzas${pend.length>0?` (${pend.length} por cobrar · ${fx(totalPend)})`:''} →</div><div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Gestiónalas, cóbralas y revisa el historial en 💰 Ingresos y Gastos → Cobranza</div></div>`}

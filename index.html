@@ -234,8 +234,9 @@ button:active{transform:scale(.97)}
       <div style="font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.7">Un número concreto activa al cerebro diferente que una idea vaga. Sé específico.</div>
       <label>Tu meta concreta</label>
       <input type="text" id="ob-goal" placeholder='"Saldar $45,000 en deudas y ahorrar $15,000"' style="margin-bottom:13px">
-      <label>Fecha límite (6 meses)</label>
-      <input type="text" id="ob-dl" readonly style="margin-bottom:22px;color:var(--muted)">
+      <label>Fecha límite</label>
+      <input type="date" id="ob-dl" style="margin-bottom:6px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:22px;line-height:1.5">Sugerimos 6 meses, pero ajústala si tienes una fecha importante (antes o después).</div>
       <button class="btn btn-sage" style="width:100%" onclick="obNext()">Siguiente →</button>
     </div>
     <div class="onb-step" id="s2">
@@ -2732,6 +2733,19 @@ const tExtras=()=>{
   return total;
 };
 const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline)-new Date())/864e5))};
+// % de tiempo transcurrido del plazo de la meta. Usa la fecha de inicio
+// real (goalBaseDate) → fecha límite, para que sea correcto aunque el
+// usuario haya elegido un plazo distinto a 6 meses. Si no hay anclas,
+// cae al supuesto histórico de 180 días.
+function goalElapsedPct(){
+  const dl=dLeft();
+  try{
+    const end=S.deadline?new Date(S.deadline+'T12:00').getTime():null;
+    const start=S.goalBaseDate?new Date(S.goalBaseDate+'T12:00').getTime():null;
+    if(end&&start&&end>start)return Math.max(0,Math.min(100,Math.round((Date.now()-start)/(end-start)*100)));
+  }catch(e){}
+  return Math.max(0,Math.min(100,Math.round((180-dl)/180*100)));
+}
 // ── AVANCE HACIA LA META PRINCIPAL ──────────────────────────────────────
 // La meta principal se vuelve MEDIBLE expresándola como una mejora de
 // patrimonio neto (goalDelta = cuánto quiere subir su patrimonio en el
@@ -2750,17 +2764,7 @@ function goalProgress(){
   // Quincenas restantes (≈15 días). Mínimo 1 para no dividir entre cero.
   const qnaLeft=Math.max(1,Math.ceil(dl/15));
   const paceNeeded=remaining/qnaLeft;          // mejora de patrimonio por quincena
-  // % de tiempo transcurrido: de la fecha base a la fecha límite si las hay,
-  // si no, asumimos plazo de 6 meses (180 días) como el resto de la app.
-  let elapsed=0;
-  try{
-    const end=S.deadline?new Date(S.deadline+'T12:00').getTime():null;
-    const start=S.goalBaseDate?new Date(S.goalBaseDate+'T12:00').getTime():null;
-    if(end&&start&&end>start)elapsed=(Date.now()-start)/(end-start);
-    else elapsed=(180-dl)/180;
-  }catch(e){elapsed=(180-dl)/180;}
-  elapsed=Math.max(0,Math.min(1,elapsed));
-  const expectedPct=Math.round(elapsed*100);
+  const expectedPct=goalElapsedPct();          // % de tiempo transcurrido (plazo real)
   const onTrack=pct>=expectedPct;
   return {measurable:true,target:base+delta,base,current:cur,delta,gained,pct,remaining,qnaLeft,paceNeeded,expectedPct,onTrack,done:remaining<=0};
 }
@@ -2893,10 +2897,24 @@ const qProj=(days=15)=>{
 
 // ══ ONBOARDING ══════════════════════════════════════
 let obS=1;
-const setDL=()=>{const d=new Date();d.setMonth(d.getMonth()+6);document.getElementById('ob-dl').value=d.toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});return _ymdLocal(d)};
+// Prepara el selector de fecha límite: default sugerido = hoy + 6 meses,
+// mínimo = mañana (no se permiten fechas pasadas). Editable por el usuario;
+// solo rellena el default si el campo aún está vacío para no pisar su elección.
+const setDL=()=>{
+  const el=document.getElementById('ob-dl');
+  const d=new Date();d.setMonth(d.getMonth()+6);
+  const def=_ymdLocal(d);
+  if(el){
+    const min=new Date();min.setDate(min.getDate()+1);
+    el.min=_ymdLocal(min);
+    if(!el.value)el.value=def;
+    return el.value||def;
+  }
+  return def;
+};
 const drawDots=()=>{document.getElementById('dots').innerHTML=[1,2,3].map(i=>`<div class="dot ${i<obS?'ok':i===obS?'cur':''}"></div>`).join('')};
 function obNext(){
-  if(obS===1){const g=document.getElementById('ob-goal').value.trim();if(!g){alert('Escribe tu meta 🎯');return;}pt({goal:g,deadline:setDL()});}
+  if(obS===1){const g=document.getElementById('ob-goal').value.trim();if(!g){alert('Escribe tu meta 🎯');return;}let dl=document.getElementById('ob-dl').value;if(!dl)dl=setDL();pt({goal:g,deadline:dl,goalBaseDate:_ymdLocal(new Date())});}
   else if(obS===2){pt({inc:{sal:+(document.getElementById('ob-sal').value)||0,bf:+(document.getElementById('ob-bf').value)||0,bv:+(document.getElementById('ob-bv').value)||0}});}
   obS++;document.querySelectorAll('.onb-step').forEach(x=>x.classList.remove('act'));document.getElementById('s'+obS)?.classList.add('act');drawDots();
 }
@@ -2941,6 +2959,10 @@ function _saveMetaEdit(){
   // o si el usuario pide reiniciar su avance desde hoy.
   if(delta>0&&(!wasMeasurable||reset||!S.goalBaseDate)){
     patch.goalBaseNW=nw();
+    patch.goalBaseDate=_ymdLocal(new Date());
+  }else if(!S.goalBaseDate){
+    // Ancla la fecha de inicio para que la barra de tiempo sea correcta
+    // aunque la meta aún no sea medible.
     patch.goalBaseDate=_ymdLocal(new Date());
   }
   pt(patch);
@@ -3248,7 +3270,7 @@ function rDash(){
       }
     }
   }catch(e){}
-  const _sb=scoreBreakdown(),s=_sb.total,sc=scCol(s),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
+  const _sb=scoreBreakdown(),s=_sb.total,sc=scCol(s),dl=dLeft(),pctT=goalElapsedPct();
   const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
   const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
   const r=getRank(s);

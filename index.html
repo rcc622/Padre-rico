@@ -230,10 +230,13 @@ button:active{transform:scale(.97)}
     <div class="dots" id="dots"></div>
     <div class="onb-step act" id="s1">
       <div style="font-size:44px;margin-bottom:14px">🎯</div>
-      <div style="font-size:20px;color:var(--sage2);margin-bottom:8px;font-weight:bold">Tu meta en 6 meses</div>
+      <div style="font-size:20px;color:var(--sage2);margin-bottom:8px;font-weight:bold">Tu meta</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.7">Un número concreto activa al cerebro diferente que una idea vaga. Sé específico.</div>
-      <label>Tu meta concreta</label>
-      <input type="text" id="ob-goal" placeholder='"Saldar $45,000 en deudas y ahorrar $15,000"' style="margin-bottom:13px">
+      <label>Tu meta en palabras</label>
+      <input type="text" id="ob-goal" placeholder='"Saldar mis deudas y armar mi colchón"' style="margin-bottom:13px">
+      <label>¿Cuánto quieres mejorar tu patrimonio? ($)</label>
+      <input type="number" id="ob-delta" placeholder="60000" inputmode="decimal" style="margin-bottom:6px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:13px;line-height:1.5">La suma de lo que quieres <strong>bajar de deudas</strong> + lo que quieres <strong>ahorrar</strong> (pagar deuda y ahorrar suman a este número). Así la app mide tu avance real, no solo el tiempo. Lo podrás ajustar después.</div>
       <label>Fecha límite</label>
       <input type="date" id="ob-dl" style="margin-bottom:6px">
       <div style="font-size:11px;color:var(--muted);margin-bottom:22px;line-height:1.5">Sugerimos 6 meses, pero ajústala si tienes una fecha importante (antes o después).</div>
@@ -2914,7 +2917,7 @@ const setDL=()=>{
 };
 const drawDots=()=>{document.getElementById('dots').innerHTML=[1,2,3].map(i=>`<div class="dot ${i<obS?'ok':i===obS?'cur':''}"></div>`).join('')};
 function obNext(){
-  if(obS===1){const g=document.getElementById('ob-goal').value.trim();if(!g){alert('Escribe tu meta 🎯');return;}let dl=document.getElementById('ob-dl').value;if(!dl)dl=setDL();pt({goal:g,deadline:dl,goalBaseDate:_ymdLocal(new Date())});}
+  if(obS===1){const g=document.getElementById('ob-goal').value.trim();if(!g){alert('Escribe tu meta 🎯');return;}let dl=document.getElementById('ob-dl').value;if(!dl)dl=setDL();const delta=Math.max(0,+(document.getElementById('ob-delta').value)||0);pt({goal:g,deadline:dl,goalDelta:delta,goalBaseDate:_ymdLocal(new Date())});}
   else if(obS===2){pt({inc:{sal:+(document.getElementById('ob-sal').value)||0,bf:+(document.getElementById('ob-bf').value)||0,bv:+(document.getElementById('ob-bv').value)||0}});}
   obS++;document.querySelectorAll('.onb-step').forEach(x=>x.classList.remove('act'));document.getElementById('s'+obS)?.classList.add('act');drawDots();
 }
@@ -2924,6 +2927,10 @@ function obDone(){
   const b=+(document.getElementById('ob-db').value)||0;
   const liq=document.getElementById('ob-dliq').value;
   if(n&&b>0)pt({debts:[{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('ob-dm').value)||0,rate:0,liqDate:liq||'',note:''}]});
+  // Línea base del patrimonio: se captura AQUÍ (no en el paso 1) para que
+  // ya incluya la deuda inicial recién registrada. Así el avance hacia la
+  // meta se mide desde tu punto de partida real.
+  if((+S.goalDelta||0)>0)pt({goalBaseNW:nw(),goalBaseDate:S.goalBaseDate||_ymdLocal(new Date())});
   pt({done:true});launchApp();
 }
 

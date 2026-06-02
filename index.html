@@ -94,8 +94,11 @@ button:active{transform:scale(.97)}
 /* Bottom tab bar (Apple HIG): los pulgares alcanzan mejor abajo. La nav
    queda fija en bottom, llena ancho y distribuye 5 items con flex:1. */
 .nav{background:var(--card);border-top:1px solid var(--border);display:flex;position:fixed;bottom:0;left:0;right:0;z-index:100;box-shadow:0 -1px 8px rgba(0,0,0,.06);padding-bottom:env(safe-area-inset-bottom,0)}
-.nb{flex:1;min-width:0;padding:8px 4px;font-size:11px;font-family:Georgia,serif;color:var(--muted);background:none;border:none;border-top:2px solid transparent;cursor:pointer;transition:all .2s;white-space:nowrap;min-height:54px;overflow:hidden;text-overflow:ellipsis}
+.ico{display:inline-block;vertical-align:-.14em;flex:none}
+.nb{flex:1;min-width:0;padding:8px 4px;font-size:10px;font-family:Georgia,serif;color:var(--muted);background:none;border:none;border-top:2px solid transparent;cursor:pointer;transition:all .2s;white-space:nowrap;min-height:56px;overflow:hidden;text-overflow:ellipsis;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px}
+.nb .ico{width:22px;height:22px;opacity:.85;transition:opacity .2s,transform .2s}
 .nb.act{color:var(--sage2);border-top-color:var(--sage);background:rgba(78,124,106,.04)}
+.nb.act .ico{opacity:1;transform:translateY(-1px)}
 .content{flex:1;padding:18px 18px calc(180px + env(safe-area-inset-bottom,0));max-width:860px;margin:0 auto;width:100%;scroll-padding-bottom:calc(180px + env(safe-area-inset-bottom,0))}
 /* Pseudo-spacer al final del contenido — garantía adicional de que el
    último card no quede tapado por la bottom nav fija, incluso si algún
@@ -274,15 +277,15 @@ button:active{transform:scale(.97)}
 <div id="app">
   <div style="background:var(--sage2);color:rgba(255,255,255,.85);text-align:center;font-size:10px;letter-spacing:1.5px;padding:6px 0;text-transform:uppercase" id="hdr-date"></div>
   <header class="hdr">
-    <div class="logo">🪙 PADRE RICO</div>
+    <div class="logo"><svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.16em;margin-right:5px"><circle cx="8" cy="8" r="6" /><path d="M18.09 10.37A6 6 0 1 1 10.34 18" /><path d="M7 6h1v4" /><path d="m16.71 13.88.7.71-2.82 2.82" /></svg>PADRE RICO</div>
     <div class="score-chip" id="hdr-score">—</div>
   </header>
   <nav class="nav">
-    <button class="nb act" onclick="go('dash')">🏛️ Inicio</button>
-    <button class="nb" onclick="go('habitos')">🧠 Día a día</button>
-    <button class="nb" onclick="go('flujo')">💰 Ingresos y Gastos</button>
-    <button class="nb" onclick="go('plan')">🎯 Plan de Acción</button>
-    <button class="nb" onclick="go('historia')">📖 Mi Historia</button>
+    <button class="nb act" onclick="go('dash')"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg><span>Inicio</span></button>
+    <button class="nb" onclick="go('habitos')"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4" /><path d="M16 2v4" /><rect width="18" height="18" x="3" y="4" rx="2" /><path d="M3 10h18" /><path d="m9 16 2 2 4-4" /></svg><span>Día a día</span></button>
+    <button class="nb" onclick="go('flujo')"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" /><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" /></svg><span>Finanzas</span></button>
+    <button class="nb" onclick="go('plan')"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" /></svg><span>Plan</span></button>
+    <button class="nb" onclick="go('historia')"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 7v14" /><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" /></svg><span>Historia</span></button>
   </nav>
   <div class="content">
     <div id="tab-dash" class="panel act"></div>
@@ -326,6 +329,10 @@ button:active{transform:scale(.97)}
 
 </div>
 <script>
+// ══ ICONOS · Lucide (ISC License) https://lucide.dev — SVG inline, sin CDN ══
+const LU={"banknote":"<rect width=\"20\" height=\"12\" x=\"2\" y=\"6\" rx=\"2\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M6 12h.01M18 12h.01\" />","book-open":"<path d=\"M12 7v14\" /><path d=\"M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z\" />","calendar-check":"<path d=\"M8 2v4\" /><path d=\"M16 2v4\" /><rect width=\"18\" height=\"18\" x=\"3\" y=\"4\" rx=\"2\" /><path d=\"M3 10h18\" /><path d=\"m9 16 2 2 4-4\" />","chart-column":"<path d=\"M3 3v16a2 2 0 0 0 2 2h16\" /><path d=\"M18 17V9\" /><path d=\"M13 17V5\" /><path d=\"M8 17v-3\" />","coins":"<circle cx=\"8\" cy=\"8\" r=\"6\" /><path d=\"M18.09 10.37A6 6 0 1 1 10.34 18\" /><path d=\"M7 6h1v4\" /><path d=\"m16.71 13.88.7.71-2.82 2.82\" />","credit-card":"<rect width=\"20\" height=\"14\" x=\"2\" y=\"5\" rx=\"2\" /><line x1=\"2\" x2=\"22\" y1=\"10\" y2=\"10\" />","hand-coins":"<path d=\"M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17\" /><path d=\"m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9\" /><path d=\"m2 16 6 6\" /><circle cx=\"16\" cy=\"9\" r=\"2.9\" /><circle cx=\"6\" cy=\"5\" r=\"3\" />","handshake":"<path d=\"m11 17 2 2a1 1 0 1 0 3-3\" /><path d=\"m14 14 2.5 2.5a1 1 0 1 0 3-3l-3.88-3.88a3 3 0 0 0-4.24 0l-.88.88a1 1 0 1 1-3-3l2.81-2.81a5.79 5.79 0 0 1 7.06-.87l.47.28a2 2 0 0 0 1.42.25L21 4\" /><path d=\"m21 3 1 11h-2\" /><path d=\"M3 3 2 14l6.5 6.5a1 1 0 1 0 3-3\" /><path d=\"M3 4h8\" />","hourglass":"<path d=\"M5 22h14\" /><path d=\"M5 2h14\" /><path d=\"M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22\" /><path d=\"M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2\" />","house":"<path d=\"M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8\" /><path d=\"M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" />","landmark":"<path d=\"M10 18v-7\" /><path d=\"M11.12 2.198a2 2 0 0 1 1.76.006l7.866 3.847c.476.233.31.949-.22.949H3.474c-.53 0-.695-.716-.22-.949z\" /><path d=\"M14 18v-7\" /><path d=\"M18 18v-7\" /><path d=\"M3 22h18\" /><path d=\"M6 18v-7\" />","life-buoy":"<circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"m4.93 4.93 4.24 4.24\" /><path d=\"m14.83 9.17 4.24-4.24\" /><path d=\"m14.83 14.83 4.24 4.24\" /><path d=\"m9.17 14.83-4.24 4.24\" /><circle cx=\"12\" cy=\"12\" r=\"4\" />","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\" /><path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\" />","piggy-bank":"<path d=\"M11 17h3v2a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1v-3a3.16 3.16 0 0 0 2-2h1a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1h-1a5 5 0 0 0-2-4V3a4 4 0 0 0-3.2 1.6l-.3.4H11a6 6 0 0 0-6 6v1a5 5 0 0 0 2 4v3a1 1 0 0 0 1 1h2a1 1 0 0 0 1-1z\" /><path d=\"M16 10h.01\" /><path d=\"M2 8v1a2 2 0 0 0 2 2h1\" />","receipt":"<path d=\"M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1Z\" /><path d=\"M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8\" /><path d=\"M12 17.5v-11\" />","shopping-cart":"<circle cx=\"8\" cy=\"21\" r=\"1\" /><circle cx=\"19\" cy=\"21\" r=\"1\" /><path d=\"M2.05 2.05h2l2.66 12.42a2 2 0 0 0 2 1.58h9.78a2 2 0 0 0 1.95-1.57l1.65-7.43H5.12\" />","target":"<circle cx=\"12\" cy=\"12\" r=\"10\" /><circle cx=\"12\" cy=\"12\" r=\"6\" /><circle cx=\"12\" cy=\"12\" r=\"2\" />","timer":"<line x1=\"10\" x2=\"14\" y1=\"2\" y2=\"2\" /><line x1=\"12\" x2=\"15\" y1=\"14\" y2=\"11\" /><circle cx=\"12\" cy=\"14\" r=\"8\" />","wallet":"<path d=\"M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1\" /><path d=\"M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4\" />"};
+// lu(nombre, tamaño, estiloExtra) → SVG inline que hereda color vía currentColor
+function lu(n,sz,stl){return '<svg class="ico" width="'+(sz||'1em')+'" height="'+(sz||'1em')+'" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'+(stl?' style="'+stl+'"':'')+'>'+(LU[n]||'')+'</svg>';}
 // ══ STATE v5 ════════════════════════════════════════
 const SK='prv5';
 window.APP_BUILD='consolidB-2026-04-17';
@@ -5008,7 +5015,7 @@ function rFlujo(){try{
   });
   const liqCount=S.debts.length-activeDebts.length;
 
-  const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','💰 Ingresos'],['gastos','📋 Gastos Fijos'],['deudas','⛓️ Deudas'],['activos','🏦 Activos'],['cobranza','💵 Cobranza']].map(([id,l])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${l}</button>`).join('')}</div>`;
+  const flujoNav=`<div class="chips" style="margin-bottom:14px">${[['ingresos','Ingresos','banknote'],['gastos','Gastos Fijos','receipt'],['deudas','Deudas','link'],['activos','Activos','landmark'],['cobranza','Cobranza','hand-coins']].map(([id,l,ic])=>`<button class="chip" style="${flujoView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="flujoView='${id}';rFlujo()">${lu(ic,'15px','margin-right:5px;vertical-align:-.2em')}${l}</button>`).join('')}</div>`;
 
   document.getElementById('tab-flujo').innerHTML=`
   ${flujoNav}
@@ -7753,7 +7760,7 @@ try{
   const todayDay=today.getDate();
 
   // ── SUB-NAV ──
-  const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','💳 Pagos'],['estrategia','📊 Estrategia'],['hrsxtra','⏱️ Hrs Xtra']].map(([id,l])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${l}</button>`).join('')}</div>`;
+  const subNav=`<div class="chips" style="margin-bottom:14px">${[['pagos','Pagos','credit-card'],['estrategia','Estrategia','chart-column'],['hrsxtra','Hrs Xtra','timer']].map(([id,l,ic])=>`<button class="chip" style="${planView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="planView='${id}';rPlan()">${lu(ic,'15px','margin-right:5px;vertical-align:-.2em')}${l}</button>`).join('')}</div>`;
 
   // ── NAVEGADOR DE QUINCENA (Fase 7) ──
   const _periodLabel=_isCurrent?'ESTA QUINCENA':_isFuture?'PRÓXIMA QUINCENA':'QUINCENA PASADA';
@@ -8521,7 +8528,7 @@ function rHabitos(){
   const avoided=resolved.filter(w=>!w.bought);
   const totalSaved=avoided.reduce((a,w)=>a+(+w.price||0),0);
 
-  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','🛟 Retos'],['diarios','🛒 Diarios'],['impulsos','⏳ Impulsos'],['ahorro','💰 Ahorro'],['cobranza','🤝 Cobranza']].map(([id,l])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setHabitView('${id}')">${l}</button>`).join('')}</div>`;
+  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','Retos','life-buoy'],['diarios','Diarios','shopping-cart'],['impulsos','Impulsos','hourglass'],['ahorro','Ahorro','piggy-bank'],['cobranza','Cobranza','handshake']].map(([id,l,ic])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setHabitView('${id}')">${lu(ic,'15px','margin-right:5px;vertical-align:-.2em')}${l}</button>`).join('')}</div>`;
 
   document.getElementById('tab-habitos').innerHTML=`
   ${habNav}

@@ -11394,6 +11394,7 @@ function buildAIReport(){
   L.push('- **Flujo libre mensual:** '+fxn(fl)+(fl<0?'  ⚠️ DÉFICIT':''));
   L.push('- **Activos totales:** '+fxn(act)+' · **Deuda total:** '+fxn(deuda));
   L.push('- **Patrimonio neto:** '+fxn(patr)+(patr<0?'  (negativo — debes más de lo que tienes)':''));
+  {const _mb=metaMoneyBreakdown();if(_mb.consumoTotal>0)L.push('  - De eso, **'+fxn(_mb.consumoTotal)+'** está comprometido a metas de consumo (se gastará); patrimonio que construye: **'+fxn(nwBuild())+'**.');}
   L.push('- **Ingreso pasivo (rendimiento de activos):** '+fxn(pasivo)+'/mes');
   L.push('- **Ratio deuda / ingreso anual:** '+(drA*100).toFixed(0)+'%');
   L.push('- **Capítulos registrados:** '+(S.snapshots||[]).length+' · racha: '+qStreak()+' consecutivos');

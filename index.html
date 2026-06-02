@@ -2215,14 +2215,18 @@ function calcCycleBalance(ck){
     if(sav&&(sav.status==='committed'||sav.status==='intact'||sav.status==='emergency-kept')){
       gastos+=+sav.amount||0;
     }
-    // 4) Abonos a metas del ciclo (sección Ahorro) — dinero apartado este
-    //    ciclo, igual que en el Estado de cuenta del Plan. Solo abonos
-    //    positivos dentro de la ventana (los retiros no son una salida).
+    // 4) Movimientos a metas del ciclo (sección Ahorro) — igual que en el
+    //    Estado de cuenta del Plan: los abonos salen de tu efectivo; los
+    //    retiros tipo "ajuste" lo regresan (corrección, no fue gasto real); los
+    //    retiros gastados (emergencia/enganche) ya salieron vía el abono, así
+    //    que no se restan otra vez. Resultado: gastos += abonos − ajustes.
     (S.savGoals||[]).forEach(g=>{
       (g.deposits||[]).forEach(d=>{
-        if(!d||!d.date||(+d.amt||0)<=0)return;
+        if(!d||!d.date)return;
         if(d.date<startYMD||d.date>endYMD)return;
-        gastos+=+d.amt||0;
+        const amt=+d.amt||0;
+        if(amt>0)gastos+=amt;
+        else if(amt<0&&(d.kind||'')==='ajuste')gastos+=amt; // regresa a tu cuenta
       });
     });
 
@@ -7703,7 +7707,7 @@ try{
   // Tracking aparte para metas de ahorro: el usuario quiere ver "🎯 Apartado
   // a metas" como línea propia en Estado de cuenta (similar a "🪙 Ahorro
   // apartado → Nu express"), no mezclado con Pagos aplicados.
-  let metaAppliedAmt=0,metaCheckedAmt=0,_metaBreakdown=[];
+  let metaAppliedAmt=0,metaCheckedAmt=0,_metaBreakdown=[],_metaRetOut=0,_metaRetBreakdown=[];
   if(!showNext){
     // Modelo de flujo de efectivo: un gasto pagado con TDC NO sale de tu
     // efectivo al aplicarlo (queda en la tarjeta); sale cuando registras el
@@ -7713,17 +7717,22 @@ try{
     const _isTdc=(type,id)=>getPaidMethod(type,id)==='tdc';
     expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(_isTdc(pt2,e.id))return;if(isApplied(pt2,e.id))appliedAmt2+=v;else if(isPaid(pt2,e.id))checkedAmt+=v;});
     debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(_isTdc('debt',e.id))return;if(isApplied('debt',e.id))appliedAmt2+=v;else if(isPaid('debt',e.id))checkedAmt+=v;});
-    // METAS · fuente unificada = abonos REALES del ciclo (sección Ahorro,
-    // "Registrar movimiento"). Antes el Estado de cuenta solo contaba metas si
-    // marcabas su pago DENTRO del Plan (isApplied('sav')), así que lo que
-    // ahorrabas en la sección Ahorro no se reflejaba. Ahora sí: sumamos los
-    // abonos positivos dentro de la ventana del ciclo. Si no hubo abono real
+    // METAS · fuente unificada = movimientos REALES del ciclo (sección Ahorro).
+    // "Apartado a metas" = NETO del ciclo (abonos − retiros) = lo que de verdad
+    // creció tu ahorro. Los retiros GASTADOS (emergencia/enganche) salen aparte
+    // como su propia línea (ese dinero sí salió de tu bolsa). Los retiros tipo
+    // "ajuste" solo netean (no son una salida real). Si no hubo movimientos
     // pero marcaste el pago en el Plan, respetamos la cuota sugerida (legacy).
-    // De este modo nunca se cuenta doble.
     const _mw=cycleWindowFromKey(planCk());const _mSY=_ymdLocal(_mw.start),_mEY=_ymdLocal(_mw.end);
     S.savGoals.forEach(g=>{
-      const realPos=(g.deposits||[]).filter(d=>d&&d.date&&d.date>=_mSY&&d.date<=_mEY&&(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
-      if(realPos>0){metaAppliedAmt+=realPos;_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:realPos,real:true});return;}
+      const deps=(g.deposits||[]).filter(d=>d&&d.date&&d.date>=_mSY&&d.date<=_mEY);
+      if(deps.length){
+        let net=0,ret=0;
+        deps.forEach(d=>{const amt=+d.amt||0;net+=amt;if(amt<0&&(d.kind||'')!=='ajuste'){ret+=(-amt);_metaRetBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:-amt,kind:d.kind||'',note:d.note||''});}});
+        metaAppliedAmt+=net;_metaRetOut+=ret;
+        if(net!==0)_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:net,real:true});
+        return;
+      }
       if(g.done||g.target<=(+g.saved||0))return;
       const _ma=metaCycleAmt(g,planCk());
       if(isApplied('sav',g.id)){metaAppliedAmt+=_ma;_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:_ma,real:false});}
@@ -7905,9 +7914,11 @@ try{
       // Metas aplicadas y seleccionadas — línea propia para que el usuario
       // las vea al mismo nivel que "Ahorro apartado" en vez de mezcladas
       // con "Pagos aplicados".
-      const _metaOut=metaAppliedAmt+metaCheckedAmt;
+      const _metaOut=metaAppliedAmt+metaCheckedAmt; // NETO apartado del ciclo (abonos − retiros)
       const _metaCount=_metaBreakdown.length;
-      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_savAmt+_metaOut;
+      // Retiros gastados (emergencia/enganche) = salida adicional: ese dinero
+      // salió de tu bolsa aunque haya pasado por la meta. Suma al total de salidas.
+      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_savAmt+_metaOut+_metaRetOut;
       const _balance=incQ+_otEarned-_totalOut;
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
@@ -7918,7 +7929,8 @@ try{
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
         ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
         ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosCashCount(planCk())})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
-        ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:var(--sage);white-space:nowrap">+${fx(Math.round(m.amt))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="setHabitView('ahorro');go('habitos')">Ver movimientos →</button></div></details>`:''}
+        ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="setHabitView('ahorro');go('habitos')">Ver movimientos →</button></div></details>`:_metaOut<0?`<div class="row-b"><span style="color:var(--sage)">↩ Retirado de metas a tu cuenta</span><strong style="color:var(--sage)">+${fx(Math.round(-_metaOut))}</strong></div>`:''}
+        ${_metaRetOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--terra)">🚨 Retiros de metas (${_metaRetBreakdown.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--terra)">−${fx(Math.round(_metaRetOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(184,92,74,.25);margin:2px 0 4px 4px">${_metaRetBreakdown.map(m=>{const _k=savGoalWdKind(m.kind);const _kl=_k?_k.e+' '+_k.n:'📉 Retiro';return `<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)} · <span style="font-size:9px">${_kl}</span>${m.note?' · '+_escH(m.note):''}</span><span style="color:var(--terra);white-space:nowrap">−${fx(Math.round(m.amt))}</span></div>`;}).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="setHabitView('ahorro');go('habitos')">Ver movimientos →</button></div></details>`:''}
         ${_savAmt>0?`<div class="row-b"><span style="color:var(--sage)">🪙 Ahorro apartado${_savAsset?' → '+_savAsset.name:''}</span><strong style="color:var(--sage)">−${fx(Math.round(_savAmt))}</strong></div>`:''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
@@ -8791,6 +8803,7 @@ function rHabitos(){
       const qLeft=Math.max(1,Math.ceil(daysLeft/15));
       const isOverdue=daysLeft<0;
       const isDone=g.done||remaining<=0;
+      const reached=remaining<=0; // alcanzó el objetivo de verdad (saldo ≥ meta)
       const dlLbl=g.deadline?fmtDate(g.deadline):'sin fecha';
       // Si la meta vive en una cajita con rendimiento, calculamos cuánto
       // gana al mes mientras espera. Es informativo (no auto-suma a g.saved):
@@ -8807,7 +8820,7 @@ function rHabitos(){
         :'';
       return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
         <div class="row-b" style="margin-bottom:8px">
-          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${_escH(g.name)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(isDone?'✅ ¡Meta alcanzada!':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div></div></div>
+          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${_escH(g.name)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(reached?'✅ ¡Meta alcanzada!':g.done?'✓ Completada (cerrada manualmente)':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div></div></div>
           <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
         </div>
         <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>

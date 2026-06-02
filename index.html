@@ -3397,12 +3397,27 @@ function rDash(){
       const asset=S.assets.find(a=>a.id===c.assetId);
       const assetName=asset?asset.name:'tu activo';
       const canCheck=c.status==='committed';
-      // Subtítulo: si hay metas, las menciona también para dar contexto.
-      const subTarget=metaSaved>0?'→ '+assetName+' · '+activeMetas.length+' meta'+(activeMetas.length!==1?'s':''):'→ '+assetName;
+      // Desglose: el "Ahorro acumulado" combina lo que llevas en tu cuenta
+      // (accumKept, respaldado por el activo) y lo apartado en metas
+      // (metaSaved, que vive aparte y NO aparece en Finanzas → Activos). Si
+      // hay dinero en ambos lados lo mostramos separado para que el total
+      // cuadre con lo que el usuario ve en cada pantalla.
+      const _multi=metaSaved>0&&accumKept>0;
+      let subBlock;
+      if(_multi){
+        subBlock='<div style="margin-top:8px;padding:9px 11px;background:rgba(78,124,106,.06);border-radius:8px;font-size:12px;line-height:1.8">'
+          +'<div class="row-b"><span style="color:var(--muted)">🏦 En '+_escH(assetName)+' (tu cuenta)</span><strong style="color:var(--sage)">'+fx(Math.round(accumKept))+'</strong></div>'
+          +'<div class="row-b"><span style="color:var(--muted)">🎯 En tus metas ('+activeMetas.length+')</span><strong style="color:var(--sage)">'+fx(Math.round(metaSaved))+'</strong></div>'
+          +'</div>'
+          +'<div style="font-size:10px;color:var(--muted);margin-top:7px;line-height:1.5">Tu total junta ambos. En <strong>Finanzas → Activos</strong> ves solo tus cuentas ('+fx(Math.round(accumKept))+'); lo de metas vive en <strong>Día a día → Ahorro</strong>.</div>'
+          +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:9px;font-size:11px" onclick="setHabitView(\'ahorro\');go(\'habitos\')">🎯 Ver mis metas →</button>';
+      }else{
+        subBlock='<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(metaSaved>0?'🎯 En tus metas · vive en Día a día → Ahorro':'🏦 → '+_escH(assetName))+'</div>';
+      }
       return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px">'
         +'<div class="row-b" style="margin-bottom:6px"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💰 Ahorro acumulado</div><button onclick="openSavPctQuick()" title="Ajustar tu %" style="background:none;border:1px solid rgba(78,124,106,.3);border-radius:5px;color:var(--sage);cursor:pointer;font-size:11px;padding:2px 8px">✎ '+S.savPct+'%</button></div>'
         +'<div class="stat" style="color:var(--sage);font-family:Georgia,serif">'+fx(Math.round(totalAccum))+'</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+subTarget+'</div>'
+        +subBlock
         +movLine
         +streakLine
         +(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')
@@ -7388,10 +7403,14 @@ function openSavCloseCheck(){
   const c=curSavCommit();if(!c||c.status!=='committed'){toast('No hay compromiso activo esta quincena');return;}
   const asset=S.assets.find(a=>a.id===c.assetId);
   const assetName=asset?asset.name:'tu activo';
-  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.7">Esta quincena te comprometiste con <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> a <strong>'+assetName+'</strong>.<br><br>¿Cómo te fue?</div>'
-    +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px;padding:14px" onclick="closeSavCheck(\'intact\')">✅ Intacto · Racha sigue</button>'
-    +'<button class="btn btn-amber" style="width:100%;margin-bottom:8px;padding:14px;background:rgba(160,112,48,.15);color:var(--amber);border:1px solid rgba(160,112,48,.3)" onclick="closeSavCheck(\'emergency\')">🚨 Emergencia real</button>'
-    +'<button class="btn btn-ghost" style="width:100%;padding:14px;color:var(--terra)" onclick="closeSavCheck(\'broken\')">💔 Me rompí</button>';
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:6px;line-height:1.7">Esta quincena apartaste <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> en <strong>'+assetName+'</strong>.</div>'
+    +'<div style="font-size:12px;color:var(--txt2);margin-bottom:16px;line-height:1.7">¿Lo <strong>mantuviste</strong> o tuviste que <strong>usarlo</strong>? Esto solo afecta tu racha y, si lo usaste, tu saldo — no se mueve dinero salvo que tú lo digas.</div>'
+    +'<button class="btn btn-sage" style="width:100%;margin-bottom:3px;padding:13px" onclick="closeSavCheck(\'intact\')">✅ Intacto · Racha sigue</button>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:11px;line-height:1.5;padding:0 4px">No lo tocaste. Tu dinero sigue ahí y tu racha continúa. <strong>No cambia ningún saldo.</strong></div>'
+    +'<button class="btn btn-amber" style="width:100%;margin-bottom:3px;padding:13px;background:rgba(160,112,48,.15);color:var(--amber);border:1px solid rgba(160,112,48,.3)" onclick="closeSavCheck(\'emergency\')">🚨 Emergencia real</button>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:11px;line-height:1.5;padding:0 4px">Tuviste que usar parte por una urgencia. Te preguntamos cuánto, lo <strong>restamos de '+assetName+'</strong> y lo registramos como gasto del ciclo. Puedes <strong>conservar tu racha</strong> por ser justificado.</div>'
+    +'<button class="btn btn-ghost" style="width:100%;margin-bottom:3px;padding:13px;color:var(--terra)" onclick="closeSavCheck(\'broken\')">💔 Me rompí</button>'
+    +'<div style="font-size:10px;color:var(--muted);line-height:1.5;padding:0 4px">Lo gastaste sin que fuera urgencia. Te preguntamos cuánto, lo restamos, se registra como gasto y tu <strong>racha se reinicia</strong>.</div>';
   showInfo('🪙 ¿Mantuviste el ahorro?',body);
 }
 function closeSavCheck(outcome){

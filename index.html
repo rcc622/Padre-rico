@@ -706,8 +706,8 @@ function closeConfirm(){document.getElementById('confirmModal').style.display='n
 function execConfirm(){if(_confirmCb)_confirmCb();closeConfirm();}
 function showInfo(title,body){showConfirm(title,body,null);document.getElementById('confirmModal').querySelector('.modal-box > .row').innerHTML='<button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Entendido</button>';}
 const INFO={
-  patrimonio:'<strong>Patrimonio neto</strong> = lo que tienes (activos) menos lo que debes (deudas).<br><br>Si es negativo, debes más de lo que tienes. Es normal cuando estás pagando deudas. Cada pago que haces lo acerca a $0 y después a positivo.<br><br><strong>Meta:</strong> llevar tu patrimonio a positivo.',
-  score:'<strong>Score de salud financiera</strong> (0-100) mide qué tan sano está tu flujo de dinero.<br><br>Considera: <strong>flujo libre</strong> (30 pts — lo más importante), relación deuda/ingreso (20 pts), ahorro real (15 pts), patrimonio neto (15 pts), constancia (10 pts), ingreso pasivo (10 pts). <strong>Penaliza déficit activo</strong> (hasta −15 pts).<br><br><strong>Rangos:</strong><br>0-19: Aprendiz 🐣<br>20-34: Constructor 🧱<br>35-49: Guardián ⚖️<br>50-64: Inversor 📈<br>65-79: Arquitecto 🏛️<br>80-89: Padre Rico 👑<br>90-100: Libre 🌟',
+  patrimonio:'<strong>Patrimonio neto</strong> = lo que TIENES (activos) menos lo que DEBES (deudas).<br><br><strong>✅ Cuenta como activo</strong> lo que registras en <em>Ingresos y Gastos → 🏦 Activos</em>:<br>• Dinero en cuentas (Nu, banco, Mercado Pago)<br>• Efectivo<br>• Inversiones, fondos, cetes<br>• El saldo de una meta <u>solo si la ligaste a un activo</u><br><br><strong>🚫 NO cuenta</strong>:<br>• El ahorro de una meta que no está ligada a ningún activo<br>• Cosas de uso (no se registran como activo)<br><br><strong>➖ Resta:</strong> el saldo de todas tus deudas.<br><br>Si es negativo, debes más de lo que tienes — normal mientras pagas deudas. Cada pago lo acerca a $0 y luego a positivo.<br><br><strong>Tip:</strong> si ahorras en una meta y quieres que cuente como patrimonio (y sume a tu score), liga la meta a un activo al registrar el movimiento.',
+  score:'<strong>Score de salud financiera</strong> (0-100) mide qué tan sano está tu dinero.<br><br>Suma siete cosas: <strong>flujo libre</strong> (30 pts — lo más importante), <strong>deuda/ingreso</strong> (20), <strong>ahorro</strong> (15), <strong>patrimonio neto</strong> (15), <strong>constancia</strong> (10), <strong>ingreso pasivo</strong> (10) y <strong>metas de ahorro</strong> (10 — abonar +5, completar metas +5). <strong>Penaliza déficit</strong> (hasta −15). El total se topa a 100.<br><br>Toca <strong>"Ver de dónde sale tu score"</strong> en la tarjeta para el desglose con tus puntos y qué mover.<br><br><strong>Ojo:</strong> tus deudas restan en dos lados (deuda/ingreso y patrimonio), por eso topan tu score aunque ahorres. Cumplir metas desbloquea un logro <em>y</em> ahora también suma puntos aquí.<br><br><strong>Rangos:</strong><br>0-19: Aprendiz 🐣<br>20-34: Constructor 🧱<br>35-49: Guardián ⚖️<br>50-64: Inversor 📈<br>65-79: Arquitecto 🏛️<br>80-89: Padre Rico 👑<br>90-100: Libre 🌟',
   hormiga:'<strong>Gastos hormiga</strong> son compras pequeñas y frecuentes: OXXO, delivery, cafés, compras en línea.<br><br>Individualmente son "baratos" ($50-$200) pero en la quincena suman $2,000-$5,000.',
   bolanieve:'<strong>Bola de Nieve</strong>: pagas primero la deuda más pequeña. Cuando la terminas, sumas ese pago a la siguiente.<br><br><strong>Avalancha</strong>: pagas primero la de mayor tasa de interés. Ahorras más en intereses.',
   disponible:'<strong>Disponible</strong> = ingreso − gastos fijos − ahorro − metas − deudas.<br><br>Positivo = te sobra. Negativo = déficit.',
@@ -2727,46 +2727,59 @@ const tExtras=()=>{
   return total;
 };
 const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline)-new Date())/864e5))};
-const score=()=>{
-  let s=0;
+// ¿Abonaste (depósito positivo) a alguna meta en el ciclo actual?
+function metaAbonoCiclo(){
+  try{
+    const w=cycleWindowFromKey(cycleKey());const sY=_ymdLocal(w.start),eY=_ymdLocal(w.end);
+    return (S.savGoals||[]).some(g=>(g.deposits||[]).some(d=>d&&d.date&&d.date>=sY&&d.date<=eY&&(+d.amt||0)>0));
+  }catch(e){return false;}
+}
+// Desglose transparente del Score de salud financiera (0-100). Única fuente de
+// verdad: score() ahora devuelve scoreBreakdown().total. Cada parte trae sus
+// puntos, su máximo y una pista accionable para que el usuario sepa POR QUÉ
+// está en su nivel y qué mover para subir.
+function scoreBreakdown(){
   const inc=mInc()||1;
   const fl=flow();
+  const parts=[];
   // 1. Flujo libre (0-30): lo más importante
-  if(fl>0){
-    const pct=fl/inc;// ratio flujo/ingreso
-    s+=Math.min(30,Math.round(pct/0.15*30));// 15% surplus = 30 pts
-  }
+  let p1=0; if(fl>0)p1=Math.min(30,Math.round(fl/inc/0.15*30));
+  parts.push({k:'flujo',label:'Flujo libre',pts:p1,max:30,col:'var(--sage)',
+    hint:fl>0?('Te sobran '+fx(Math.round(fl))+'/mes ('+Math.round(fl/inc*100)+'% del ingreso). Con 15% llegas a 30.'):'No te sobra dinero al mes. Baja gastos o pagos de deuda para ganar hasta 30 pts.'});
   // Penalización por déficit (hasta -15)
-  if(fl<0){
-    const defPct=Math.abs(fl)/inc;
-    s-=Math.min(15,Math.round(defPct*30));
-  }
+  let pen=0; if(fl<0)pen=Math.min(15,Math.round(Math.abs(fl)/inc*30));
   // 2. Deuda vs ingreso anual (0-20)
-  const dr=tDebt()/Math.max(inc*12,1);
-  if(dr===0)s+=20;
-  else if(dr<=0.2)s+=18;
-  else if(dr<=0.5)s+=Math.round(10+(0.5-dr)/0.3*8);
-  else if(dr<=1.0)s+=Math.round(3+(1.0-dr)/0.5*7);
-  // >1.0 = 0
-  // 3. Ahorro real (0-15): proporcional + bonus por compromiso
-  const savP=Math.min(S.savPct||0,20);
-  s+=Math.round(savP/20*10);// hasta 10 pts proporcional
-  if(curSavCommit())s+=5;// +5 si comprometiste este ciclo
+  const dr=tDebt()/Math.max(inc*12,1); let p2=0;
+  if(dr===0)p2=20; else if(dr<=0.2)p2=18; else if(dr<=0.5)p2=Math.round(10+(0.5-dr)/0.3*8); else if(dr<=1.0)p2=Math.round(3+(1.0-dr)/0.5*7);
+  parts.push({k:'deuda',label:'Deuda vs ingreso',pts:p2,max:20,col:'var(--sky)',
+    hint:tDebt()===0?'Sin deudas: máximo.':('Debes '+fx(Math.round(tDebt()))+' ('+Math.round(dr*100)+'% de tu ingreso anual). Bajar la deuda sube este puntaje.')});
+  // 3. Ahorro (0-15): % programado + compromiso del ciclo
+  const savP=Math.min(S.savPct||0,20); let p3=Math.round(savP/20*10); if(curSavCommit())p3+=5;
+  parts.push({k:'ahorro',label:'Ahorro (Págate primero)',pts:p3,max:15,col:'var(--sage)',
+    hint:('Apartas '+(S.savPct||0)+'% de tu ingreso')+(curSavCommit()?' y ya apartaste este ciclo (+5).':'. Toca "Ya aparté mi ahorro" cada ciclo para +5.')});
   // 4. Patrimonio neto (0-15)
-  const netW=nw();
-  if(netW>0){
-    const moRatio=netW/(inc||1);// patrimonio en meses de ingreso
-    s+=Math.min(15,Math.round(moRatio/6*15));// 6 meses ingreso = 15 pts
-  }
-  // nw <= 0 = 0 pts (no regala puntos por tener $200 con $50K en deuda)
-  // 5. Constancia (0-10): racha CSV + racha ahorro
-  s+=Math.min(5,qStreak());
-  s+=Math.min(5,S.savStreak||0);
+  const netW=nw(); let p4=0; if(netW>0)p4=Math.min(15,Math.round(netW/(inc||1)/6*15));
+  parts.push({k:'patrimonio',label:'Patrimonio neto',pts:p4,max:15,col:'var(--sage)',
+    hint:netW>0?('Tu patrimonio ('+fx(Math.round(netW))+') equivale a '+(netW/(inc||1)).toFixed(1)+' meses de ingreso. 6 meses = 15.'):('Patrimonio = '+fx(Math.round(netW))+' (activos − deudas). En 0 o negativo no suma. Sube activos o baja deuda.')});
+  // 5. Constancia (0-10): racha de cierres + racha de ahorro
+  let p5=Math.min(5,qStreak())+Math.min(5,S.savStreak||0);
+  parts.push({k:'constancia',label:'Constancia',pts:p5,max:10,col:'var(--amber)',
+    hint:('Racha de cierres ('+qStreak()+') + racha de ahorro ('+(S.savStreak||0)+'). Cierra y aparta cada ciclo.')});
   // 6. Ingreso pasivo (0-10)
-  const pi=passInc();
-  if(pi>0)s+=5+Math.min(5,Math.round(pi/inc*100));
-  return Math.min(100,Math.max(0,Math.round(s)));
-};
+  const pi=passInc(); let p6=0; if(pi>0)p6=5+Math.min(5,Math.round(pi/inc*100));
+  parts.push({k:'pasivo',label:'Ingreso pasivo',pts:p6,max:10,col:'var(--sage)',
+    hint:pi>0?('Tus activos generan '+fx(Math.round(pi))+'/mes.'):'Ningún activo genera rendimiento aún. Marca un activo como "genera" para sumar.'});
+  // 7. Metas de ahorro (0-10) · NUEVO: premia abonar y completar metas
+  let p7=0; const abono=metaAbonoCiclo(); if(abono)p7+=5;
+  const metasCumplidas=(S.savGoals||[]).filter(g=>g.done&&(+g.target||0)>0).length;
+  const ptsCumpl=Math.min(5,metasCumplidas*3); p7+=ptsCumpl; p7=Math.min(10,p7);
+  parts.push({k:'metas',label:'Metas de ahorro',pts:p7,max:10,col:'var(--sage)',
+    hint:(abono?'Abonaste a una meta este ciclo (+5). ':'Abona a una meta este ciclo para +5. ')+(metasCumplidas>0?('Tienes '+metasCumplidas+' meta'+(metasCumplidas>1?'s':'')+' cumplida'+(metasCumplidas>1?'s':'')+' (+'+ptsCumpl+').'):'Completa metas para hasta +5.')});
+  const raw=p1+p2+p3+p4+p5+p6+p7-pen;
+  const total=Math.min(100,Math.max(0,Math.round(raw)));
+  return {total,parts,penalty:pen};
+}
+const score=()=>scoreBreakdown().total;
 const fx=(n)=>new Intl.NumberFormat('es-MX',{style:'currency',currency:'MXN',maximumFractionDigits:0}).format(n||0);
 const scCol=(s)=>s>=70?'var(--sage)':s>=40?'var(--sky)':'var(--terra)';
 
@@ -3157,7 +3170,7 @@ function rDash(){
       }
     }
   }catch(e){}
-  const s=score(),sc=scCol(s),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
+  const _sb=scoreBreakdown(),s=_sb.total,sc=scCol(s),dl=dLeft(),pctT=Math.round(((180-dl)/180)*100);
   const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
   const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
   const r=getRank(s);
@@ -3334,6 +3347,18 @@ function rDash(){
     ${streak>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:12px">🔥 Racha: ${streak} ${cycleLabel()}${streak>1?(S.cycleMode==='quincenal'?'s':'es'):''} consecutiv${streak>1?(S.cycleMode==='quincenal'?'as':'os'):'o'}</div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Sube tu primer CSV para iniciar tu racha</div>`}
     <div class="pw" style="max-width:220px;margin:0 auto 6px;height:7px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
     <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'}</div>
+    <details style="margin-top:16px;text-align:left">
+      <summary style="list-style:none;cursor:pointer;font-size:11px;color:var(--sage);text-align:center;letter-spacing:.5px;-webkit-tap-highlight-color:transparent">▾ Ver de dónde sale tu score</summary>
+      <div style="margin-top:12px">
+        ${_sb.parts.map(p=>`<div style="margin-bottom:11px">
+          <div class="row-b" style="font-size:12px"><span style="color:var(--txt)">${p.label}</span><span style="font-weight:bold;color:${p.pts>0?p.col:'var(--muted)'}">${p.pts}/${p.max}</span></div>
+          <div class="pw" style="height:5px;margin:4px 0 3px"><div class="pb" style="width:${p.max>0?Math.round(p.pts/p.max*100):0}%;background:${p.col}"></div></div>
+          <div style="font-size:10px;color:var(--muted);line-height:1.5">${p.hint}</div>
+        </div>`).join('')}
+        ${_sb.penalty>0?`<div class="row-b" style="font-size:12px;margin-bottom:8px"><span style="color:var(--terra)">⚠️ Penalización por déficit</span><span style="font-weight:bold;color:var(--terra)">−${_sb.penalty}</span></div>`:''}
+        <div style="font-size:10px;color:var(--muted);border-top:1px solid var(--border);padding-top:9px;margin-top:6px;line-height:1.6">Se suman todos y el total se topa a <strong>100</strong>. Abonar y completar metas ya cuentan aquí. <button class="info-btn" style="vertical-align:middle" onclick="event.stopPropagation();showInfo('Patrimonio',INFO.patrimonio)">?</button> <span style="cursor:pointer;color:var(--sage)" onclick="showInfo('Patrimonio',INFO.patrimonio)">¿Qué cuenta como patrimonio?</span></div>
+      </div>
+    </details>
   </div>
 
   <!-- PERIODO TOGGLE -->
@@ -11059,7 +11084,7 @@ function buildAIReport(){
   L.push('- **Ratio deuda / ingreso anual:** '+(drA*100).toFixed(0)+'%');
   L.push('- **Capítulos registrados:** '+(S.snapshots||[]).length+' · racha: '+qStreak()+' consecutivos');
   L.push('');
-  L.push('_El score (0-100) pondera: flujo libre 30, deuda/ingreso 20, ahorro 15, patrimonio 15, constancia 10, ingreso pasivo 10; penaliza déficit hasta −15._');
+  L.push('_El score (0-100) pondera: flujo libre 30, deuda/ingreso 20, ahorro 15, patrimonio 15, constancia 10, ingreso pasivo 10, metas de ahorro 10 (abonar +5 / completar +5); penaliza déficit hasta −15; se topa a 100._');
   L.push('');
   // ── 2. Gastos fijos por categoría ─────────────────────
   const expByCat={};

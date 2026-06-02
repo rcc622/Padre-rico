@@ -2215,6 +2215,16 @@ function calcCycleBalance(ck){
     if(sav&&(sav.status==='committed'||sav.status==='intact'||sav.status==='emergency-kept')){
       gastos+=+sav.amount||0;
     }
+    // 4) Abonos a metas del ciclo (sección Ahorro) — dinero apartado este
+    //    ciclo, igual que en el Estado de cuenta del Plan. Solo abonos
+    //    positivos dentro de la ventana (los retiros no son una salida).
+    (S.savGoals||[]).forEach(g=>{
+      (g.deposits||[]).forEach(d=>{
+        if(!d||!d.date||(+d.amt||0)<=0)return;
+        if(d.date<startYMD||d.date>endYMD)return;
+        gastos+=+d.amt||0;
+      });
+    });
 
     return Math.round(ingreso-gastos);
   }catch(e){return null;}
@@ -7693,7 +7703,7 @@ try{
   // Tracking aparte para metas de ahorro: el usuario quiere ver "🎯 Apartado
   // a metas" como línea propia en Estado de cuenta (similar a "🪙 Ahorro
   // apartado → Nu express"), no mezclado con Pagos aplicados.
-  let metaAppliedAmt=0,metaCheckedAmt=0;
+  let metaAppliedAmt=0,metaCheckedAmt=0,_metaBreakdown=[];
   if(!showNext){
     // Modelo de flujo de efectivo: un gasto pagado con TDC NO sale de tu
     // efectivo al aplicarlo (queda en la tarjeta); sale cuando registras el
@@ -7703,7 +7713,22 @@ try{
     const _isTdc=(type,id)=>getPaidMethod(type,id)==='tdc';
     expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(_isTdc(pt2,e.id))return;if(isApplied(pt2,e.id))appliedAmt2+=v;else if(isPaid(pt2,e.id))checkedAmt+=v;});
     debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(_isTdc('debt',e.id))return;if(isApplied('debt',e.id))appliedAmt2+=v;else if(isPaid('debt',e.id))checkedAmt+=v;});
-    S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).forEach(g=>{const _ma=metaCycleAmt(g,planCk());if(isApplied('sav',g.id))metaAppliedAmt+=_ma;else if(isPaid('sav',g.id))metaCheckedAmt+=_ma;});
+    // METAS · fuente unificada = abonos REALES del ciclo (sección Ahorro,
+    // "Registrar movimiento"). Antes el Estado de cuenta solo contaba metas si
+    // marcabas su pago DENTRO del Plan (isApplied('sav')), así que lo que
+    // ahorrabas en la sección Ahorro no se reflejaba. Ahora sí: sumamos los
+    // abonos positivos dentro de la ventana del ciclo. Si no hubo abono real
+    // pero marcaste el pago en el Plan, respetamos la cuota sugerida (legacy).
+    // De este modo nunca se cuenta doble.
+    const _mw=cycleWindowFromKey(planCk());const _mSY=_ymdLocal(_mw.start),_mEY=_ymdLocal(_mw.end);
+    S.savGoals.forEach(g=>{
+      const realPos=(g.deposits||[]).filter(d=>d&&d.date&&d.date>=_mSY&&d.date<=_mEY&&(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
+      if(realPos>0){metaAppliedAmt+=realPos;_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:realPos,real:true});return;}
+      if(g.done||g.target<=(+g.saved||0))return;
+      const _ma=metaCycleAmt(g,planCk());
+      if(isApplied('sav',g.id)){metaAppliedAmt+=_ma;_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:_ma,real:false});}
+      else if(isPaid('sav',g.id)){metaCheckedAmt+=_ma;_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:_ma,real:false});}
+    });
     expSavePlan.forEach(e=>{if(_isTdc('apt',e.id))return;if(isApplied('apt',e.id))appliedAmt2+=e.half;else if(isPaid('apt',e.id))checkedAmt+=e.half;});
     // Impulse items: applied → counted in appliedAmt2, selected → in checkedAmt
     impulseItems.forEach(e=>{if(_isTdc('imp',e.id))return;if(isApplied('imp',e.id))appliedAmt2+=e.amt;else if(isPaid('imp',e.id))checkedAmt+=e.amt;});
@@ -7869,7 +7894,7 @@ try{
       // las vea al mismo nivel que "Ahorro apartado" en vez de mezcladas
       // con "Pagos aplicados".
       const _metaOut=metaAppliedAmt+metaCheckedAmt;
-      const _metaCount=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)&&(isApplied('sav',g.id)||isPaid('sav',g.id))).length;
+      const _metaCount=_metaBreakdown.length;
       const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_savAmt+_metaOut;
       const _balance=incQ+_otEarned-_totalOut;
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
@@ -7881,7 +7906,7 @@ try{
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
         ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
         ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosCashCount(planCk())})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
-        ${_metaOut>0?`<div class="row-b"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount})</span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></div>`:''}
+        ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:var(--sage);white-space:nowrap">+${fx(Math.round(m.amt))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="setHabitView('ahorro');go('habitos')">Ver movimientos →</button></div></details>`:''}
         ${_savAmt>0?`<div class="row-b"><span style="color:var(--sage)">🪙 Ahorro apartado${_savAsset?' → '+_savAsset.name:''}</span><strong style="color:var(--sage)">−${fx(Math.round(_savAmt))}</strong></div>`:''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>

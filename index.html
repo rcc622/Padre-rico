@@ -396,7 +396,7 @@ const _ymdLocal=(d)=>{
   return y+'-'+m+'-'+dd;
 };
 const _todayYMD=()=>_ymdLocal(new Date());
-let S={version:5,goal:'',deadline:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
+let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
@@ -420,6 +420,11 @@ function migrate(){
     // Carry over v4 fields con validación de tipos
     S.goal=typeof old.goal==='string'?old.goal:'';
     S.deadline=typeof old.deadline==='string'?old.deadline:'';
+    // Meta medible (patrimonio): si el usuario v4 no la tenía, queda en 0
+    // (no medible) y la app le ofrece definirla desde la tarjeta de meta.
+    S.goalDelta=typeof old.goalDelta==='number'?old.goalDelta:0;
+    S.goalBaseNW=typeof old.goalBaseNW==='number'?old.goalBaseNW:0;
+    S.goalBaseDate=typeof old.goalBaseDate==='string'?old.goalBaseDate:'';
     S.done=!!old.done;
     S.inc=(old.inc&&typeof old.inc==='object'&&!Array.isArray(old.inc))?old.inc:{sal:0,bf:0,bv:0};
     S.savPct=typeof old.savPct==='number'?old.savPct:10;
@@ -2727,6 +2732,38 @@ const tExtras=()=>{
   return total;
 };
 const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline)-new Date())/864e5))};
+// ── AVANCE HACIA LA META PRINCIPAL ──────────────────────────────────────
+// La meta principal se vuelve MEDIBLE expresándola como una mejora de
+// patrimonio neto (goalDelta = cuánto quiere subir su patrimonio en el
+// plazo). Pagar deuda Y ahorrar suben el patrimonio, así que un solo número
+// unifica "saldar deuda + ahorrar". goalBaseNW/goalBaseDate son la línea base
+// al fijar la meta; el avance se mide contra ella, no contra el tiempo.
+function goalProgress(){
+  const delta=+S.goalDelta||0;
+  if(delta<=0)return {measurable:false};
+  const base=+S.goalBaseNW||0;
+  const cur=nw();
+  const gained=cur-base;                       // progreso real (puede ser negativo)
+  const pct=Math.max(0,Math.min(100,Math.round(gained/delta*100)));
+  const remaining=Math.max(0,delta-gained);    // lo que falta para la meta
+  const dl=dLeft();
+  // Quincenas restantes (≈15 días). Mínimo 1 para no dividir entre cero.
+  const qnaLeft=Math.max(1,Math.ceil(dl/15));
+  const paceNeeded=remaining/qnaLeft;          // mejora de patrimonio por quincena
+  // % de tiempo transcurrido: de la fecha base a la fecha límite si las hay,
+  // si no, asumimos plazo de 6 meses (180 días) como el resto de la app.
+  let elapsed=0;
+  try{
+    const end=S.deadline?new Date(S.deadline+'T12:00').getTime():null;
+    const start=S.goalBaseDate?new Date(S.goalBaseDate+'T12:00').getTime():null;
+    if(end&&start&&end>start)elapsed=(Date.now()-start)/(end-start);
+    else elapsed=(180-dl)/180;
+  }catch(e){elapsed=(180-dl)/180;}
+  elapsed=Math.max(0,Math.min(1,elapsed));
+  const expectedPct=Math.round(elapsed*100);
+  const onTrack=pct>=expectedPct;
+  return {measurable:true,target:base+delta,base,current:cur,delta,gained,pct,remaining,qnaLeft,paceNeeded,expectedPct,onTrack,done:remaining<=0};
+}
 // ¿Abonaste (depósito positivo) a alguna meta en el ciclo actual?
 function metaAbonoCiclo(){
   try{
@@ -2870,6 +2907,47 @@ function obDone(){
   const liq=document.getElementById('ob-dliq').value;
   if(n&&b>0)pt({debts:[{id:Date.now(),name:n,bal:b,pay:+(document.getElementById('ob-dm').value)||0,rate:0,liqDate:liq||'',note:''}]});
   pt({done:true});launchApp();
+}
+
+// ══ EDITAR META PRINCIPAL (texto + fecha + objetivo medible) ════════════
+// Permite redefinir la meta y, sobre todo, hacerla MEDIBLE fijando cuánto
+// quiere mejorar su patrimonio. Captura la línea base (patrimonio de hoy)
+// para que el avance se mida de forma real, no por tiempo transcurrido.
+function openMetaEdit(){
+  const gp=goalProgress();
+  const curNw=nw();
+  const dl=S.deadline||'';
+  const deltaVal=(+S.goalDelta||0)>0?(+S.goalDelta):'';
+  const body=''
+    +'<div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:14px;padding:10px;background:rgba(78,124,106,.05);border-radius:8px">🎯 Tu meta guía todo el plan. Para que la app trace pasos concretos y mida tu avance real, dile <strong>cuánto quieres mejorar tu patrimonio</strong> en el plazo. Pagar deuda y ahorrar suman a ese número.</div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Tu meta en palabras</label><input type="text" id="meName" value="'+_escA(S.goal||'')+'" placeholder=\'"Saldar mis deudas y ahorrar mi colchón"\' style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha límite</label><input type="date" id="meDl" value="'+dl+'" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
+    +'<div style="margin-bottom:8px"><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">¿Cuánto quieres mejorar tu patrimonio? ($)</label><input type="number" id="meDelta" value="'+deltaVal+'" placeholder="60000" inputmode="decimal" style="width:100%;padding:11px;font-size:18px;text-align:center;font-weight:bold;color:var(--sage);border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"><div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Tu patrimonio hoy es <strong>'+fx(Math.round(curNw))+'</strong>. Si pones <strong>60,000</strong>, la meta es llegar a <strong>'+fx(Math.round(curNw+60000))+'</strong> (bajando deuda y/o ahorrando).</div></div>'
+    +(gp.measurable?'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-size:12px;color:var(--txt2);padding:8px 10px;background:rgba(160,112,48,.06);border-radius:6px;margin-top:8px"><input type="checkbox" id="meReset" style="width:auto;accent-color:var(--sage)">Reiniciar mi avance desde hoy (línea base = patrimonio actual)</label>':'');
+  showConfirm('🎯 Tu meta',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()" style="flex:0 0 auto;padding:10px 16px">Cancelar</button><button class="btn btn-sage" onclick="_saveMetaEdit()" style="flex:1">✓ Guardar meta</button>';
+  setTimeout(()=>document.getElementById('meName')?.focus(),120);
+}
+function _saveMetaEdit(){
+  const name=(document.getElementById('meName')?.value||'').trim();
+  const dl=(document.getElementById('meDl')?.value||'').trim();
+  const delta=Math.max(0,+(document.getElementById('meDelta')?.value)||0);
+  const reset=!!document.getElementById('meReset')?.checked;
+  if(!name){toast('Escribe tu meta 🎯');return;}
+  const wasMeasurable=(+S.goalDelta||0)>0;
+  const patch={goal:name,deadline:dl,goalDelta:delta};
+  // Capturamos línea base si la meta se vuelve medible por primera vez,
+  // o si el usuario pide reiniciar su avance desde hoy.
+  if(delta>0&&(!wasMeasurable||reset||!S.goalBaseDate)){
+    patch.goalBaseNW=nw();
+    patch.goalBaseDate=_ymdLocal(new Date());
+  }
+  pt(patch);
+  closeConfirm();
+  toast(delta>0?'🎯 Meta medible guardada':'🎯 Meta actualizada');
+  try{if(typeof rDash==='function')rDash();}catch(e){}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
 }
 
 // ══ ROUTING ═════════════════════════════════════════
@@ -3332,11 +3410,42 @@ function rDash(){
   
   <!-- META -->
   <div class="card card-sage">
-    <div class="ct">🎯 Tu Meta — 6 Meses</div>
+    <div class="row-b" style="align-items:flex-start;margin-bottom:8px">
+      <div class="ct" style="margin:0">🎯 Tu Meta</div>
+      <button class="btn btn-ghost btn-sm" style="flex:0 0 auto;padding:5px 10px;font-size:11px" onclick="openMetaEdit()">✏️ Editar</button>
+    </div>
     <div style="font-size:15px;line-height:1.7;margin-bottom:14px;color:var(--txt2);font-style:italic">"${S.goal||'Sin meta definida'}"</div>
-    <div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted)">Progreso del plazo</span><span style="font-size:11px;color:var(--sage);font-weight:bold">${pctT}% transcurrido</span></div>
-    <div class="pw"><div class="pb" style="width:${pctT}%;background:var(--sage)"></div></div>
-    <div style="font-size:11px;color:var(--muted);margin-top:7px">${dl} días restantes · Límite: ${dlFmt}</div>
+    ${(()=>{
+      const _gp=goalProgress();
+      // Línea de tiempo (siempre, como dato secundario)
+      const timeLine='<div style="font-size:11px;color:var(--muted);margin-top:10px">⏳ '+dl+' días restantes · Límite: '+dlFmt+' · '+pctT+'% del plazo</div>';
+      if(!_gp.measurable){
+        // Meta sin objetivo medible: barra de tiempo + invitación a hacerla medible.
+        return '<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted)">Progreso del plazo</span><span style="font-size:11px;color:var(--sage);font-weight:bold">'+pctT+'% transcurrido</span></div>'
+          +'<div class="pw"><div class="pb" style="width:'+pctT+'%;background:var(--sage)"></div></div>'
+          +'<div style="font-size:11px;color:var(--muted);margin-top:7px">'+dl+' días restantes · Límite: '+dlFmt+'</div>'
+          +'<div style="margin-top:14px;padding:12px;background:rgba(160,112,48,.06);border:1px dashed rgba(160,112,48,.35);border-radius:8px"><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Hoy esta meta solo cuenta el <strong>tiempo</strong>, no tu avance real. Dale un número y la app medirá qué tan cerca estás y qué abonar cada quincena.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openMetaEdit()">📊 Haz tu meta medible →</button></div>';
+      }
+      // Meta medible → avance REAL de patrimonio
+      const okCol=_gp.onTrack?'var(--sage)':'var(--amber)';
+      const pace=Math.max(0,Math.round(_gp.paceNeeded));
+      let statusChip;
+      if(_gp.done){
+        statusChip='<div style="font-size:12px;color:var(--sage);font-weight:bold;margin-top:10px">🏆 ¡Meta alcanzada! Mejoraste tu patrimonio '+fx(Math.round(_gp.gained))+'.</div>';
+      }else{
+        const paceLine=pace>0?'<div class="row-b" style="margin-top:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Ritmo para llegar a tiempo</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Mejora tu patrimonio (abona deuda y/o ahorra)</div></div><div style="text-align:right"><div style="font-size:18px;font-weight:bold;color:var(--sage)">'+fx(pace)+'</div><div style="font-size:10px;color:var(--muted)">/quincena · '+_gp.qnaLeft+' rest.</div></div></div>':'';
+        const trackLine='<div style="font-size:11px;margin-top:8px;color:'+okCol+'">'+(_gp.onTrack?'✓ Vas al día — tu avance ('+_gp.pct+'%) va igual o adelante del tiempo ('+_gp.expectedPct+'%).':'⚠ Vas atrás — avance '+_gp.pct+'% vs '+_gp.expectedPct+'% del tiempo. Sube el ritmo para no rezagarte.')+'</div>';
+        statusChip=paceLine+trackLine;
+      }
+      const gainTxt=_gp.gained>=0
+        ? 'Has mejorado tu patrimonio <strong style="color:var(--sage)">'+fx(Math.round(_gp.gained))+'</strong> de <strong>'+fx(Math.round(_gp.delta))+'</strong>'
+        : 'Tu patrimonio bajó <strong style="color:var(--terra)">'+fx(Math.round(-_gp.gained))+'</strong> desde que fijaste la meta';
+      return '<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted)">Avance a tu meta</span><span style="font-size:13px;color:'+okCol+';font-weight:bold">'+_gp.pct+'%</span></div>'
+        +'<div class="pw" style="height:9px"><div class="pb" style="width:'+_gp.pct+'%;background:'+okCol+'"></div></div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.6">'+gainTxt+' · faltan <strong>'+fx(Math.round(_gp.remaining))+'</strong> para tu objetivo de '+fx(Math.round(_gp.target))+'</div>'
+        +statusChip
+        +timeLine;
+    })()}
   </div>
 
   <!-- SCORE + RANGO -->
@@ -3347,6 +3456,7 @@ function rDash(){
     ${streak>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:12px">🔥 Racha: ${streak} ${cycleLabel()}${streak>1?(S.cycleMode==='quincenal'?'s':'es'):''} consecutiv${streak>1?(S.cycleMode==='quincenal'?'as':'os'):'o'}</div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Sube tu primer CSV para iniciar tu racha</div>`}
     <div class="pw" style="max-width:220px;margin:0 auto 6px;height:7px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
     <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'}</div>
+    ${goalProgress().measurable?`<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5;font-style:italic">Tu nivel mide qué tan <strong>sano</strong> estás — distinto de tu <strong>avance a la meta</strong> (arriba). Los dos suben juntos cuando bajas deuda y ahorras.</div>`:''}
     <details style="margin-top:16px;text-align:left">
       <summary style="list-style:none;cursor:pointer;font-size:11px;color:var(--sage);text-align:center;letter-spacing:.5px;-webkit-tap-highlight-color:transparent">▾ Ver de dónde sale tu score</summary>
       <div style="margin-top:12px">
@@ -7932,6 +8042,20 @@ try{
     document.getElementById('tab-plan').innerHTML=`
     ${subNav}${toggle}
 
+    <!-- RITMO HACIA TU META (puente meta ↔ plan) -->
+    ${(()=>{try{
+      const _gp=goalProgress();
+      if(!_gp.measurable||_gp.done||showNext)return '';
+      const pace=Math.max(0,Math.round(_gp.paceNeeded));
+      if(pace<=0)return '';
+      const okCol=_gp.onTrack?'var(--sage)':'var(--amber)';
+      return '<div class="card" style="border:1px solid rgba(78,124,106,.3);background:rgba(78,124,106,.05);padding:14px 16px">'
+        +'<div class="row-b" style="margin-bottom:6px"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🎯 Paso hacia tu meta</div><span style="font-size:11px;color:'+okCol+';font-weight:bold">'+_gp.pct+'% avance</span></div>'
+        +'<div style="font-size:12px;color:var(--txt2);line-height:1.6">Para llegar a tiempo, esta quincena mejora tu patrimonio <strong style="color:var(--sage)">'+fx(pace)+'</strong> — abonando a deuda y/o apartando ahorro. Lo que hagas abajo cuenta para tu meta.</div>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:6px">Faltan '+fx(Math.round(_gp.remaining))+' en '+_gp.qnaLeft+' quincena'+(_gp.qnaLeft!==1?'s':'')+'.</div>'
+        +'</div>';
+    }catch(e){return '';}})()}
+
     <!-- DEFICIT ALERT -->
     ${mUnpaidT>0&&!showNext?`<div class="card card-red" style="padding:14px 18px">
       <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mUnpaidT))}</strong> (${mUnpaid.length} gasto${mUnpaid.length!==1?'s':''} y deudas). Selecciónalos y aplícalos conforme vayas pagando.</div>
@@ -11071,6 +11195,7 @@ function buildAIReport(){
   L.push('## 1 · Foto financiera de hoy');
   L.push('');
   if(S.goal)L.push('- **Meta:** '+S.goal+(S.deadline?' · fecha límite '+fmtDate(S.deadline)+' ('+dLeft()+' días)':''));
+  {const _gp=goalProgress();if(_gp.measurable)L.push('- **Avance a la meta:** '+_gp.pct+'% — mejora de patrimonio '+fxn(_gp.gained)+' de '+fxn(_gp.delta)+' objetivo · faltan '+fxn(_gp.remaining)+' · ritmo necesario '+fxn(Math.round(_gp.paceNeeded))+'/quincena · '+(_gp.onTrack?'va al día':'va atrasado vs tiempo ('+_gp.expectedPct+'%)'));}
   L.push('- **Score de salud financiera:** '+sc+'/100 — rango '+rk.emoji+' '+rk.name+(rk.stars?' ('+rk.stars+'★ prestigio)':''));
   L.push('- **Ingreso mensual:** '+fxn(inc)+'  (salario '+fxn(+S.inc.sal||0)+' + bono fijo '+fxn(+S.inc.bf||0)+')'+((+S.inc.bv||0)>0?' · bono variable estimado '+fxn(+S.inc.bv||0):''));
   if(ext>0)L.push('- **Ingresos extra (prom. mensual):** '+fxn(ext));

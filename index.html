@@ -7768,7 +7768,18 @@ try{
     expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
     debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';mandatory.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
     // Optional: savings, apartados, impulses
-    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{const perQ=metaCycleAmt(g,planCk());const paid=!showNext&&isPaid('sav',g.id);optional.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid});});
+    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{
+      // Si ya registraste un abono REAL este ciclo (sección Ahorro · "Registrar
+      // movimiento"), la meta se marca SOLA como aplicada en el Plan: una sola
+      // fuente de verdad (los abonos reales), sin tener que checarla a mano ni
+      // sumar un monto fantasma encima.
+      const _mw=cycleWindowFromKey(planCk());const _msY=_ymdLocal(_mw.start),_meY=_ymdLocal(_mw.end);
+      const _realAb=(g.deposits||[]).filter(d=>d&&d.date&&d.date>=_msY&&d.date<=_meY&&(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
+      const _auto=!showNext&&_realAb>0;
+      const perQ=_auto?_realAb:metaCycleAmt(g,planCk());
+      const paid=_auto||(!showNext&&isPaid('sav',g.id));
+      optional.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid,autoApplied:_auto});
+    });
     expSavePlan.forEach(e=>{const paid=!showNext&&isPaid('apt',e.id);const label=e.type==='other'?'💰 Apartar '+e.name+' (día '+e.day+' · '+fx(e.amt)+')':'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';optional.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});});
     // FASE 8: TDC payment synthetic entries (paidItems keys starting with 'tdcpay_')
     if(!showNext){
@@ -7832,8 +7843,8 @@ try{
 
     // Optional splits
     const oUnpaid=optional.filter(p=>!p.paid);
-    const oSelected=optional.filter(p=>p.paid&&!isApplied(p.ptype,p.id));
-    const oApplied=optional.filter(p=>p.paid&&isApplied(p.ptype,p.id));
+    const oSelected=optional.filter(p=>p.paid&&!p.autoApplied&&!isApplied(p.ptype,p.id));
+    const oApplied=optional.filter(p=>p.autoApplied||(p.paid&&isApplied(p.ptype,p.id)));
     const oUnpaidT=oUnpaid.reduce((a,p)=>a+p.amt,0);
     const oTotalT=optional.reduce((a,p)=>a+p.amt,0);
 
@@ -7853,6 +7864,7 @@ try{
       // FASE 8: método de pago (solo para applied, y tdcpay siempre es débito sin toggle)
       const methodIcon=(()=>{
         if(st!=='applied')return '';
+        if(p.autoApplied)return ''; // el abono vive en Ahorro; sin toggle de método aquí
         if(p.tdcPending)return '';
         const method=getPaidMethod(p.ptype,p.id);
         if(p.tdcPayment||p.ptype==='tdcpay'){return '<span title="Pago TDC" style="font-size:13px;opacity:.9;padding:3px 5px">💵</span>';}
@@ -7861,7 +7873,7 @@ try{
       })();
       return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
         <div class="row" style="gap:8px">
-          ${!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:22px;height:22px;font-size:11px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:22px;height:22px;font-size:11px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
+          ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();setHabitView('ahorro');go('habitos')" style="width:22px;height:22px;font-size:11px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:22px;height:22px;font-size:11px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:22px;height:22px;font-size:11px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
           <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
           <span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>
         </div>
@@ -7871,7 +7883,7 @@ try{
             <span style="font-size:12px;color:${col};font-weight:bold">${fx(Math.round(showReal?rAmt:p.amt))}</span>
             ${showReal?`<div style="font-size:9px;color:${diff>0?'var(--sage)':'var(--terra)'}">${diff>0?'↓'+fx(Math.round(diff)):'↑'+fx(Math.round(Math.abs(diff)))}</div>`:''}
           </div>
-          ${st==='applied'&&!p.tdcPayment&&!p.tdcPending?`<button style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-family:Georgia,serif" onclick="event.stopPropagation();undoApply('${p.ptype}',${p.id})">↩</button>`:''}
+          ${p.autoApplied?`<span title="Abono automático desde Ahorro" style="font-size:8px;color:var(--sage);border:1px solid rgba(78,124,106,.4);border-radius:4px;padding:2px 5px;text-transform:uppercase;letter-spacing:.3px;font-family:Georgia,serif">auto</span>`:st==='applied'&&!p.tdcPayment&&!p.tdcPending?`<button style="font-size:9px;color:var(--muted);background:none;border:1px solid var(--border);border-radius:4px;padding:2px 5px;cursor:pointer;font-family:Georgia,serif" onclick="event.stopPropagation();undoApply('${p.ptype}',${p.id})">↩</button>`:''}
           ${p.ptype==='imp'&&p._rid?(()=>{const _rr=_xref({rid:p._rid,ck:p._ck,idx:p._idx,id:p.id,name:p.name||'',amt:p.amt});return `<button title="Eliminar este gasto impulso" style="font-size:11px;color:var(--terra);background:none;border:1px solid rgba(184,92,74,.3);border-radius:4px;padding:2px 6px;cursor:pointer;font-family:Georgia,serif;line-height:1" onclick="event.stopPropagation();(function(a){confirmDeleteImpulse(a.rid,a.ck,a.idx,a.id,a.name,a.amt);})(_xget(${_rr}))">✕</button>`;})():''}
         </div>
       </div>`;};

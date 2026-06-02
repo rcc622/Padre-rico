@@ -1777,8 +1777,9 @@ function addSavGoal(){
   const t=+(document.getElementById('sgt')?.value)||0;
   const dl=document.getElementById('sgd')?.value||'';
   const icon=document.getElementById('sgi')?.value||'🎯';
+  const tipo=document.getElementById('sgtipo')?.value==='patrimonio'?'patrimonio':'consumo';
   if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
-  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,done:false};
+  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,tipo,done:false};
   pt({savGoals:[...S.savGoals,goal]});
   toast('🎯 Meta de ahorro creada');rHabitos();
 }
@@ -2018,8 +2019,9 @@ function addSavGoalH(){
   const t=+(document.getElementById('sgth')?.value)||0;
   const dl=document.getElementById('sgdh')?.value||'';
   const icon=document.getElementById('sgih')?.value||'🎯';
+  const tipo=document.getElementById('sgtipo')?.value==='patrimonio'?'patrimonio':'consumo';
   if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
-  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,done:false};
+  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,tipo,done:false};
   pt({savGoals:[...S.savGoals,goal]});
   toast('🎯 Meta de ahorro creada');rHabitos();
 }
@@ -2027,6 +2029,15 @@ function rmSavGoal(id){
   showConfirm('¿Eliminar esta meta?','Se perderá el historial de abonos.',()=>{
     pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');rHabitos();
   });
+}
+// Alterna el propósito de una meta: consumo (se gasta) ↔ patrimonio (construye).
+// Afecta cómo cuenta su dinero en el patrimonio, la meta principal y el score.
+function toggleSavGoalTipo(id){
+  let nt='consumo';
+  pt({savGoals:S.savGoals.map(g=>{if(g.id!==id)return g;nt=(g.tipo||'consumo')==='consumo'?'patrimonio':'consumo';return {...g,tipo:nt};})});
+  toast(nt==='patrimonio'?'🏗️ Meta marcada como patrimonio (construye)':'🛒 Meta marcada como consumo (se gasta)');
+  rHabitos();hdrUp&&hdrUp();
+  try{if(cur==='dash')rDash();}catch(e){}
 }
 function savGoalPerQ(g){
   const today=new Date();
@@ -2698,6 +2709,33 @@ const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
 const tDebt=()=>S.debts.reduce((a,d)=>a+(+d.bal||0),0);
 const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
 const nw=()=>tAss()-tDebt();
+// ── PATRIMONIO POR PROPÓSITO ────────────────────────────────────────────
+// Distingue el dinero que CONSTRUYE patrimonio (fondo de emergencia,
+// inversión) del COMPROMETIDO a metas de consumo (TV, viaje, fiesta), que
+// es dinero tuyo hoy pero destinado a gastarse. El dinero de una meta puede
+// vivir respaldado en un activo (depósitos con assetId, ya dentro de nw) o
+// "virtual" (apartado mental aún no ligado a una cuenta).
+// tipo de meta: 'consumo' (default) | 'patrimonio'.
+function metaMoneyBreakdown(){
+  let consumoAsset=0,consumoVirtual=0,buildAsset=0,buildVirtual=0;
+  (S.savGoals||[]).forEach(g=>{
+    if(g.done)return;                       // ya cumplida/gastada: el dinero salió
+    const saved=+g.saved||0;if(saved<=0)return;
+    let backed=0;(g.deposits||[]).forEach(d=>{if(d&&d.assetId!=null)backed+=(+d.amt||0);});
+    backed=Math.max(0,Math.min(saved,backed));
+    const virtual=Math.max(0,saved-backed);
+    if((g.tipo||'consumo')==='patrimonio'){buildAsset+=backed;buildVirtual+=virtual;}
+    else{consumoAsset+=backed;consumoVirtual+=virtual;}
+  });
+  return {consumoAsset,consumoVirtual,buildAsset,buildVirtual,
+    consumoTotal:consumoAsset+consumoVirtual,buildTotal:buildAsset+buildVirtual};
+}
+// Patrimonio que CONSTRUYE: quita de nw el dinero de metas de consumo que
+// está sentado en activos, y suma el de metas tipo patrimonio aún virtual.
+// Para usuarios sin metas, nwBuild()===nw() (sin regresión).
+function nwBuild(){const b=metaMoneyBreakdown();return nw()-b.consumoAsset+b.buildVirtual;}
+// Todo el efectivo que tienes hoy (incluye metas, virtuales o no).
+function nwTotalCash(){const b=metaMoneyBreakdown();return nw()+b.consumoVirtual+b.buildVirtual;}
 // Rendimiento mensual de un activo: balance × tasa anual / 12. Antes el
 // usuario tecleaba el monto mensual fijo (a.inc); ahora teclea el % anual
 // (a.yldPct) y la app calcula la ganancia y las proyecciones.
@@ -2759,7 +2797,7 @@ function goalProgress(){
   const delta=+S.goalDelta||0;
   if(delta<=0)return {measurable:false};
   const base=+S.goalBaseNW||0;
-  const cur=nw();
+  const cur=nwBuild();                          // patrimonio que construye (excluye metas de consumo)
   const gained=cur-base;                       // progreso real (puede ser negativo)
   const pct=Math.max(0,Math.min(100,Math.round(gained/delta*100)));
   const remaining=Math.max(0,delta-gained);    // lo que falta para la meta
@@ -2802,7 +2840,7 @@ function scoreBreakdown(){
   parts.push({k:'ahorro',label:'Ahorro (Págate primero)',pts:p3,max:15,col:'var(--sage)',
     hint:('Apartas '+(S.savPct||0)+'% de tu ingreso')+(curSavCommit()?' y ya apartaste este ciclo (+5).':'. Toca "Ya aparté mi ahorro" cada ciclo para +5.')});
   // 4. Patrimonio neto (0-15)
-  const netW=nw(); let p4=0; if(netW>0)p4=Math.min(15,Math.round(netW/(inc||1)/6*15));
+  const netW=nwBuild(); let p4=0; if(netW>0)p4=Math.min(15,Math.round(netW/(inc||1)/6*15));
   parts.push({k:'patrimonio',label:'Patrimonio neto',pts:p4,max:15,col:'var(--sage)',
     hint:netW>0?('Tu patrimonio ('+fx(Math.round(netW))+') equivale a '+(netW/(inc||1)).toFixed(1)+' meses de ingreso. 6 meses = 15.'):('Patrimonio = '+fx(Math.round(netW))+' (activos − deudas). En 0 o negativo no suma. Sube activos o baja deuda.')});
   // 5. Constancia (0-10): racha de cierres + racha de ahorro
@@ -2930,7 +2968,7 @@ function obDone(){
   // Línea base del patrimonio: se captura AQUÍ (no en el paso 1) para que
   // ya incluya la deuda inicial recién registrada. Así el avance hacia la
   // meta se mide desde tu punto de partida real.
-  if((+S.goalDelta||0)>0)pt({goalBaseNW:nw(),goalBaseDate:S.goalBaseDate||_ymdLocal(new Date())});
+  if((+S.goalDelta||0)>0)pt({goalBaseNW:nwBuild(),goalBaseDate:S.goalBaseDate||_ymdLocal(new Date())});
   pt({done:true});launchApp();
 }
 
@@ -2940,7 +2978,7 @@ function obDone(){
 // para que el avance se mida de forma real, no por tiempo transcurrido.
 function openMetaEdit(){
   const gp=goalProgress();
-  const curNw=nw();
+  const curNw=nwBuild();
   const dl=S.deadline||'';
   const deltaVal=(+S.goalDelta||0)>0?(+S.goalDelta):'';
   const body=''
@@ -2965,7 +3003,7 @@ function _saveMetaEdit(){
   // Capturamos línea base si la meta se vuelve medible por primera vez,
   // o si el usuario pide reiniciar su avance desde hoy.
   if(delta>0&&(!wasMeasurable||reset||!S.goalBaseDate)){
-    patch.goalBaseNW=nw();
+    patch.goalBaseNW=nwBuild();
     patch.goalBaseDate=_ymdLocal(new Date());
   }else if(!S.goalBaseDate){
     // Ancla la fecha de inicio para que la barra de tiempo sea correcta
@@ -3597,10 +3635,25 @@ function rDash(){
   <!-- PATRIMONIO -->
   <div class="card">
     <div class="ct">Patrimonio Neto ${ib('patrimonio','Patrimonio')}</div>
-    <div class="row-b">
-      <div><div class="stat" style="color:${nw()>=0?'var(--sage)':'var(--terra)'}">${fx(nw())}</div><div class="lbl">Activos ${fx(tAss())} − Deudas ${fx(tDebt())}</div></div>
-      <div style="text-align:right"><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Deuda / Ingreso anual</div><div style="font-size:22px;font-weight:bold;color:${tDebt()/(Math.max(mInc()*12,1))<0.4?'var(--sage)':'var(--terra)'}">${(tDebt()/Math.max(mInc()*12,1)*100).toFixed(0)}%</div></div>
-    </div>
+    ${(()=>{
+      const _b=metaMoneyBreakdown();
+      const _build=nwBuild();
+      const _consumo=_b.consumoTotal;
+      const _ratio=(tDebt()/Math.max(mInc()*12,1)*100).toFixed(0);
+      const _ratioCol=tDebt()/(Math.max(mInc()*12,1))<0.4?'var(--sage)':'var(--terra)';
+      const head='<div class="row-b">'
+        +'<div><div class="stat" style="color:'+(_build>=0?'var(--sage)':'var(--terra)')+'">'+fx(_build)+'</div><div class="lbl">'+(_consumo>0?'🏗️ Lo que construye tu riqueza':'Activos '+fx(tAss())+' − Deudas '+fx(tDebt()))+'</div></div>'
+        +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Deuda / Ingreso anual</div><div style="font-size:22px;font-weight:bold;color:'+_ratioCol+'">'+_ratio+'%</div></div>'
+        +'</div>';
+      const consumoBlock=_consumo>0?(
+        '<div style="margin-top:12px;padding:10px 12px;background:rgba(160,112,48,.06);border:1px solid rgba(160,112,48,.2);border-radius:8px">'
+        +'<div class="row-b"><span style="font-size:12px;color:var(--amber)">🛒 Comprometido a metas de consumo</span><strong style="font-size:14px;color:var(--amber)">'+fx(Math.round(_consumo))+'</strong></div>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Es dinero tuyo hoy, pero destinado a gastarse (TV, viaje, fiesta). Por eso <strong>no cuenta</strong> como patrimonio que construye ni en tu meta principal.</div>'
+        +'</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-top:8px">💵 Efectivo total hoy: <strong>'+fx(Math.round(nwTotalCash()))+'</strong> <span style="color:var(--muted)">(construye + consumo)</span></div>'
+      ):'';
+      return head+consumoBlock;
+    })()}
   </div>
 
   <!-- PRINCIPIO -->
@@ -9058,7 +9111,7 @@ function rHabitos(){
         :'';
       return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
         <div class="row-b" style="margin-bottom:8px">
-          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${_escH(g.name)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(reached?'✅ ¡Meta alcanzada!':g.done?'✓ Completada (cerrada manualmente)':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div></div></div>
+          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${_escH(g.name)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(reached?'✅ ¡Meta alcanzada!':g.done?'✓ Completada (cerrada manualmente)':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div><div style="margin-top:5px"><button onclick="toggleSavGoalTipo(${g.id})" title="Cambiar propósito (afecta tu patrimonio)" style="background:${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.1)':'rgba(160,112,48,.1)'};border:1px solid ${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.3)':'rgba(160,112,48,.3)'};border-radius:5px;color:${(g.tipo||'consumo')==='patrimonio'?'var(--sage)':'var(--amber)'};cursor:pointer;font-size:10px;padding:2px 8px;font-family:Georgia,serif">${(g.tipo||'consumo')==='patrimonio'?'🏗️ Patrimonio':'🛒 Consumo'} ⇄</button></div></div></div>
           <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
         </div>
         <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
@@ -9115,6 +9168,13 @@ function rHabitos(){
       <div class="g2" style="margin-bottom:10px">
         <div><label>¿Cuánto necesitas? ($)</label><input type="number" id="sgth" placeholder="15000"></div>
         <div><label>¿Para cuándo?</label><input type="date" id="sgdh"></div>
+      </div>
+      <div style="margin-bottom:10px"><label>¿Qué tipo de meta es?</label>
+        <select id="sgtipo" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">
+          <option value="consumo">🛒 Consumo — la voy a gastar (viaje, fiesta, TV…)</option>
+          <option value="patrimonio">🏗️ Patrimonio — se queda y construye (fondo, inversión)</option>
+        </select>
+        <div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Las de <strong>consumo</strong> son dinero tuyo hoy pero no cuentan como patrimonio que construye (se van a gastar). Las de <strong>patrimonio</strong> sí suman a tu riqueza y a tu meta principal.</div>
       </div>
       <button class="btn btn-sage" onclick="addSavGoalH()">🎯 Crear meta de ahorro</button>
     </div>

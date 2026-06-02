@@ -3412,7 +3412,7 @@ function rDash(){
     const metaLine=metaSaved>0?(
       '<div style="font-size:11px;color:var(--sage);margin:0 0 10px;padding:8px 10px;background:rgba(78,124,106,.06);border-radius:6px;line-height:1.5">🎯 Tienes <strong>'+fx(Math.round(metaSaved))+'</strong> ahorrado en '+activeMetas.length+' meta'+(activeMetas.length!==1?'s':'')+'</div>'
     ):'';
-    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div>'+metaLine+'<div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'%</div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
+    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div>'+metaLine+'<div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'% <button onclick="openSavPctQuick()" title="Ajustar tu %" style="background:none;border:1px solid rgba(78,124,106,.3);border-radius:5px;color:var(--sage);cursor:pointer;font-size:11px;padding:1px 6px;margin-left:3px;vertical-align:middle">✎</button></div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
   }catch(e){return'';}})()}
 
   <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en ventana del bono) -->
@@ -8695,6 +8695,35 @@ function setSavPct(v){
   pt({savPct:n});
   rHabitos();
   hdrUp&&hdrUp();
+}
+
+// Mini-editor del % de ahorro, invocable desde el widget "Págate a ti
+// primero" del dashboard. Escribe el MISMO S.savPct que el editor de Ahorro
+// en Día a día, así ambos quedan siempre sincronizados (una sola fuente).
+let _spqTimer=null;
+function openSavPctQuick(){
+  const pct=Math.max(1,Math.min(50,+S.savPct||10));
+  const amt=Math.round(curQnaInc()*(+S.savPct||0)/100);
+  const body=''
+    +'<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:16px">El porcentaje que apartas <strong>antes</strong> de gastar. Se usa en toda la app: tu sugerido, tu plan y tu score.</div>'
+    +'<div style="text-align:center;margin-bottom:4px"><span id="spqVal" style="font-size:44px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+S.savPct+'%</span></div>'
+    +'<div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:16px">= <strong id="spqAmt" style="color:var(--sage)">'+fx(amt)+'</strong> de esta quincena</div>'
+    +'<input type="range" min="1" max="50" step="1" value="'+pct+'" id="spqSlider" oninput="_setSavPctQuick(+this.value)" style="width:100%;accent-color:var(--sage)">'
+    +'<div class="row" style="gap:6px;justify-content:center;margin-top:14px">'+[5,10,15,20].map(p=>'<button class="btn btn-ghost btn-sm" onclick="_setSavPctQuick('+p+')" style="padding:7px 14px">'+p+'%</button>').join('')+'</div>';
+  showConfirm('🪙 Tu % de ahorro',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-sage" style="flex:1" onclick="closeConfirm();if(cur===\'dash\')rDash()">Listo ✓</button>';
+}
+function _setSavPctQuick(v){
+  let n=Math.round(+v||0);if(n<1)n=1;if(n>100)n=100;
+  if(n!==S.savPct)pt({savPct:n});
+  const val=document.getElementById('spqVal');if(val)val.textContent=n+'%';
+  const amtEl=document.getElementById('spqAmt');if(amtEl)amtEl.textContent=fx(Math.round(curQnaInc()*n/100));
+  const sld=document.getElementById('spqSlider');if(sld&&+sld.value!==Math.min(50,n))sld.value=Math.min(50,n);
+  try{hdrUp&&hdrUp();}catch(e){}
+  // Sincroniza el card de fondo (debounced) para que el % y el sugerido
+  // queden alineados al cerrar.
+  clearTimeout(_spqTimer);_spqTimer=setTimeout(()=>{try{if(cur==='dash')rDash();}catch(e){}},250);
 }
 
 function rHabitos(){

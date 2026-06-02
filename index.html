@@ -4668,6 +4668,8 @@ function saveSnapshot(txns,source){
     topByAmt,
     score:score(),
     patrimonio:nw(),
+    patrimonioBuild:nwBuild(),
+    consumoComprometido:metaMoneyBreakdown().consumoTotal,
     deudaTotal:tDebt(),
     // Separate debit/credit data
     debitTotal:nuDebit.reduce((a,t)=>a+t.amt,0),
@@ -6917,6 +6919,8 @@ function cerrarQnaDiarios(){
         topByAmt:list.slice().sort((a,b)=>b.amt-a.amt).slice(0,10).map(g=>({desc:g.name.slice(0,30),amt:g.amt})),
         score:score(),
         patrimonio:nw(),
+        patrimonioBuild:nwBuild(),
+        consumoComprometido:metaMoneyBreakdown().consumoTotal,
         deudaTotal:tDebt(),
         debitTotal:totalG,creditTotal:0,debitTxns:list.length,creditTxns:0,
         hormigaDebit:catBreakdown,hormigaCredit:{},

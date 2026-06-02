@@ -3400,7 +3400,7 @@ function rDash(){
       // Subtítulo: si hay metas, las menciona también para dar contexto.
       const subTarget=metaSaved>0?'→ '+assetName+' · '+activeMetas.length+' meta'+(activeMetas.length!==1?'s':''):'→ '+assetName;
       return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px">'
-        +'<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">💰 Ahorro acumulado</div>'
+        +'<div class="row-b" style="margin-bottom:6px"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💰 Ahorro acumulado</div><button onclick="openSavPctQuick()" title="Ajustar tu %" style="background:none;border:1px solid rgba(78,124,106,.3);border-radius:5px;color:var(--sage);cursor:pointer;font-size:11px;padding:2px 8px">✎ '+S.savPct+'%</button></div>'
         +'<div class="stat" style="color:var(--sage);font-family:Georgia,serif">'+fx(Math.round(totalAccum))+'</div>'
         +'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+subTarget+'</div>'
         +movLine
@@ -5779,7 +5779,7 @@ function rFlujo(){try{
     return `<div class="card" style="border-left:3px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.04) 0%,rgba(78,124,106,.02) 100%)">
       <div class="row-b" style="margin-bottom:10px">
         <div class="ct" style="margin-bottom:0">🪙 Págate a ti primero</div>
-        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:6px 10px" onclick="setHabitView('ahorro');go('habitos')" title="Ajustar % en Ahorro">⚙️ Config</button>
+        <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:6px 10px" onclick="openSavPctQuick()" title="Ajustar tu %">✎ ${S.savPct}%</button>
       </div>
       ${committed
         ?'<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Ya apartaste <strong style="color:var(--sage)">'+fx(c.amount)+'</strong> esta quincena. La diferencia (si la sugerencia subió) puede agregarse desde aquí.</div>'
@@ -8712,8 +8712,13 @@ function openSavPctQuick(){
     +'<div class="row" style="gap:6px;justify-content:center;margin-top:14px">'+[5,10,15,20].map(p=>'<button class="btn btn-ghost btn-sm" onclick="_setSavPctQuick('+p+')" style="padding:7px 14px">'+p+'%</button>').join('')+'</div>';
   showConfirm('🪙 Tu % de ahorro',body,null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
-  if(row)row.innerHTML='<button class="btn btn-sage" style="flex:1" onclick="closeConfirm();if(cur===\'dash\')rDash()">Listo ✓</button>';
+  if(row)row.innerHTML='<button class="btn btn-sage" style="flex:1" onclick="_closeSavPctQuick()">Listo ✓</button>';
 }
+// Refresca el panel visible para que el % quede sincronizado donde se abrió.
+function _refreshSavPctViews(){
+  try{if(cur==='dash')rDash();else if(cur==='habitos')rHabitos();}catch(e){}
+}
+function _closeSavPctQuick(){closeConfirm();_refreshSavPctViews();}
 function _setSavPctQuick(v){
   let n=Math.round(+v||0);if(n<1)n=1;if(n>100)n=100;
   if(n!==S.savPct)pt({savPct:n});
@@ -8721,9 +8726,9 @@ function _setSavPctQuick(v){
   const amtEl=document.getElementById('spqAmt');if(amtEl)amtEl.textContent=fx(Math.round(curQnaInc()*n/100));
   const sld=document.getElementById('spqSlider');if(sld&&+sld.value!==Math.min(50,n))sld.value=Math.min(50,n);
   try{hdrUp&&hdrUp();}catch(e){}
-  // Sincroniza el card de fondo (debounced) para que el % y el sugerido
+  // Sincroniza el panel de fondo (debounced) para que el % y el sugerido
   // queden alineados al cerrar.
-  clearTimeout(_spqTimer);_spqTimer=setTimeout(()=>{try{if(cur==='dash')rDash();}catch(e){}},250);
+  clearTimeout(_spqTimer);_spqTimer=setTimeout(_refreshSavPctViews,250);
 }
 
 function rHabitos(){

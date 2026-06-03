@@ -7082,39 +7082,75 @@ function convertAssetToMeta(id){
   const val=+a.val||0;
   const defDl=(()=>{const d=new Date();d.setMonth(d.getMonth()+3);return _ymdLocal(d);})();
   const keepDefault=!!a.gen;
+  const activeMetas=(S.savGoals||[]).filter(g=>!g.done);
+  const metaOpts=activeMetas.map(g=>'<option value="'+g.id+'">'+(g.icon||'🎯')+' '+_escH(g.name)+' · '+fx(Math.round(+g.saved||0))+' / '+fx(g.target)+'</option>').join('');
+  const iconOpts=['🎯','🚗','🎉','🏠','✈️','🎄','📱','🎓','💍','🛡️','🛒','🥳'].map(e=>'<option>'+e+'</option>').join('');
+  const startNew=activeMetas.length===0; // si no hay metas, arranca en "crear nueva"
   const body=''
-    +'<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px;padding:10px;background:rgba(160,112,48,.06);border-radius:8px">🎯 Convertiremos <strong>'+_escH(a.name)+'</strong> en una <strong>meta de consumo</strong> (algo que vas a gastar).'+(val>0?' Su saldo de <strong>'+fx(val)+'</strong> contará como lo que llevas ahorrado.':'')+'</div>'
-    +'<div class="g2" style="margin-bottom:10px">'
-      +'<div><label style="font-size:11px;color:var(--muted)">¿Cuánto necesitas? ($)</label><input type="number" id="c2mTarget" value="'+(val>0?val:'')+'" placeholder="15000" style="width:100%;padding:9px"></div>'
-      +'<div><label style="font-size:11px;color:var(--muted)">¿Para cuándo?</label><input type="date" id="c2mDl" value="'+defDl+'" style="width:100%;padding:9px"></div>'
+    +'<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px;padding:10px;background:rgba(160,112,48,.06);border-radius:8px">🎯 El saldo de <strong>'+_escH(a.name)+'</strong>'+(val>0?' (<strong>'+fx(val)+'</strong>)':'')+' lo manejaremos como <strong>meta de consumo</strong>. Elige a qué meta va.</div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted)">¿A qué meta?</label>'
+      +'<select id="c2mGoal" onchange="_c2mToggleNew()" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
+        +metaOpts
+        +'<option value="__new__"'+(startNew?' selected':'')+'>➕ Crear meta nueva…</option>'
+      +'</select></div>'
+    +'<div id="c2mNewFields" style="display:'+(startNew?'block':'none')+'">'
+      +'<div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-bottom:10px">'
+        +'<div><label style="font-size:11px;color:var(--muted)">Icono</label><select id="c2mIcon" style="width:64px;text-align:center;font-size:16px;padding:8px;border:1px solid var(--border);border-radius:6px">'+iconOpts+'</select></div>'
+        +'<div><label style="font-size:11px;color:var(--muted)">Nombre</label><input type="text" id="c2mName" value="'+_escA(a.name)+'" style="width:100%;padding:9px"></div>'
+      +'</div>'
+      +'<div class="g2" style="margin-bottom:10px">'
+        +'<div><label style="font-size:11px;color:var(--muted)">¿Cuánto necesitas? ($)</label><input type="number" id="c2mTarget" value="'+(val>0?val:'')+'" placeholder="15000" style="width:100%;padding:9px"></div>'
+        +'<div><label style="font-size:11px;color:var(--muted)">¿Para cuándo?</label><input type="date" id="c2mDl" value="'+defDl+'" style="width:100%;padding:9px"></div>'
+      +'</div>'
     +'</div>'
     +'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--txt2);padding:8px 10px;background:rgba(78,124,106,.05);border-radius:6px"><input type="checkbox" id="c2mKeep" '+(keepDefault?'checked':'')+' style="width:auto;accent-color:var(--sage)">Mantener la cuenta (sigue ganando interés) y solo ligar la meta</label>'
     +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Márcalo si el dinero vive en una cajita real (Nu, Mercado Pago) que da rendimiento. Si lo desmarcas, la cuenta se elimina y el saldo queda dentro de la meta.</div>';
-  showConfirm('🎯 Convertir a meta de consumo',body,null);
+  showConfirm('🎯 Mandar a una meta de consumo',body,null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
-  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()" style="flex:0 0 auto;padding:10px 16px">Cancelar</button><button class="btn btn-sage" onclick="_doConvertAssetToMeta('+id+')" style="flex:1">✓ Convertir</button>';
+  if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" onclick="closeConfirm()" style="flex:0 0 auto;padding:10px 16px">Cancelar</button><button class="btn btn-sage" onclick="_doConvertAssetToMeta('+id+')" style="flex:1">✓ Guardar</button>';
+}
+function _c2mToggleNew(){
+  const sel=document.getElementById('c2mGoal')?.value;
+  const nf=document.getElementById('c2mNewFields');
+  if(nf)nf.style.display=(sel==='__new__')?'block':'none';
 }
 function _doConvertAssetToMeta(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
   const val=+a.val||0;
-  const target=Math.max(0,+(document.getElementById('c2mTarget')?.value)||0);
-  const dl=document.getElementById('c2mDl')?.value||'';
   const keep=!!document.getElementById('c2mKeep')?.checked;
-  if(!target){toast('Indica cuánto necesitas en total');return;}
-  if(!dl){toast('Indica la fecha límite');return;}
-  const gid=Date.now();
-  const deposits=[];
-  if(val>0){
-    const dep={id:gid+1,amt:val,date:_todayYMD(),note:'Saldo inicial'};
-    if(keep){dep.assetId=a.id;dep.evId=null;} // ligado sin re-aplicar: el dinero ya está en la cuenta
-    deposits.push(dep);
+  const sel=document.getElementById('c2mGoal')?.value||'__new__';
+  let savGoals=S.savGoals,goalName='';
+  if(sel==='__new__'){
+    const name=(document.getElementById('c2mName')?.value||'').trim()||a.name;
+    const icon=document.getElementById('c2mIcon')?.value||'🎯';
+    const target=Math.max(0,+(document.getElementById('c2mTarget')?.value)||0);
+    const dl=document.getElementById('c2mDl')?.value||'';
+    if(!target){toast('Indica cuánto necesitas en total');return;}
+    if(!dl){toast('Indica la fecha límite');return;}
+    const gid=Date.now();
+    const deposits=[];
+    if(val>0){const dep={id:gid+1,amt:val,date:_todayYMD(),note:'Saldo inicial'};if(keep){dep.assetId=a.id;dep.evId=null;}deposits.push(dep);}
+    const goal={id:gid,name,target,deadline:dl,saved:val,deposits,icon,tipo:'consumo',done:val>=target};
+    if(keep)goal.lastAssetId=a.id;
+    savGoals=[...S.savGoals,goal];goalName=name;
+  }else{
+    const g=S.savGoals.find(x=>x.id===+sel);
+    if(!g){toast('Meta no encontrada');return;}
+    goalName=g.name;
+    if(val>0){
+      const dep={id:Date.now()+1,amt:val,date:_todayYMD(),note:'Desde '+a.name};
+      if(keep){dep.assetId=a.id;dep.evId=null;}
+      savGoals=S.savGoals.map(x=>{
+        if(x.id!==g.id)return x;
+        const saved=(+x.saved||0)+val;
+        return {...x,saved,deposits:[...(x.deposits||[]),dep],done:saved>=x.target,lastAssetId:keep?a.id:x.lastAssetId};
+      });
+    }
   }
-  const goal={id:gid,name:a.name,target,deadline:dl,saved:val,deposits,icon:a.icon||'🎯',tipo:'consumo',done:val>=target};
-  if(keep)goal.lastAssetId=a.id;
   const assets=keep?S.assets:S.assets.filter(x=>x.id!==id);
-  pt({savGoals:[...S.savGoals,goal],assets});
+  pt({savGoals,assets});
   closeConfirm();
-  toast('🎯 «'+a.name+'» ahora es una meta de consumo');
+  toast('🎯 Saldo enviado a «'+goalName+'»');
   try{if(cur==='flujo')rFlujo();}catch(e){}
   try{rDash&&rDash();}catch(e){}
   try{hdrUp&&hdrUp();}catch(e){}

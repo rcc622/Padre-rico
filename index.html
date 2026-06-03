@@ -2704,9 +2704,9 @@ function showBonoPlays(){
     showInfo('💎 Jugada Estratégica',body);
   }catch(e){toast('Error al calcular jugadas');}
 }
-const tDebtPay=()=>S.debts.reduce((a,d)=>a+toMonthly(+d.pay||0,d.freq||'mensual'),0);
+const tDebtPay=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)?0:toMonthly(+d.pay||0,d.freq||'mensual')),0);
 const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
-const tDebt=()=>S.debts.reduce((a,d)=>a+(+d.bal||0),0);
+const tDebt=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)?0:(+d.bal||0)),0);
 const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
 const nw=()=>tAss()-tDebt();
 // ── PATRIMONIO POR PROPÓSITO ────────────────────────────────────────────
@@ -3570,7 +3570,7 @@ function rDash(){
   <div class="card card-link" style="margin-bottom:13px;text-align:center;padding:18px 16px" onclick="go('plan')">
     <div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🌊 Disponible${pLbl}</div>
     <div class="stat" style="color:${pFlow>=0?'var(--sage)':'var(--terra)'};font-family:Georgia,serif">${fx(Math.round(pFlow))}</div>
-    <div class="lbl" style="margin-top:6px">${pFlow>=0?'Después de todos los compromisos':'⚠ Déficit'} ›</div>
+    <div class="lbl" style="margin-top:6px">${pFlow>=0?'Te queda libre tras gastos, ahorro y deudas':'⚠ Déficit — tus compromisos superan tu ingreso'} ›</div>
   </div>
   <div class="g2" style="margin-bottom:13px">
     ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',(isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna'),"flujoView='ingresos';go('flujo')")}
@@ -3578,7 +3578,7 @@ function rDash(){
   </div>
   <div class="g2" style="margin-bottom:13px">
     ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos',"flujoView='gastos';go('flujo')")}
-    ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.length+' créditos',"flujoView='deudas';go('flujo')")}
+    ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.filter(d=>!isDebtLiquidated(d)).length+' créditos activos',"flujoView='deudas';go('flujo')")}
   </div>
   <div class="${tExtras()>0?'g2':''}" style="margin-bottom:13px">
     <div class="card${hormigaTotal?' card-link':''}" style="margin-bottom:0;text-align:center" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>

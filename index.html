@@ -5588,8 +5588,8 @@ function rFlujo(){try{
        sólo aparecía embebida dentro del form de "Registrar deuda" y
        requería prender el switch de intereses. Ahora vive arriba como
        herramienta educativa: "¿piensas pedir un préstamo? calcula" -->
-  <details class="card" style="background:linear-gradient(135deg,rgba(74,110,140,.04) 0%,rgba(78,124,106,.02) 100%);border-left:3px solid var(--sky)" open>
-    <summary class="ct" style="cursor:pointer;padding:6px 0;list-style:none">🧮 ¿Piensas pedir un préstamo?</summary>
+  <div class="card" style="background:linear-gradient(135deg,rgba(74,110,140,.04) 0%,rgba(78,124,106,.02) 100%);border-left:3px solid var(--sky)">
+    <div class="ct">🧮 ¿Piensas pedir un préstamo?</div>
     <div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.6">Calcula cuánto pagarías de interés <em>antes</em> de firmar. Te ayuda a comparar ofertas y a entender el costo real.</div>
     <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:10px">
       <div><label style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">💵 ¿Cuánto te prestarían? ($)</label><input type="number" id="loanCalcPrinc" placeholder="50,000" style="width:100%;font-size:18px;padding:11px;text-align:center;font-weight:bold;color:var(--sky)" oninput="_calcLoanStandalone()"></div>
@@ -5598,7 +5598,7 @@ function rFlujo(){try{
     </div>
     <div id="loanCalcResult" style="margin-top:14px;padding:14px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:13px;line-height:1.8;display:none"></div>
     <div id="loanCalcEmpty" style="margin-top:10px;font-size:11px;color:var(--muted);text-align:center;font-style:italic;padding:8px">Llena préstamo y total para ver el desglose.</div>
-  </details>
+  </div>
 
   <!-- ═══ DEUDAS ═══ -->
   <details class="card" ${editDebtId?'open':''} style="padding:0">

@@ -717,9 +717,10 @@ function fmtCycleRange(ck){
 let flujoView='ingresos',debtView='plazos';
 // Sub-vista de Día a día. Se persiste a localStorage para que al refrescar
 // el usuario regrese al mismo sub-tab donde estaba (Retos / Diarios / etc.)
-const _HABIT_VIEWS=['retos','diarios','impulsos','ahorro','cobranza'];
+const _HABIT_VIEWS=['retos','diarios','impulsos','cobranza'];
 let habitView=(()=>{try{const v=localStorage.getItem('prv5_habitView');return _HABIT_VIEWS.includes(v)?v:'retos';}catch(e){return 'retos';}})();
 function setHabitView(v){
+  if(v==='ahorro'){flujoView='activos';go('flujo');return;}
   if(!_HABIT_VIEWS.includes(v))v='retos';
   habitView=v;
   try{localStorage.setItem('prv5_habitView',v);}catch(e){}
@@ -1809,7 +1810,7 @@ function addSavGoal(){
   if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
   const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,tipo,done:false};
   pt({savGoals:[...S.savGoals,goal]});
-  toast('🎯 Meta de ahorro creada');rHabitos();
+  toast('🎯 Meta de ahorro creada');_refreshActive();
 }
 // ══ Movimientos de metas ↔ activos ═══════════════════════════════════
 // Un movimiento de meta (abono + o retiro −) que tenga activo ligado crea/
@@ -1870,7 +1871,7 @@ function depositSavGoal(id,prefix){
       const newSaved=(+gx.saved||0)+amt;
       return{...gx,saved:newSaved,deposits:[...(gx.deposits||[]),dep],done:newSaved>=gx.target,lastAssetId:assetId};
     })});
-    closeConfirm();toast('💰 +'+fx(amt)+' apartado para '+g.name);rHabitos();hdrUp&&hdrUp();
+    closeConfirm();toast('💰 +'+fx(amt)+' apartado para '+g.name);_refreshActive();hdrUp&&hdrUp();
   });
 }
 
@@ -1930,7 +1931,7 @@ function updSavGoalSaved(id){
     });
     closeConfirm();
     toast(diff<0?(kindMeta?kindMeta.e+' ':'📉 ')+fx(diff)+' · Ahorrado '+fx(nv):'📈 +'+fx(diff)+' · Ahorrado '+fx(nv));
-    rHabitos();hdrUp&&hdrUp();
+    _refreshActive();hdrUp&&hdrUp();
   });
   _quSavToggleKind(cur);
 }
@@ -1941,13 +1942,13 @@ function toggleSavGoalDone(id){
   const g=S.savGoals.find(x=>x.id===id);if(!g)return;
   if(g.done){
     pt({savGoals:S.savGoals.map(gx=>gx.id===id?{...gx,done:false}:gx)});
-    toast('↩ Meta reabierta');rHabitos();
+    toast('↩ Meta reabierta');_refreshActive();
     return;
   }
   const saved=Math.round(+g.saved||0);
   showConfirm('✅ Completar meta','<div style="font-size:13px;line-height:1.6;color:var(--txt2)">¿Marcar <strong>'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong> como completada?<br><span style="font-size:11px;color:var(--muted)">Llevas '+fx(saved)+' de '+fx(g.target)+'. Puedes reabrirla después. No afecta tus activos ni el monto ahorrado.</span></div>',()=>{
     pt({savGoals:S.savGoals.map(gx=>gx.id===id?{...gx,done:true}:gx)});
-    closeConfirm();toast('🎉 Meta completada');rHabitos();
+    closeConfirm();toast('🎉 Meta completada');_refreshActive();
   });
 }
 // Muestra/oculta el selector de tipo de retiro según si el monto nuevo es
@@ -2019,7 +2020,7 @@ function editSavGoalDep(goalId,idx){
       });
       return{...gx,saved,deposits,done:saved>=gx.target,lastAssetId:newAssetId||gx.lastAssetId};
     })});
-    closeConfirm();toast('✏️ Movimiento actualizado');rHabitos();hdrUp&&hdrUp();
+    closeConfirm();toast('✏️ Movimiento actualizado');_refreshActive();hdrUp&&hdrUp();
   });
 }
 // Eliminar un movimiento de una meta. Revierte su efecto en saved y, si estaba
@@ -2039,7 +2040,7 @@ function delSavGoalDep(goalId,idx){
       const deposits=(gx.deposits||[]).filter((_,i)=>i!==idx);
       return{...gx,saved,deposits,done:saved>=gx.target};
     })});
-    closeConfirm();toast('🗑️ Movimiento eliminado');rHabitos();hdrUp&&hdrUp();
+    closeConfirm();toast('🗑️ Movimiento eliminado');_refreshActive();hdrUp&&hdrUp();
   });
 }
 function addSavGoalH(){
@@ -2051,11 +2052,11 @@ function addSavGoalH(){
   if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
   const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,tipo,done:false};
   pt({savGoals:[...S.savGoals,goal]});
-  toast('🎯 Meta de ahorro creada');rHabitos();
+  toast('🎯 Meta de ahorro creada');_refreshActive();
 }
 function rmSavGoal(id){
   showConfirm('¿Eliminar esta meta?','Se perderá el historial de abonos.',()=>{
-    pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');rHabitos();
+    pt({savGoals:S.savGoals.filter(g=>g.id!==id)});toast('Meta eliminada');_refreshActive();
   });
 }
 // Alterna el propósito de una meta: consumo (se gasta) ↔ patrimonio (construye).
@@ -2064,7 +2065,7 @@ function toggleSavGoalTipo(id){
   let nt='consumo';
   pt({savGoals:S.savGoals.map(g=>{if(g.id!==id)return g;nt=(g.tipo||'consumo')==='consumo'?'patrimonio':'consumo';return {...g,tipo:nt};})});
   toast(nt==='patrimonio'?'🏗️ Meta marcada como patrimonio (construye)':'🛒 Meta marcada como consumo (se gasta)');
-  rHabitos();hdrUp&&hdrUp();
+  _refreshActive();hdrUp&&hdrUp();
   try{if(cur==='dash')rDash();}catch(e){}
 }
 function savGoalPerQ(g){
@@ -3494,7 +3495,7 @@ function rDash(){
           +'<div class="row-b"><span style="color:var(--muted)">🎯 En tus metas ('+activeMetas.length+')</span><strong style="color:var(--sage)">'+fx(Math.round(metaSaved))+'</strong></div>'
           +'</div>'
           +'<div style="font-size:10px;color:var(--muted);margin-top:7px;line-height:1.5">Tu total junta ambos. En <strong>Finanzas → Activos</strong> ves solo tus cuentas ('+fx(Math.round(accumKept))+'); lo de metas vive en <strong>Día a día → Ahorro</strong>.</div>'
-          +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:9px;font-size:11px" onclick="setHabitView(\'ahorro\');go(\'habitos\')">🎯 Ver mis metas →</button>';
+          +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:9px;font-size:11px" onclick="flujoView=\'activos\';go(\'flujo\')">🎯 Ver mis metas →</button>';
       }else{
         subBlock='<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(metaSaved>0?'🎯 En tus metas · vive en Día a día → Ahorro':'🏦 → '+_escH(assetName))+'</div>';
       }
@@ -3620,7 +3621,7 @@ function rDash(){
   </div>
   <div class="g2" style="margin-bottom:13px">
     ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',(isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna'),"flujoView='ingresos';go('flujo')")}
-    ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero',"setHabitView('ahorro');go('habitos')")}
+    ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero',"flujoView='activos';go('flujo')")}
   </div>
   <div class="g2" style="margin-bottom:13px">
     ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos',"flujoView='gastos';go('flujo')")}
@@ -5986,27 +5987,8 @@ function rFlujo(){try{
     <div style="font-size:13px;color:var(--txt2);line-height:1.6">Aún no registras activos. Empieza con lo que ya tienes: ¿cuánto hay hoy en tu Cajita Nu o Mercado Pago? Ese es tu punto de partida.</div>
   </div>
   `}
-  ${(()=>{try{
-    // FASE 2 (fusión): cajitas de consumo (metas) viven junto a los activos.
-    const metas=(S.savGoals||[]).filter(g=>!g.done);
-    if(!metas.length)return '<div class="card" style="border-left:3px solid var(--amber);text-align:center;padding:16px"><div style="font-size:11px;color:var(--muted);line-height:1.6">🛒 Aquí también vivirán tus <strong>cajitas de consumo</strong> (metas para viaje, fiesta, una compra). Créalas en <strong>Día a día → Ahorro</strong> y aparecerán junto a tus activos.</div></div>';
-    return '<div class="card" style="border-left:3px solid var(--amber)">'
-      +'<div class="ct">🛒 Cajitas de consumo · metas ('+metas.length+')</div>'
-      +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px;line-height:1.6">Dinero que apartas para gastar. Vive aquí junto a tus activos, pero no cuenta como patrimonio que construye.</div>'
-      +metas.map(g=>{
-        const sv=+g.saved||0,tgt=+g.target||0;
-        const pct=tgt>0?Math.min(100,sv/tgt*100):0;
-        const isC=(g.tipo||'consumo')==='consumo';
-        const badge='<button onclick="toggleSavGoalTipo('+g.id+')" title="Cambiar propósito" style="background:'+(isC?'rgba(160,112,48,.1)':'rgba(78,124,106,.1)')+';border:1px solid '+(isC?'rgba(160,112,48,.3)':'rgba(78,124,106,.3)')+';border-radius:5px;color:'+(isC?'var(--amber)':'var(--sage)')+';cursor:pointer;font-size:9px;padding:1px 6px;flex-shrink:0">'+(isC?'🛒':'🏗️')+' ⇄</button>';
-        return '<div style="padding:10px 0;border-top:1px solid var(--border)">'
-          +'<div class="row-b" style="margin-bottom:6px;gap:6px"><span class="row" style="gap:6px;align-items:center;min-width:0"><span>'+(g.icon||'🎯')+'</span><strong style="font-size:13px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(g.name)+'</strong>'+badge+'</span><span style="font-size:12px;color:var(--sage);font-weight:bold;white-space:nowrap">'+fx(Math.round(sv))+' / '+fx(tgt)+'</span></div>'
-          +'<div class="pw" style="height:6px"><div class="pb" style="width:'+pct.toFixed(0)+'%;background:var(--sky)"></div></div>'
-          +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="updSavGoalSaved('+g.id+')">💰 Abonar / usar</button>'
-        +'</div>';
-      }).join('')
-      +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:12px;font-size:11px" onclick="setHabitView(\'ahorro\');go(\'habitos\')">⚙️ Gestionar metas en Día a día →</button>'
-      +'</div>';
-  }catch(e){return '';}})()}
+  ${metasCardHTML()}
+  ${planApartadoHTML()}
   `:''}
   `;
 }catch(e){document.getElementById('tab-flujo').innerHTML='<div class="card card-red"><div class="ct">Error en Ingresos y Gastos</div><div style="font-size:12px;color:var(--terra)">'+e.message+'</div></div>';console.error('rFlujo error:',e);}
@@ -8279,7 +8261,7 @@ try{
       })();
       return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
         <div class="row" style="gap:8px">
-          ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();setHabitView('ahorro');go('habitos')" style="width:22px;height:22px;font-size:11px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:22px;height:22px;font-size:11px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:22px;height:22px;font-size:11px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
+          ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();flujoView='activos';go('flujo')" style="width:22px;height:22px;font-size:11px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:22px;height:22px;font-size:11px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:22px;height:22px;font-size:11px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
           <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
           <span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>
         </div>
@@ -8340,8 +8322,8 @@ try{
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
         ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
         ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosCashCount(planCk())})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
-        ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="setHabitView('ahorro');go('habitos')">Ver movimientos →</button></div></details>`:_metaOut<0?`<div class="row-b"><span style="color:var(--sage)">↩ Retirado de metas a tu cuenta</span><strong style="color:var(--sage)">+${fx(Math.round(-_metaOut))}</strong></div>`:''}
-        ${_metaRetOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--terra)">🚨 Retiros de metas (${_metaRetBreakdown.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--terra)">−${fx(Math.round(_metaRetOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(184,92,74,.25);margin:2px 0 4px 4px">${_metaRetBreakdown.map(m=>{const _k=savGoalWdKind(m.kind);const _kl=_k?_k.e+' '+_k.n:'📉 Retiro';return `<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)} · <span style="font-size:9px">${_kl}</span>${m.note?' · '+_escH(m.note):''}</span><span style="color:var(--terra);white-space:nowrap">−${fx(Math.round(m.amt))}</span></div>`;}).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="setHabitView('ahorro');go('habitos')">Ver movimientos →</button></div></details>`:''}
+        ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:_metaOut<0?`<div class="row-b"><span style="color:var(--sage)">↩ Retirado de metas a tu cuenta</span><strong style="color:var(--sage)">+${fx(Math.round(-_metaOut))}</strong></div>`:''}
+        ${_metaRetOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--terra)">🚨 Retiros de metas (${_metaRetBreakdown.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--terra)">−${fx(Math.round(_metaRetOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(184,92,74,.25);margin:2px 0 4px 4px">${_metaRetBreakdown.map(m=>{const _k=savGoalWdKind(m.kind);const _kl=_k?_k.e+' '+_k.n:'📉 Retiro';return `<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)} · <span style="font-size:9px">${_kl}</span>${m.note?' · '+_escH(m.note):''}</span><span style="color:var(--terra);white-space:nowrap">−${fx(Math.round(m.amt))}</span></div>`;}).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:''}
         ${_savAmt>0?`<div class="row-b"><span style="color:var(--sage)">🪙 Ahorro apartado${_savAsset?' → '+_savAsset.name:''}</span><strong style="color:var(--sage)">−${fx(Math.round(_savAmt))}</strong></div>`:''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
@@ -8957,6 +8939,122 @@ function _setSavPctQuick(v){
   clearTimeout(_spqTimer);_spqTimer=setTimeout(_refreshSavPctViews,250);
 }
 
+// === Cajitas: metas + plan de apartado (movidos desde la antigua vista Ahorro a Finanzas) ===
+function metasCardHTML(){
+  return `  <div class="card">
+    <div class="ct">🎯 Metas de ahorro</div>
+    ${S.savGoals.length>0?S.savGoals.map(g=>{
+      const remaining=Math.max(0,g.target-(+g.saved||0));
+      const pct=Math.min(100,((+g.saved||0)/g.target*100));
+      const perQ=savGoalPerQ(g);
+      const dl=new Date(g.deadline+'T12:00');
+      const daysLeft=Math.ceil((dl-new Date())/864e5);
+      const qLeft=Math.max(1,Math.ceil(daysLeft/15));
+      const isOverdue=daysLeft<0;
+      const isDone=g.done||remaining<=0;
+      const reached=remaining<=0; // alcanzó el objetivo de verdad (saldo ≥ meta)
+      const dlLbl=g.deadline?fmtDate(g.deadline):'sin fecha';
+      // Si la meta vive en una cajita con rendimiento, calculamos cuánto
+      // gana al mes mientras espera. Es informativo (no auto-suma a g.saved):
+      // el rendimiento llega al activo y el usuario decide si lo "mueve" a la
+      // meta abonando manualmente.
+      const _metaAssetId=g.lastAssetId||(g.deposits||[]).slice().reverse().find(d=>d&&d.assetId)?.assetId;
+      const _metaAsset=_metaAssetId?S.assets.find(a=>a.id===_metaAssetId):null;
+      const _metaSaved=+g.saved||0;
+      const _metaYieldM=(_metaAsset&&_metaAsset.gen&&(+_metaAsset.yldPct||0)>0&&_metaSaved>0)
+        ?Math.round(_metaSaved*(+_metaAsset.yldPct||0)/100/12)
+        :0;
+      const yldBadge=(_metaYieldM>0&&!isDone)
+        ?'<div style="font-size:10px;color:var(--sage);margin-top:6px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;line-height:1.5">💎 Mientras espera en <strong>'+_metaAsset.name+'</strong> ('+(+_metaAsset.yldPct||0)+'% anual) gana ~<strong>'+fx(_metaYieldM)+'/mes</strong></div>'
+        :'';
+      return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
+        <div class="row-b" style="margin-bottom:8px">
+          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${_escH(g.name)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(reached?'✅ ¡Meta alcanzada!':g.done?'✓ Completada (cerrada manualmente)':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div><div style="margin-top:5px"><button onclick="toggleSavGoalTipo(${g.id})" title="Cambiar propósito (afecta tu patrimonio)" style="background:${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.1)':'rgba(160,112,48,.1)'};border:1px solid ${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.3)':'rgba(160,112,48,.3)'};border-radius:5px;color:${(g.tipo||'consumo')==='patrimonio'?'var(--sage)':'var(--amber)'};cursor:pointer;font-size:10px;padding:2px 8px;font-family:Georgia,serif">${(g.tipo||'consumo')==='patrimonio'?'🏗️ Patrimonio':'🛒 Consumo'} ⇄</button></div></div></div>
+          <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
+        </div>
+        <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
+        <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
+        ${(()=>{
+          // Barra apilada por concepto: del total ABONADO (bruto), muestra
+          // cuánto QUEDÓ neto (verde) y cuánto salió por cada tipo de retiro
+          // (cada concepto con su color). Da una lectura visual de qué mermó
+          // el ahorro y cuánto entró de verdad a la cuenta al final.
+          const deps=g.deposits||[];
+          const totalIn=deps.filter(d=>(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
+          const wd={};deps.forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
+          const totalOut=Object.values(wd).reduce((a,v)=>a+v,0);
+          const net=Math.round((+g.saved||0));
+          if(totalIn<=0&&totalOut<=0)return '';
+          // El "todo" de la barra es el bruto abonado (net + salidas). Si por
+          // datos viejos net+out != totalIn, usamos el mayor para no romper %.
+          const base=Math.max(totalIn,net+totalOut,1);
+          const segs=[];
+          if(net>0)segs.push({c:'var(--sage)',v:net,lbl:'💰 Quedó neto'});
+          Object.keys(wd).forEach(k=>{const km=savGoalWdKind(k);segs.push({c:km?km.c:'var(--muted)',v:wd[k],lbl:(km?km.e+' '+km.n.split(' ')[0]:k)});});
+          const bar='<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:6px;background:rgba(120,120,120,.1)">'
+            +segs.map(s=>'<div title="'+s.lbl+': '+fx(s.v)+'" style="width:'+(s.v/base*100).toFixed(1)+'%;background:'+s.c+'"></div>').join('')
+            +'</div>';
+          const legend='<div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:8px">'
+            +segs.map(s=>'<span style="font-size:10px;color:var(--txt2);display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.c+';display:inline-block"></span>'+s.lbl+' <strong>'+fx(s.v)+'</strong></span>').join('')
+            +'</div>';
+          const netLine='<div class="row-b" style="font-size:11px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;margin-bottom:8px"><span style="color:var(--muted)">Abonado bruto <strong style="color:var(--sage)">'+fx(totalIn)+'</strong>'+(totalOut>0?' · salió <strong style="color:var(--terra)">−'+fx(totalOut)+'</strong>':'')+'</span><span style="color:var(--txt);font-weight:bold">Entró neto: '+fx(net)+'</span></div>';
+          return bar+legend+netLine;
+        })()}
+        ${yldBadge}
+        ${!isDone?`
+          <div class="row-b" style="margin-bottom:10px;margin-top:10px">
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(perQ)}</div><div style="font-size:9px;color:var(--muted)">apartar/quincena</div></div>
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
+          </div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-sage btn-sm" style="flex:1" onclick="updSavGoalSaved(${g.id})">💰 Registrar movimiento</button>
+            <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Marcar como completada sin borrarla">✓ Completar</button>
+          </div>
+        `:`<div class="row" style="gap:8px;align-items:center;margin-top:6px">
+            <div style="flex:1;text-align:center;font-size:12px;color:var(--sage)">🎉 Meta completada — ¡disfruta!</div>
+            <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Reabrir esta meta">↩ Reabrir</button>
+          </div>`}
+        ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Movimientos</div><div style="max-height:180px;overflow-y:auto">${(g.deposits||[]).map((d,i)=>({d,i})).reverse().map(({d,i})=>{const neg=(+d.amt||0)<0;const km=d.kind?savGoalWdKind(d.kind):null;const tag=km?'<span style="font-size:8px;margin-left:4px;padding:1px 5px;border-radius:4px;background:rgba(120,120,120,.12);color:'+km.c+';font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+km.e+' '+km.n.split(' ')[0]+'</span>':'';return '<div class="row-b" style="padding:4px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px;gap:6px"><span style="color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+tag+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold;white-space:nowrap">'+(neg?'':'+')+fx(d.amt)+'</span><span class="row" style="gap:2px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:10px" onclick="editSavGoalDep('+g.id+','+i+')" title="Editar">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 5px;font-size:10px" onclick="delSavGoalDep('+g.id+','+i+')" title="Eliminar">✕</button></span></div>';}).join('')}</div></div>`:''}
+      </div>`;
+    }).join(''):''}
+    <div style="${S.savGoals.length>0?'border-top:1px solid var(--border);padding-top:14px;margin-top:4px':''}">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${S.savGoals.length>0?'Agregar otra meta:':'¿Necesitas ahorrar para algo? Crea tu meta y te calculo cuánto apartar por quincena.'}</div>
+      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-bottom:8px">
+        <div><label>Icono</label><select id="sgih" style="width:60px;text-align:center;font-size:16px"><option>🎉</option><option>🏠</option><option>🚗</option><option>✈️</option><option>🎄</option><option>📱</option><option>🎓</option><option>💍</option><option>🎯</option><option>🛡️</option></select></div>
+        <div><label>¿Para qué ahorras?</label><input type="text" id="sgnh" placeholder="Fiesta, viaje, fondo de emergencia..."></div>
+      </div>
+      <div class="g2" style="margin-bottom:10px">
+        <div><label>¿Cuánto necesitas? ($)</label><input type="number" id="sgth" placeholder="15000"></div>
+        <div><label>¿Para cuándo?</label><input type="date" id="sgdh"></div>
+      </div>
+      <div style="margin-bottom:10px"><label>¿Qué tipo de meta es?</label>
+        <select id="sgtipo" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">
+          <option value="consumo">🛒 Consumo — la voy a gastar (viaje, fiesta, TV…)</option>
+          <option value="patrimonio">🏗️ Patrimonio — se queda y construye (fondo, inversión)</option>
+        </select>
+        <div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Las de <strong>consumo</strong> son dinero tuyo hoy pero no cuentan como patrimonio que construye (se van a gastar). Las de <strong>patrimonio</strong> sí suman a tu riqueza y a tu meta principal.</div>
+      </div>
+      <button class="btn btn-sage" onclick="addSavGoalH()">🎯 Crear meta de ahorro</button>
+    </div>
+  </div>`;
+}
+function planApartadoHTML(){try{
+    const ap=getExpSavePlan();
+    if(!ap.length)return'';
+    const otherQ=ap.filter(e=>e.type==='other');
+    const thisQ=ap.filter(e=>e.type==='this');
+    const totalApartar=ap.reduce((a,e)=>a+e.half,0);
+    return'<div class="card card-sky"><div class="ct">💰 Plan de apartado '+ib('apartado','Apartado')+'</div>'
+    +'<div style="font-size:11px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Tus gastos fijos mensuales de $500+ divididos en 2 quincenas. Aparta la mitad cada quincena para que el golpe no te descuadre.</div>'
+    +(otherQ.length>0?'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Se pagan la otra quincena — aparta ahora</div>'
+      +otherQ.map(e=>'<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(74,110,140,.15)"><div><div style="font-size:13px;color:var(--txt);font-weight:bold">'+e.name+'</div><div style="font-size:10px;color:var(--muted)">'+(e.cat||'')+' · día '+e.day+' · Total: '+fx(e.amt)+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--sky)">'+fx(e.half)+'</div><div style="font-size:9px;color:var(--muted)">apartar esta qna</div></div></div>').join(''):'')
+    +(thisQ.length>0?'<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:'+(otherQ.length?'14px':'0')+' 0 6px">Se pagan esta quincena — aparta para la próxima</div>'
+      +thisQ.map(e=>'<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(160,112,48,.15)"><div><div style="font-size:13px;color:var(--txt);font-weight:bold">'+e.name+'</div><div style="font-size:10px;color:var(--muted)">'+(e.cat||'')+' · día '+e.day+' · Total: '+fx(e.amt)+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--amber)">'+fx(e.half)+'</div><div style="font-size:9px;color:var(--muted)">apartar p/próx qna</div></div></div>').join(''):'')
+    +'<div class="row-b" style="padding-top:10px;margin-top:8px;border-top:2px solid rgba(74,110,140,.3)"><strong style="color:var(--sky)">Total a apartar/qna:</strong><strong style="color:var(--sky);font-size:16px">'+fx(totalApartar)+'</strong></div>'
+    +'<div style="font-size:10px;color:var(--sky);margin-top:8px;line-height:1.6">💡 Estos montos aparecen como items en tu tabla de Pagos del Ciclo en Plan de Acción.</div>'
+    +'</div>';
+}catch{return'';}}
+
 function rHabitos(){
   const now=Date.now();
   const pending=S.waitList.filter(w=>!w.resolved);
@@ -8966,7 +9064,7 @@ function rHabitos(){
   const avoided=resolved.filter(w=>!w.bought);
   const totalSaved=avoided.reduce((a,w)=>a+(+w.price||0),0);
 
-  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','Retos','life-buoy'],['diarios','Diarios','shopping-cart'],['impulsos','Impulsos','hourglass'],['ahorro','Ahorro','piggy-bank'],['cobranza','Cobranza','handshake']].map(([id,l,ic])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setHabitView('${id}')">${lu(ic,'15px','margin-right:5px;vertical-align:-.2em')}${l}</button>`).join('')}</div>`;
+  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','Retos','life-buoy'],['diarios','Diarios','shopping-cart'],['impulsos','Impulsos','hourglass'],['cobranza','Cobranza','handshake']].map(([id,l,ic])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setHabitView('${id}')">${lu(ic,'15px','margin-right:5px;vertical-align:-.2em')}${l}</button>`).join('')}</div>`;
 
   document.getElementById('tab-habitos').innerHTML=`
   ${habNav}
@@ -9207,161 +9305,8 @@ function rHabitos(){
     <div class="lbl" style="margin-top:4px">${avoided.length} compra${avoided.length>1?'s':''} impulsiva${avoided.length>1?'s':''} evitada${avoided.length>1?'s':''}</div>
   </div>`:''}
 
-  ${resolved.length>0?`<div class="card"><div class="ct">Historial de impulsos</div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${avoided.length} evitados · ${resolved.length-avoided.length} comprados</div>
-  ${resolved.slice(-10).reverse().map(w=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-    <div class="row"><span>${w.bought?'🔴':'🟢'}</span><span style="color:var(--txt)">${w.name}</span></div>
-    <span style="color:${w.bought?'var(--terra)':'var(--sage)'};font-weight:bold">${fx(w.price)}</span>
-  </div>`).join('')}</div>`:''}
   `:''}
 
-  ${habitView==='ahorro'?`
-  <div class="card">
-    <div class="ct">🪙 Págate Primero ${ib('pagateprimero','Págate Primero')}</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:10px;line-height:1.65">Reserva este porcentaje <em>antes</em> de pagar cualquier gasto. El monto se calcula sobre el ingreso REAL de esta quincena (incluye bono si cae en ella).</div>
-    <div style="font-size:11px;color:var(--sky);margin-bottom:13px;line-height:1.55;padding:8px 10px;background:rgba(74,110,140,.05);border-radius:6px">🍯 Aquí <strong>alimentas tus cajitas</strong> cada quincena (el hábito). La estructura — saldos, interés y metas — vive en <strong>Finanzas → Activos</strong>. <span style="cursor:pointer;text-decoration:underline" onclick="flujoView='activos';go('flujo')">Ver mis cajitas →</span></div>
-    <div class="row-b" style="margin-bottom:12px">
-      <div>
-        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Porcentaje</div>
-        <div class="row" style="gap:6px;align-items:baseline;margin-top:2px"><input type="number" min="1" max="100" step="1" value="${S.savPct}" id="savPctInput" style="width:68px;font-size:22px;font-weight:bold;color:var(--sage);text-align:center;padding:4px 6px" oninput="setSavPct(+this.value)"><span style="font-size:18px;color:var(--sage);font-weight:bold">%</span></div>
-      </div>
-      <div style="text-align:right">
-        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Esta quincena</div>
-        <div style="font-size:18px;color:var(--sage);font-weight:bold;margin-top:2px">${fx(Math.round(curQnaInc()*(+S.savPct||0)/100))}</div>
-        <div style="font-size:9px;color:var(--muted);margin-top:1px">de ${fx(curQnaInc())}</div>
-      </div>
-    </div>
-    <input type="range" min="1" max="50" step="1" value="${Math.max(1,Math.min(50,+S.savPct||10))}" id="savPctSlider" style="width:100%;margin-bottom:2px" oninput="setSavPct(+this.value)">
-    <div class="sld-ticks"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span><span>25</span><span>30</span><span>40</span><span>50</span></div>
-    <div style="font-size:11px;color:var(--sage);text-align:center;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(78,124,106,.2)">${S.savPct}% de esta qna = <strong>${fx(Math.round(curQnaInc()*(+S.savPct||0)/100))}</strong> · promedio mensual: ${fx(savAmt())}</div>
-  </div>
-
-  <!-- METAS DE AHORRO -->
-  <!-- METAS DE AHORRO (full) -->
-  <div class="card">
-    <div class="ct">🎯 Metas de ahorro</div>
-    ${S.savGoals.length>0?S.savGoals.map(g=>{
-      const remaining=Math.max(0,g.target-(+g.saved||0));
-      const pct=Math.min(100,((+g.saved||0)/g.target*100));
-      const perQ=savGoalPerQ(g);
-      const dl=new Date(g.deadline+'T12:00');
-      const daysLeft=Math.ceil((dl-new Date())/864e5);
-      const qLeft=Math.max(1,Math.ceil(daysLeft/15));
-      const isOverdue=daysLeft<0;
-      const isDone=g.done||remaining<=0;
-      const reached=remaining<=0; // alcanzó el objetivo de verdad (saldo ≥ meta)
-      const dlLbl=g.deadline?fmtDate(g.deadline):'sin fecha';
-      // Si la meta vive en una cajita con rendimiento, calculamos cuánto
-      // gana al mes mientras espera. Es informativo (no auto-suma a g.saved):
-      // el rendimiento llega al activo y el usuario decide si lo "mueve" a la
-      // meta abonando manualmente.
-      const _metaAssetId=g.lastAssetId||(g.deposits||[]).slice().reverse().find(d=>d&&d.assetId)?.assetId;
-      const _metaAsset=_metaAssetId?S.assets.find(a=>a.id===_metaAssetId):null;
-      const _metaSaved=+g.saved||0;
-      const _metaYieldM=(_metaAsset&&_metaAsset.gen&&(+_metaAsset.yldPct||0)>0&&_metaSaved>0)
-        ?Math.round(_metaSaved*(+_metaAsset.yldPct||0)/100/12)
-        :0;
-      const yldBadge=(_metaYieldM>0&&!isDone)
-        ?'<div style="font-size:10px;color:var(--sage);margin-top:6px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;line-height:1.5">💎 Mientras espera en <strong>'+_metaAsset.name+'</strong> ('+(+_metaAsset.yldPct||0)+'% anual) gana ~<strong>'+fx(_metaYieldM)+'/mes</strong></div>'
-        :'';
-      return`<div class="card ${isDone?'card-grn':isOverdue?'card-red':'card-sage'}" style="margin-bottom:10px;padding:16px">
-        <div class="row-b" style="margin-bottom:8px">
-          <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${_escH(g.name)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(reached?'✅ ¡Meta alcanzada!':g.done?'✓ Completada (cerrada manualmente)':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div><div style="margin-top:5px"><button onclick="toggleSavGoalTipo(${g.id})" title="Cambiar propósito (afecta tu patrimonio)" style="background:${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.1)':'rgba(160,112,48,.1)'};border:1px solid ${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.3)':'rgba(160,112,48,.3)'};border-radius:5px;color:${(g.tipo||'consumo')==='patrimonio'?'var(--sage)':'var(--amber)'};cursor:pointer;font-size:10px;padding:2px 8px;font-family:Georgia,serif">${(g.tipo||'consumo')==='patrimonio'?'🏗️ Patrimonio':'🛒 Consumo'} ⇄</button></div></div></div>
-          <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
-        </div>
-        <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
-        <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
-        ${(()=>{
-          // Barra apilada por concepto: del total ABONADO (bruto), muestra
-          // cuánto QUEDÓ neto (verde) y cuánto salió por cada tipo de retiro
-          // (cada concepto con su color). Da una lectura visual de qué mermó
-          // el ahorro y cuánto entró de verdad a la cuenta al final.
-          const deps=g.deposits||[];
-          const totalIn=deps.filter(d=>(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
-          const wd={};deps.forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
-          const totalOut=Object.values(wd).reduce((a,v)=>a+v,0);
-          const net=Math.round((+g.saved||0));
-          if(totalIn<=0&&totalOut<=0)return '';
-          // El "todo" de la barra es el bruto abonado (net + salidas). Si por
-          // datos viejos net+out != totalIn, usamos el mayor para no romper %.
-          const base=Math.max(totalIn,net+totalOut,1);
-          const segs=[];
-          if(net>0)segs.push({c:'var(--sage)',v:net,lbl:'💰 Quedó neto'});
-          Object.keys(wd).forEach(k=>{const km=savGoalWdKind(k);segs.push({c:km?km.c:'var(--muted)',v:wd[k],lbl:(km?km.e+' '+km.n.split(' ')[0]:k)});});
-          const bar='<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:6px;background:rgba(120,120,120,.1)">'
-            +segs.map(s=>'<div title="'+s.lbl+': '+fx(s.v)+'" style="width:'+(s.v/base*100).toFixed(1)+'%;background:'+s.c+'"></div>').join('')
-            +'</div>';
-          const legend='<div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:8px">'
-            +segs.map(s=>'<span style="font-size:10px;color:var(--txt2);display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.c+';display:inline-block"></span>'+s.lbl+' <strong>'+fx(s.v)+'</strong></span>').join('')
-            +'</div>';
-          const netLine='<div class="row-b" style="font-size:11px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;margin-bottom:8px"><span style="color:var(--muted)">Abonado bruto <strong style="color:var(--sage)">'+fx(totalIn)+'</strong>'+(totalOut>0?' · salió <strong style="color:var(--terra)">−'+fx(totalOut)+'</strong>':'')+'</span><span style="color:var(--txt);font-weight:bold">Entró neto: '+fx(net)+'</span></div>';
-          return bar+legend+netLine;
-        })()}
-        ${yldBadge}
-        ${!isDone?`
-          <div class="row-b" style="margin-bottom:10px;margin-top:10px">
-            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(perQ)}</div><div style="font-size:9px;color:var(--muted)">apartar/quincena</div></div>
-            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
-          </div>
-          <div class="row" style="gap:8px">
-            <button class="btn btn-sage btn-sm" style="flex:1" onclick="updSavGoalSaved(${g.id})">💰 Registrar movimiento</button>
-            <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Marcar como completada sin borrarla">✓ Completar</button>
-          </div>
-        `:`<div class="row" style="gap:8px;align-items:center;margin-top:6px">
-            <div style="flex:1;text-align:center;font-size:12px;color:var(--sage)">🎉 Meta completada — ¡disfruta!</div>
-            <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Reabrir esta meta">↩ Reabrir</button>
-          </div>`}
-        ${(g.deposits||[]).length>0?`<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:8px"><div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Movimientos</div><div style="max-height:180px;overflow-y:auto">${(g.deposits||[]).map((d,i)=>({d,i})).reverse().map(({d,i})=>{const neg=(+d.amt||0)<0;const km=d.kind?savGoalWdKind(d.kind):null;const tag=km?'<span style="font-size:8px;margin-left:4px;padding:1px 5px;border-radius:4px;background:rgba(120,120,120,.12);color:'+km.c+';font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+km.e+' '+km.n.split(' ')[0]+'</span>':'';return '<div class="row-b" style="padding:4px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px;gap:6px"><span style="color:var(--muted);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+fmtDate(d.date)+(d.note?' · '+_escH(d.note):'')+tag+'</span><span style="color:'+(neg?'var(--terra)':'var(--sage)')+';font-weight:bold;white-space:nowrap">'+(neg?'':'+')+fx(d.amt)+'</span><span class="row" style="gap:2px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="padding:2px 5px;font-size:10px" onclick="editSavGoalDep('+g.id+','+i+')" title="Editar">✏️</button><button class="btn btn-red btn-sm" style="padding:2px 5px;font-size:10px" onclick="delSavGoalDep('+g.id+','+i+')" title="Eliminar">✕</button></span></div>';}).join('')}</div></div>`:''}
-      </div>`;
-    }).join(''):''}
-    <div style="${S.savGoals.length>0?'border-top:1px solid var(--border);padding-top:14px;margin-top:4px':''}">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${S.savGoals.length>0?'Agregar otra meta:':'¿Necesitas ahorrar para algo? Crea tu meta y te calculo cuánto apartar por quincena.'}</div>
-      <div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-bottom:8px">
-        <div><label>Icono</label><select id="sgih" style="width:60px;text-align:center;font-size:16px"><option>🎉</option><option>🏠</option><option>🚗</option><option>✈️</option><option>🎄</option><option>📱</option><option>🎓</option><option>💍</option><option>🎯</option><option>🛡️</option></select></div>
-        <div><label>¿Para qué ahorras?</label><input type="text" id="sgnh" placeholder="Fiesta, viaje, fondo de emergencia..."></div>
-      </div>
-      <div class="g2" style="margin-bottom:10px">
-        <div><label>¿Cuánto necesitas? ($)</label><input type="number" id="sgth" placeholder="15000"></div>
-        <div><label>¿Para cuándo?</label><input type="date" id="sgdh"></div>
-      </div>
-      <div style="margin-bottom:10px"><label>¿Qué tipo de meta es?</label>
-        <select id="sgtipo" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">
-          <option value="consumo">🛒 Consumo — la voy a gastar (viaje, fiesta, TV…)</option>
-          <option value="patrimonio">🏗️ Patrimonio — se queda y construye (fondo, inversión)</option>
-        </select>
-        <div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Las de <strong>consumo</strong> son dinero tuyo hoy pero no cuentan como patrimonio que construye (se van a gastar). Las de <strong>patrimonio</strong> sí suman a tu riqueza y a tu meta principal.</div>
-      </div>
-      <button class="btn btn-sage" onclick="addSavGoalH()">🎯 Crear meta de ahorro</button>
-    </div>
-  </div>
-
-  <!-- PLAN DE APARTADO -->
-  ${(()=>{try{
-    const ap=getExpSavePlan();
-    if(!ap.length)return'';
-    const otherQ=ap.filter(e=>e.type==='other');
-    const thisQ=ap.filter(e=>e.type==='this');
-    const totalApartar=ap.reduce((a,e)=>a+e.half,0);
-    return'<div class="card card-sky"><div class="ct">💰 Plan de apartado '+ib('apartado','Apartado')+'</div>'
-    +'<div style="font-size:11px;color:var(--txt2);margin-bottom:12px;line-height:1.7">Tus gastos fijos mensuales de $500+ divididos en 2 quincenas. Aparta la mitad cada quincena para que el golpe no te descuadre.</div>'
-    +(otherQ.length>0?'<div style="font-size:10px;color:var(--sky);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin-bottom:6px">Se pagan la otra quincena — aparta ahora</div>'
-      +otherQ.map(e=>'<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(74,110,140,.15)"><div><div style="font-size:13px;color:var(--txt);font-weight:bold">'+e.name+'</div><div style="font-size:10px;color:var(--muted)">'+(e.cat||'')+' · día '+e.day+' · Total: '+fx(e.amt)+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--sky)">'+fx(e.half)+'</div><div style="font-size:9px;color:var(--muted)">apartar esta qna</div></div></div>').join(''):'')
-    +(thisQ.length>0?'<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:'+(otherQ.length?'14px':'0')+' 0 6px">Se pagan esta quincena — aparta para la próxima</div>'
-      +thisQ.map(e=>'<div class="row-b" style="padding:8px 0;border-bottom:1px solid rgba(160,112,48,.15)"><div><div style="font-size:13px;color:var(--txt);font-weight:bold">'+e.name+'</div><div style="font-size:10px;color:var(--muted)">'+(e.cat||'')+' · día '+e.day+' · Total: '+fx(e.amt)+'</div></div><div style="text-align:right"><div style="font-size:16px;font-weight:bold;color:var(--amber)">'+fx(e.half)+'</div><div style="font-size:9px;color:var(--muted)">apartar p/próx qna</div></div></div>').join(''):'')
-    +'<div class="row-b" style="padding-top:10px;margin-top:8px;border-top:2px solid rgba(74,110,140,.3)"><strong style="color:var(--sky)">Total a apartar/qna:</strong><strong style="color:var(--sky);font-size:16px">'+fx(totalApartar)+'</strong></div>'
-    +'<div style="font-size:10px;color:var(--sky);margin-top:8px;line-height:1.6">💡 Estos montos aparecen como items en tu tabla de Pagos del Ciclo en Plan de Acción.</div>'
-    +'</div>';
-  }catch{return'';}})()}
-
-  <!-- HISTORIAL RESUELTOS -->
-  ${resolved.length>0?`<div class="card"><div class="ct">Historial de impulsos</div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:10px">${avoided.length} evitados · ${resolved.length-avoided.length} comprados</div>
-  ${resolved.slice(-10).reverse().map(w=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px">
-    <div class="row"><span>${w.bought?'🔴':'🟢'}</span><span style="color:var(--txt)">${w.name}</span></div>
-    <span style="color:${w.bought?'var(--terra)':'var(--sage)'};font-weight:bold">${fx(w.price)}</span>
-  </div>`).join('')}</div>`:''}
-
-  `:''}
 
   ${habitView==='cobranza'?(()=>{
     // ESPEJO de la cobranza principal (vive en 💰 Ingresos y Gastos → 💵
@@ -10378,7 +10323,7 @@ function rHistoria(){
   const streak=qStreak();
   checkAch();
   // Sub-nav
-  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['cats','🏷️ Categorías'],['logros','🏆 Logros'],['retos','🎯 Retos'],['timeline','📖 Timeline'],['liq','🏁 Liquidadas']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
+  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['cats','🏷️ Categorías'],['logros','🏆 Logros'],['retos','🎯 Retos'],['timeline','📖 Timeline'],['impulsos','⏳ Impulsos'],['liq','🏁 Liquidadas']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
   let ct='';
 
   // ═══ SIMULADOR ═══
@@ -11092,6 +11037,20 @@ function rHistoria(){
         <strong style="color:var(--sage);font-size:16px">${fx(totalLiqPaid)}/mes</strong>
       </div>
     </div>`:'<div class="card" style="text-align:center;padding:20px"><div style="font-size:30px;margin-bottom:8px">🎯</div><div style="color:var(--muted)">Aún no has liquidado deudas. ¡Sigue adelante!</div></div>'}`;
+  }
+
+  if(histView==='impulsos'){
+    const resolved=S.waitList.filter(w=>w.resolved);
+    const avoided=resolved.filter(w=>!w.bought);
+    if(!resolved.length){
+      ct='<div class="card" style="text-align:center;padding:24px"><div style="font-size:32px;margin-bottom:8px">⏳</div><div style="font-size:13px;color:var(--txt2);line-height:1.6">Aún no resuelves impulsos. Cuando dejes pasar (o compres) algo en <strong>Día a día → Impulsos</strong>, el historial aparecerá aquí.</div></div>';
+    }else{
+      const totalSaved=avoided.reduce((a,w)=>a+(+w.price||0),0);
+      ct='<div class="card card-sage"><div class="ct">⏳ Historial de impulsos</div>'
+        +'<div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:var(--sagedim);border-radius:8px"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Dinero salvado</div><div class="stat" style="color:var(--sage)">'+fx(totalSaved)+'</div></div><div style="text-align:right"><div style="font-size:11px;color:var(--muted)">'+avoided.length+' evitados · '+(resolved.length-avoided.length)+' comprados</div></div></div>'
+        +resolved.slice().reverse().map(w=>'<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row"><span>'+(w.bought?'🔴':'🟢')+'</span><span style="color:var(--txt)">'+_escH(w.name)+'</span></div><span style="color:'+(w.bought?'var(--terra)':'var(--sage)')+';font-weight:bold">'+fx(w.price)+'</span></div>').join('')
+        +'</div>';
+    }
   }
 
     document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div>`;

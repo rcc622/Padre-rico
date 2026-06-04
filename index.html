@@ -506,6 +506,34 @@ function _normalizeState(st){
   if(typeof st.savPct!=='number')st.savPct=10;
   if(typeof st.impulsesBudget!=='number')st.impulsesBudget=2000;
   if(typeof st.gastoDiarioBudget!=='number')st.gastoDiarioBudget=0;
+  _migrateV6(st);
+}
+// ── FUSIÓN (Fase Base): esquema unificado "Cajita" ──────────────────────
+// One-shot, no destructiva. Solo añade el vocabulario unificado (propósito
+// en activos, tipo en metas) y guarda un respaldo restaurable ANTES de
+// normalizar. No cambia ningún cálculo: los números quedan idénticos.
+function _migrateV6(st){
+  if(st._cajitaSchema)return;
+  try{
+    if(!localStorage.getItem('prv6_premerge_backup')){
+      localStorage.setItem('prv6_premerge_backup',JSON.stringify(st));
+      localStorage.setItem('prv6_premerge_backup_date',new Date().toISOString());
+    }
+  }catch(e){}
+  (st.assets||[]).forEach(a=>{if(a&&!a.purpose)a.purpose='patrimonio';}); // activos: conservar por defecto
+  (st.savGoals||[]).forEach(g=>{if(g&&!g.tipo)g.tipo='consumo';});        // metas: consumo por defecto
+  st._cajitaSchema=1;
+  st.version=6;
+}
+// Restaura el estado previo a la fusión (por si algo no cuadra). Llamable
+// desde consola: restorePremergeBackup()
+function restorePremergeBackup(){
+  try{
+    const b=localStorage.getItem('prv6_premerge_backup');
+    if(!b){toast&&toast('No hay respaldo pre-fusión');return false;}
+    localStorage.setItem(SK,b);
+    location.reload();return true;
+  }catch(e){return false;}
 }
 
 function ld(){
@@ -2736,6 +2764,24 @@ function metaMoneyBreakdown(){
 function nwBuild(){const b=metaMoneyBreakdown();return nw()-b.consumoAsset+b.buildVirtual;}
 // Todo el efectivo que tienes hoy (incluye metas, virtuales o no).
 function nwTotalCash(){const b=metaMoneyBreakdown();return nw()+b.consumoVirtual+b.buildVirtual;}
+// ── VISTA UNIFICADA "CAJITAS" (solo lectura) ────────────────────────────
+// Normaliza activos (S.assets) y metas (S.savGoals) en una sola lista de
+// "cajitas". NO muta nada ni cambia cálculos; es la base sobre la que se
+// construirá la UI unificada en la siguiente fase. Cada cajita expone su
+// propósito (🏗️ patrimonio | 🛒 consumo) y, si es meta, su objetivo.
+function cajitas(){
+  const out=[];
+  (S.assets||[]).forEach(a=>{if(!a)return;out.push({
+    id:a.id,kind:'asset',name:a.name,icon:a.icon||(a.gen?'📈':'🏦'),
+    saldo:+a.val||0,yldPct:+a.yldPct||0,gen:!!a.gen,
+    purpose:a.purpose||'patrimonio',target:0,deadline:'',done:false,src:a});});
+  (S.savGoals||[]).forEach(g=>{if(!g)return;out.push({
+    id:g.id,kind:'meta',name:g.name,icon:g.icon||'🎯',
+    saldo:+g.saved||0,yldPct:0,gen:false,
+    purpose:(g.tipo||'consumo')==='patrimonio'?'patrimonio':'consumo',
+    target:+g.target||0,deadline:g.deadline||'',done:!!g.done,src:g});});
+  return out;
+}
 // Rendimiento mensual de un activo: balance × tasa anual / 12. Antes el
 // usuario tecleaba el monto mensual fijo (a.inc); ahora teclea el % anual
 // (a.yldPct) y la app calcula la ganancia y las proyecciones.

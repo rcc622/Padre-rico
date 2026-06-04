@@ -5868,22 +5868,6 @@ function rFlujo(){try{
     </div>
   </details>
 
-  <!-- REGISTRAR / EDITAR ACTIVO -->
-  <div class="card" style="${editAssetId?'border:2px solid var(--amber);background:rgba(160,112,48,.05);box-shadow:0 0 0 4px rgba(160,112,48,.08)':''}">
-    <div class="ct" style="${editAssetId?'color:var(--amber)':''}">${editAssetId?'✏️ Editando: '+_escH((S.assets.find(a=>a.id===editAssetId)||{}).name||'activo'):'+ Registrar activo'}</div>
-    ${(()=>{const ea=editAssetId?S.assets.find(a=>a.id===editAssetId):null;return`
-    <div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="an" placeholder="Mercado Pago BMG, Cajita Nu..." value="${ea?ea.name:''}"></div>
-    <div style="margin-bottom:10px"><label>Saldo actual ($)</label><input type="number" id="av" placeholder="0" value="${ea?ea.val:''}"></div>
-    ${editAssetId?'':`<div style="margin-bottom:10px"><label>Fecha del registro</label><input type="date" id="ad" value="${_todayYMD()}"><div style="font-size:10px;color:var(--muted);margin-top:4px">Se usará para el primer movimiento "Saldo inicial". Útil si quieres reflejar saldo histórico.</div></div>`}
-    <div class="row-b" style="padding:10px 0;margin-bottom:10px;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)">
-      <div style="flex:1"><div style="font-size:12px;color:var(--txt)">¿Genera rendimiento?</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Activos como BMG, Cetes o Cajita pagan intereses</div></div>
-      <label class="switch"><input type="checkbox" id="ag" ${ea?.gen?'checked':''} onchange="document.getElementById('agIncWrap').style.display=this.checked?'block':'none'"><span class="slider"></span></label>
-    </div>
-    <div id="agIncWrap" style="display:${ea?.gen?'block':'none'};margin-bottom:10px"><label>Rendimiento anual (%)</label><input type="number" id="ai" placeholder="0" step="0.1" value="${ea?.yldPct||''}"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Tasa anual neta. Ej: BMG ~9%, Cetes ~10%, Cajita Nu ~13%. La app calcula la ganancia mensual y proyecciones a 1/3/6/12 meses.</div></div>
-    ${editAssetId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="saveAsset()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editAssetId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addAsset()">+ Agregar activo</button>`}
-    `;})()}
-  </div>
-
   ${(()=>{
     // Págate a ti primero — quick access desde Activos. Misma config que
     // Día a día → Ahorro (escribe S.savPct, lee curQnaInc). El usuario
@@ -5987,6 +5971,22 @@ function rFlujo(){try{
     <div style="font-size:13px;color:var(--txt2);line-height:1.6">Aún no registras activos. Empieza con lo que ya tienes: ¿cuánto hay hoy en tu Cajita Nu o Mercado Pago? Ese es tu punto de partida.</div>
   </div>
   `}
+
+  <!-- REGISTRAR / EDITAR ACTIVO -->
+  <div class="card" style="${editAssetId?'border:2px solid var(--amber);background:rgba(160,112,48,.05);box-shadow:0 0 0 4px rgba(160,112,48,.08)':''}">
+    <div class="ct" style="${editAssetId?'color:var(--amber)':''}">${editAssetId?'✏️ Editando: '+_escH((S.assets.find(a=>a.id===editAssetId)||{}).name||'activo'):'+ Registrar activo'}</div>
+    ${(()=>{const ea=editAssetId?S.assets.find(a=>a.id===editAssetId):null;return`
+    <div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="an" placeholder="Mercado Pago BMG, Cajita Nu..." value="${ea?ea.name:''}"></div>
+    <div style="margin-bottom:10px"><label>Saldo actual ($)</label><input type="number" id="av" placeholder="0" value="${ea?ea.val:''}"></div>
+    ${editAssetId?'':`<div style="margin-bottom:10px"><label>Fecha del registro</label><input type="date" id="ad" value="${_todayYMD()}"><div style="font-size:10px;color:var(--muted);margin-top:4px">Se usará para el primer movimiento "Saldo inicial". Útil si quieres reflejar saldo histórico.</div></div>`}
+    <div class="row-b" style="padding:10px 0;margin-bottom:10px;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)">
+      <div style="flex:1"><div style="font-size:12px;color:var(--txt)">¿Genera rendimiento?</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Activos como BMG, Cetes o Cajita pagan intereses</div></div>
+      <label class="switch"><input type="checkbox" id="ag" ${ea?.gen?'checked':''} onchange="document.getElementById('agIncWrap').style.display=this.checked?'block':'none'"><span class="slider"></span></label>
+    </div>
+    <div id="agIncWrap" style="display:${ea?.gen?'block':'none'};margin-bottom:10px"><label>Rendimiento anual (%)</label><input type="number" id="ai" placeholder="0" step="0.1" value="${ea?.yldPct||''}"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Tasa anual neta. Ej: BMG ~9%, Cetes ~10%, Cajita Nu ~13%. La app calcula la ganancia mensual y proyecciones a 1/3/6/12 meses.</div></div>
+    ${editAssetId?`<div class="row" style="gap:8px"><button class="btn btn-sage" onclick="saveAsset()">✓ Guardar cambios</button><button class="btn btn-ghost" onclick="editAssetId=null;rFlujo()">Cancelar</button></div>`:`<button class="btn btn-sage" onclick="addAsset()">+ Agregar activo</button>`}
+    `;})()}
+  </div>
   ${metasCardHTML()}
   ${planApartadoHTML()}
   `:''}

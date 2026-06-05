@@ -9039,10 +9039,10 @@ function metasCardHTML(){
           if(net>0)segs.push({c:'var(--sage)',v:net,lbl:'💰 Quedó neto'});
           Object.keys(wd).forEach(k=>{const km=savGoalWdKind(k);segs.push({c:km?km.c:'var(--muted)',v:wd[k],lbl:(km?km.e+' '+km.n.split(' ')[0]:k)});});
           const bar='<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:6px;background:rgba(120,120,120,.1)">'
-            +segs.map(s=>'<div title="'+s.lbl+': '+fx(s.v)+'" style="width:'+(s.v/base*100).toFixed(1)+'%;background:'+s.c+'"></div>').join('')
+            +segs.map(s=>'<div title="'+s.lbl+': '+fx(s.v)+' ('+(s.v/base*100).toFixed(0)+'%)" style="width:'+(s.v/base*100).toFixed(1)+'%;background:'+s.c+'"></div>').join('')
             +'</div>';
           const legend='<div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:8px">'
-            +segs.map(s=>'<span style="font-size:10px;color:var(--txt2);display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.c+';display:inline-block"></span>'+s.lbl+' <strong>'+fx(s.v)+'</strong></span>').join('')
+            +segs.map(s=>{const p=(s.v/base*100).toFixed(0);return '<span style="font-size:10px;color:var(--txt2);display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.c+';display:inline-block"></span>'+s.lbl+' <strong>'+fx(s.v)+'</strong> <span style="color:var(--muted)">('+p+'%)</span></span>';}).join('')
             +'</div>';
           const netLine='<div class="row-b" style="font-size:11px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;margin-bottom:8px"><span style="color:var(--muted)">Abonado bruto <strong style="color:var(--sage)">'+fx(totalIn)+'</strong>'+(totalOut>0?' · salió <strong style="color:var(--terra)">−'+fx(totalOut)+'</strong>':'')+'</span><span style="color:var(--txt);font-weight:bold">Entró neto: '+fx(net)+'</span></div>';
           return bar+legend+netLine;

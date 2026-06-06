@@ -2083,8 +2083,22 @@ function addSavGoalH(){
   const dl=document.getElementById('sgdh')?.value||'';
   const icon=document.getElementById('sgih')?.value||'🎯';
   const tipo=document.getElementById('sgtipo')?.value==='patrimonio'?'patrimonio':'consumo';
+  const conCajita=document.getElementById('sgcaj')?.value==='nueva';
   if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
-  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,tipo,done:false};
+  const gid=Date.now();
+  if(conCajita){
+    // Crear meta + cajita: un activo nuevo con el saldo inicial, y la meta
+    // ligada a él (lastAssetId). El activo es la fuente de verdad del dinero.
+    const initVal=Math.max(0,+(document.getElementById('sgcajVal')?.value)||0);
+    const aid=gid+1;
+    const initEvent=_mkAssetEvent('init',initVal,'Saldo inicial registrado',_todayYMD());
+    const asset={id:aid,name:n,val:initVal,gen:false,yldPct:0,purpose:tipo==='patrimonio'?'patrimonio':'consumo',events:[initEvent]};
+    const goal={id:gid,name:n,target:t,deadline:dl,saved:initVal,deposits:[],icon,tipo,done:initVal>=t,lastAssetId:aid};
+    pt({assets:[...(S.assets||[]),asset],savGoals:[...S.savGoals,goal]});
+    toast('💎 Meta + cajita creadas');_refreshActive();hdrUp&&hdrUp();
+    return;
+  }
+  const goal={id:gid,name:n,target:t,deadline:dl,saved:0,deposits:[],icon,tipo,done:false};
   pt({savGoals:[...S.savGoals,goal]});
   toast('🎯 Meta de ahorro creada');_refreshActive();
 }
@@ -9150,6 +9164,13 @@ function metasCardHTML(){
           <option value="patrimonio">🏗️ Patrimonio — se queda y construye (fondo, inversión)</option>
         </select>
         <div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Las de <strong>consumo</strong> son dinero tuyo hoy pero no cuentan como patrimonio que construye (se van a gastar). Las de <strong>patrimonio</strong> sí suman a tu riqueza y a tu meta principal.</div>
+      </div>
+      <div style="margin-bottom:10px"><label>¿Dónde vive el dinero?</label>
+        <select id="sgcaj" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="document.getElementById('sgcajInit').style.display=this.value==='nueva'?'block':'none'">
+          <option value="solo">🎯 Solo meta — sin cajita (no toca activos)</option>
+          <option value="nueva">💎 Crear meta + cajita (activo nuevo)</option>
+        </select>
+        <div id="sgcajInit" style="display:none;margin-top:8px"><label>Saldo inicial de la cajita ($)</label><input type="number" id="sgcajVal" placeholder="0" inputmode="decimal"><div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Se crea un <strong>activo</strong> con este nombre. Lo que ya tengas ahorrado va aquí; los abonos/retiros futuros viven en la cajita.</div></div>
       </div>
       <button class="btn btn-sage" onclick="addSavGoalH()">🎯 Crear meta de ahorro</button>
     </div>

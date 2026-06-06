@@ -6014,7 +6014,7 @@ function rFlujo(){try{
           <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
           <div class="row" style="gap:4px">
             <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Ajustar saldo">🔄</button>
-            <button class="btn btn-ghost btn-sm" onclick="editAsset(${a.id})" title="Ajustes (nombre, saldo, interés, fecha)">⚙️</button>
+            <button class="btn btn-ghost btn-sm" onclick="openAssetSettings(${a.id})" title="Ajustes del activo">⚙️</button>
             <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
           </div>
         </div>
@@ -7277,6 +7277,69 @@ function editAsset(id){
     const el=document.getElementById('an');
     if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}
   },140);
+}
+// Modal de ajustes del activo: reúne TODAS las opciones para reconfigurarlo
+// (nombre, saldo, rendimiento, fecha de creación) y acciones (meta ligada,
+// registrar movimiento, eliminar) en una sola ventana emergente.
+function openAssetSettings(id){
+  const a=(S.assets||[]).find(x=>x.id===id);if(!a){toast('Activo no encontrado');return;}
+  const initEv=(a.events||[]).find(e=>e.type==='init');
+  const creaDate=initEv&&initEv.date?initEv.date:_todayYMD();
+  const linked=metasForAsset(id);
+  const linkedMeta=linked[0]||null;
+  const body=''
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Nombre</label><input type="text" id="_asN" value="'+_escA(a.name||'')+'" style="width:100%;padding:9px;font-size:14px"></div>'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+    +'<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Saldo actual ($)</label><input type="number" id="_asV" value="'+(+a.val||0)+'" style="width:100%;padding:9px;font-size:14px"></div>'
+    +'<div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha de creación</label><input type="date" id="_asD" value="'+creaDate+'" style="width:100%;padding:9px;font-size:13px"></div>'
+    +'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin:-4px 0 10px;line-height:1.5">Si cambias el saldo, la diferencia se registra como un movimiento de ajuste (conserva la huella).</div>'
+    +'<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(120,120,120,.06);border-radius:8px;cursor:pointer;text-transform:none;font-size:13px;color:var(--txt2);margin-bottom:8px"><input type="checkbox" id="_asGen" '+(a.gen?'checked':'')+' onchange="document.getElementById(\'_asYldWrap\').style.display=this.checked?\'block\':\'none\'" style="width:auto;accent-color:var(--sage)"><span>📈 <strong>Genera rendimiento</strong> (BMG, Cetes, Cajita…)</span></label>'
+    +'<div id="_asYldWrap" style="display:'+(a.gen?'block':'none')+';margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Rendimiento anual (%)</label><input type="number" id="_asYld" step="0.1" value="'+(+a.yldPct||0)+'" style="width:100%;padding:9px;font-size:13px"></div>'
+    +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">🎯 Propósito</label><select id="_asPurpose" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif"><option value="patrimonio"'+((a.purpose||'patrimonio')==='patrimonio'?' selected':'')+'>🏗️ Patrimonio — construye tu riqueza</option><option value="consumo"'+((a.purpose||'patrimonio')==='consumo'?' selected':'')+'>🛒 Consumo — se va a gastar</option></select></div>'
+    // Acciones rápidas (cierran este modal y abren su propio flujo)
+    +'<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:4px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Acciones</div>'
+    +'<div style="display:flex;flex-direction:column;gap:6px">'
+    +'<button type="button" class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start;text-align:left" onclick="closeConfirm();depositAsset('+id+')">💵 Registrar movimiento (abono/retiro)</button>'
+    +(linkedMeta
+        ?'<button type="button" class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start;text-align:left;color:var(--amber)" onclick="closeConfirm();unlinkMetaFromAsset('+linkedMeta.id+')">🎯✕ Quitar meta ligada («'+_escH(linkedMeta.name)+'»)</button>'
+        :'<button type="button" class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start;text-align:left;color:var(--amber)" onclick="closeConfirm();convertAssetToMeta('+id+')">🎯 Ponerle una meta</button>')
+    +'<button type="button" class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start;text-align:left;color:var(--terra)" onclick="closeConfirm();delAsset('+id+')">🗑️ Eliminar activo</button>'
+    +'</div></div>';
+  showConfirm('⚙️ Ajustes · '+_escH(a.name),body,()=>{
+    const n=(document.getElementById('_asN')?.value||'').trim();
+    const v=+(document.getElementById('_asV')?.value)||0;
+    const d=document.getElementById('_asD')?.value||'';
+    const gen=document.getElementById('_asGen')?.checked||false;
+    const yld=gen?(+(document.getElementById('_asYld')?.value)||0):0;
+    const purpose=document.getElementById('_asPurpose')?.value==='consumo'?'consumo':'patrimonio';
+    if(!n){toast('Falta el nombre');return;}
+    if(v<0){toast('⚠ Saldo inválido');return;}
+    const oldVal=+a.val||0;const delta=v-oldVal;
+    pt({assets:S.assets.map(x=>{
+      if(x.id!==id)return x;
+      let events=Array.isArray(x.events)?[...x.events]:[];
+      if(delta!==0)events.push(_mkAssetEvent(delta>0?'in':'out',Math.abs(delta),'Ajuste de saldo',_todayYMD()));
+      if(d)events=events.map(e=>e.type==='init'?{...e,date:d}:e);
+      return{...x,name:n,val:v,gen,yldPct:yld,purpose,inc:undefined,events};
+    })});
+    _syncLinkedMetaSaved(id);
+    closeConfirm();
+    toast('✓ Activo actualizado'+(delta!==0?' · saldo '+(delta>0?'+':'')+fx(delta):''));
+    _refreshActive();hdrUp&&hdrUp();
+  });
+}
+// Desliga una meta de su activo (vuelve a "solo meta"). No borra nada: el
+// activo conserva su saldo y movimientos; la meta deja de leer el activo y
+// usa su propio g.saved (= último saldo conocido).
+function unlinkMetaFromAsset(metaId){
+  const g=(S.savGoals||[]).find(x=>x.id===metaId);if(!g)return;
+  const aid=_metaPrimaryAssetId(g);
+  const a=aid!=null?(S.assets||[]).find(x=>x.id===aid):null;
+  showConfirm('🎯✕ Quitar meta de la cajita','<div style="font-size:13px;line-height:1.6;color:var(--txt2)">La meta <strong>'+_escH(g.name)+'</strong> dejará de vivir en el activo <strong>'+_escH(a?a.name:'')+'</strong> y volverá a ser una meta independiente.<br><span style="font-size:11px;color:var(--muted)">El activo conserva su saldo y movimientos. No se borra nada.</span></div>',()=>{
+    pt({savGoals:S.savGoals.map(x=>x.id===metaId?{...x,lastAssetId:null,saved:Math.round(a?(+a.val||0):(+x.saved||0))}:x)});
+    closeConfirm();toast('🎯 Meta desligada');_refreshActive();hdrUp&&hdrUp();
+  });
 }
 function addAsset(){
   const n=document.getElementById('an')?.value.trim();

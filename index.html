@@ -9028,6 +9028,29 @@ function linkMetaToAsset(metaId,assetId){
   pt({savGoals:S.savGoals.map(g=>g.id===metaId?{...g,lastAssetId:assetId,tipo:g.tipo||'consumo'}:g)});
   toast('🔗 Unidas en una sola cajita');_refreshActive();
 }
+// Convierte una meta "solo meta" en cajita: crea un activo con el saldo que
+// ya lleva ahorrado (g.saved) y liga la meta a él. El historial previo
+// (g.deposits) se conserva en la meta; el saldo del activo arranca en g.saved
+// (representado como un evento 'init'). De aquí en adelante el activo es la
+// fuente de verdad (modelo unificado).
+function convertMetaToCajita(metaId){
+  const g=S.savGoals.find(x=>x.id===metaId);if(!g)return;
+  if(_metaPrimaryAssetId(g)!=null){toast('Esta meta ya vive en una cajita');return;}
+  const saved=Math.round(+g.saved||0);
+  const body='<div style="font-size:13px;line-height:1.6;color:var(--txt2)">Se creará un <strong>activo</strong> llamado <strong>'+_escH(g.name)+'</strong> con saldo inicial de <strong style="color:var(--sage)">'+fx(saved)+'</strong> (lo que ya llevas ahorrado).<br><br><span style="font-size:11px;color:var(--muted)">A partir de ahí el dinero de esta meta vive en la cajita: abonos y retiros mueven el saldo del activo. Tu patrimonio en Inicio lo reflejará.</span>'
+    +'<div style="margin-top:12px"><label style="font-size:11px;color:var(--muted)">¿Genera rendimiento? (opcional)</label><div class="row" style="gap:8px;margin-top:4px"><input type="number" id="_cmcYld" placeholder="0" step="0.1" style="flex:1;padding:8px"><span style="font-size:11px;color:var(--muted);align-self:center">% anual</span></div></div></div>';
+  showConfirm('💎 Convertir en cajita',body,()=>{
+    const yld=Math.max(0,+(document.getElementById('_cmcYld')?.value)||0);
+    const aid=Date.now()+Math.floor(Math.random()*1000);
+    const initEvent=_mkAssetEvent('init',saved,'Saldo inicial (desde meta)',_todayYMD());
+    const asset={id:aid,name:g.name,val:saved,gen:yld>0,yldPct:yld,purpose:(g.tipo||'consumo')==='patrimonio'?'patrimonio':'consumo',events:[initEvent]};
+    pt({
+      assets:[...(S.assets||[]),asset],
+      savGoals:S.savGoals.map(x=>x.id===metaId?{...x,lastAssetId:aid}:x)
+    });
+    closeConfirm();toast('💎 Cajita creada · '+fx(saved));_refreshActive();hdrUp&&hdrUp();
+  });
+}
 // Bloque de objetivo que se inyecta dentro de la tarjeta del activo.
 // Barra apilada por concepto + neto + %. FUENTE DE VERDAD UNIFICADA:
 // - Meta LIGADA a un activo → lee los eventos del activo (a.events). El neto
@@ -9141,6 +9164,7 @@ function metasCardHTML(){
             <button class="btn btn-sage btn-sm" style="flex:1" onclick="updSavGoalSaved(${g.id})">💰 Registrar movimiento</button>
             <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Marcar como completada sin borrarla">✓ Completar</button>
           </div>
+          <div style="margin-top:6px"><button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--amber)" onclick="convertMetaToCajita(${g.id})" title="Crear un activo para separar el dinero de esta meta">💎 Convertir en cajita (crear activo) →</button></div>
         `:`<div class="row" style="gap:8px;align-items:center;margin-top:6px">
             <div style="flex:1;text-align:center;font-size:12px;color:var(--sage)">🎉 Meta completada — ¡disfruta!</div>
             <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="toggleSavGoalDone(${g.id})" title="Reabrir esta meta">↩ Reabrir</button>

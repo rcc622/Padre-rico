@@ -6014,7 +6014,7 @@ function rFlujo(){try{
           <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
           <div class="row" style="gap:4px">
             <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Ajustar saldo">🔄</button>
-            <button class="btn btn-ghost btn-sm" onclick="editAsset(${a.id})" title="Editar">✏️</button>
+            <button class="btn btn-ghost btn-sm" onclick="editAsset(${a.id})" title="Ajustes (nombre, saldo, interés, fecha)">⚙️</button>
             <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
           </div>
         </div>
@@ -6041,8 +6041,8 @@ function rFlujo(){try{
     <div class="ct" style="${editAssetId?'color:var(--amber)':''}">${editAssetId?'✏️ Editando: '+_escH((S.assets.find(a=>a.id===editAssetId)||{}).name||'activo'):'+ Registrar activo'}</div>
     ${(()=>{const ea=editAssetId?S.assets.find(a=>a.id===editAssetId):null;return`
     <div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="an" placeholder="Mercado Pago BMG, Cajita Nu..." value="${ea?ea.name:''}"></div>
-    <div style="margin-bottom:10px"><label>Saldo actual ($)</label><input type="number" id="av" placeholder="0" value="${ea?ea.val:''}"></div>
-    ${editAssetId?'':`<div style="margin-bottom:10px"><label>Fecha del registro</label><input type="date" id="ad" value="${_todayYMD()}"><div style="font-size:10px;color:var(--muted);margin-top:4px">Se usará para el primer movimiento "Saldo inicial". Útil si quieres reflejar saldo histórico.</div></div>`}
+    <div style="margin-bottom:10px"><label>Saldo actual ($)</label><input type="number" id="av" placeholder="0" value="${ea?ea.val:''}">${editAssetId?'<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Si cambias el saldo, la diferencia se registra como un movimiento de ajuste.</div>':''}</div>
+    ${editAssetId?`<div style="margin-bottom:10px"><label>Fecha de creación</label><input type="date" id="ad" value="${(()=>{const iv=(ea?.events||[]).find(e=>e.type==='init');return iv&&iv.date?iv.date:_todayYMD();})()}"><div style="font-size:10px;color:var(--muted);margin-top:4px">Fecha del movimiento "Saldo inicial". Ajusta tu historial.</div></div>`:`<div style="margin-bottom:10px"><label>Fecha del registro</label><input type="date" id="ad" value="${_todayYMD()}"><div style="font-size:10px;color:var(--muted);margin-top:4px">Se usará para el primer movimiento "Saldo inicial". Útil si quieres reflejar saldo histórico.</div></div>`}
     <div class="row-b" style="padding:10px 0;margin-bottom:10px;border-top:1px dashed var(--border);border-bottom:1px dashed var(--border)">
       <div style="flex:1"><div style="font-size:12px;color:var(--txt)">¿Genera rendimiento?</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Activos como BMG, Cetes o Cajita pagan intereses</div></div>
       <label class="switch"><input type="checkbox" id="ag" ${ea?.gen?'checked':''} onchange="document.getElementById('agIncWrap').style.display=this.checked?'block':'none'"><span class="slider"></span></label>
@@ -7296,13 +7296,39 @@ function saveAsset(){
   const v=+(document.getElementById('av')?.value)||0;
   const gen=document.getElementById('ag')?.checked||false;
   const yldPct=gen?(+(document.getElementById('ai')?.value)||0):0;
+  const creaDate=document.getElementById('ad')?.value||'';
   if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
+  const cur=S.assets.find(a=>a.id===editAssetId);
+  const oldVal=+(cur?.val)||0;
+  const delta=v-oldVal;
   // Limpieza: ya no usamos a.inc (monto fijo). Lo quito del registro para
   // que no haya duda sobre cuál fuente manda.
-  pt({assets:S.assets.map(a=>a.id===editAssetId?{...a,name:n,val:v,gen,yldPct,inc:undefined}:a)});
+  pt({assets:S.assets.map(a=>{
+    if(a.id!==editAssetId)return a;
+    let events=Array.isArray(a.events)?[...a.events]:[];
+    // 1) Cambio de saldo → registrar movimiento de ajuste (no perder la huella)
+    if(delta!==0){
+      events.push(_mkAssetEvent(delta>0?'in':'out',Math.abs(delta),'Ajuste de saldo',_todayYMD()));
+    }
+    // 2) Cambio de fecha de creación → actualizar el evento 'init'
+    if(creaDate){
+      events=events.map(e=>e.type==='init'?{...e,date:creaDate}:e);
+    }
+    return{...a,name:n,val:v,gen,yldPct,inc:undefined,events};
+  })});
+  // Mantener congruencia: si hay una meta ligada, su saved = saldo del activo
+  _syncLinkedMetaSaved(editAssetId);
   editAssetId=null;
-  toast('✓ Activo actualizado');
+  toast('✓ Activo actualizado'+(delta!==0?' · saldo '+(delta>0?'+':'')+fx(delta):''));
   rFlujo();hdrUp&&hdrUp();
+}
+// Si un activo tiene meta(s) ligada(s), sincroniza g.saved = a.val (fuente
+// de verdad unificada). Llamar tras cualquier cambio del saldo del activo.
+function _syncLinkedMetaSaved(assetId){
+  const a=(S.assets||[]).find(x=>x.id===assetId);if(!a)return;
+  const linked=(S.savGoals||[]).filter(g=>_metaPrimaryAssetId(g)===assetId);
+  if(!linked.length)return;
+  pt({savGoals:S.savGoals.map(g=>_metaPrimaryAssetId(g)===assetId?{...g,saved:Math.round(+a.val||0),done:Math.round(+a.val||0)>=(+g.target||0)}:g)});
 }
 function delAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
@@ -8155,6 +8181,10 @@ try{
   // a metas" como línea propia en Estado de cuenta (similar a "🪙 Ahorro
   // apartado → Nu express"), no mezclado con Pagos aplicados.
   let metaAppliedAmt=0,metaCheckedAmt=0,_metaBreakdown=[],_metaRetOut=0,_metaRetBreakdown=[];
+  // Cajitas de PATRIMONIO: su aporte neto del ciclo se muestra junto al
+  // "🪙 Ahorro apartado" (no en "🎯 Apartado a metas", que es consumo). Es
+  // una reclasificación: el total no cambia, solo dónde se ve.
+  let _patrSavNet=0,_patrSavBreakdown=[];
   if(!showNext){
     // Modelo de flujo de efectivo: un gasto pagado con TDC NO sale de tu
     // efectivo al aplicarlo (queda en la tarjeta); sale cuando registras el
@@ -8172,16 +8202,29 @@ try{
     // pero marcaste el pago en el Plan, respetamos la cuota sugerida (legacy).
     const _mw=cycleWindowFromKey(planCk());const _mSY=_ymdLocal(_mw.start),_mEY=_ymdLocal(_mw.end);
     S.savGoals.forEach(g=>{
+      const _esPatr=(g.tipo||'consumo')==='patrimonio';
       const deps=(g.deposits||[]).filter(d=>d&&d.date&&d.date>=_mSY&&d.date<=_mEY);
       if(deps.length){
         let net=0,ret=0;
         deps.forEach(d=>{const amt=+d.amt||0;net+=amt;if(amt<0&&(d.kind||'')!=='ajuste'){ret+=(-amt);_metaRetBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:-amt,kind:d.kind||'',note:d.note||''});}});
-        metaAppliedAmt+=net;_metaRetOut+=ret;
-        if(net!==0)_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:net,real:true});
+        _metaRetOut+=ret;
+        if(_esPatr){
+          // Patrimonio → cuenta como ahorro apartado, no como meta de consumo.
+          _patrSavNet+=net;
+          if(net!==0)_patrSavBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:net,real:true});
+        }else{
+          metaAppliedAmt+=net;
+          if(net!==0)_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:net,real:true});
+        }
         return;
       }
       if(g.done||g.target<=(+g.saved||0))return;
       const _ma=metaCycleAmt(g,planCk());
+      if(_esPatr){
+        if(isApplied('sav',g.id)){_patrSavNet+=_ma;_patrSavBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:_ma,real:false});}
+        else if(isPaid('sav',g.id)){_patrSavNet+=_ma;_patrSavBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:_ma,real:false});}
+        return;
+      }
       if(isApplied('sav',g.id)){metaAppliedAmt+=_ma;_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:_ma,real:false});}
       else if(isPaid('sav',g.id)){metaCheckedAmt+=_ma;_metaBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:_ma,real:false});}
     });
@@ -8379,7 +8422,10 @@ try{
       const _metaCount=_metaBreakdown.length;
       // Retiros gastados (emergencia/enganche) = salida adicional: ese dinero
       // salió de tu bolsa aunque haya pasado por la meta. Suma al total de salidas.
-      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_savAmt+_metaOut+_metaRetOut;
+      // Ahorro apartado total = Págate Primero (savCommit) + neto de cajitas
+      // de patrimonio. Ambos son "se queda y construye", van en la misma línea.
+      const _ahorroApartado=_savAmt+_patrSavNet;
+      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_ahorroApartado+_metaOut+_metaRetOut;
       const _balance=incQ+_otEarned-_totalOut;
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
@@ -8392,7 +8438,17 @@ try{
         ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosCashCount(planCk())})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
         ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:_metaOut<0?`<div class="row-b"><span style="color:var(--sage)">↩ Retirado de metas a tu cuenta</span><strong style="color:var(--sage)">+${fx(Math.round(-_metaOut))}</strong></div>`:''}
         ${_metaRetOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--terra)">🚨 Retiros de metas (${_metaRetBreakdown.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--terra)">−${fx(Math.round(_metaRetOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(184,92,74,.25);margin:2px 0 4px 4px">${_metaRetBreakdown.map(m=>{const _k=savGoalWdKind(m.kind);const _kl=_k?_k.e+' '+_k.n:'📉 Retiro';return `<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)} · <span style="font-size:9px">${_kl}</span>${m.note?' · '+_escH(m.note):''}</span><span style="color:var(--terra);white-space:nowrap">−${fx(Math.round(m.amt))}</span></div>`;}).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:''}
-        ${_savAmt>0?`<div class="row-b"><span style="color:var(--sage)">🪙 Ahorro apartado${_savAsset?' → '+_savAsset.name:''}</span><strong style="color:var(--sage)">−${fx(Math.round(_savAmt))}</strong></div>`:''}
+        ${_ahorroApartado>0?(()=>{
+          // Línea unificada de Ahorro apartado: Págate Primero + cajitas de
+          // patrimonio. Con desglose si hay cajitas de patrimonio.
+          const items=[];
+          if(_savAmt>0)items.push({icon:'🪙',name:'Págate Primero'+(_savAsset?' → '+_savAsset.name:''),amt:_savAmt});
+          _patrSavBreakdown.forEach(m=>items.push({icon:m.icon||'🏗️',name:m.name,amt:m.amt,plan:!m.real}));
+          if(items.length===1&&_patrSavBreakdown.length===0){
+            return `<div class="row-b"><span style="color:var(--sage)">🪙 Ahorro apartado${_savAsset?' → '+_savAsset.name:''}</span><strong style="color:var(--sage)">−${fx(Math.round(_savAmt))}</strong></div>`;
+          }
+          return `<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🪙 Ahorro apartado (${items.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_ahorroApartado))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${items.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon} ${_escH(m.name)}${m.plan?' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>':''}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}</div></details>`;
+        })():''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
           <strong style="color:${_balance>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(_balance))}</strong>

@@ -524,6 +524,30 @@ function _migrateV6(st){
   (st.savGoals||[]).forEach(g=>{if(g&&!g.tipo)g.tipo='consumo';});        // metas: consumo por defecto
   st._cajitaSchema=1;
   st.version=6;
+  _migrateV7(st);
+}
+// FUSIÓN (Fase 7): fuente de verdad unificada para cajitas. Una meta ligada a
+// un activo toma como "ahorrado" (g.saved) el SALDO del activo. Antes la meta
+// llevaba su propio ledger (g.deposits→g.saved) que podía divergir del saldo
+// del activo (a.val), mostrando dos contabilidades distintas en la misma
+// cajita. Esta migración one-shot reconcilia g.saved = a.val para metas
+// ligadas. Conserva g.deposits como historial pero el saldo manda.
+function _migrateV7(st){
+  if(st._cajitaUnifiedV7)return;
+  try{
+    const assetsById={};(st.assets||[]).forEach(a=>{if(a)assetsById[a.id]=a;});
+    (st.savGoals||[]).forEach(g=>{
+      if(!g)return;
+      const aid=g.lastAssetId!=null?g.lastAssetId:((g.deposits||[]).slice().reverse().find(d=>d&&d.assetId!=null)||{}).assetId;
+      const a=aid!=null?assetsById[aid]:null;
+      if(a){
+        g.lastAssetId=a.id; // fija el vínculo explícito
+        g.saved=Math.round(+a.val||0); // saldo del activo = fuente de verdad
+        g.done=g.saved>=(+g.target||0);
+      }
+    });
+  }catch(e){}
+  st._cajitaUnifiedV7=1;
 }
 // Restaura el estado previo a la fusión (por si algo no cuadra). Llamable
 // desde consola: restorePremergeBackup()
@@ -1819,10 +1843,13 @@ function addSavGoal(){
 // editar/eliminar el movimiento y sincronizar ambos lados.
 const _savDepId=()=>Date.now()+Math.floor(Math.random()*100000);
 // Aplica un movimiento a su activo ligado. amt es con signo (+entra/−sale).
+// kind (opcional) = tipo de retiro (emergencia/enganche/ajuste) que se guarda
+// en el evento para que la barra de desglose pueda agruparlo por concepto.
 // Devuelve {assets, evId}.
-function _savApplyToAsset(assets,assetId,amt,concept,date){
+function _savApplyToAsset(assets,assetId,amt,concept,date,kind){
   if(!assetId)return{assets,evId:null};
   const ev=_mkAssetEvent(amt>=0?'in':'out',Math.abs(amt),concept,date);
+  if(kind&&amt<0)ev.kind=kind;
   const next=_withAssetEvent(assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amt}:a),assetId,ev);
   return{assets:next,evId:ev.id};
 }
@@ -1892,9 +1919,12 @@ const savGoalWdKind=k=>SAVGOAL_WD_KINDS[k]||null;
 // siga cuadrando.
 function updSavGoalSaved(id){
   const g=S.savGoals.find(x=>x.id===id);if(!g)return;
-  const cur=Math.round(+g.saved||0);
   const _metaAssetId=g.lastAssetId||(g.deposits||[]).slice().reverse().find(d=>d&&d.assetId)?.assetId;
   const _metaAsset=_metaAssetId&&S.assets?S.assets.find(a=>a.id===_metaAssetId):null;
+  // Fuente de verdad unificada: si la meta está ligada a un activo, el
+  // "ahorrado" ES el saldo del activo. Así el movimiento opera sobre la
+  // misma cuenta que muestran el saldo y la lista de movimientos.
+  const cur=Math.round(_metaAsset?(+_metaAsset.val||0):(+g.saved||0));
   const assetOpts=(S.assets&&S.assets.length)?('<option value="">— Sin activo (no afecta saldos) —</option>'+S.assets.map(a=>'<option value="'+a.id+'"'+(a.id===_metaAssetId?' selected':'')+'>'+(a.gen?'📈 ':'')+_escH(a.name)+' · '+fx(a.val)+'</option>').join('')):'';
   const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza lo que llevas ahorrado en <strong style="color:var(--sage)">'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>. Si <strong>subes</strong> el monto es un abono; si lo <strong>bajas</strong>, un retiro (te pido el tipo). En ambos casos puedes anotar concepto, fecha y a qué activo afecta.</div>'
     +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Ahorrado anterior</label><div style="font-size:14px;color:var(--txt2)">'+fx(cur)+'</div></div>'
@@ -1918,7 +1948,11 @@ function updSavGoalSaved(id){
     const date=document.getElementById('_quSavDate')?.value||_todayYMD();
     const assetIdRaw=document.getElementById('_quSavAsset')?.value;
     const assetId=assetIdRaw?+assetIdRaw:null;
-    const r=assetId?_savApplyToAsset(S.assets,assetId,diff,concept,date):{assets:S.assets,evId:null};
+    const r=assetId?_savApplyToAsset(S.assets,assetId,diff,concept,date,kind):{assets:S.assets,evId:null};
+    // Si quedó ligada a un activo, g.saved se mantiene = saldo del activo
+    // (fuente única). Si no, g.saved = nv (su ledger propio).
+    const linkedAsset=assetId?r.assets.find(a=>a.id===assetId):null;
+    const newSaved=linkedAsset?Math.round(+linkedAsset.val||0):nv;
     pt({
       assets:r.assets,
       savGoals:S.savGoals.map(gx=>{
@@ -1926,7 +1960,7 @@ function updSavGoalSaved(id){
         const dep={id:_savDepId(),date,amt:diff,note:concept};
         if(kind)dep.kind=kind;
         if(assetId){dep.assetId=assetId;dep.evId=r.evId;}
-        return{...gx,saved:nv,deposits:[...(gx.deposits||[]),dep],done:nv>=gx.target,lastAssetId:assetId||gx.lastAssetId};
+        return{...gx,saved:newSaved,deposits:[...(gx.deposits||[]),dep],done:newSaved>=gx.target,lastAssetId:assetId||gx.lastAssetId};
       })
     });
     closeConfirm();
@@ -8970,31 +9004,54 @@ function linkMetaToAsset(metaId,assetId){
   toast('🔗 Unidas en una sola cajita');_refreshActive();
 }
 // Bloque de objetivo que se inyecta dentro de la tarjeta del activo.
-// Barra apilada por concepto + neto + %, reutilizable en la vista de cajita
-// ligada (_goalOverlay) y en las cajitas sin activo (metasCardHTML). Deriva
-// todo de g.deposits: abonos (+) vs retiros (−) por tipo (kind).
+// Barra apilada por concepto + neto + %. FUENTE DE VERDAD UNIFICADA:
+// - Meta LIGADA a un activo → lee los eventos del activo (a.events). El neto
+//   es el saldo del activo. Así la barra, el saldo y los movimientos cuentan
+//   la MISMA historia (una sola cajita).
+// - Meta SIN activo → lee g.deposits (su ledger propio).
 function _savGoalBreakdownBar(g){
-  const deps=g.deposits||[];
-  const totalIn=deps.filter(d=>(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
-  const wd={};deps.forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
+  const aid=_metaPrimaryAssetId(g);
+  const asset=aid!=null?(S.assets||[]).find(a=>a.id===aid):null;
+  let totalIn,wd={},net;
+  if(asset){
+    // Fuente = eventos del activo. init/in/yield = entradas; out = salidas.
+    // adjust con monto +/− se reparte. Agrupamos salidas por tipo de retiro
+    // si el evento lo trae (ev.kind), si no, en "Salidas".
+    const evs=asset.events||[];
+    totalIn=0;
+    evs.forEach(ev=>{
+      const amt=Math.abs(+ev.amount||0);
+      const isOut=ev.type==='out'||(+ev.amount||0)<0;
+      if(isOut){const k=ev.kind||'salida';wd[k]=(wd[k]||0)+amt;}
+      else totalIn+=amt;
+    });
+    net=Math.round(+asset.val||0);
+  }else{
+    const deps=g.deposits||[];
+    totalIn=deps.filter(d=>(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
+    deps.forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
+    net=Math.round(+g.saved||0);
+  }
   const totalOut=Object.values(wd).reduce((a,v)=>a+v,0);
-  const net=Math.round((+g.saved||0));
   if(totalIn<=0&&totalOut<=0)return '';
   const base=Math.max(totalIn,net+totalOut,1);
   const segs=[];
   if(net>0)segs.push({c:'var(--sage)',v:net,lbl:'💰 Quedó neto'});
-  Object.keys(wd).forEach(k=>{const km=savGoalWdKind(k);segs.push({c:km?km.c:'var(--muted)',v:wd[k],lbl:(km?km.e+' '+km.n.split(' ')[0]:k)});});
+  Object.keys(wd).forEach(k=>{const km=savGoalWdKind(k);segs.push({c:km?km.c:'var(--terra)',v:wd[k],lbl:(km?km.e+' '+km.n.split(' ')[0]:(k==='salida'?'🔴 Salida':k))});});
   const bar='<div style="display:flex;height:14px;border-radius:7px;overflow:hidden;margin-bottom:6px;background:rgba(120,120,120,.1)">'
     +segs.map(s=>'<div title="'+s.lbl+': '+fx(s.v)+' ('+(s.v/base*100).toFixed(0)+'%)" style="width:'+(s.v/base*100).toFixed(1)+'%;background:'+s.c+'"></div>').join('')
     +'</div>';
   const legend='<div style="display:flex;flex-wrap:wrap;gap:6px 10px;margin-bottom:8px">'
     +segs.map(s=>{const p=(s.v/base*100).toFixed(0);return '<span style="font-size:10px;color:var(--txt2);display:inline-flex;align-items:center;gap:4px"><span style="width:9px;height:9px;border-radius:2px;background:'+s.c+';display:inline-block"></span>'+s.lbl+' <strong>'+fx(s.v)+'</strong> <span style="color:var(--muted)">('+p+'%)</span></span>';}).join('')
     +'</div>';
-  const netLine='<div class="row-b" style="font-size:11px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;margin-bottom:8px"><span style="color:var(--muted)">Abonado bruto <strong style="color:var(--sage)">'+fx(totalIn)+'</strong>'+(totalOut>0?' · salió <strong style="color:var(--terra)">−'+fx(totalOut)+'</strong>':'')+'</span><span style="color:var(--txt);font-weight:bold">Entró neto: '+fx(net)+'</span></div>';
+  const netLine='<div class="row-b" style="font-size:11px;padding:6px 8px;background:rgba(78,124,106,.06);border-radius:6px;margin-bottom:8px"><span style="color:var(--muted)">Entró bruto <strong style="color:var(--sage)">'+fx(totalIn)+'</strong>'+(totalOut>0?' · salió <strong style="color:var(--terra)">−'+fx(totalOut)+'</strong>':'')+'</span><span style="color:var(--txt);font-weight:bold">Saldo: '+fx(net)+'</span></div>';
   return bar+legend+netLine;
 }
 function _goalOverlay(g){
-  const sv=+g.saved||0,tgt=+g.target||0;
+  // Meta ligada → su "ahorrado" ES el saldo del activo (fuente unificada).
+  const _aid=_metaPrimaryAssetId(g);
+  const _asset=_aid!=null?(S.assets||[]).find(a=>a.id===_aid):null;
+  const sv=_asset?(+_asset.val||0):(+g.saved||0),tgt=+g.target||0;
   const remaining=Math.max(0,tgt-sv);
   const pct=tgt>0?Math.min(100,sv/tgt*100):0;
   const isDone=g.done||remaining<=0;

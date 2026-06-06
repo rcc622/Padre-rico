@@ -5963,11 +5963,18 @@ function rFlujo(){try{
           // amount positivo (Math.abs) pero deben mostrarse en negativo.
           const isOut=ev.type==='out'||(+ev.amount||0)<0;
           const sign=ev.type==='init'?'':(isOut?'−':'+');
-          const col=isOut?'var(--terra)':'var(--sage)';
-          const ic=evIcon[ev.type]||'•';
+          // Color por TIPO de movimiento. Las salidas con tipo de retiro
+          // (emergencia/enganche/ajuste) usan el color de su categoría — igual
+          // que la barra de desglose — para que coincidan visualmente.
+          const km=isOut&&ev.kind?savGoalWdKind(ev.kind):null;
+          const col=km?km.c:(isOut?'var(--terra)':ev.type==='yield'?'var(--sky)':ev.type==='init'?'var(--muted)':'var(--sage)');
+          // Punto de color en vez del emoji genérico, salvo init/yield que
+          // conservan su ícono distintivo.
+          const dot=(ev.type==='init')?'🌱':(ev.type==='yield')?'💎':'<span style="width:9px;height:9px;border-radius:50%;background:'+col+';display:inline-block;flex-shrink:0"></span>';
+          const kindTag=km?' <span style="font-size:8px;padding:1px 5px;border-radius:4px;background:rgba(120,120,120,.12);color:'+km.c+';font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+km.e+' '+km.n.split(' ')[0]+'</span>':'';
           return '<div class="row-b" style="padding:6px 4px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px">'
             +'<div style="flex:1;min-width:0">'
-              +'<div style="display:flex;align-items:center;gap:6px"><span>'+ic+'</span><span style="color:var(--txt);font-weight:bold">'+fmtDate(ev.date)+'</span></div>'
+              +'<div style="display:flex;align-items:center;gap:6px">'+dot+'<span style="color:var(--txt);font-weight:bold">'+fmtDate(ev.date)+'</span>'+kindTag+'</div>'
               +(ev.concept?'<div style="color:var(--muted);font-size:10px;margin-top:2px;margin-left:18px">'+_escH(ev.concept)+'</div>':'')
             +'</div>'
             +'<div style="display:flex;align-items:center;gap:4px;flex-shrink:0">'
@@ -7304,8 +7311,11 @@ function editAssetEvent(assetId,evId){
     {k:'adjust',l:'🔄 Ajuste'},
     {k:'yield',l:'💎 Rendimiento'}
   ];
-  const body='<div style="margin-bottom:10px"><label>Tipo</label><select id="_eaeType" style="width:100%;padding:9px;font-size:13px">'
+  const body='<div style="margin-bottom:10px"><label>Tipo</label><select id="_eaeType" style="width:100%;padding:9px;font-size:13px" onchange="document.getElementById(\'_eaeKindWrap\').style.display=this.value===\'out\'?\'block\':\'none\'">'
     +types.map(t=>'<option value="'+t.k+'" '+(ev.type===t.k?'selected':'')+'>'+t.l+'</option>').join('')
+    +'</select></div>'
+    +'<div id="_eaeKindWrap" style="display:'+(ev.type==='out'?'block':'none')+';margin-bottom:10px"><label>Tipo de retiro (color)</label><select id="_eaeKind" style="width:100%;padding:9px;font-size:13px">'
+    +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'"'+(ev.kind===k?' selected':'')+'>'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
     +'</select></div>'
     +'<div style="margin-bottom:10px"><label>Monto ($)</label><input type="number" id="_eaeAmt" value="'+(+ev.amount||0)+'" style="width:100%;padding:9px;font-size:14px"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4">Positivo = entra al activo, negativo = sale. La diferencia se aplica al saldo.</div></div>'
     +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_eaeDate" value="'+(ev.date||_todayYMD())+'"></div>'
@@ -7315,11 +7325,12 @@ function editAssetEvent(assetId,evId){
     const newAmt=+(document.getElementById('_eaeAmt')?.value)||0;
     const newDate=document.getElementById('_eaeDate')?.value||ev.date;
     const newConcept=(document.getElementById('_eaeConcept')?.value||'').trim();
+    const newKind=newType==='out'?(document.getElementById('_eaeKind')?.value||'ajuste'):null;
     const oldAmt=+ev.amount||0;
     const delta=newAmt-oldAmt;
     const newAssets=S.assets.map(x=>{
       if(x.id!==assetId)return x;
-      const newEvents=(x.events||[]).map(e=>e.id===evId?{...e,type:newType,amount:newAmt,date:newDate,concept:newConcept}:e);
+      const newEvents=(x.events||[]).map(e=>{if(e.id!==evId)return e;const ne={...e,type:newType,amount:newAmt,date:newDate,concept:newConcept};if(newKind)ne.kind=newKind;else delete ne.kind;return ne;});
       return {...x,val:Math.max(0,(+x.val||0)+delta),events:newEvents};
     });
     pt({assets:newAssets});

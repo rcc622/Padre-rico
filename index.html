@@ -3659,6 +3659,11 @@ function rDash(){
     const allCommits=Object.values(S.savCommits||{});
     const validCommits=allCommits.filter(sc=>sc&&sc.assetId&&S.assets.find(a=>a.id===sc.assetId));
     const cIsValid=c&&c.assetId&&S.assets.find(a=>a.id===c.assetId);
+    // Ahorros huérfanos (cuenta borrada): su monto dejó de contar. Ofrecemos
+    // re-vincularlos a una cuenta real (el usuario elige; no inventamos saldos).
+    const orphanCommits=allCommits.filter(sc=>sc&&(sc.status==='committed'||sc.status==='intact'||sc.status==='emergency-kept')&&(!sc.assetId||!S.assets.find(a=>a.id===sc.assetId)));
+    const orphanTotal=orphanCommits.reduce((a,sc)=>a+(+sc.amount||0),0);
+    const linkOrphanBtn=orphanCommits.length>0?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:9px;font-size:11px;color:var(--sky);border:1px dashed rgba(74,110,140,.4)" onclick="openLinkOrphanModal()">🔗 Vincular tu ahorro ('+fx(Math.round(orphanTotal))+') a una cuenta</button>':'';
     // "Ya apartaste este ciclo" se decide por el ESTADO del compromiso, NO por
     // si el activo destino sigue existiendo. Antes se exigía cIsValid, así que
     // si el usuario borraba/renombraba el activo, el commit quedaba huérfano y
@@ -3738,13 +3743,14 @@ function rDash(){
         +movLine
         +streakLine
         +(canCheck?'<button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="openSavCloseCheck()">🪙 ¿Mantuviste el ahorro? (al cerrar quincena)</button>':'')
+        +linkOrphanBtn
         +'</div>';
     }
     // Sin commit válido este ciclo — mostrar prompt + nota de metas si hay.
     const metaLine=metaSaved>0?(
       '<div style="font-size:11px;color:var(--sage);margin:0 0 10px;padding:8px 10px;background:rgba(78,124,106,.06);border-radius:6px;line-height:1.5">🎯 Tienes <strong>'+fx(Math.round(metaSaved))+'</strong> ahorrado en '+activeMetas.length+' meta'+(activeMetas.length!==1?'s':'')+'</div>'
     ):'';
-    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div>'+metaLine+'<div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'% <button onclick="openSavPctQuick()" title="Ajustar tu %" style="background:none;border:1px solid rgba(78,124,106,.3);border-radius:5px;color:var(--sage);cursor:pointer;font-size:11px;padding:1px 6px;margin-left:3px;vertical-align:middle">✎</button></div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+'</div>';
+    return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div>'+metaLine+'<div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'% <button onclick="openSavPctQuick()" title="Ajustar tu %" style="background:none;border:1px solid rgba(78,124,106,.3);border-radius:5px;color:var(--sage);cursor:pointer;font-size:11px;padding:1px 6px;margin-left:3px;vertical-align:middle">✎</button></div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+linkOrphanBtn+'</div>';
   }catch(e){return'';}})()}
 
   <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en ventana del bono) -->
@@ -7752,6 +7758,41 @@ function _savTopUp(gap){
   const newCommits={...S.savCommits,[ck]:{...c,amount:(+c.amount||0)+gap}};
   pt({assets:newAssets,savCommits:newCommits});
   toast('💰 +'+fx(gap)+' agregados a '+asset.name);
+  _refreshActive();hdrUp&&hdrUp();
+}
+// Compromisos de Págate Primero cuya cuenta destino ya no existe (activo
+// borrado/renombrado). Su dinero deja de contar en el acumulado hasta que el
+// usuario diga en qué cuenta real está.
+function _orphanCommits(){
+  return Object.entries(S.savCommits||{}).filter(([ck,sc])=>sc&&(sc.status==='committed'||sc.status==='intact'||sc.status==='emergency-kept')&&(!sc.assetId||!(S.assets||[]).find(a=>a.id===sc.assetId)));
+}
+function openLinkOrphanModal(){
+  const orphans=_orphanCommits();
+  if(!orphans.length){toast('No hay ahorros sin vincular');return;}
+  if(!S.assets||!S.assets.length){
+    quickCreateAsset(()=>{openLinkOrphanModal();},{title:'🌱 Crea la cuenta',intro:'Crea la cuenta donde está realmente ese ahorro y lo vinculamos.'});
+    return;
+  }
+  const total=orphans.reduce((a,[,sc])=>a+(+sc.amount||0),0);
+  const body='<div style="font-size:12px;color:var(--muted);line-height:1.6;margin-bottom:12px">Tienes <strong style="color:var(--sage)">'+fx(Math.round(total))+'</strong> en '+orphans.length+' aportación'+(orphans.length!==1?'es':'')+' de Págate Primero cuya cuenta ya no existe. Elige en qué cuenta está realmente ese dinero para volver a contarlo.<br><span style="font-size:10px">No cambia el saldo de la cuenta — solo reconecta el registro.</span></div>'
+    +'<div style="max-height:240px;overflow-y:auto">'
+    +S.assets.map((a,i)=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(i===0?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(i===0?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_lnkAsset" value="'+a.id+'" '+(i===0?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo: '+fx(a.val)+'</div></div></label>').join('')
+    +'<button type="button" class="row" style="width:100%;gap:10px;padding:12px;border:2px dashed rgba(78,124,106,.4);border-radius:8px;cursor:pointer;background:transparent;color:var(--sage);font-weight:bold;font-family:Georgia,serif;font-size:13px;justify-content:center" onclick="quickCreateAsset(()=>{openLinkOrphanModal()})">+ Nueva cuenta</button>'
+    +'</div>';
+  showConfirm('🔗 Vincular tu ahorro a una cuenta',body,()=>{
+    const sel=document.querySelector('input[name=_lnkAsset]:checked');
+    linkOrphanCommits(sel?+sel.value:S.assets[0].id);
+  });
+}
+function linkOrphanCommits(assetId){
+  const aid=assetId!=null?assetId:(S.assets[0]&&S.assets[0].id);
+  if(aid==null){toast('Crea una cuenta primero');return;}
+  let cnt=0;const nc={...(S.savCommits||{})};
+  _orphanCommits().forEach(([ck,sc])=>{nc[ck]={...sc,assetId:aid};cnt++;});
+  pt({savCommits:nc});
+  closeConfirm&&closeConfirm();
+  const a=(S.assets||[]).find(x=>x.id===aid);
+  toast('🔗 '+cnt+' ahorro'+(cnt!==1?'s':'')+' vinculado'+(cnt!==1?'s':'')+(a?' a '+a.name:''));
   _refreshActive();hdrUp&&hdrUp();
 }
 function startSavWizard(){

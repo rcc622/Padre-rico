@@ -8190,6 +8190,50 @@ function restoreBackup(){
     ()=>{try{S={...S,...JSON.parse(bk)};sv();toast('✅ Respaldo restaurado');go('plan');}catch{toast('Error al restaurar');}});
 }
 
+// ══ MOTOR DE PAGOS POR CICLO (fuente única de verdad) ═══════════════════
+// Calcula los pagos OBLIGATORIOS (gastos + deudas) de un ciclo, con TODA la
+// lógica fina: split semanal, quincenal/bimestral/mensual por payDay, deudas
+// con nextPay/_effectiveNextPay, deudas liquidadas y pagos ya aplicados en el
+// ciclo. Tanto el Plan de Acción (rPlan) como la calculadora de Horas Extra
+// llaman a ESTA función, así que sus totales SIEMPRE cuadran (antes la calc de
+// horas re-derivaba los números por su cuenta y daba cifras distintas — p.ej.
+// $14,786 en el modal vs $12,586 en el Plan).
+function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
+  const dayInCycle=(pd)=>{if(!pd)return false;const tds=[];for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){const mx=new Date(cStart.getFullYear(),tm+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);};
+  // ── EXPENSES ──
+  let expQ=0;const expDetail=[];
+  S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
+    if(f==='semanal'){const w=+e.amt||0;const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;expQ+=w*weeks;for(let wi=0;wi<weeks;wi++){const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:0,freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
+    else if(f==='quincenal'){expQ+=(+e.amt||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
+    else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
+    else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
+  });
+  // ── DEBTS ──
+  let debtPayQ=0;const debtDetail=[];
+  const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
+  S.debts.forEach(db=>{
+    const _appliedInView=!!(S.paidItems[viewCk]&&S.paidItems[viewCk]['debt_'+db.id]);
+    const _isLiquidated=isDebtLiquidated(db);
+    if(_isLiquidated&&!_appliedInView)return;
+    const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
+    if(_appliedInView){
+      const dayApp=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);
+      debtPayQ+=(+db.pay||0);
+      debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:dayApp,curPay:db.curPay,totalPays:db.totalPays,isLast});
+      return;
+    }
+    if(db.nextPay){
+      const npd=_effectiveNextPay(db)||new Date(db.nextPay+'T12:00');
+      if(npd>=cStart&&npd<=cEnd){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npd.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});return;}
+      if(npd>cEnd)return;
+    }
+    const pdEff=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);
+    if(f==='quincenal'){if(pdEff>0){if(dayInCycle(pdEff)){debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:pdEff,curPay:db.curPay,totalPays:db.totalPays,isLast});}}else{debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast});}}
+    else if(pdEff>0&&dayInCycle(pdEff)){debtPayQ+=mo;debtDetail.push({id:db.id,name:db.name,amt:mo,day:pdEff,curPay:db.curPay,totalPays:db.totalPays,isLast});}
+    else if(!pdEff){debtPayQ+=mo/2;debtDetail.push({id:db.id,name:db.name,amt:mo/2,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast,noDate:true});}
+  });
+  return {expQ,debtPayQ,expDetail,debtDetail};
+}
 function rPlan(){
 try{
   const today=new Date();today.setHours(0,0,0,0);
@@ -8242,58 +8286,8 @@ try{
     ?(_otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+_otSrc.rate||0)),0)
     :0;
 
-  // ── EXPENSES ──
-  let expQ=0;const expDetail=[];
-  S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
-    if(f==='semanal'){const w=+e.amt||0;const weeks=showNext?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;expQ+=w*weeks;for(let wi=0;wi<weeks;wi++){const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:0,freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
-    else if(f==='quincenal'){expQ+=(+e.amt||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
-    else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
-    else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
-  });
-
-  // ── DEBTS ──
-  let debtPayQ=0;const debtDetail=[];
-  const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
-  S.debts.forEach(db=>{
-    // Una deuda aparece en el Plan del ciclo que se está viendo si:
-    //  • está activa Y su fecha cae en el ciclo, O
-    //  • ya se aplicó el pago en ESTE ciclo (aunque haya quedado liquidada).
-    // Antes mi filtro la sacaba si bal=0 SIN importar si fue pagada en este
-    // ciclo, lo que inflaba el sobrante de la quincena actual (el dinero ya
-    // había salido). Ahora sólo se oculta si está liquidada Y NO fue pagada
-    // en el ciclo viendo. Por eso en próxima qna no reaparecen, pero en la
-    // qna actual siguen contando como egreso.
-    const _appliedInView=!!(S.paidItems[_viewCk]&&S.paidItems[_viewCk]['debt_'+db.id]);
-    const _isLiquidated=isDebtLiquidated(db);
-    if(_isLiquidated&&!_appliedInView)return;
-    const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;const isLast=_urgLiqIds.has(db.id);
-    // Si ya se aplicó en este ciclo, inclúyela directo: el dinero salió y
-    // debe contar como egreso del ciclo, sin importar que nextPay haya
-    // avanzado al siguiente periodo.
-    if(_appliedInView){
-      const dayApp=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);
-      debtPayQ+=(+db.pay||0);
-      debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:dayApp,curPay:db.curPay,totalPays:db.totalPays,isLast});
-      return;
-    }
-    if(db.nextPay){
-      // Para deudas no-únicas con nextPay viejo (pagos legacy, ediciones
-      // manuales), usamos la fecha efectiva rodada al siguiente periodo
-      // válido. Antes el filtro skipeaba o caía a un cálculo por payDay
-      // que no reflejaba el verdadero próximo pago.
-      const npd=_effectiveNextPay(db)||new Date(db.nextPay+'T12:00');
-      // Cae en el ciclo: la deuda se muestra
-      if(npd>=cStart&&npd<=cEnd){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npd.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});return;}
-      // Después del ciclo: no aplica
-      if(npd>cEnd)return;
-      // npd < cStart sólo puede pasar para deudas únicas vencidas. Cae al
-      // cálculo por payDay/freq abajo para no dejarlas invisibles.
-    }
-    const pdEff=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);
-    if(f==='quincenal'){if(pdEff>0){if(dayInCycle(pdEff)){debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:pdEff,curPay:db.curPay,totalPays:db.totalPays,isLast});}}else{debtPayQ+=db.pay||0;debtDetail.push({id:db.id,name:db.name,amt:db.pay||0,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast});}}
-    else if(pdEff>0&&dayInCycle(pdEff)){debtPayQ+=mo;debtDetail.push({id:db.id,name:db.name,amt:mo,day:pdEff,curPay:db.curPay,totalPays:db.totalPays,isLast});}
-    else if(!pdEff){debtPayQ+=mo/2;debtDetail.push({id:db.id,name:db.name,amt:mo/2,day:0,curPay:db.curPay,totalPays:db.totalPays,isLast,noDate:true});}
-  });
+  // ── EXPENSES + DEBTS ── (motor compartido, misma fuente que Horas Extra)
+  const {expQ,debtPayQ,expDetail,debtDetail}=buildCyclePayments(_viewCk,cStart,cEnd,ct,showNext);
 
   // ── SAVINGS & APARTADOS ──
   const savQ=savAmt()/2;
@@ -9722,40 +9716,42 @@ function _otNumbers(){
   const RATE=172;
   const today=new Date();today.setHours(0,0,0,0);
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
-  // Ventana del ciclo ACTUAL
-  let cStart,cEnd;
-  if(d>=15&&d<=29){cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
-  else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
-  else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
-  const dayInC=(pd)=>{if(!pd)return false;const tds=[];for(let tm2=cStart.getMonth()-1;tm2<=cEnd.getMonth()+1;tm2++){const mx=new Date(cStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);};
-  // Pendiente del ciclo actual (gastos+deudas aún no aplicados)
-  let thisCycleTotal=0,thisApplied=0;
-  S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')thisCycleTotal+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')thisCycleTotal+=(+e.amt||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
-  S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')thisCycleTotal+=(db.pay||0);else if(pd>0&&dayInC(pd))thisCycleTotal+=mo;else if(!pd)thisCycleTotal+=mo/2;});
-  const ck=cycleKey();const paidItems=S.paidItems[ck]||{};
-  for(const key in paidItems){if(key.startsWith('_'))continue;const v=paidItems[key];const applied=typeof v==='object'?!!v.applied:(v==='applied');if(!applied)continue;let amt=typeof v==='object'?(+v.amt||+v.realAmt||0):0;if(!amt){const[type,idStr]=key.split('_');const id=+idStr;if(type==='exp'||type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}else if(type==='debt'){const db=S.debts.find(x=>x.id===id);if(db)amt=+db.pay||0;}}thisApplied+=amt;}
-  const pendingThis=Math.max(0,thisCycleTotal-thisApplied);
-  // Ventana de la PRÓXIMA qna
-  let nStart,nEnd;
-  if(d>=15&&d<=29){nStart=new Date(y,m,30);nEnd=new Date(y,m+1,14);}
-  else if(d>=30){nStart=new Date(y,m+1,15);nEnd=new Date(y,m+1,29);}
-  else{nStart=new Date(y,m,15);nEnd=new Date(y,m,29);}
-  const dayInN=(pd)=>{if(!pd)return false;const tds=[];for(let tm2=nStart.getMonth()-1;tm2<=nEnd.getMonth()+1;tm2++){const mx=new Date(nStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(nStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=nStart&&td<=nEnd);};
-  const nCycleKey=(()=>{const y2=nStart.getFullYear(),m2=nStart.getMonth()+1,d2=nStart.getDate();const nType=(d2>=15&&d2<=29)?'2da':'1ra';return y2+'-'+m2+'-'+nType;})();
+  // ── Ventana + clave del ciclo ACTUAL ──
+  let cStart,cEnd,cType;
+  if(d>=15&&d<=29){cType='2da';cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
+  else if(d>=30){cType='1ra';cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
+  else{cType='1ra';const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
+  const curCk=cycleKey();
+  // PENDIENTE esta qna = pagos obligatorios del ciclo actual que aún NO has
+  // marcado como pagados. Usa el MISMO motor que el Plan, así cuadra al peso
+  // con la lista "PENDIENTES" (antes daba $0 ignorando lo que faltaba pagar).
+  const cur=buildCyclePayments(curCk,cStart,cEnd,cType,false);
+  const curItems=S.paidItems[curCk]||{};
+  const _unpaid=(type,id)=>!curItems[type+'_'+id];
+  let pendingThis=0;
+  cur.expDetail.forEach(e=>{const pt=e.paidType||'exp';if(_unpaid(pt,e.id))pendingThis+=(+e.amt||0);});
+  cur.debtDetail.forEach(e=>{if(_unpaid('debt',e.id))pendingThis+=(+e.amt||0);});
+  // ── Ventana + clave de la PRÓXIMA qna ──
+  let nStart,nEnd,nType;
+  if(d>=15&&d<=29){nType='1ra';nStart=new Date(y,m,30);nEnd=new Date(y,m+1,14);}
+  else if(d>=30){nType='2da';nStart=new Date(y,m+1,15);nEnd=new Date(y,m+1,29);}
+  else{nType='2da';nStart=new Date(y,m,15);nEnd=new Date(y,m,29);}
+  const nCycleKey=nStart.getFullYear()+'-'+(nStart.getMonth()+1)+'-'+nType;
+  // PAGOS próxima qna = total obligatorio del ciclo (nada pagado todavía) =
+  // EXACTAMENTE el "Total pendiente" que ves al navegar a la próxima quincena.
+  const nx=buildCyclePayments(nCycleKey,nStart,nEnd,nType,true);
+  const nextPagos=nx.expQ+nx.debtPayQ;
   const nIncH=getIncForCycle(nCycleKey);
   const salQ=(+nIncH.sal||0)/2;
   const nBonus=bonusInCycle(nStart,nEnd,nIncH)?(+nIncH.bf||0):0;
   const nextIncome=salQ+nBonus;
-  let nextExpQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')nextExpQ+=(+e.amt||0)*getWeeksInCycle({start:nStart,end:nEnd});else if(f==='quincenal')nextExpQ+=(+e.amt||0);else if(pd>0&&dayInN(pd))nextExpQ+=mo;else if(!pd)nextExpQ+=mo/2;});
-  let nextDebtQ=0;S.debts.filter(db=>(+db.bal||0)>0).forEach(db=>{const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(f==='quincenal')nextDebtQ+=(db.pay||0);else if(pd>0&&dayInN(pd))nextDebtQ+=mo;else if(!pd)nextDebtQ+=mo/2;});
-  const nextPagos=nextExpQ+nextDebtQ;          // SOLO obligatorios (cuadra con Plan de Acción)
   const pagateP=savAmt()/2;                     // ahorro Págate Primero (% de tu ingreso)
   // Metas + apartados opcionales por quincena (lo que en Plan de Acción es "Total ahorro/qna")
   let metasOpc=0;
   (S.savGoals||[]).filter(g=>!g.done&&(g.target-(+g.saved||0))>0).forEach(g=>{metasOpc+=savGoalPerQ(g);});
   try{getExpSavePlan().forEach(e=>{metasOpc+=(+e.half||0);});}catch(e){}
   metasOpc=Math.round(metasOpc);
-  return {RATE,pendingThis,nextPagos,pagateP,metasOpc,nextIncome,nBonus};
+  return {RATE,pendingThis:Math.round(pendingThis),nextPagos:Math.round(nextPagos),pagateP,metasOpc,nextIncome,nBonus};
 }
 // Déficit y horas necesarias según qué ahorros se incluyan.
 function _otDeficit(n,inclP,inclM){

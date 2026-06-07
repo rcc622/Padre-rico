@@ -548,6 +548,47 @@ function _migrateV7(st){
     });
   }catch(e){}
   st._cajitaUnifiedV7=1;
+  _migrateV8(st);
+}
+// FUSIÓN (Fase 8): SALDO DERIVADO DE EVENTOS. Antes a.val era un valor
+// arrastrado que cada flujo mutaba con convenciones de signo inconsistentes
+// (unos retiros guardaban amount positivo, otros negativo), y editar/eliminar
+// un movimiento no recalculaba bien → el saldo divergía de la suma real.
+// Esta migración one-shot:
+//   1) Normaliza el signo: amount SIEMPRE positivo (el type define el signo).
+//   2) Recalcula a.val = suma derivada de los eventos.
+// Es no destructiva (hay respaldo prv6_premerge_backup). Tras esto, el saldo
+// siempre se deriva y es imposible que se descuadre.
+function _migrateV8(st){
+  if(st._derivedBalanceV8)return;
+  try{
+    (st.assets||[]).forEach(a=>{
+      if(!a||!Array.isArray(a.events)){if(a&&typeof _recalcAsset==='function'){/* sin eventos: deja val */}return;}
+      // 1) Normalizar amount a positivo. El type ya dice si entra o sale; los
+      //    eventos viejos con amount negativo se vuelven positivos sin cambiar
+      //    su efecto (porque _eventDelta usa el type).
+      a.events=a.events.map(ev=>{
+        if(!ev)return ev;
+        const amt=+ev.amount||0;
+        // Si el type es ambiguo y el amount es negativo, lo tratamos como 'out'.
+        if(amt<0&&(ev.type==='in'||ev.type==='yield')){
+          return {...ev,type:'out',amount:Math.abs(amt)};
+        }
+        return {...ev,amount:Math.abs(amt)};
+      });
+      // 2) Recalcular saldo derivado.
+      a.val=Math.round(a.events.reduce((s,ev)=>s+_eventDelta(ev),0));
+    });
+    // Re-sincronizar metas ligadas con el saldo recalculado.
+    const byId={};(st.assets||[]).forEach(a=>{if(a)byId[a.id]=a;});
+    (st.savGoals||[]).forEach(g=>{
+      if(!g)return;
+      const aid=g.lastAssetId!=null?g.lastAssetId:((g.deposits||[]).slice().reverse().find(d=>d&&d.assetId!=null)||{}).assetId;
+      const a=aid!=null?byId[aid]:null;
+      if(a){g.lastAssetId=a.id;g.saved=Math.round(+a.val||0);g.done=g.saved>=(+g.target||0);}
+    });
+  }catch(e){}
+  st._derivedBalanceV8=1;
 }
 // Restaura el estado previo a la fusión (por si algo no cuadra). Llamable
 // desde consola: restorePremergeBackup()
@@ -1456,8 +1497,11 @@ function _offerSavingsDeposit(amt,retoName,retoId){
     if(!radio){toast('⚠ Elige el activo destino');return;}
     const assetId=+radio.value;
     const asset=S.assets.find(a=>a.id===assetId);if(!asset)return;
-    const newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amt}:a);
+    // Registramos un evento (no mutamos val a mano) para que el saldo derivado
+    // lo incluya y no se pierda en el próximo recálculo.
+    const newAssets=_withAssetEvent(S.assets,assetId,_mkAssetEvent('in',amt,'Ahorro de reto'));
     pt({assets:newAssets});
+    _syncLinkedMetaSaved(assetId);
     toast('🏦 '+fx(amt)+' → '+asset.name);
     if(typeof rDash==='function')try{rDash();}catch(e){}
     if(typeof hdrUp==='function')try{hdrUp();}catch(e){}
@@ -1850,17 +1894,17 @@ function _savApplyToAsset(assets,assetId,amt,concept,date,kind){
   if(!assetId)return{assets,evId:null};
   const ev=_mkAssetEvent(amt>=0?'in':'out',Math.abs(amt),concept,date);
   if(kind&&amt<0)ev.kind=kind;
-  const next=_withAssetEvent(assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amt}:a),assetId,ev);
+  // _withAssetEvent recalcula el saldo desde los eventos (no mutamos val a mano).
+  const next=_withAssetEvent(assets,assetId,ev);
   return{assets:next,evId:ev.id};
 }
-// Revierte un movimiento de su activo ligado: quita el evento y deshace su
-// efecto en el saldo. amt con signo (el mismo que se aplicó).
+// Revierte un movimiento de su activo ligado: quita el evento. El saldo se
+// recalcula desde los eventos restantes (no hay que deshacer nada a mano).
 function _savRevertFromAsset(assets,assetId,evId,amt){
   if(!assetId||evId==null)return assets;
   return assets.map(a=>{
     if(a.id!==assetId)return a;
-    const hasEv=(a.events||[]).some(e=>e.id===evId);
-    return{...a,val:(+a.val||0)-(hasEv?amt:0),events:(a.events||[]).filter(e=>e.id!==evId)};
+    return _recalcAsset({...a,events:(a.events||[]).filter(e=>e.id!==evId)});
   });
 }
 function depositSavGoal(id,prefix){
@@ -2852,8 +2896,39 @@ const _mkAssetEvent=(type,amount,concept,date)=>({
 // Devuelve nuevo array S.assets con el evento agregado al activo dado.
 const _withAssetEvent=(assets,assetId,event)=>assets.map(a=>{
   if(a.id!==assetId)return a;
-  return {...a,events:[...(a.events||[]),event]};
+  return _recalcAsset({...a,events:[...(a.events||[]),event]});
 });
+// ── SALDO DERIVADO DE EVENTOS (fuente de verdad única) ──────────────────
+// Convención: amount SIEMPRE positivo; el TYPE define el signo.
+//   in / init / yield  → suman.  out → resta.
+//   adjust → usa el signo del amount (puede subir o bajar el saldo).
+// Compatibilidad: si un evento viejo trae amount negativo, respetamos ese
+// signo (Math.sign) para no romper datos previos a la normalización.
+function _eventDelta(ev){
+  if(!ev)return 0;
+  const amt=+ev.amount||0;
+  const mag=Math.abs(amt);
+  switch(ev.type){
+    case 'out': return amt<0?amt:-mag;       // salida: resta
+    case 'in':
+    case 'init':
+    case 'yield': return amt<0?amt:mag;       // entrada: suma
+    case 'adjust': return amt;                // ajuste: respeta el signo
+    default: return amt;
+  }
+}
+// Suma de todos los eventos = saldo real del activo.
+function _assetBalance(a){
+  if(!a||!Array.isArray(a.events))return +a?.val||0;
+  return a.events.reduce((s,ev)=>s+_eventDelta(ev),0);
+}
+// Devuelve el activo con val recalculado desde sus eventos. Llamar tras
+// CUALQUIER cambio de eventos para que el saldo nunca diverja.
+function _recalcAsset(a){
+  if(!a)return a;
+  if(!Array.isArray(a.events))return a;
+  return {...a,val:Math.round(_assetBalance(a))};
+}
 const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+_monthlyYield(x),0);
 const tExtras=()=>{
   let total=0;
@@ -7315,13 +7390,15 @@ function openAssetSettings(id){
     const purpose=document.getElementById('_asPurpose')?.value==='consumo'?'consumo':'patrimonio';
     if(!n){toast('Falta el nombre');return;}
     if(v<0){toast('⚠ Saldo inválido');return;}
-    const oldVal=+a.val||0;const delta=v-oldVal;
+    const oldVal=_recalcAsset(a).val;const delta=v-oldVal; // base = saldo derivado
     pt({assets:S.assets.map(x=>{
       if(x.id!==id)return x;
       let events=Array.isArray(x.events)?[...x.events]:[];
+      // Cambio de saldo → evento de ajuste (amount positivo, type define signo).
       if(delta!==0)events.push(_mkAssetEvent(delta>0?'in':'out',Math.abs(delta),'Ajuste de saldo',_todayYMD()));
       if(d)events=events.map(e=>e.type==='init'?{...e,date:d}:e);
-      return{...x,name:n,val:v,gen,yldPct:yld,purpose,inc:undefined,events};
+      // El saldo se recalcula desde los eventos (no se fija a mano).
+      return _recalcAsset({...x,name:n,gen,yldPct:yld,purpose,inc:undefined,events});
     })});
     _syncLinkedMetaSaved(id);
     closeConfirm();
@@ -7362,7 +7439,7 @@ function saveAsset(){
   const creaDate=document.getElementById('ad')?.value||'';
   if(!n||v<=0){toast('⚠ Nombre y saldo requeridos');return;}
   const cur=S.assets.find(a=>a.id===editAssetId);
-  const oldVal=+(cur?.val)||0;
+  const oldVal=_recalcAsset(cur).val; // base = saldo derivado
   const delta=v-oldVal;
   // Limpieza: ya no usamos a.inc (monto fijo). Lo quito del registro para
   // que no haya duda sobre cuál fuente manda.
@@ -7377,7 +7454,8 @@ function saveAsset(){
     if(creaDate){
       events=events.map(e=>e.type==='init'?{...e,date:creaDate}:e);
     }
-    return{...a,name:n,val:v,gen,yldPct,inc:undefined,events};
+    // El saldo se recalcula desde los eventos (no se fija a mano).
+    return _recalcAsset({...a,name:n,gen,yldPct,inc:undefined,events});
   })});
   // Mantener congruencia: si hay una meta ligada, su saved = saldo del activo
   _syncLinkedMetaSaved(editAssetId);
@@ -7425,19 +7503,21 @@ function editAssetEvent(assetId,evId){
     +'<div style="margin-bottom:4px"><label>Concepto</label><input type="text" id="_eaeConcept" value="'+(ev.concept||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:9px;font-size:13px"></div>';
   showConfirm('✏️ Editar movimiento',body,()=>{
     const newType=document.getElementById('_eaeType')?.value||ev.type;
-    const newAmt=+(document.getElementById('_eaeAmt')?.value)||0;
+    // amount SIEMPRE positivo; el type define el signo. El saldo se recalcula
+    // desde los eventos, así que editar no puede descuadrarlo.
+    const newAmt=Math.abs(+(document.getElementById('_eaeAmt')?.value)||0);
     const newDate=document.getElementById('_eaeDate')?.value||ev.date;
     const newConcept=(document.getElementById('_eaeConcept')?.value||'').trim();
     const newKind=newType==='out'?(document.getElementById('_eaeKind')?.value||'ajuste'):null;
-    const oldAmt=+ev.amount||0;
-    const delta=newAmt-oldAmt;
     const newAssets=S.assets.map(x=>{
       if(x.id!==assetId)return x;
       const newEvents=(x.events||[]).map(e=>{if(e.id!==evId)return e;const ne={...e,type:newType,amount:newAmt,date:newDate,concept:newConcept};if(newKind)ne.kind=newKind;else delete ne.kind;return ne;});
-      return {...x,val:Math.max(0,(+x.val||0)+delta),events:newEvents};
+      return _recalcAsset({...x,events:newEvents});
     });
+    const newBal=_recalcAsset(newAssets.find(x=>x.id===assetId)).val;
     pt({assets:newAssets});
-    toast('✓ Movimiento actualizado'+(delta!==0?' · saldo '+(delta>0?'+':'')+fx(delta):''));
+    _syncLinkedMetaSaved(assetId);
+    toast('✓ Movimiento actualizado · saldo '+fx(newBal));
     rFlujo();hdrUp&&hdrUp();
   });
 }
@@ -7446,17 +7526,18 @@ function editAssetEvent(assetId,evId){
 function delAssetEvent(assetId,evId){
   const a=S.assets.find(x=>x.id===assetId);if(!a)return;
   const ev=(a.events||[]).find(e=>e.id===evId);if(!ev)return;
-  const evAmt=+ev.amount||0;
+  const d=_eventDelta(ev); // efecto real en el saldo (con signo)
   showConfirm('¿Eliminar este movimiento?',
-    '<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a quitar <strong>'+(evAmt>=0?'+':'')+fx(evAmt)+'</strong> ('+(ev.concept||'sin concepto')+'). El saldo del activo se ajusta restando este monto.</div>',
+    '<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a quitar <strong>'+(d>=0?'+':'−')+fx(Math.abs(d))+'</strong> ('+(ev.concept||'sin concepto')+'). El saldo se recalcula desde los movimientos restantes.</div>',
     ()=>{
       const newAssets=S.assets.map(x=>{
         if(x.id!==assetId)return x;
-        const newEvents=(x.events||[]).filter(e=>e.id!==evId);
-        return {...x,val:Math.max(0,(+x.val||0)-evAmt),events:newEvents};
+        return _recalcAsset({...x,events:(x.events||[]).filter(e=>e.id!==evId)});
       });
+      const newBal=_recalcAsset(newAssets.find(x=>x.id===assetId)).val;
       pt({assets:newAssets});
-      toast('Movimiento eliminado');rFlujo();hdrUp&&hdrUp();
+      _syncLinkedMetaSaved(assetId);
+      toast('Movimiento eliminado · saldo '+fx(newBal));rFlujo();hdrUp&&hdrUp();
     }
   );
 }
@@ -7469,16 +7550,18 @@ function quickUpdAsset(id){
   showConfirm('🔄 Actualizar saldo',body,()=>{
     const nv=+(document.getElementById('_quAssetVal')?.value)||0;
     if(nv<0){toast('⚠ Saldo inválido');return;}
-    const diff=nv-a.val;
-    const concept=(document.getElementById('_quAssetConcept')?.value||'').trim()||(diff>=0?'Ajuste de saldo':'Ajuste de saldo');
-    let newAssets=S.assets.map(x=>x.id===id?{...x,val:nv}:x);
-    if(diff!==0){
-      const ev=_mkAssetEvent(diff>0?'in':'out',diff,concept);
-      newAssets=_withAssetEvent(newAssets,id,ev);
-    }
+    const cur=_recalcAsset(a).val; // saldo derivado actual
+    const diff=nv-cur;
+    if(diff===0){closeConfirm&&closeConfirm();toast('Sin cambios');return;}
+    const concept=(document.getElementById('_quAssetConcept')?.value||'').trim()||'Ajuste de saldo';
+    // Registramos un evento de ajuste (amount positivo, type 'in'/'out' según
+    // suba o baje). El saldo se recalcula desde los eventos.
+    const ev=_mkAssetEvent(diff>0?'in':'out',Math.abs(diff),concept);
+    const newAssets=_withAssetEvent(S.assets,id,ev);
+    const newBal=_recalcAsset(newAssets.find(x=>x.id===id)).val;
     pt({assets:newAssets});
-    const msg=diff>0?'📈 +'+fx(diff)+' · Nuevo saldo '+fx(nv):diff<0?'📉 '+fx(diff)+' · Nuevo saldo '+fx(nv):'Sin cambios';
-    toast(msg);rFlujo();hdrUp&&hdrUp();
+    _syncLinkedMetaSaved(id);
+    toast((diff>0?'📈 +':'📉 −')+fx(Math.abs(diff))+' · Nuevo saldo '+fx(newBal));rFlujo();hdrUp&&hdrUp();
   });
 }
 // Atajo para registrar un depósito explícito sin pensar en el saldo
@@ -7494,10 +7577,11 @@ function depositAsset(id){
     if(amt<=0){toast('⚠ Monto requerido');return;}
     const date=document.getElementById('_depDate')?.value||_todayYMD();
     const concept=(document.getElementById('_depConcept')?.value||'').trim()||'Depósito';
-    let newAssets=S.assets.map(x=>x.id===id?{...x,val:(+x.val||0)+amt}:x);
-    newAssets=_withAssetEvent(newAssets,id,_mkAssetEvent('in',amt,concept,date));
+    const newAssets=_withAssetEvent(S.assets,id,_mkAssetEvent('in',amt,concept,date));
+    const newBal=_recalcAsset(newAssets.find(x=>x.id===id)).val;
     pt({assets:newAssets});
-    toast('📈 +'+fx(amt)+' · Nuevo saldo '+fx((+a.val||0)+amt));rFlujo();hdrUp&&hdrUp();
+    _syncLinkedMetaSaved(id);
+    toast('📈 +'+fx(amt)+' · Nuevo saldo '+fx(newBal));rFlujo();hdrUp&&hdrUp();
   });
 }
 // Atajo para registrar un retiro explícito. Resta el monto del activo
@@ -7533,10 +7617,12 @@ function withdrawAsset(id){
     const used=Math.min(amt,+a.val||0);
     const date=document.getElementById('_wdDate')?.value||_todayYMD();
     const concept=(document.getElementById('_wdConcept')?.value||'').trim()||'Retiro';
-    let newAssets=S.assets.map(x=>x.id===id?{...x,val:Math.max(0,(+x.val||0)-used)}:x);
-    newAssets=_withAssetEvent(newAssets,id,_mkAssetEvent('out',-used,concept,date));
+    // amount positivo; type 'out' define el signo. El saldo se recalcula.
+    const newAssets=_withAssetEvent(S.assets,id,_mkAssetEvent('out',used,concept,date));
+    const newBal=_recalcAsset(newAssets.find(x=>x.id===id)).val;
     pt({assets:newAssets});
-    toast('📉 −'+fx(used)+' · Nuevo saldo '+fx(Math.max(0,(+a.val||0)-used)));rFlujo();hdrUp&&hdrUp();
+    _syncLinkedMetaSaved(id);
+    toast('📉 −'+fx(used)+' · Nuevo saldo '+fx(newBal));rFlujo();hdrUp&&hdrUp();
   });
 }
 // ══ SAVINGS STREAK (Fase 2 · Hooked) ════════════════════
@@ -7552,9 +7638,8 @@ function _savTopUp(gap){
   const ck=cycleKey();
   const c=(S.savCommits||{})[ck];if(!c||gap<=0)return;
   const asset=S.assets.find(a=>a.id===c.assetId);if(!asset){toast('⚠ Activo destino no existe');return;}
-  let newAssets=S.assets.map(a=>a.id===c.assetId?{...a,val:(+a.val||0)+gap}:a);
   const ev=_mkAssetEvent('in',gap,'Págate Primero · top-up '+ck);
-  newAssets=_withAssetEvent(newAssets,c.assetId,ev);
+  const newAssets=_withAssetEvent(S.assets,c.assetId,ev);
   const newCommits={...S.savCommits,[ck]:{...c,amount:(+c.amount||0)+gap}};
   pt({assets:newAssets,savCommits:newCommits});
   toast('💰 +'+fx(gap)+' agregados a '+asset.name);
@@ -7692,13 +7777,10 @@ function _savWizPickAsset(id){
 function _savWizStep3(){
   const {amount,assetId}=_savWizData;
   const asset=S.assets.find(a=>a.id===assetId);if(!asset)return;
-  // Execute commit
-  let newAssets=S.assets.map(a=>a.id===assetId?{...a,val:(+a.val||0)+amount}:a);
   const ck=cycleKey();
-  // Registra el ingreso en el log del activo para que aparezca en
-  // "Movimientos" del card de Activos.
+  // Registra el ingreso en el log del activo (el saldo se recalcula solo).
   const ev=_mkAssetEvent('in',amount,'Págate Primero · '+ck);
-  newAssets=_withAssetEvent(newAssets,assetId,ev);
+  let newAssets=_withAssetEvent(S.assets,assetId,ev);
   const newCommits={...(S.savCommits||{}),[ck]:{amount,assetId,date:new Date().toISOString(),status:'committed'}};
   const newStreak=(S.savStreak||0)+1;
   const newBest=Math.max(S.savStreakBest||0,newStreak);
@@ -7845,11 +7927,11 @@ function _applySavUsed({outcome,keepStreak}){
   const assetName=asset?asset.name:'tu activo';
   const used=Math.max(0,+window._pendingSavUsed||0);
   const concept=window._pendingSavConcept||(outcome==='emergency'?'Emergencia':'Uso del ahorro');
-  let newAssets=used>0?S.assets.map(a=>a.id===c.assetId?{...a,val:Math.max(0,(+a.val||0)-used)}:a):S.assets;
-  // Log del retiro en el activo para que aparezca en "Movimientos".
+  let newAssets=S.assets;
+  // Log del retiro en el activo (amount positivo, type 'out'; saldo derivado).
   if(used>0){
     const evConcept=(outcome==='emergency'?'🚨 ':'💔 ')+concept;
-    const ev=_mkAssetEvent('out',-used,evConcept);
+    const ev=_mkAssetEvent('out',used,evConcept);
     newAssets=_withAssetEvent(newAssets,c.assetId,ev);
   }
   // Status según outcome+keepStreak
@@ -10124,9 +10206,8 @@ function _promptHabitSavingsRegister(habitId,amount){
     const r=document.querySelector('input[name=_habAsset]:checked');
     const aid=r?+r.value:opts[0].id;
     const h=(S.customHabits||[]).find(x=>x.id===habitId);
-    let newAssets=S.assets.map(x=>x.id===aid?{...x,val:(+x.val||0)+amount}:x);
     const ev=_mkAssetEvent('in',amount,'Hábito completado: '+(h?h.name:''));
-    newAssets=_withAssetEvent(newAssets,aid,ev);
+    let newAssets=_withAssetEvent(S.assets,aid,ev);
     pt({assets:newAssets});
     closeConfirm();toast('💰 +'+fx(amount)+' registrado');
     rHabitos();hdrUp&&hdrUp();

@@ -2183,11 +2183,50 @@ function toggleSavGoalTipo(id){
   _refreshActive();hdrUp&&hdrUp();
   try{if(cur==='dash')rDash();}catch(e){}
 }
+// Ingreso BRUTO acumulado de una meta (suma de entradas, sin restar gastos).
+// Para metas de CONSUMO esto define si ya se "fondeó" el objetivo: el usuario
+// junta el target y luego lo gasta; gastar no des-fondea la meta.
+function _metaGrossIn(g){
+  const aid=_metaPrimaryAssetId(g);
+  const asset=aid!=null?(S.assets||[]).find(a=>a.id===aid):null;
+  if(asset){return (asset.events||[]).reduce((s,ev)=>{const amt=Math.abs(+ev.amount||0);const isOut=ev.type==='out'||(+ev.amount||0)<0;return s+(isOut?0:amt);},0);}
+  return (g.deposits||[]).filter(d=>(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
+}
+// Estado de captación/consumo de una meta. CONSUMO: el objetivo es JUNTAR el
+// monto (se mide por ingreso bruto); una vez fondeada (bruto ≥ target) queda
+// cumplida para siempre y entra en fase de CONSUMO, donde lo relevante es el
+// saldo disponible y lo gastado — NO "falta por ahorrar". PATRIMONIO: el
+// objetivo es TENER el saldo, así que gastarlo sí baja el avance.
+function metaFundState(g){
+  const isConsumo=(g.tipo||'consumo')==='consumo';
+  const aid=_metaPrimaryAssetId(g);
+  const asset=aid!=null?(S.assets||[]).find(a=>a.id===aid):null;
+  let grossIn=0,spent=0,balance;
+  if(asset){
+    (asset.events||[]).forEach(ev=>{const amt=Math.abs(+ev.amount||0);const isOut=ev.type==='out'||(+ev.amount||0)<0;if(isOut)spent+=amt;else grossIn+=amt;});
+    balance=Math.round(+asset.val||0);
+  }else{
+    (g.deposits||[]).forEach(d=>{const a=+d.amt||0;if(a>=0)grossIn+=a;else spent+=-a;});
+    balance=Math.round(grossIn-spent);
+  }
+  const target=+g.target||0;
+  const funded=target>0&&grossIn>=target;           // captación cumplida (consumo)
+  const reached=isConsumo?(funded||!!g.done):(target>0&&balance>=target)||!!g.done;
+  const consuming=isConsumo&&reached;                // fondeada → fase de pagos/gasto
+  const have=isConsumo?grossIn:balance;
+  const pct=target>0?Math.min(100,have/target*100):0;
+  const remaining=Math.max(0,target-have);
+  return {isConsumo,grossIn:Math.round(grossIn),spent:Math.round(spent),balance,target,funded,reached,consuming,pct,remaining};
+}
 function savGoalPerQ(g){
   const today=new Date();
   const dl=new Date(g.deadline+'T12:00');
-  const remaining=Math.max(0,g.target-(+g.saved||0));
-  if(remaining<=0)return 0;
+  // Consumo: una vez que el ingreso BRUTO llega al target, está fondeada y ya
+  // no hay que apartar más (aunque se esté gastando). Patrimonio: por saldo neto.
+  const isConsumo=(g.tipo||'consumo')==='consumo';
+  const have=isConsumo?_metaGrossIn(g):(+g.saved||0);
+  const remaining=Math.max(0,(+g.target||0)-have);
+  if(remaining<=0||g.done)return 0;
   const msLeft=dl-today;
   const qLeft=Math.max(1,Math.ceil(msLeft/(15*864e5))); // quincenas remaining
   return Math.ceil(remaining/qLeft);
@@ -9348,16 +9387,23 @@ function _goalOverlay(g){
   const _aid=_metaPrimaryAssetId(g);
   const _asset=_aid!=null?(S.assets||[]).find(a=>a.id===_aid):null;
   const sv=_asset?(+_asset.val||0):(+g.saved||0),tgt=+g.target||0;
-  const remaining=Math.max(0,tgt-sv);
-  const pct=tgt>0?Math.min(100,sv/tgt*100):0;
-  const isDone=g.done||remaining<=0;
+  const _fs=metaFundState(g);
+  const remaining=_fs.remaining;
+  const pct=_fs.pct;
+  const isDone=_fs.reached;
+  const consuming=_fs.consuming;
   const dlLbl=g.deadline?fmtDate(g.deadline):'sin fecha';
   const perQ=savGoalPerQ(g);
   const isC=(g.tipo||'consumo')==='consumo';
+  // Estado: fondeada y gastando → "fondeada · disponible $X"; alcanzada → ✅;
+  // si no, "falta $Y · cuota/qna".
+  const statusLine=consuming
+    ?' · ✅ Fondeada · disponible '+fx(_fs.balance)
+    :isDone?' · ✅ Meta alcanzada':' · falta '+fx(remaining)+' · '+fx(perQ)+'/qna';
   return '<div style="margin-top:10px;padding:10px;border:1px dashed rgba(160,112,48,.35);border-radius:8px;background:rgba(160,112,48,.04)">'
     +'<div class="row-b" style="margin-bottom:6px;gap:6px"><span style="font-size:11px;font-weight:bold;color:var(--amber)">🎯 Meta: '+_escH(g.name)+'</span>'
       +'<button onclick="toggleSavGoalTipo('+g.id+')" title="Cambiar propósito" style="background:rgba(160,112,48,.1);border:1px solid rgba(160,112,48,.3);border-radius:5px;color:var(--amber);cursor:pointer;font-size:9px;padding:1px 6px;flex-shrink:0">'+(isC?'🛒 Consumo':'🏗️ Patrimonio')+' ⇄</button></div>'
-    +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">📅 '+dlLbl+(isDone?' · ✅ Meta alcanzada':' · falta '+fx(remaining)+' · '+fx(perQ)+'/qna')+'</div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">📅 '+dlLbl+statusLine+'</div>'
     +'<div class="pw" style="height:6px;margin-bottom:8px"><div class="pb" style="width:'+pct.toFixed(0)+'%;background:'+(isDone?'var(--sage)':'var(--sky)')+'"></div></div>'
     +_savGoalBreakdownBar(g)
     +'<div class="row" style="gap:6px"><span style="font-size:11px;color:var(--sage);font-weight:bold;align-self:center">'+fx(Math.round(sv))+' / '+fx(tgt)+'</span>'
@@ -9371,15 +9417,17 @@ function metasCardHTML(){
   return `  <div class="card">
     <div class="ct">🛒 Cajitas de consumo · metas sin activo (${standalone.length})</div>
     ${standalone.length>0?standalone.map(g=>{
-      const remaining=Math.max(0,g.target-(+g.saved||0));
-      const pct=Math.min(100,((+g.saved||0)/g.target*100));
+      const _fs=metaFundState(g);
+      const remaining=_fs.remaining;
+      const pct=_fs.pct;
       const perQ=savGoalPerQ(g);
       const dl=new Date(g.deadline+'T12:00');
       const daysLeft=Math.ceil((dl-new Date())/864e5);
       const qLeft=Math.max(1,Math.ceil(daysLeft/15));
-      const isOverdue=daysLeft<0;
-      const isDone=g.done||remaining<=0;
-      const reached=remaining<=0; // alcanzó el objetivo de verdad (saldo ≥ meta)
+      const reached=_fs.reached;              // consumo: bruto≥target; patrimonio: saldo≥target
+      const isOverdue=daysLeft<0&&!reached;   // fondeada a tiempo no es "vencida"
+      const isDone=reached;
+      const consuming=_fs.consuming;          // fondeada y en fase de gasto
       const dlLbl=g.deadline?fmtDate(g.deadline):'sin fecha';
       // Si la meta vive en una cajita con rendimiento, calculamos cuánto
       // gana al mes mientras espera. Es informativo (no auto-suma a g.saved):
@@ -9403,10 +9451,20 @@ function metasCardHTML(){
         <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
         ${_savGoalBreakdownBar(g)}
         ${yldBadge}
-        ${!isDone?`
+        ${consuming?`
+          <div style="font-size:11px;color:var(--sage);margin:8px 0;padding:7px 10px;background:rgba(78,124,106,.07);border-radius:6px;line-height:1.5">✅ <strong>Meta fondeada</strong> — juntaste ${fx(_fs.grossIn)}. Ahora vas haciendo los pagos.</div>
+          <div class="row-b" style="margin-bottom:10px">
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sage)">${fx(_fs.balance)}</div><div style="font-size:9px;color:var(--muted)">💵 disponible</div></div>
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--amber)">${fx(_fs.spent)}</div><div style="font-size:9px;color:var(--muted)">gastado de ${fx(_fs.grossIn)}</div></div>
+          </div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-sage btn-sm" style="flex:1" onclick="updSavGoalSaved(${g.id})">💸 Registrar pago/gasto</button>
+            <button class="btn btn-ghost btn-sm" style="flex:0 0 auto" onclick="rmSavGoal(${g.id})" title="Cerrar y archivar esta meta ya cumplida">✓ Cerrar</button>
+          </div>
+        `:!isDone?`
           <div class="row-b" style="margin-bottom:10px;margin-top:10px">
             <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--sky)">${fx(perQ)}</div><div style="font-size:9px;color:var(--muted)">apartar/quincena</div></div>
-            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por ahorrar</div></div>
+            <div style="text-align:center;flex:1"><div style="font-size:18px;font-weight:bold;color:var(--terra)">${fx(remaining)}</div><div style="font-size:9px;color:var(--muted)">falta por juntar</div></div>
           </div>
           <div class="row" style="gap:8px">
             <button class="btn btn-sage btn-sm" style="flex:1" onclick="updSavGoalSaved(${g.id})">💰 Registrar movimiento</button>

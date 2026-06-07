@@ -507,6 +507,29 @@ function _normalizeState(st){
   if(typeof st.impulsesBudget!=='number')st.impulsesBudget=2000;
   if(typeof st.gastoDiarioBudget!=='number')st.gastoDiarioBudget=0;
   _migrateV6(st);
+  _reconcileStandaloneMetas(st);
+}
+// SELF-HEALING: el saldo de una meta SIN activo ligado SIEMPRE debe ser la suma
+// de sus movimientos (g.deposits). Antes g.saved podía divergir de su propio
+// ledger (p.ej. un abono de cobranza que no actualizaba saved), y el "saldo
+// restante" no cuadraba con ingresos−egresos: el usuario sumaba sus movimientos
+// y le daba otra cosa que el Saldo mostrado. A diferencia de la reconciliación
+// de metas LIGADAS (V7/V8, que manda el activo), esta corre en CADA carga para
+// que sea imposible que se vuelva a descuadrar. No toca g.done (respeta cierres
+// manuales) ni metas con activo (esas las manda el saldo del activo).
+function _reconcileStandaloneMetas(st){
+  try{
+    const assetsById={};(st.assets||[]).forEach(a=>{if(a)assetsById[a.id]=a;});
+    (st.savGoals||[]).forEach(g=>{
+      if(!g)return;
+      const aid=g.lastAssetId!=null?g.lastAssetId:((g.deposits||[]).slice().reverse().find(d=>d&&d.assetId!=null)||{}).assetId;
+      if(aid!=null&&assetsById[aid])return;        // ligada a activo → la manda el activo
+      const deps=g.deposits||[];
+      if(deps.length===0)return;                    // sin movimientos → conserva saved (legacy/inicial)
+      const ledger=Math.round(deps.reduce((a,d)=>a+(+d.amt||0),0));
+      if(Math.round(+g.saved||0)!==ledger)g.saved=ledger; // saldo = ingresos − egresos del ledger
+    });
+  }catch(e){}
 }
 // ── FUSIÓN (Fase Base): esquema unificado "Cajita" ──────────────────────
 // One-shot, no destructiva. Solo añade el vocabulario unificado (propósito
@@ -9300,7 +9323,10 @@ function _savGoalBreakdownBar(g){
     const deps=g.deposits||[];
     totalIn=deps.filter(d=>(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
     deps.forEach(d=>{if((+d.amt||0)<0){const k=d.kind||'ajuste';wd[k]=(wd[k]||0)+Math.abs(+d.amt||0);}});
-    net=Math.round(+g.saved||0);
+    // Saldo = ingresos − egresos del MISMO ledger que se muestra abajo, no un
+    // g.saved que pudiera haber divergido. Así "Entró bruto − salió = Saldo"
+    // siempre cuadra con la lista de movimientos.
+    net=Math.round(totalIn-Object.values(wd).reduce((a,v)=>a+v,0));
   }
   const totalOut=Object.values(wd).reduce((a,v)=>a+v,0);
   if(totalIn<=0&&totalOut<=0)return '';

@@ -8910,8 +8910,33 @@ try{
         const cycleLabel=isCurrentCycle?'Esta quincena':'Quincena pasada · '+otCk;
         const borderColor=isCurrentCycle?'var(--sky)':'var(--amber)';
         const bgColor=isCurrentCycle?'rgba(74,110,140,.04)':'rgba(160,112,48,.05)';
+        // Aviso "reto desactualizado": si la situación cambió (gastos/deudas/ingreso/
+        // pagos aplicados), el objetivo comprometido ya no cuadra con el déficit real.
+        // Compara usando las MISMAS preferencias de ahorro con que se creó el reto.
+        let otStaleBanner='';
+        if(isCurrentCycle){
+          try{
+            const _n=_otNumbers();
+            const _iP=ot.inclPagate!==undefined?!!ot.inclPagate:!!S.otInclPagate;
+            const _iM=ot.inclMetas!==undefined?!!ot.inclMetas:!!S.otInclMetas;
+            const _need=_otDeficit(_n,_iP,_iM).hours;
+            const _newT=Math.max(_need,totalHrs);       // nunca por debajo de lo ya registrado
+            const _diff=_newT-(+ot.targetHrs||0);
+            const _moneyDiff=Math.round(_diff*(ot.rate||172));
+            if(Math.abs(_diff)>=0.5&&Math.abs(_moneyDiff)>=100){
+              const _up=_diff>0;
+              const _col=_up?'var(--terra)':'var(--sage)';
+              otStaleBanner='<div style="font-size:11px;margin-bottom:10px;padding:9px 11px;background:'+(_up?'rgba(184,92,74,.08)':'rgba(78,124,106,.08)')+';border:1px solid '+(_up?'rgba(184,92,74,.28)':'rgba(78,124,106,.28)')+';border-radius:8px;line-height:1.6">'
+                +'<strong style="color:'+_col+'">'+(_up?'⚠️ Tu reto quedó corto':'✅ Tu reto puede bajar')+'</strong><br>'
+                +'Tu situación cambió: el objetivo ahora sería <strong>'+_newT.toFixed(1)+'h</strong> ('+(_up?'+':'')+_diff.toFixed(1)+'h · '+(_up?'+':'')+fx(_moneyDiff)+'). Recalcula para ajustarlo.'
+                +'<button class="btn btn-sm" style="width:100%;margin-top:8px;background:'+(_up?'rgba(184,92,74,.12)':'rgba(78,124,106,.12)')+';color:'+_col+';border:1px solid '+(_up?'rgba(184,92,74,.3)':'rgba(78,124,106,.3)')+'" onclick="recalcOvertime(\''+otCk+'\')">🔄 Recalcular ahora</button>'
+                +'</div>';
+            }
+          }catch(e){}
+        }
         otContent+='<div class="card" style="border:2px solid '+borderColor+';background:'+bgColor+'"><div class="ct">⏰ '+cycleLabel+'</div>'
           +(!isCurrentCycle?'<div style="font-size:11px;color:var(--amber);margin-bottom:8px;padding:8px;background:rgba(160,112,48,.08);border-radius:6px;line-height:1.6">⚠️ Este log es de una quincena anterior. Sigue activo porque aún no marcas las horas como pagadas.</div>':'')
+          +otStaleBanner
           +'<div style="font-size:12px;color:var(--txt2);margin-bottom:8px;line-height:1.6">Comprometido: <strong>'+ot.targetHrs.toFixed(1)+'h</strong> = '+fx(targetMoney)+'</div>'
           +'<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--sky);font-weight:bold">'+totalHrs.toFixed(1)+' / '+ot.targetHrs.toFixed(1)+' horas</span><span style="font-size:11px;color:var(--muted)">'+pct+'%</span></div>'
           +'<div class="pw" style="margin-bottom:8px;height:6px"><div class="pb" style="width:'+pct+'%;background:'+(pct>=100?'var(--sage)':'var(--sky)')+'"></div></div>'

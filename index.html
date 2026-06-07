@@ -3637,6 +3637,12 @@ function rDash(){
     const allCommits=Object.values(S.savCommits||{});
     const validCommits=allCommits.filter(sc=>sc&&sc.assetId&&S.assets.find(a=>a.id===sc.assetId));
     const cIsValid=c&&c.assetId&&S.assets.find(a=>a.id===c.assetId);
+    // "Ya apartaste este ciclo" se decide por el ESTADO del compromiso, NO por
+    // si el activo destino sigue existiendo. Antes se exigía cIsValid, así que
+    // si el usuario borraba/renombraba el activo, el commit quedaba huérfano y
+    // el widget volvía a mostrar el botón "✓ Ya aparté" como si no hubiera
+    // ahorrado — confuso, porque al tocarlo decía "Ya apartaste esta quincena".
+    const committedNow=c&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept');
     // Metas activas: cuánto ha ahorrado el usuario en sus cajitas. Se suma
     // al acumulado total para que el card refleje TODO el ahorro real.
     const activeMetas=(S.savGoals||[]).filter(g=>!g.done&&(+g.saved||0)>0);
@@ -3680,7 +3686,7 @@ function rDash(){
     ):'';
     // Racha sólo se muestra si hay actividad real (commits válidos)
     const streakLine=streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--amber);margin-top:6px">🔥 Racha: <strong>'+streak+'</strong> quincena'+(streak!==1?'s':'')+' fiel'+(streak!==1?'es':'')+(best>streak?' · Mejor: '+best:'')+'</div>':'';
-    if(cIsValid&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept')){
+    if(committedNow){
       // Already committed this cycle — show confirmed state
       const asset=S.assets.find(a=>a.id===c.assetId);
       const assetName=asset?asset.name:'tu activo';
@@ -3703,6 +3709,7 @@ function rDash(){
         subBlock='<div style="font-size:11px;color:var(--muted);margin-top:2px">'+(metaSaved>0?'🎯 En tus metas · vive en Día a día → Ahorro':'🏦 → '+_escH(assetName))+'</div>';
       }
       return '<div class="card card-grn" style="background:rgba(78,124,106,.08);border-color:rgba(78,124,106,.3);margin-bottom:13px">'
+        +'<div style="display:flex;align-items:center;gap:9px;margin-bottom:11px;padding:9px 11px;background:rgba(78,124,106,.14);border-radius:8px"><span style="font-size:17px">✅</span><div style="flex:1;line-height:1.4"><div style="font-size:12px;font-weight:bold;color:var(--sage)">Ya te pagaste a ti primero esta quincena</div>'+((+c.amount||0)>0?'<div style="font-size:11px;color:var(--muted)">Apartaste '+fx(Math.round(c.amount))+(c.status==='committed'?'':' · quincena cerrada')+'</div>':'')+'</div>'+(streak>0?'<span style="font-size:11px;color:var(--amber);font-weight:bold;white-space:nowrap">🔥 '+streak+'</span>':'')+'</div>'
         +'<div class="row-b" style="margin-bottom:6px"><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💰 Ahorro acumulado</div><button onclick="openSavPctQuick()" title="Ajustar tu %" style="background:none;border:1px solid rgba(78,124,106,.3);border-radius:5px;color:var(--sage);cursor:pointer;font-size:11px;padding:2px 8px">✎ '+S.savPct+'%</button></div>'
         +'<div class="stat" style="color:var(--sage);font-family:Georgia,serif">'+fx(Math.round(totalAccum))+'</div>'
         +subBlock

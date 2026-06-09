@@ -2076,10 +2076,84 @@ function toggleSavGoalClosed(id){
     return;
   }
   const st=metaFundState(g);
-  showConfirm('✓ Cerrar meta','<div style="font-size:13px;line-height:1.6;color:var(--txt2)">¿Cerrar y archivar <strong>'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>?<br><span style="font-size:11px;color:var(--muted)">Juntaste '+fx(st.grossIn)+' y gastaste '+fx(st.spent)+(st.balance>0?' (te quedan '+fx(st.balance)+')':'')+'. Se conserva el historial y la puedes reabrir cuando quieras.</span></div>',()=>{
+  // Si NO queda saldo, cierre simple. Si queda saldo a favor, preguntamos qué
+  // hacer con él (mover a otra cajita, a otra meta, o pagar una deuda) y luego
+  // archivamos. Así la cajita se vacía y se cierra de verdad.
+  if(st.balance>0){_closeMetaWithLeftover(g,st);return;}
+  showConfirm('✓ Cerrar meta','<div style="font-size:13px;line-height:1.6;color:var(--txt2)">¿Cerrar y archivar <strong>'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong>?<br><span style="font-size:11px;color:var(--muted)">Juntaste '+fx(st.grossIn)+' y gastaste '+fx(st.spent)+'. Se conserva el historial y la puedes reabrir cuando quieras.</span></div>',()=>{
     pt({savGoals:S.savGoals.map(gx=>gx.id===id?{...gx,closed:true}:gx)});
     closeConfirm();toast('✓ Meta cerrada y archivada');_refreshActive();
   });
+}
+// Modal de cierre cuando queda saldo a favor: el usuario decide a dónde va.
+function _closeMetaWithLeftover(g,st){
+  const bal=Math.round(st.balance);
+  const srcAid=_metaPrimaryAssetId(g);
+  const otherAssets=(S.assets||[]).filter(a=>a.id!==srcAid);
+  const otherGoals=(S.savGoals||[]).filter(x=>x.id!==g.id&&!x.closed&&!x.done);
+  const payableDebts=(S.debts||[]).filter(d=>(+d.bal||0)>0);
+  const opt=(val,label,sub)=>'<label class="row" style="gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_clDest" value="'+val+'" style="margin:0;flex-shrink:0"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--txt);font-weight:bold">'+label+'</div>'+(sub?'<div style="font-size:10px;color:var(--muted);margin-top:1px">'+sub+'</div>':'')+'</div></label>';
+  let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Vas a cerrar <strong>'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong> y te quedan <strong style="color:var(--sage)">'+fx(bal)+'</strong> a favor. ¿Qué hago con ese dinero?</div>'
+    +'<div style="max-height:46vh;overflow-y:auto;margin:0 -2px;padding:0 2px">'
+    +opt('leave','🚫 Dejarlo donde está','La cajita conserva el saldo');
+  if(otherAssets.length){
+    body+='<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:.5px;font-weight:bold;margin:10px 0 5px">💎 Mover a otra cajita</div>'
+      +otherAssets.map(a=>opt('asset:'+a.id,(a.gen?'📈 ':'💎 ')+_escH(a.name),'Saldo '+fx(a.val))).join('');
+  }
+  if(otherGoals.length){
+    body+='<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:.5px;font-weight:bold;margin:10px 0 5px">🎯 Mover a otra meta</div>'
+      +otherGoals.map(x=>opt('goal:'+x.id,(x.icon||'🎯')+' '+_escH(x.name),'Lleva '+fx(Math.round(+x.saved||0))+' de '+fx(x.target))).join('');
+  }
+  if(payableDebts.length){
+    body+='<div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:.5px;font-weight:bold;margin:10px 0 5px">⛓️ Pagar una deuda</div>'
+      +payableDebts.map(d=>{const pay=+d.bal||0;const cubre=bal>=pay?'✅ liquidas esta deuda ('+fx(pay)+')':'abono parcial · queda '+fx(Math.max(0,pay-bal));return opt('debt:'+d.id,'⛓️ '+_escH(d.name),'Saldo '+fx(pay)+' · '+cubre);}).join('');
+  }
+  body+='</div>';
+  showConfirm('✓ Cerrar meta · '+fx(bal)+' a favor',body,()=>{_execCloseMeta(g.id);});
+}
+// Ejecuta el cierre: mueve el saldo según la elección y archiva la meta.
+function _execCloseMeta(id){
+  const g=S.savGoals.find(x=>x.id===id);if(!g)return;
+  const st=metaFundState(g);const bal=Math.round(st.balance);
+  const sel=document.querySelector('input[name=_clDest]:checked')?.value||'leave';
+  const date=_todayYMD();
+  let assets=S.assets,goals=S.savGoals,debts=S.debts,msg='';
+  const srcAid=_metaPrimaryAssetId(g);
+  if(sel!=='leave'&&bal>0){
+    // 1) Saca el dinero de la cajita origen (si está ligada a un activo).
+    if(srcAid){assets=_savApplyToAsset(assets,srcAid,-bal,'Cierre meta · '+g.name,date,'ajuste').assets;}
+    // 2) Lo deposita en el destino elegido.
+    if(sel.startsWith('asset:')){
+      const tid=+sel.split(':')[1];
+      assets=_savApplyToAsset(assets,tid,bal,'Desde meta · '+g.name,date).assets;
+      const ta=assets.find(a=>a.id===tid);msg='💎 '+fx(bal)+' → '+(ta?ta.name:'cajita');
+    }else if(sel.startsWith('goal:')){
+      const tid=+sel.split(':')[1];const tg=goals.find(x=>x.id===tid);const taid=tg?_metaPrimaryAssetId(tg):null;
+      if(taid){assets=_savApplyToAsset(assets,taid,bal,'Desde meta · '+g.name,date).assets;}
+      goals=goals.map(x=>{if(x.id!==tid)return x;const dep={id:_savDepId(),date,amt:bal,note:'Desde meta · '+g.name};if(taid)dep.assetId=taid;const ns=taid?Math.round((assets.find(a=>a.id===taid)||{}).val||0):(+x.saved||0)+bal;return{...x,saved:ns,deposits:[...(x.deposits||[]),dep],done:ns>=x.target};});
+      msg='🎯 '+fx(bal)+' → '+(tg?tg.name:'meta');
+    }else if(sel.startsWith('debt:')){
+      const tid=+sel.split(':')[1];const td=debts.find(x=>x.id===tid);
+      debts=debts.map(x=>x.id===tid?{...x,bal:Math.max(0,(+x.bal||0)-bal)}:x);
+      msg='⛓️ '+fx(bal)+' → '+(td?td.name:'deuda');
+    }
+  }
+  // 3) Registra el egreso en la meta origen y la archiva.
+  goals=goals.map(x=>{
+    if(x.id!==g.id)return x;
+    let deps=x.deposits||[],saved=+x.saved||0;
+    if(sel!=='leave'&&bal>0&&!srcAid){ // standalone: lo registramos en su ledger
+      deps=[...deps,{id:_savDepId(),date,amt:-bal,kind:'ajuste',note:'Cierre · '+(msg||'movido')}];
+      saved=Math.max(0,saved-bal);
+    }else if(srcAid){
+      saved=Math.round((assets.find(a=>a.id===srcAid)||{}).val||0);
+    }
+    return{...x,deposits:deps,saved,closed:true};
+  });
+  pt({assets,savGoals:goals,debts});
+  closeConfirm();
+  toast('✓ Meta cerrada'+(msg?' · '+msg:''));
+  _refreshActive();hdrUp&&hdrUp();
 }
 // Muestra/oculta el selector de tipo de retiro según si el monto nuevo es
 // menor que el actual (es decir, si es un retiro).
@@ -6157,10 +6231,21 @@ function rFlujo(){try{
     ${S.assets.map(a=>{
       const my=_monthlyYield(a);
       const yldLine=a.gen&&my>0?'+'+fx(Math.round(my))+'/mes · '+(+a.yldPct||0)+'% anual':'Sin rendimiento registrado';
+      // La proyección de rendimiento solo tiene sentido si el dinero va a estar
+      // un buen rato. Si la cajita aloja una meta de CORTO plazo (≤30 días desde
+      // que se creó), no la mostramos — el interés sería despreciable y solo
+      // distrae ("ni para qué").
+      const _linkedForProj=metasForAsset(a.id);
+      const _shortMeta=_linkedForProj.some(g=>{
+        if(!g.deadline)return false;
+        const start=(typeof g.id==='number'&&g.id>1e12)?g.id:Date.now();
+        const dur=(new Date(g.deadline+'T12:00').getTime()-start)/864e5;
+        return isFinite(dur)&&dur<=30;
+      });
       // Proyecciones a interés simple (sin reinversión). Para BMG/Cetes el
       // usuario suele cobrar el interés mensual aparte, así que esta vista
       // refleja "cuánto te pagaría cada periodo" más que un saldo compuesto.
-      const proj=a.gen&&my>0?
+      const proj=a.gen&&my>0&&!_shortMeta?
         '<div style="font-size:10px;color:var(--muted);margin-top:6px;padding:6px 8px;background:rgba(78,124,106,.05);border-radius:6px;line-height:1.7">'
         +'<div class="row-b"><span>1 mes</span><strong style="color:var(--sage)">'+fx(Math.round(my))+'</strong></div>'
         +'<div class="row-b"><span>3 meses</span><strong style="color:var(--sage)">'+fx(Math.round(my*3))+'</strong></div>'
@@ -9483,6 +9568,11 @@ function _savGoalBreakdownBar(g){
   return bar+legend+netLine;
 }
 function _goalOverlay(g){
+  // Meta CERRADA → vista archivada compacta (no estorba en la cajita activa).
+  if(g.closed){
+    const _s=metaFundState(g);
+    return '<div style="margin-top:10px;padding:9px 11px;border:1px dashed var(--border);border-radius:8px;background:rgba(154,149,144,.05)"><div class="row-b" style="gap:8px"><div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:bold;color:var(--muted)">📦 '+(g.icon||'🎯')+' '+_escH(g.name)+' · cerrada</div><div style="font-size:10px;color:var(--muted);margin-top:2px">Juntaste '+fx(_s.grossIn)+' · gastaste '+fx(_s.spent)+(_s.balance>0?' · quedan '+fx(_s.balance):'')+'</div></div><button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:3px 7px" onclick="toggleSavGoalClosed('+g.id+')" title="Reabrir">↩</button></div></div>';
+  }
   // Meta ligada → su "ahorrado" ES el saldo del activo (fuente unificada).
   const _aid=_metaPrimaryAssetId(g);
   const _asset=_aid!=null?(S.assets||[]).find(a=>a.id===_aid):null;

@@ -219,6 +219,58 @@ button:active{transform:scale(.97)}
 .debt-group-hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 0;cursor:pointer;border-bottom:2px solid var(--sage);margin-bottom:8px}
 .debt-group-hdr:hover{opacity:.8}
 .debt-sort-pills{display:flex;gap:4px;flex-wrap:wrap;margin-bottom:13px}
+/* ── Dashboard rediseñado: 7 bloques visuales (ver propuesta-visual.html) ── */
+.dh-hero{display:flex;gap:16px;align-items:center}
+.dh-ring{position:relative;width:108px;height:108px;flex-shrink:0;background:none;border:none;padding:0;cursor:pointer}
+.dh-ring-mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none}
+.dh-ring-mid b{font-size:28px;line-height:1;font-variant-numeric:tabular-nums}
+.dh-ring-mid i{font-style:normal;font-size:15px;margin-top:2px}
+.dh-hero-right{flex:1;min-width:0;cursor:pointer}
+.dh-klabel{font-size:11px;color:var(--muted);margin-bottom:2px;text-transform:uppercase;letter-spacing:1px}
+.dh-kbig{font-size:30px;font-weight:bold;line-height:1.05;font-variant-numeric:tabular-nums}
+.dh-delta{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:bold;border-radius:12px;padding:2px 8px;margin-top:6px}
+.dh-delta.up{background:var(--sagedim);color:var(--sage2)}
+.dh-delta.down{background:var(--terradim);color:var(--terra)}
+.dh-hero-foot{display:flex;gap:8px;margin-top:14px}
+.dh-pill{flex:1;border:none;border-radius:10px;padding:11px 4px;font-size:12px;font-weight:bold;font-family:Georgia,serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px}
+.dh-pill.sage{background:var(--sage);color:#fff}
+.dh-pill.ghost{background:transparent;border:1px solid rgba(78,124,106,.4);color:var(--sage)}
+.dh-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:13px}
+.dh-kpi{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:13px 14px;position:relative;overflow:hidden;cursor:pointer;box-shadow:var(--shadow)}
+.dh-kpi .ico{font-size:17px;margin-bottom:6px;display:block}
+.dh-kpi .v{font-size:19px;font-weight:bold;line-height:1;font-variant-numeric:tabular-nums}
+.dh-kpi .l{font-size:10.5px;color:var(--muted);margin-top:4px}
+.dh-spark{position:absolute;right:8px;bottom:8px;opacity:.85;pointer-events:none}
+.dh-kpi.warn{border-color:rgba(184,92,74,.3);background:linear-gradient(135deg,#fff 30%,var(--terradim))}
+.dh-kpi.good{border-color:rgba(78,124,106,.3);background:linear-gradient(135deg,#fff 30%,var(--sagedim))}
+.dh-track{height:14px;border-radius:8px;background:var(--bg2);position:relative;margin:10px 0 6px}
+.dh-fill{height:100%;border-radius:8px;background:linear-gradient(90deg,var(--sage),#6FA08C);position:relative;transition:width .7s ease}
+.dh-flag{position:absolute;right:-2px;top:-7px;width:4px;height:28px;border-radius:2px;background:var(--sage2)}
+.dh-mark{position:absolute;top:-3px;width:2px;height:20px;background:var(--amber)}
+.dh-meta-row{display:flex;justify-content:space-between;gap:6px;font-size:10.5px;color:var(--muted);flex-wrap:wrap}
+.dh-legend{display:flex;gap:14px;font-size:10.5px;color:var(--muted);margin-top:6px;flex-wrap:wrap}
+.dh-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px}
+.dh-gauge-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.dh-gauge{width:120px;flex-shrink:0;text-align:center}
+.dh-gauge b{font-size:18px;font-variant-numeric:tabular-nums}
+.dh-gauge span{display:block;font-size:9.5px;color:var(--muted);margin-top:2px}
+.dh-qadd{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:140px}
+.dh-rail{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:4px;scrollbar-width:none}
+.dh-rail::-webkit-scrollbar{display:none}
+.dh-reto{scroll-snap-align:start;flex:0 0 150px;border-radius:var(--r);padding:13px;border:1px solid var(--border);background:linear-gradient(160deg,#fff 40%,var(--amberdim));cursor:pointer}
+.dh-reto.ok{background:linear-gradient(160deg,#fff 40%,var(--sagedim));border-color:rgba(78,124,106,.35)}
+.dh-reto .re{font-size:26px}
+.dh-reto .rn{font-size:12px;font-weight:bold;margin:6px 0 2px;line-height:1.3;color:var(--txt)}
+.dh-reto .rs{font-size:10.5px;color:var(--sage2);font-weight:bold}
+.dh-steps{display:flex;gap:4px;margin-top:9px;flex-wrap:wrap}
+.dh-stp{width:9px;height:9px;border-radius:50%;background:var(--bg2);border:1px solid var(--border)}
+.dh-stp.on{background:var(--sage);border-color:var(--sage)}
+.dh-quote{display:flex;gap:10px;align-items:center;background:var(--sagedim);border-radius:var(--r);padding:13px 15px;font-size:12px;font-style:italic;color:var(--sage2);line-height:1.55;margin-bottom:13px;cursor:pointer}
+.dh-quote .qi{font-size:20px;flex-shrink:0}
+.dh-quote .qt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex:1;min-width:0}
+.dh-ct{font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.dh-ct .more{font-size:10.5px;color:var(--muted);font-weight:normal;cursor:pointer;white-space:nowrap}
+@media(max-width:420px){.dh-kpis{grid-template-columns:1fr 1fr;gap:8px}.dh-hero{gap:12px}.dh-ring{width:92px;height:92px}.dh-ring svg{width:92px;height:92px}.dh-kbig{font-size:26px}}
 </style>
 </head>
 <body>
@@ -3715,73 +3767,57 @@ function toggleHormigaDetail(){
   else{el.style.display='none';}
 }
 
-// ══ DASHBOARD ═══════════════════════════════════════
-function rDash(){
-  // Fase 2: auto-reset sav streak if user skipped a full cycle without committing
+// ── Helpers del dashboard rediseñado (7 bloques visuales) ──────────
+// Sparkline compacta: normaliza la serie a un polyline de 54×22.
+function _sparkSvg(vals,color){
+  if(!vals||vals.length<2)return'';
+  const w=54,h=22,mn=Math.min(...vals),mx=Math.max(...vals),rg=(mx-mn)||1;
+  const pts=vals.map((v,i)=>(i/(vals.length-1)*w).toFixed(1)+','+(h-3-(v-mn)/rg*(h-6)).toFixed(1)).join(' ');
+  return '<svg class="dh-spark" width="54" height="22" aria-hidden="true"><polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2"/></svg>';
+}
+// Snapshots en orden cronológico (sparklines y gráfica de historia)
+function _snapsAsc(){return [...(S.snapshots||[])].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));}
+// Gastos frecuentes de la bitácora → chips de captura en 1 tap. Se guarda
+// en una variable global para que el onclick reciba el objeto sin escapar
+// nombres con comillas dentro del atributo.
+let _dashChips=[];
+function _diarioChips(){
   try{
-    if((S.savStreak||0)>0 && S.savCommits){
-      const ck=cycleKey();
-      const keys=Object.keys(S.savCommits);
-      if(keys.length>0){
-        // Find most recent commit
-        const sorted=keys.slice().sort((a,b)=>{
-          const da=S.savCommits[a].date||'';const db=S.savCommits[b].date||'';
-          return db.localeCompare(da);
-        });
-        const lastCk=sorted[0];
-        if(lastCk!==ck){
-          // Check if lastCk is the immediately previous cycle (ok) or older (reset)
-          const prev=prevCycleKey();
-          if(lastCk!==prev && lastCk!==ck){
-            // Gap detected — skipped at least one full cycle
-            S.savStreak=0;sv();
-          }
-        }
-      }
-    }
+    const freq={};
+    (S.gastosDiarios||[]).filter(g=>!g.pending&&g.name).forEach(g=>{
+      const k=g.name.trim().toLowerCase();
+      if(!freq[k])freq[k]={n:0,name:g.name,amt:+g.amt||0,cat:g.cat||'snack',last:''};
+      freq[k].n++;
+      if((g.date||'')>=freq[k].last){freq[k].last=g.date||'';freq[k].amt=+g.amt||0;freq[k].cat=g.cat||freq[k].cat;}
+    });
+    return Object.values(freq).sort((a,b)=>b.n-a.n).slice(0,3).map(c=>({name:c.name,amt:c.amt,cat:c.cat}));
+  }catch(e){return [];}
+}
+// Detalle del score en modal — sustituye al card "Salud Financiera" del
+// dashboard; se abre tocando el anillo del hero.
+function openScoreDetail(){
+  const _sb=scoreBreakdown(),s=_sb.total,r=getRank(s);
+  let html='<div style="text-align:center;margin-bottom:14px"><div style="font-size:40px;font-weight:bold;color:'+scCol(s)+'">'+s+'</div><div style="color:'+scCol(s)+';font-weight:bold">'+r.emoji+' '+r.name+'</div><div style="font-size:10px;color:var(--muted);margin-top:4px">Próximo rango: '+(s<100?(RANKS.find(rk=>rk.min>s)?.name||'—'):'¡Máximo!')+'</div></div>';
+  html+=_sb.parts.map(p=>'<div style="margin-bottom:11px"><div class="row-b" style="font-size:12px"><span style="color:var(--txt)">'+p.label+'</span><span style="font-weight:bold;color:'+(p.pts>0?p.col:'var(--muted)')+'">'+p.pts+'/'+p.max+'</span></div><div class="pw" style="height:5px;margin:4px 0 3px"><div class="pb" style="width:'+(p.max>0?Math.round(p.pts/p.max*100):0)+'%;background:'+p.col+'"></div></div><div style="font-size:10px;color:var(--muted);line-height:1.5">'+p.hint+'</div></div>').join('');
+  if(_sb.penalty>0)html+='<div class="row-b" style="font-size:12px;margin-bottom:8px"><span style="color:var(--terra)">⚠️ Penalización por déficit</span><span style="font-weight:bold;color:var(--terra)">−'+_sb.penalty+'</span></div>';
+  html+='<div style="font-size:10px;color:var(--muted);border-top:1px solid var(--border);padding-top:9px;margin-top:6px;line-height:1.6">Se suman todos y el total se topa a <strong>100</strong>. Tu nivel mide qué tan <strong>sano</strong> estás — distinto de tu avance a la meta.</div>';
+  showInfo('Salud Financiera',html);
+}
+// Sabiduría del día completa, en modal.
+function openWisdomDetail(){
+  try{
+    const w=getDailyWisdom();if(!w)return;
+    showInfo('💡 Sabiduría del día','<div style="font-size:30px;text-align:center;margin-bottom:10px">'+w.icon+'</div><div style="font-size:13px;color:var(--txt2);line-height:1.7;font-style:italic">'+w.text+'</div><div style="font-size:10px;color:var(--muted);margin-top:10px;text-transform:uppercase;letter-spacing:1px;text-align:center">'+w.book+'</div>');
   }catch(e){}
-  const _sb=scoreBreakdown(),s=_sb.total,sc=scCol(s),dl=dLeft(),pctT=goalElapsedPct();
-  const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
-  const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
-  const r=getRank(s);
-  const streak=qStreak();
-  const lastSnap=lastHormiga();
-  const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
-  // Period calculations
-  const isQ=S.dashPeriod==='quincenal';
-  const div=isQ?2:1;
-  const pLbl=isQ?'/qna':'/mes';
-  const pInc=mInc()/div;
-  // Gastos fijos: en vista quincenal usamos el gasto REAL del ciclo (mismas
-  // semanas que el Plan), no el promedio mensual÷2, para que el KPI "/qna"
-  // cuadre con el Plan de Acción. En vista mensual seguimos con el mensual.
-  const pExp=isQ?cycleExpenseTotal():tExp();
-  const pDebtPay=tDebtPay()/div;
-  const pSav=savAmt()/div;
-  const pExtras=tExtras()/div;
-  const pSavGoals=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0)*(isQ?1:2);
-  const pFlow=pInc+pExtras-pExp-pSav-pSavGoals-pDebtPay;
-
-  document.getElementById('tab-dash').innerHTML=`
-  <!-- CIERRE INMINENTE (≤2 días) -->
-  ${(()=>{try{
-    const w=getCycleWindow();
-    const today=new Date();today.setHours(0,0,0,0);
-    const daysLeft=Math.ceil((w.end-today)/864e5);
-    if(daysLeft<0||daysLeft>2)return'';
-    const label=daysLeft===0?'HOY CIERRA TU QUINCENA':daysLeft===1?'MAÑANA CIERRA TU QUINCENA':'CIERRA EN 2 DÍAS';
-    return '<div class="card" style="border:2px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.09) 0%,rgba(184,92,74,.04) 100%);margin-bottom:13px;padding:14px 16px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">📊 '+label+'</div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Sube tu CSV de Nu o cierra con tu bitácora de Diarios para crear el capítulo.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openCierreModal()">📊 Abrir Cierre de quincena</button></div>';
-  }catch(e){return'';}})()}
-
-  <!-- FASE 5 · DÉFICIT DE QUINCENA ANTERIOR (recordatorio amable hasta resolver) -->
-  ${(()=>{try{
-    const pd=pendingDeficitCycle();
-    if(!pd)return '';
-    return '<div class="card" style="border:2px solid rgba(184,92,74,.45);background:linear-gradient(135deg,rgba(184,92,74,.06) 0%,rgba(160,112,48,.03) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">⚠️ Quincena pasada cerró con déficit</div><div style="font-size:13px;color:var(--txt);font-weight:bold;margin-top:4px">'+pd.ck+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Faltante</div><div style="font-size:20px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.65;margin-bottom:14px">Te faltaron <strong style="color:var(--terra)">'+fx(Math.abs(pd.balance))+'</strong> al cerrar. ¿Cómo lo cubriste?</div><div class="row" style="gap:6px;margin-bottom:10px"><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Lo absorbo</button></div><div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">Si elegiste TDC o Préstamo, recuerda registrar la deuda manualmente en <strong>Ingresos y Gastos → ⛓️ Deudas</strong></div></div>';
-  }catch(e){return'';}})()}
-
-  <!-- FASE 2 · PÁGATE A TI PRIMERO (Hooked: gatillo quincenal) -->
-  ${(()=>{try{
+}
+// "Págate a ti primero": el contenido completo del card original (acumulado,
+// desglose, racha, ahorros huérfanos, check de cierre) vive ahora a un tap
+// del hero. savSelfHtml() conserva la lógica original intacta.
+function openSavStatusModal(){
+  const html=savSelfHtml();
+  showInfo('🪙 Págate a ti primero',html||'<div style="font-size:12px;color:var(--muted)">Registra tu ingreso para activar esta sección.</div>');
+}
+function savSelfHtml(){try{
     if(mInc()<=0)return '';
     const c=curSavCommit();
     // Sugerido = % del ingreso REAL de la quincena (incluye bono si cae en ella).
@@ -3904,7 +3940,84 @@ function rDash(){
       '<div style="font-size:11px;color:var(--sage);margin:0 0 10px;padding:8px 10px;background:rgba(78,124,106,.06);border-radius:6px;line-height:1.5">🎯 Tienes <strong>'+fx(Math.round(metaSaved))+'</strong> ahorrado en '+activeMetas.length+' meta'+(activeMetas.length!==1?'s':'')+'</div>'
     ):'';
     return '<div class="card" style="border:1px solid rgba(160,112,48,.35);background:linear-gradient(135deg,rgba(160,112,48,.05) 0%,rgba(78,124,106,.03) 100%);margin-bottom:13px;padding:16px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;font-weight:bold">🪙 Págate a ti primero</div><div style="font-size:13px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Aparta tu ahorro <strong style="color:var(--sage)">antes</strong> de pagar gastos o deudas. Es sagrado — no se toca salvo emergencia real.</div>'+metaLine+'<div class="row-b" style="margin-bottom:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted)">Sugerido</div><div style="font-size:20px;font-weight:bold;color:var(--sage)">'+fx(sug)+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">de tu quincena</div><div style="font-size:14px;color:var(--sage);font-weight:bold">'+S.savPct+'% <button onclick="openSavPctQuick()" title="Ajustar tu %" style="background:none;border:1px solid rgba(78,124,106,.3);border-radius:5px;color:var(--sage);cursor:pointer;font-size:11px;padding:1px 6px;margin-left:3px;vertical-align:middle">✎</button></div></div></div><button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">✓ Ya aparté mi ahorro</button>'+(streak>0&&validCommits.length>0?'<div style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px">No rompas tu racha de <strong style="color:var(--amber)">'+streak+'</strong> quincena'+(streak!==1?'s':'')+'</div>':'')+linkOrphanBtn+'</div>';
+  }catch(e){return'';}}
+
+// ══ DASHBOARD ═══════════════════════════════════════
+function rDash(){
+  // Fase 2: auto-reset sav streak if user skipped a full cycle without committing
+  try{
+    if((S.savStreak||0)>0 && S.savCommits){
+      const ck=cycleKey();
+      const keys=Object.keys(S.savCommits);
+      if(keys.length>0){
+        // Find most recent commit
+        const sorted=keys.slice().sort((a,b)=>{
+          const da=S.savCommits[a].date||'';const db=S.savCommits[b].date||'';
+          return db.localeCompare(da);
+        });
+        const lastCk=sorted[0];
+        if(lastCk!==ck){
+          // Check if lastCk is the immediately previous cycle (ok) or older (reset)
+          const prev=prevCycleKey();
+          if(lastCk!==prev && lastCk!==ck){
+            // Gap detected — skipped at least one full cycle
+            S.savStreak=0;sv();
+          }
+        }
+      }
+    }
+  }catch(e){}
+  const _sb=scoreBreakdown(),s=_sb.total,sc=scCol(s),dl=dLeft(),pctT=goalElapsedPct();
+  const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
+  const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
+  const r=getRank(s);
+  const _nextRank=RANKS.find(rk=>rk.min>s);
+  const streak=qStreak();
+  const lastSnap=lastHormiga();
+  const hormigaTotal=lastSnap?Object.values(lastSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
+  // Cifras fijas a la quincena: es la unidad mental de toda la app.
+  const pInc=mInc()/2;
+  const pExp=cycleExpenseTotal();
+  const pDebtPay=tDebtPay()/2;
+  const pSav=savAmt()/2;
+  const pExtras=tExtras()/2;
+  const pSavGoals=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);
+  const pFlow=pInc+pExtras-pExp-pSav-pSavGoals-pDebtPay;
+  const _ck=cycleKey();
+  const _c=curSavCommit();
+  const _committed=_c&&(_c.status==='committed'||_c.status==='intact'||_c.status==='emergency-kept');
+  const snapsA=_snapsAsc();
+  const nwSeries=snapsA.map(x=>+x.patrimonio||0).slice(-7);
+  const debtSeries=snapsA.map(x=>+x.deudaTotal||0).slice(-7);
+  const _prevSnap=snapsA.length>1?snapsA[snapsA.length-2]:null;
+  const _prevHormiga=_prevSnap?Object.values(_prevSnap.hormiga||{}).reduce((a,v)=>a+v.total,0):0;
+  const _hormigaDelta=_prevHormiga>0&&hormigaTotal>0?Math.round((hormigaTotal-_prevHormiga)/_prevHormiga*100):null;
+  const _debtPrev=debtSeries.length>1?debtSeries[debtSeries.length-2]:0;
+  const _debtDelta=_debtPrev>0?Math.round((tDebt()-_debtPrev)/_debtPrev*100):null;
+  const _gp=goalProgress();
+  const dBud=getDiarioBudgetForCycle(_ck),dSpent=diariosCycleSpent(_ck);
+  let _cycDaysLeft=null;try{const _w=getCycleWindow();const _t=new Date();_t.setHours(0,0,0,0);_cycDaysLeft=Math.max(0,Math.ceil((_w.end-_t)/864e5));}catch(e){}
+  _dashChips=_diarioChips();
+  const wis=(()=>{try{return getDailyWisdom();}catch(e){return null;}})();
+
+  document.getElementById('tab-dash').innerHTML=`
+  <!-- CIERRE INMINENTE (≤2 días) -->
+  ${(()=>{try{
+    const w=getCycleWindow();
+    const today=new Date();today.setHours(0,0,0,0);
+    const daysLeft=Math.ceil((w.end-today)/864e5);
+    if(daysLeft<0||daysLeft>2)return'';
+    const label=daysLeft===0?'HOY CIERRA TU QUINCENA':daysLeft===1?'MAÑANA CIERRA TU QUINCENA':'CIERRA EN 2 DÍAS';
+    return '<div class="card" style="border:2px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.09) 0%,rgba(184,92,74,.04) 100%);margin-bottom:13px;padding:14px 16px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">📊 '+label+'</div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Sube tu CSV de Nu o cierra con tu bitácora de Diarios para crear el capítulo.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openCierreModal()">📊 Abrir Cierre de quincena</button></div>';
   }catch(e){return'';}})()}
+
+  <!-- FASE 5 · DÉFICIT DE QUINCENA ANTERIOR (recordatorio amable hasta resolver) -->
+  ${(()=>{try{
+    const pd=pendingDeficitCycle();
+    if(!pd)return '';
+    return '<div class="card" style="border:2px solid rgba(184,92,74,.45);background:linear-gradient(135deg,rgba(184,92,74,.06) 0%,rgba(160,112,48,.03) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">⚠️ Quincena pasada cerró con déficit</div><div style="font-size:13px;color:var(--txt);font-weight:bold;margin-top:4px">'+pd.ck+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Faltante</div><div style="font-size:20px;font-weight:bold;color:var(--terra)">'+fx(pd.balance)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.65;margin-bottom:14px">Te faltaron <strong style="color:var(--terra)">'+fx(Math.abs(pd.balance))+'</strong> al cerrar. ¿Cómo lo cubriste?</div><div class="row" style="gap:6px;margin-bottom:10px"><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'tdc\','+pd.balance+')">💳 TDC</button><button class="btn btn-sky btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'prestamo\','+pd.balance+')">💸 Préstamo</button><button class="btn btn-ghost btn-sm" style="flex:1;padding:12px 6px;font-size:12px" onclick="markDeficitDecision(\''+pd.ck+'\',\'absorbido\','+pd.balance+')">✓ Lo absorbo</button></div><div style="font-size:10px;color:var(--muted);text-align:center;line-height:1.5">Si elegiste TDC o Préstamo, recuerda registrar la deuda manualmente en <strong>Ingresos y Gastos → ⛓️ Deudas</strong></div></div>';
+  }catch(e){return'';}})()}
+
 
   <!-- FASE 3 · QUINCENA GRANDE · JUGADA ESTRATÉGICA (coach card, solo en ventana del bono) -->
   ${(()=>{try{
@@ -3928,103 +4041,45 @@ function rDash(){
     return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">'+headerLabel+'</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+headerSub+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">'+introCopy+'</div>'+playA+(p.topDebt?playB+playC:noDebts)+'<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div></div>';
   }catch(e){return'';}})()}
   
-  <!-- META -->
-  <div class="card card-sage">
-    <div class="row-b" style="align-items:flex-start;margin-bottom:8px">
-      <div class="ct" style="margin:0">🎯 Tu Meta</div>
-      <button class="btn btn-ghost btn-sm" style="flex:0 0 auto;padding:5px 10px;font-size:11px" onclick="openMetaEdit()">✏️ Editar</button>
-    </div>
-    <div style="font-size:15px;line-height:1.7;margin-bottom:14px;color:var(--txt2);font-style:italic">"${S.goal||'Sin meta definida'}"</div>
-    ${(()=>{
-      const _gp=goalProgress();
-      // Línea de tiempo (siempre, como dato secundario)
-      const timeLine='<div style="font-size:11px;color:var(--muted);margin-top:10px">⏳ '+dl+' días restantes · Límite: '+dlFmt+' · '+pctT+'% del plazo</div>';
-      if(!_gp.measurable){
-        // Meta sin objetivo medible: barra de tiempo + invitación a hacerla medible.
-        return '<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted)">Progreso del plazo</span><span style="font-size:11px;color:var(--sage);font-weight:bold">'+pctT+'% transcurrido</span></div>'
-          +'<div class="pw"><div class="pb" style="width:'+pctT+'%;background:var(--sage)"></div></div>'
-          +'<div style="font-size:11px;color:var(--muted);margin-top:7px">'+dl+' días restantes · Límite: '+dlFmt+'</div>'
-          +'<div style="margin-top:14px;padding:12px;background:rgba(160,112,48,.06);border:1px dashed rgba(160,112,48,.35);border-radius:8px"><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Hoy esta meta solo cuenta el <strong>tiempo</strong>, no tu avance real. Dale un número y la app medirá qué tan cerca estás y qué abonar cada quincena.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openMetaEdit()">📊 Haz tu meta medible →</button></div>';
-      }
-      // Meta medible → avance REAL de patrimonio
-      const okCol=_gp.onTrack?'var(--sage)':'var(--amber)';
-      const pace=Math.max(0,Math.round(_gp.paceNeeded));
-      let statusChip;
-      if(_gp.done){
-        statusChip='<div style="font-size:12px;color:var(--sage);font-weight:bold;margin-top:10px">🏆 ¡Meta alcanzada! Mejoraste tu patrimonio '+fx(Math.round(_gp.gained))+'.</div>';
-      }else{
-        const paceLine=pace>0?'<div class="row-b" style="margin-top:12px;padding:10px 12px;background:rgba(78,124,106,.06);border-radius:8px"><div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Ritmo para llegar a tiempo</div><div style="font-size:11px;color:var(--txt2);margin-top:2px">Mejora tu patrimonio (abona deuda y/o ahorra)</div></div><div style="text-align:right"><div style="font-size:18px;font-weight:bold;color:var(--sage)">'+fx(pace)+'</div><div style="font-size:10px;color:var(--muted)">/quincena · '+_gp.qnaLeft+' rest.</div></div></div>':'';
-        const trackLine='<div style="font-size:11px;margin-top:8px;color:'+okCol+'">'+(_gp.onTrack?'✓ Vas al día — tu avance ('+_gp.pct+'%) va igual o adelante del tiempo ('+_gp.expectedPct+'%).':'⚠ Vas atrás — avance '+_gp.pct+'% vs '+_gp.expectedPct+'% del tiempo. Sube el ritmo para no rezagarte.')+'</div>';
-        statusChip=paceLine+trackLine;
-      }
-      const gainTxt=_gp.gained>=0
-        ? 'Has mejorado tu patrimonio <strong style="color:var(--sage)">'+fx(Math.round(_gp.gained))+'</strong> de <strong>'+fx(Math.round(_gp.delta))+'</strong>'
-        : 'Tu patrimonio bajó <strong style="color:var(--terra)">'+fx(Math.round(-_gp.gained))+'</strong> desde que fijaste la meta';
-      return '<div class="row-b" style="margin-bottom:6px"><span style="font-size:11px;color:var(--muted)">Avance a tu meta</span><span style="font-size:13px;color:'+okCol+';font-weight:bold">'+_gp.pct+'%</span></div>'
-        +'<div class="pw" style="height:9px"><div class="pb" style="width:'+_gp.pct+'%;background:'+okCol+'"></div></div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-top:7px;line-height:1.6">'+gainTxt+' · faltan <strong>'+fx(Math.round(_gp.remaining))+'</strong> para tu objetivo de '+fx(Math.round(_gp.target))+'</div>'
-        +statusChip
-        +timeLine;
-    })()}
-  </div>
-
-  <!-- SCORE + RANGO -->
-  <div class="card" style="text-align:center;padding:28px 18px">
-    <div style="font-size:10px;letter-spacing:3px;color:var(--muted);margin-bottom:10px">SALUD FINANCIERA ${ib('score','Salud Financiera')}</div>
-    <div style="font-size:72px;font-weight:bold;color:${sc};line-height:1">${s}</div>
-    <div style="color:${sc};margin:8px 0 4px;font-size:16px;font-weight:bold">${r.emoji} ${r.name}</div>
-    ${streak>0?`<div style="font-size:11px;color:var(--amber);margin-bottom:12px">🔥 Racha: ${streak} ${cycleLabel()}${streak>1?(S.cycleMode==='quincenal'?'s':'es'):''} consecutiv${streak>1?(S.cycleMode==='quincenal'?'as':'os'):'o'}</div>`:`<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Sube tu primer CSV para iniciar tu racha</div>`}
-    <div class="pw" style="max-width:220px;margin:0 auto 6px;height:7px"><div class="pb" style="width:${s}%;background:${sc}"></div></div>
-    <div style="font-size:10px;color:var(--muted)">Próximo rango: ${s<100?RANKS.find(rk=>rk.min>s)?.name||'—':'¡Máximo!'}</div>
-    ${goalProgress().measurable?`<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5;font-style:italic">Tu nivel mide qué tan <strong>sano</strong> estás — distinto de tu <strong>avance a la meta</strong> (arriba). Los dos suben juntos cuando bajas deuda y ahorras.</div>`:''}
-    <details style="margin-top:16px;text-align:left">
-      <summary style="list-style:none;cursor:pointer;font-size:11px;color:var(--sage);text-align:center;letter-spacing:.5px;-webkit-tap-highlight-color:transparent">▾ Ver de dónde sale tu score</summary>
-      <div style="margin-top:12px">
-        ${_sb.parts.map(p=>`<div style="margin-bottom:11px">
-          <div class="row-b" style="font-size:12px"><span style="color:var(--txt)">${p.label}</span><span style="font-weight:bold;color:${p.pts>0?p.col:'var(--muted)'}">${p.pts}/${p.max}</span></div>
-          <div class="pw" style="height:5px;margin:4px 0 3px"><div class="pb" style="width:${p.max>0?Math.round(p.pts/p.max*100):0}%;background:${p.col}"></div></div>
-          <div style="font-size:10px;color:var(--muted);line-height:1.5">${p.hint}</div>
-        </div>`).join('')}
-        ${_sb.penalty>0?`<div class="row-b" style="font-size:12px;margin-bottom:8px"><span style="color:var(--terra)">⚠️ Penalización por déficit</span><span style="font-weight:bold;color:var(--terra)">−${_sb.penalty}</span></div>`:''}
-        <div style="font-size:10px;color:var(--muted);border-top:1px solid var(--border);padding-top:9px;margin-top:6px;line-height:1.6">Se suman todos y el total se topa a <strong>100</strong>. Abonar y completar metas ya cuentan aquí. <button class="info-btn" style="vertical-align:middle" onclick="event.stopPropagation();showInfo('Patrimonio',INFO.patrimonio)">?</button> <span style="cursor:pointer;color:var(--sage)" onclick="showInfo('Patrimonio',INFO.patrimonio)">¿Qué cuenta como patrimonio?</span></div>
-      </div>
-    </details>
-  </div>
-
-  <!-- PERIODO TOGGLE -->
-  <div class="card" style="padding:10px 18px">
-    <div class="row-b">
-      <span style="font-size:11px;color:var(--muted);letter-spacing:1px;text-transform:uppercase">Ver cifras:</span>
-      <div class="row" style="gap:4px">
-        <button class="btn btn-sm ${isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'quincenal'});rDash()">Quincenal</button>
-        <button class="btn btn-sm ${!isQ?'btn-sage':'btn-ghost'}" onclick="pt({dashPeriod:'mensual'});rDash()">Mensual</button>
+  <!-- 1 · HERO: anillo de score + disponible + las 2 acciones del día -->
+  <div class="card">
+    <div class="dh-hero">
+      <button class="dh-ring" onclick="openScoreDetail()" aria-label="Ver de dónde sale tu score">
+        <svg width="108" height="108" viewBox="0 0 108 108"><circle cx="54" cy="54" r="46" fill="none" stroke="var(--bg2)" stroke-width="9"/><circle cx="54" cy="54" r="46" fill="none" stroke="${sc}" stroke-width="9" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="${Math.round(289*(1-Math.min(100,Math.max(0,s))/100))}" transform="rotate(-90 54 54)"/></svg>
+        <span class="dh-ring-mid"><b style="color:${sc}">${s}</b><i>${r.emoji}</i></span>
+      </button>
+      <div class="dh-hero-right" onclick="go('plan')">
+        <div class="dh-klabel">🌊 Disponible esta quincena</div>
+        <div class="dh-kbig" style="color:${pFlow>=0?'var(--sage2)':'var(--terra)'}">${fx(Math.round(pFlow))}</div>
+        <span class="dh-delta ${pFlow>=0?'up':'down'}">${pFlow>=0?'Libre tras gastos, ahorro y deudas ›':'⚠ Déficit — compromisos > ingreso ›'}</span>
+        <div class="dh-klabel" style="margin-top:8px;text-transform:none;letter-spacing:0">Rango: <strong style="color:${sc}">${r.name}</strong>${_nextRank?` · ${_nextRank.min-s} pts para ${_nextRank.name} ${_nextRank.emoji}`:' · ¡Máximo!'}</div>
       </div>
     </div>
+    <div class="dh-hero-foot">
+      ${_committed
+        ?`<button class="dh-pill ghost" onclick="openSavStatusModal()">✅ Ya te pagaste${(S.savStreak||0)>0?' · 🔥'+S.savStreak:''}</button>`
+        :`<button class="dh-pill sage" onclick="openSavCommitModal()">🪙 Ya aparté mi ahorro</button>`}
+      <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cierre de quincena</button>
+    </div>
   </div>
 
-  <!-- KPIs (cada card es un quick-access a su sección fuente) -->
-  <!-- Disponible al frente: es el número más accionable del día a día.
-       Antes vivía abajo y obligaba a scrollear en iPhone SE. -->
-  <div class="card card-link" style="margin-bottom:13px;text-align:center;padding:18px 16px" onclick="go('plan')">
-    <div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🌊 Disponible${pLbl}</div>
-    <div class="stat" style="color:${pFlow>=0?'var(--sage)':'var(--terra)'};font-family:Georgia,serif">${fx(Math.round(pFlow))}</div>
-    <div class="lbl" style="margin-top:6px">${pFlow>=0?'Te queda libre tras gastos, ahorro y deudas':'⚠ Déficit — tus compromisos superan tu ingreso'} ›</div>
-  </div>
-  <div class="g2" style="margin-bottom:13px">
-    ${kpi('💰 Ingreso'+pLbl,fx(Math.round(pInc)),'var(--sage)',(isQ?fx(mInc())+'/mes':fx(Math.round(mInc()/2))+'/qna'),"flujoView='ingresos';go('flujo')")}
-    ${kpi('💾 Ahorro'+pLbl,fx(Math.round(pSav)),'var(--sage)',S.savPct+'% — págate primero',"flujoView='activos';go('flujo')")}
-  </div>
-  <div class="g2" style="margin-bottom:13px">
-    ${kpi('📋 Gastos fijos'+pLbl,fx(Math.round(pExp)),'var(--terra)',S.exp.length+' conceptos',"flujoView='gastos';go('flujo')")}
-    ${kpi('⛓️ Pagos deuda'+pLbl,fx(Math.round(pDebtPay)),'var(--sky)',S.debts.filter(d=>!isDebtLiquidated(d)).length+' créditos activos',"flujoView='deudas';go('flujo')")}
-  </div>
-  <div class="${tExtras()>0?'g2':''}" style="margin-bottom:13px">
-    <div class="card${hormigaTotal?' card-link':''}" style="margin-bottom:0;text-align:center" ${hormigaTotal?'onclick="toggleHormigaDetail()"':''}>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:6px;letter-spacing:1px;text-transform:uppercase">🐜 Gastos hormiga ${ib("hormiga","Gastos Hormiga")}</div>
-      <div class="stat-sm" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div>
-      <div class="lbl" style="margin-top:4px">${lastSnap?(hormigaTotal?'Detalle ▾':'Sin hormiga'):'Sube CSV'}</div>
+  <!-- 2 · KPIs: 1 icono + 1 número + micro-tendencia por ficha -->
+  <div class="dh-kpis">
+    <div class="dh-kpi ${nwBuild()>=0&&(nwSeries.length<2||nwSeries[nwSeries.length-1]>=nwSeries[0])?'good':''}" onclick="flujoView='activos';go('flujo')">
+      <span class="ico">🏦</span><div class="v" style="color:${nwBuild()>=0?'var(--sage2)':'var(--terra)'}">${fx(nwBuild())}</div><div class="l">Patrimonio neto ›</div>
+      ${_sparkSvg(nwSeries,'var(--sage)')}
     </div>
-    ${tExtras()>0?kpi('📈 Extras'+pLbl,'+'+fx(Math.round(pExtras)),'var(--sage)',S.extras.length+' fuentes',"flujoView='ingresos';go('flujo')"):''}
+    <div class="dh-kpi" onclick="flujoView='deudas';go('flujo')">
+      <span class="ico">⛓️</span><div class="v">${fx(tDebt())}</div><div class="l">Deuda${_debtDelta!==null?' · '+(_debtDelta<=0?'▼ ':'▲ ')+Math.abs(_debtDelta)+'%':''} ›</div>
+      ${_sparkSvg(debtSeries,'var(--sky)')}
+    </div>
+    <div class="dh-kpi ${hormigaTotal&&_hormigaDelta!==null&&_hormigaDelta>0?'warn':''}" onclick="${hormigaTotal?'toggleHormigaDetail()':'openCierreModal()'}">
+      <span class="ico">🐜</span><div class="v" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div><div class="l">${hormigaTotal?'Hormiga'+(_hormigaDelta!==null?(_hormigaDelta>0?' · ▲ '+_hormigaDelta+'% ¡ojo!':' · ▼ '+Math.abs(_hormigaDelta)+'%'):'')+' ▾':'Hormiga · sube tu CSV'}</div>
+    </div>
+    <div class="dh-kpi" onclick="go('historia')">
+      <span class="ico">🔥</span><div class="v">${streak} qna${streak!==1?'s':''}</div><div class="l">Racha de capítulos ›</div>
+      <div class="dh-spark" style="font-size:13px;letter-spacing:2px">${streak>0?'🔥'.repeat(Math.min(streak,4)):''}</div>
+    </div>
   </div>
 
   <!-- HORMIGA DETAIL (expandable) -->
@@ -4053,6 +4108,89 @@ function rDash(){
     }catch(e){return'';}})()}
   </div>`:''}
 
+  <!-- 3 · META como pista: bandera = tu avance, marca ámbar = ritmo esperado -->
+  <div class="card">
+    <div class="dh-ct">🎯 ${_gp.measurable?'Meta: +'+fx(Math.round(_gp.delta))+' de patrimonio':'Tu meta'} <span class="more" onclick="openMetaEdit()">editar ›</span></div>
+    ${_gp.measurable?`
+    <div class="dh-track"><div class="dh-fill" style="width:${_gp.pct}%"><div class="dh-flag"></div></div><div class="dh-mark" style="left:${Math.min(99,_gp.expectedPct)}%"></div></div>
+    <div class="dh-meta-row"><span><strong style="color:${_gp.onTrack?'var(--sage2)':'var(--amber)'}">${fx(Math.round(Math.max(0,_gp.gained)))}</strong> logrado (${_gp.pct}%)</span><span style="color:var(--amber)">│ ritmo esperado ${_gp.expectedPct}%</span><span>${fx(Math.round(_gp.target))}</span></div>
+    ${_gp.done
+      ?`<div style="font-size:12px;color:var(--sage);font-weight:bold;margin-top:8px">🏆 ¡Meta alcanzada! Mejoraste tu patrimonio ${fx(Math.round(_gp.gained))}.</div>`
+      :`<div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">${_gp.onTrack?'✓ Vas al día':'⚠ Vas atrás'} · abona <strong style="color:var(--sage2)">${fx(Math.max(0,Math.round(_gp.paceNeeded)))}</strong>/qna · ${_gp.qnaLeft} restante${_gp.qnaLeft!==1?'s':''} · ⏳ ${dl} días (límite ${dlFmt})</div>`}
+    `:`
+    <div class="dh-track"><div class="dh-fill" style="width:${pctT}%;background:linear-gradient(90deg,var(--amber),#C9A05C)"></div></div>
+    <div class="dh-meta-row"><span>${pctT}% del plazo transcurrido</span><span>⏳ ${dl} días (límite ${dlFmt})</span></div>
+    <button class="btn btn-sage btn-sm" style="width:100%;margin-top:10px" onclick="openMetaEdit()">📊 Haz tu meta medible →</button>
+    `}
+  </div>
+
+  <!-- 4 · HISTORIA como gráfica: patrimonio (sube) vs deuda (baja) -->
+  <div class="card">
+    <div class="dh-ct">📈 Tu historia en ${snapsA.length} capítulo${snapsA.length!==1?'s':''} <span class="more" onclick="go('historia')">ver todo ›</span></div>
+    ${(()=>{
+      if(snapsA.length<2)return '<div style="font-size:12px;color:var(--muted);line-height:1.6">Tu historia se dibuja con cada cierre de quincena. '+(snapsA.length===0?'Sube tu primer CSV o cierra tu quincena para escribir el capítulo 1.':'Un capítulo más y verás tu primera gráfica.')+'</div>';
+      const N=Math.min(snapsA.length,8);
+      const nws=snapsA.slice(-N).map(x=>+x.patrimonio||0);
+      const dbs=snapsA.slice(-N).map(x=>+x.deudaTotal||0);
+      const mx=Math.max(...nws,...dbs),mn=Math.min(...nws,...dbs,0),rg=(mx-mn)||1;
+      const X=i=>(i/(N-1)*330).toFixed(1),Y=v=>(86-(v-mn)/rg*78).toFixed(1);
+      const pNW=nws.map((v,i)=>X(i)+','+Y(v)).join(' ');
+      const pDB=dbs.map((v,i)=>X(i)+','+Y(v)).join(' ');
+      const crossed=nws[0]<dbs[0]&&nws[N-1]>=dbs[N-1];
+      return '<svg width="100%" height="92" viewBox="0 0 330 92" preserveAspectRatio="none" aria-hidden="true">'
+        +'<polygon points="'+pNW+' 330,92 0,92" fill="rgba(78,124,106,.13)"/>'
+        +'<polyline points="'+pNW+'" fill="none" stroke="var(--sage)" stroke-width="2.5"/>'
+        +'<polyline points="'+pDB+'" fill="none" stroke="var(--sky)" stroke-width="2.5" stroke-dasharray="5,4"/>'
+        +'<circle cx="330" cy="'+Y(nws[N-1])+'" r="4" fill="var(--sage)"/><circle cx="330" cy="'+Y(dbs[N-1])+'" r="4" fill="var(--sky)"/>'
+        +'</svg>'
+        +'<div class="dh-legend"><span><i class="dh-dot" style="background:var(--sage)"></i>Patrimonio</span><span><i class="dh-dot" style="background:var(--sky)"></i>Deuda</span>'+(crossed?'<span style="margin-left:auto;color:var(--sage2);font-weight:bold">Se cruzaron 🎉</span>':'')+'</div>';
+    })()}
+  </div>
+
+  <!-- 5 · DIARIOS: medidor de presupuesto + registro en 1 tap -->
+  <div class="card">
+    <div class="dh-ct">🛒 Diarios de la quincena <span class="more" onclick="setHabitView('diarios');go('habitos')">ver todo ›</span></div>
+    <div class="dh-gauge-row">
+      ${(()=>{
+        if(dBud<=0)return '<div style="font-size:12px;color:var(--muted);line-height:1.6;flex:1;min-width:140px">Llevas <strong style="color:var(--amber)">'+fx(Math.round(dSpent))+'</strong> esta quincena. Define tu presupuesto de diarios en el Plan para ver tu medidor.</div>';
+        const pct=Math.min(1,dSpent/dBud);
+        const over=dSpent>dBud;
+        const col=over?'var(--terra)':pct>=.85?'var(--amber)':'var(--sage)';
+        const ang=Math.PI*pct;
+        const ex=(60-50*Math.cos(ang)).toFixed(1),ey=(62-50*Math.sin(ang)).toFixed(1);
+        return '<div class="dh-gauge"><svg width="110" height="64" viewBox="0 0 120 66" aria-hidden="true">'
+          +'<path d="M10,62 A50 50 0 0 1 110,62" fill="none" stroke="var(--bg2)" stroke-width="11" stroke-linecap="round"/>'
+          +(pct>0.01?'<path d="M10,62 A50 50 0 0 1 '+ex+','+ey+'" fill="none" stroke="'+col+'" stroke-width="11" stroke-linecap="round"/>':'')
+          +'</svg><b style="color:'+col+'">'+fx(Math.round(dSpent))+'</b><span>de '+fx(Math.round(dBud))+(over?' · te pasaste':_cycDaysLeft!==null?' · quedan '+_cycDaysLeft+' día'+(_cycDaysLeft!==1?'s':''):'')+'</span></div>';
+      })()}
+      <div class="dh-qadd">
+        ${_dashChips.map((c,i)=>`<button class="chip" onclick="openQuickDiario(_dashChips[${i}])">${_escH(c.name)} · ${fx(c.amt)}</button>`).join('')}
+        <button class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold" onclick="openQuickDiario()">＋ Gasto</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6 · RETOS como carrusel: emoji + nombre + puntos de progreso -->
+  ${(()=>{try{
+    const activeS=S.survivalRetos.filter(rr=>rr.cycle===_ck&&rr.active);
+    if(!activeS.length)return '<div class="card card-link" onclick="go(\'habitos\')"><div class="dh-ct" style="margin-bottom:4px">⚔️ Retos <span class="more">explorar ›</span></div><div style="font-size:12px;color:var(--muted)">Sin retos activos esta quincena. Actívalos en Día a día para tapar fugas.</div></div>';
+    if(!S.retoChecks)S.retoChecks={};
+    const allR=genSurvivalRetos(1000);
+    const okN=activeS.filter(sr=>{const m=allR.find(x=>x.id===sr.id);if(!m)return false;const nC=(S.retoChecks[sr.id+'_'+_ck]||[]).length;return sr.completed||nC>0;}).length;
+    const cards=activeS.map(sr=>{
+      const m=allR.find(x=>x.id===sr.id);
+      if(!m)return'';
+      const nC=(S.retoChecks[sr.id+'_'+_ck]||[]).length;
+      const totalN=m.steps||1;
+      const okCls=sr.completed||nC>0?' ok':'';
+      const dots=totalN<=7
+        ?'<div class="dh-steps">'+Array.from({length:totalN},(_,di)=>'<span class="dh-stp'+(di<nC?' on':'')+'"></span>').join('')+'</div>'
+        :'<div class="pw" style="height:5px;margin-top:9px"><div class="pb" style="width:'+Math.min(100,Math.round(nC/totalN*100))+'%;background:var(--sage)"></div></div>';
+      return '<div class="dh-reto'+okCls+'" onclick="go(\'habitos\')"><div class="re">'+m.icon+'</div><div class="rn">'+m.name+'</div><div class="rs">'+(sr.completed?'🏆 +'+fx(m.save):nC+'/'+totalN+' · +'+fx(m.save))+'</div>'+(sr.completed?'':dots)+'</div>';
+    }).join('');
+    return '<div class="card" style="padding-right:6px"><div class="dh-ct" style="padding-right:12px">⚔️ Retos activos <span class="more" onclick="go(\'habitos\')">'+okN+' de '+activeS.length+' en marcha ›</span></div><div class="dh-rail">'+cards+'</div></div>';
+  }catch(e){return'';}})()}
+
   <!-- LIQUIDACIONES URGENTES (esta quincena) -->
   ${urgentLiqs.length>0?`
   <div class="card" style="border-left:3px solid var(--sage)">
@@ -4070,94 +4208,8 @@ function rDash(){
     }).join('')}
   </div>`:''}
 
-  <!-- PATRIMONIO -->
-  <div class="card">
-    <div class="ct">Patrimonio Neto ${ib('patrimonio','Patrimonio')}</div>
-    ${(()=>{
-      const _b=metaMoneyBreakdown();
-      const _build=nwBuild();
-      const _consumo=_b.consumoTotal;
-      const _ratio=(tDebt()/Math.max(mInc()*12,1)*100).toFixed(0);
-      const _ratioCol=tDebt()/(Math.max(mInc()*12,1))<0.4?'var(--sage)':'var(--terra)';
-      const head='<div class="row-b">'
-        +'<div><div class="stat" style="color:'+(_build>=0?'var(--sage)':'var(--terra)')+'">'+fx(_build)+'</div><div class="lbl">'+(_consumo>0?'🏗️ Lo que construye tu riqueza':'Activos '+fx(tAss())+' − Deudas '+fx(tDebt()))+'</div></div>'
-        +'<div style="text-align:right"><div style="font-size:11px;color:var(--muted);margin-bottom:3px">Deuda / Ingreso anual</div><div style="font-size:22px;font-weight:bold;color:'+_ratioCol+'">'+_ratio+'%</div></div>'
-        +'</div>';
-      const consumoBlock=_consumo>0?(
-        '<div style="margin-top:12px;padding:10px 12px;background:rgba(160,112,48,.06);border:1px solid rgba(160,112,48,.2);border-radius:8px">'
-        +'<div class="row-b"><span style="font-size:12px;color:var(--amber)">🛒 Comprometido a metas de consumo</span><strong style="font-size:14px;color:var(--amber)">'+fx(Math.round(_consumo))+'</strong></div>'
-        +'<div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Es dinero tuyo hoy, pero destinado a gastarse (TV, viaje, fiesta). Por eso <strong>no cuenta</strong> como patrimonio que construye ni en tu meta principal.</div>'
-        +'</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-top:8px">💵 Efectivo total hoy: <strong>'+fx(Math.round(nwTotalCash()))+'</strong> <span style="color:var(--muted)">(construye + consumo)</span></div>'
-      ):'';
-      return head+consumoBlock;
-    })()}
-  </div>
-
-  <!-- PRINCIPIO -->
-  <div class="card" style="background:linear-gradient(135deg,rgba(78,124,106,.06) 0%,rgba(74,110,140,.04) 100%);border-color:rgba(78,124,106,.2)">
-    <div class="ct">📖 Principio de la quincena</div>
-    <div style="font-size:13px;font-style:italic;line-height:1.85;color:var(--txt2)">${principle()}</div>
-  </div>
-
-  <!-- METAS DE AHORRO ACTIVAS -->
-  ${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).length>0?`
-  <div class="card" style="border-left:3px solid var(--sky)">
-    <div class="ct">🎯 Metas de ahorro activas</div>
-    ${S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).map(g=>{
-      const pct=Math.min(100,((+g.saved||0)/g.target*100));
-      const perQ=savGoalPerQ(g);
-      const daysLeft=Math.ceil((new Date(g.deadline+'T12:00')-new Date())/864e5);
-      const dlLbl=g.deadline?fmtDate(g.deadline):'sin fecha';
-      const dlColor=daysLeft<0?'var(--terra)':daysLeft<=14?'var(--amber)':'var(--muted)';
-      return`<div style="padding:8px 0;border-bottom:1px solid var(--border)">
-        <div class="row-b" style="margin-bottom:4px"><div class="row" style="gap:6px"><span>${g.icon||'🎯'}</span><span style="font-weight:bold;color:var(--txt)">${_escH(g.name)}</span></div><span style="font-size:12px;color:var(--sky);font-weight:bold">${fx(perQ)}/qna</span></div>
-        <div class="pw" style="height:5px"><div class="pb" style="width:${pct.toFixed(0)}%;background:var(--sky)"></div></div>
-        <div class="row-b" style="font-size:10px;color:var(--muted);margin-top:3px"><span>${fx(Math.round(+g.saved||0))} de ${fx(g.target)}</span><span style="color:${dlColor}">📅 ${dlLbl}${g.deadline?' · '+(daysLeft<0?Math.abs(daysLeft)+'d vencida':daysLeft+'d restantes'):''}</span></div>
-      </div>`;
-    }).join('')}
-  </div>`:''}
-
-  <!-- RETOS ACTIVOS -->
-  ${(()=>{try{
-    const ck=cycleKey();
-    const activeS=S.survivalRetos.filter(r=>r.cycle===ck&&r.active);
-    if(!activeS.length)return'';
-    if(!S.retoChecks)S.retoChecks={};
-    const allR=genSurvivalRetos(1000);
-    const trackLbl=(t)=>t==='dia'?'día':t==='sem'?'semana':'quincena';
-    return`<div class="card" style="border-left:3px solid var(--amber)">
-      <div class="ct">🎯 Retos activos</div>
-      ${activeS.map(sr=>{
-        const m=allR.find(x=>x.id===sr.id);
-        if(!m)return'';
-        const rawC=S.retoChecks[sr.id+'_'+ck]||[];
-        const nC=rawC.length;
-        const totalN=m.steps||1;
-        const pctD=Math.min(100,Math.round(nC/totalN*100));
-        return`<div style="padding:10px 0;border-bottom:1px solid var(--border)">
-          <div class="row-b" style="margin-bottom:6px">
-            <div class="row" style="gap:8px"><span style="font-size:18px">${m.icon}</span><div><div style="font-weight:bold;color:var(--txt);font-size:13px">${m.name}</div><div style="font-size:10px;color:var(--muted)">${sr.completed?'🏆 Completado':nC+'/'+totalN+' '+trackLbl(m.track)+(totalN>1?'s':'')}</div></div></div>
-            <span style="font-size:14px;font-weight:bold;color:var(--sage)">+${fx(m.save)}</span>
-          </div>
-          ${!sr.completed?`<div class="pw" style="height:5px"><div class="pb" style="width:${pctD}%;background:${pctD>=100?'var(--sage)':'var(--amber)'}"></div></div>`:''}
-        </div>`;
-      }).join('')}
-      <button class="btn btn-ghost btn-sm" style="margin-top:10px;width:100%" onclick="go('habitos')">Ver todos los retos →</button>
-    </div>`;
-  }catch{return'';}})()}
-
-  <!-- CAPÍTULOS -->
-  <div class="card">
-    <div class="ct">📊 Resumen de actividad</div>
-    <div class="row-b" style="font-size:12px;color:var(--txt2)">
-      <span>${S.snapshots.length} capítulo${S.snapshots.length!==1?'s':''}</span>
-      <span>${S.waitList.filter(w=>!w.bought&&w.resolved).length} compras impulsivas evitadas</span>
-    </div>
-  </div>
-
-  <!-- FRENTE 4 · SABIDURÍA DEL DÍA (al final: primero el dinero, luego la inspiración) -->
-  ${(()=>{try{const w=getDailyWisdom();if(!w)return'';return`<div class="card" style="border-left:3px solid var(--sage);padding:14px 16px;margin-bottom:13px;background:linear-gradient(135deg,rgba(78,124,106,.04) 0%,rgba(74,110,140,.02) 100%)"><div class="row" style="gap:12px;align-items:flex-start"><div style="font-size:30px;line-height:1;flex-shrink:0">${w.icon}</div><div style="flex:1;min-width:0"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1.2px;margin-bottom:5px;font-weight:bold">💡 Sabiduría del día · ${w.book}</div><div style="font-size:12px;color:var(--txt2);line-height:1.65">${w.text}</div></div></div></div>`;}catch(e){return'';}})()}
+  <!-- 7 · SABIDURÍA en una línea (tap para leer completa) -->
+  ${wis?`<div class="dh-quote" onclick="openWisdomDetail()"><span class="qi">${wis.icon}</span><span class="qt">${wis.text}</span><span style="flex-shrink:0;font-size:10px;text-decoration:underline;font-style:normal">más</span></div>`:''}
   `;
 }
 

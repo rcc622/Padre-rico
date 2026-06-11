@@ -462,7 +462,7 @@ let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',do
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],txnCatExceptions:{},diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},txnCatExceptions:{},diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
@@ -520,6 +520,7 @@ function _normalizeState(st){
   if(!isObj(st.gastoDiarioBudgetByCycle))st.gastoDiarioBudgetByCycle={};
   if(!isObj(st.recurringAch))st.recurringAch={};
   if(!isObj(st.userCategories))st.userCategories={};
+  if(!isObj(st.userCatLabels))st.userCatLabels={};
   if(!isObj(st.txnCatExceptions))st.txnCatExceptions={};
   // Migración (idempotente): las claves de reglas/excepciones creadas cuando
   // la etiqueta "[...]" del banco se pegaba al comercio se re-llavean al
@@ -4302,11 +4303,101 @@ const USER_CATS=[
 const _CUSTOM_CAT_FLAGS={hormiga:{hormiga:true},impulso:{},emergencia:{},fijo:{exclude:true},deuda:{exclude:true},otros:{exclude:true}};
 function allUserCats(){
   try{
+    // S.userCatLabels: nombre/emoji personalizado por id (editor 🏷️). Las de
+    // fábrica se sobreescriben aquí al leer; las propias guardan su label.
+    const ov=S.userCatLabels||{};
+    const base=USER_CATS.map(c=>typeof ov[c.id]==='string'&&ov[c.id]?{...c,label:ov[c.id]}:c);
     const customs=(S.userCatsCustom||[])
       .filter(c=>c&&typeof c.id==='string'&&typeof c.label==='string'&&_CUSTOM_CAT_FLAGS[c.group])
       .map(c=>({id:c.id,label:c.label,group:c.group,custom:true,..._CUSTOM_CAT_FLAGS[c.group]}));
-    return USER_CATS.concat(customs);
+    return base.concat(customs);
   }catch(e){return USER_CATS;}
+}
+// Nombre vigente de una categoría de fábrica a partir de su nombre original
+// (la detección por palabras clave HK usa nombres originales como llave).
+function _hkDisplay(origLabel){
+  try{
+    const f=USER_CATS.find(x=>x.label===origLabel);
+    return (f&&S.userCatLabels&&S.userCatLabels[f.id])||origLabel;
+  }catch(e){return origLabel;}
+}
+
+// ── Editor de categorías del análisis (🏷️ emoji y nombre) ────────────
+// Las de fábrica se personalizan vía S.userCatLabels (con "↺ restaurar");
+// las propias editan su propio registro. El cambio aplica de aquí en
+// adelante: los capítulos ya guardados conservan el nombre con el que se
+// cerraron (no se reescribe historia).
+function openCatEditor(){
+  const ov=S.userCatLabels||{};
+  const groups=[['hormiga','🐜 Hormiga'],['impulso','💥 Impulso'],['emergencia','🚨 Emergencia'],['fijo','🏠 Pago fijo'],['deuda','💳 Pago deuda'],['otros','🚫 Excluir']];
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Toca ✏️ para cambiar emoji y nombre. Aplica de aquí en adelante; tus capítulos guardados conservan el nombre con el que se cerraron.</div>';
+  body+='<div style="max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:2px 12px 8px">';
+  groups.forEach(([g,gl])=>{
+    const cats=allUserCats().filter(c=>c.group===g);
+    if(!cats.length)return;
+    body+='<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin:10px 0 4px">'+gl+'</div>';
+    cats.forEach(c=>{
+      body+='<div class="row-b" style="padding:5px 0;border-bottom:1px solid var(--border);gap:8px;flex-wrap:nowrap">'
+        +'<span style="font-size:12px;color:var(--txt);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(c.label)
+        +(c.custom?' <span style="font-size:9px;color:var(--sky)">propia</span>':(ov[c.id]?' <span style="font-size:9px;color:var(--amber)">editada</span>':''))+'</span>'
+        +'<span class="row" style="gap:4px;flex-shrink:0;flex-wrap:nowrap">'
+        +'<button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px;min-height:28px" onclick="openCatLabelEdit(\''+c.id+'\')">✏️</button>'
+        +(!c.custom&&ov[c.id]?'<button class="btn btn-ghost btn-sm" style="padding:3px 8px;font-size:11px;min-height:28px" title="Restaurar original" onclick="_resetCatLabel(\''+c.id+'\')">↺</button>':'')
+        +'</span></div>';
+    });
+  });
+  body+='</div>';
+  showConfirm('🏷️ Editar categorías',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Listo</button>';
+}
+function openCatLabelEdit(catId){
+  const c=allUserCats().find(x=>x.id===catId);
+  if(!c)return;
+  const m=String(c.label).match(/^(\S+)\s+(.*)$/);
+  const curE=m?m[1]:'🏷️',curN=m?m[2]:String(c.label);
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Edita emoji y nombre. Tus reglas y excepciones siguen apuntando a esta categoría — solo cambia cómo se ve.</div>';
+  body+='<div style="display:flex;gap:8px;margin-bottom:6px">'
+    +'<input type="text" id="nucEmoji" value="'+_escA(curE)+'" maxlength="4" style="width:58px;text-align:center;font-size:18px;padding:9px 4px" aria-label="Emoji">'
+    +'<input type="text" id="nucName" value="'+_escA(curN)+'" maxlength="28">'
+    +'</div>';
+  showConfirm('✏️ Editar categoría',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="openCatEditor()">← Atrás</button><button class="btn btn-sage" style="flex:1" onclick="_saveCatLabel(\''+catId+'\')">Guardar</button>';
+  setTimeout(()=>{try{document.getElementById('nucName')?.focus();}catch(_){}},120);
+}
+function _saveCatLabel(catId){
+  try{
+    const c=allUserCats().find(x=>x.id===catId);
+    if(!c)return;
+    const name=(document.getElementById('nucName')?.value||'').trim();
+    const emoji=(document.getElementById('nucEmoji')?.value||'').trim()||'🏷️';
+    if(!name){toast('⚠ Falta el nombre');document.getElementById('nucName')?.focus();return;}
+    const label=emoji+' '+name;
+    if(c.custom){
+      const raw=(S.userCatsCustom||[]).find(x=>x.id===catId);
+      if(raw)raw.label=label;
+    }else{
+      if(!S.userCatLabels)S.userCatLabels={};
+      const orig=USER_CATS.find(x=>x.id===catId);
+      if(orig&&orig.label===label)delete S.userCatLabels[catId];
+      else S.userCatLabels[catId]=label;
+    }
+    sv();
+    toast('✓ '+label);
+    openCatEditor();
+    // Refresca vistas que muestran etiquetas de categorías
+    try{rQuincena();}catch(e){}
+    try{if(cur==='dash')rDash();}catch(e){}
+    try{if(cur==='historia')rHistoria();}catch(e){}
+  }catch(e){toast('Error al guardar');}
+}
+function _resetCatLabel(catId){
+  try{
+    if(S.userCatLabels&&S.userCatLabels[catId]){delete S.userCatLabels[catId];sv();toast('↺ Restaurada');}
+    openCatEditor();
+    try{rQuincena();}catch(e){}
+  }catch(e){}
 }
 
 // Normalize merchant name for rule matching (similar to normalizeMerchant but simpler)
@@ -4524,10 +4615,11 @@ function detectH(txns){
     const d=desc.toUpperCase();
     for(const[cat,keys]of Object.entries(HK)){
       if(keys.some(k=>d.includes(k))){
-        if(!r[cat])r[cat]={total:0,count:0,txns:[]};
-        r[cat].total+=t.amt;
-        r[cat].count++;
-        r[cat].txns.push({desc:desc.slice(0,40),amt:t.amt,date:t.date||''});
+        const catShow=_hkDisplay(cat); // respeta nombre editado en 🏷️
+        if(!r[catShow])r[catShow]={total:0,count:0,txns:[]};
+        r[catShow].total+=t.amt;
+        r[catShow].count++;
+        r[catShow].txns.push({desc:desc.slice(0,40),amt:t.amt,date:t.date||''});
         break;
       }
     }
@@ -5799,6 +5891,7 @@ function rQuincena(){
       </div>
       ${window._rulesOpen?`
       <div style="font-size:11px;color:var(--muted);margin-top:10px;margin-bottom:10px;line-height:1.6">Estas son las reglas que has creado. Cada regla se aplica automáticamente cuando aparece un cargo similar. Puedes editarlas o eliminarlas.</div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:10px" onclick="openCatEditor()">🏷️ Editar nombres y emojis de categorías</button>
       <div style="max-height:320px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
         ${rules.map(([key,catId])=>{
           const info=getUserCatInfo(catId);
@@ -5852,7 +5945,7 @@ function rQuincena(){
   <!-- RADIOGRAFÍA MINISUPER (filtered) -->
   ${(()=>{
     const hd=hdAll;
-    const mini=hd.find(([cat])=>cat.includes('Minisuper'));
+    const mini=hd.find(([cat])=>cat.includes('Minisuper')||cat===_hkDisplay('🛒 Minisuper / OXXO'));
     if(!mini)return'';
     const [,data]=mini;
     const periodDays=Math.max(1,(()=>{try{
@@ -11367,7 +11460,7 @@ function project(mo,ov={}){
     if(f!=='unico')return a;
     return a+Math.min(+d.pay||0,+d.bal||0);
   },0);
-  const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return v.reduce((a,b)=>a+b,0)/v.length;};
+  const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>((s.hormiga[c]||s.hormiga[_hkDisplay(c)]||{}).total)||0);return v.reduce((a,b)=>a+b,0)/v.length;};
   // NOTA: hR, hM, hO son promedios QUINCENALES. Para flujo mensual se multiplican x2.
   const hR=ov.restaurantes!==undefined?ov.restaurantes:aH('🍔 Restaurantes');
   const hM=ov.minisuper!==undefined?ov.minisuper:aH('🛒 Minisuper / OXXO');
@@ -11677,7 +11770,7 @@ function rHistoria(){
 
   // ═══ SIMULADOR ═══
   if(histView==='sim'){
-    const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>(s.hormiga[c]||{}).total||0);return Math.round(v.reduce((a,b)=>a+b,0)/v.length);};
+    const aH=c=>{if(!S.snapshots.length)return 0;const v=S.snapshots.map(s=>((s.hormiga[c]||s.hormiga[_hkDisplay(c)]||{}).total)||0);return Math.round(v.reduce((a,b)=>a+b,0)/v.length);};
     // Promedio de gastos diarios por quincena: agrupa por ciclo y promedia.
     // Reemplaza al promedio de "Restaurantes" — ahora el usuario simula sobre
     // su métrica real (gastos diarios) en vez de una categoría hormiga vieja.
@@ -12402,7 +12495,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button></div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para

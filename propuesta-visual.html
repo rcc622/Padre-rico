@@ -19,14 +19,16 @@ body{background:#E3DFD6;color:var(--txt);font-family:Georgia,'Times New Roman',s
 .intro{max-width:1060px;margin:0 auto 26px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:22px 26px}
 .intro h1{font-size:20px;color:var(--sage2);margin-bottom:8px}
 .intro p{font-size:13.5px;color:var(--txt2);line-height:1.7}
-.phone{width:390px;background:var(--bg);border-radius:34px;border:10px solid #2C2925;box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden;position:relative;flex-shrink:0}
+.phone{width:min(390px,100%);background:var(--bg);border-radius:34px;border:10px solid #2C2925;box-shadow:0 18px 50px rgba(0,0,0,.25);overflow:hidden;position:relative;flex-shrink:0}
 .screen{height:760px;overflow-y:auto;padding-bottom:90px;scrollbar-width:none}
 .screen::-webkit-scrollbar{display:none}
 .notes{flex:1;min-width:300px;max-width:560px}
 .note{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:12px;font-size:13px;color:var(--txt2);line-height:1.65}
 .note b{color:var(--sage2)}
 .tag{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--sage);color:#fff;font-size:12px;font-weight:bold;margin-right:8px;flex-shrink:0;font-family:Georgia,serif}
-.tagref{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;border-radius:50%;background:var(--sage);color:#fff;font-size:11px;font-weight:bold;position:absolute;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.25);border:2px solid #fff}
+/* Número anclado a SU tarjeta (esquina superior izquierda): viaja con el
+   contenido al hacer scroll y no se empalma con otras secciones. */
+.tagn{position:absolute;top:-9px;left:-9px;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--sage);color:#fff;font-size:11.5px;font-weight:bold;z-index:5;box-shadow:0 2px 6px rgba(0,0,0,.25);border:2px solid #fff;font-family:Georgia,serif}
 /* ── pantalla ── */
 .strip{background:var(--sage2);color:rgba(255,255,255,.85);text-align:center;font-size:10px;letter-spacing:1.5px;padding:6px 0;text-transform:uppercase}
 .hdr{background:var(--card);border-bottom:1px solid var(--border);padding:0 16px;height:50px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
@@ -51,7 +53,7 @@ body{background:#E3DFD6;color:var(--txt);font-family:Georgia,'Times New Roman',s
 .pb-sage{background:var(--sage);color:#fff}
 .pb-ghost{background:transparent;border:1px solid rgba(78,124,106,.4);color:var(--sage)}
 /* KPI GRID */
-.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;position:relative}
 .kpi{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:13px 14px;position:relative;overflow:hidden}
 .kpi .ico{font-size:17px;margin-bottom:6px;display:block}
 .kpi .v{font-size:19px;font-weight:bold;line-height:1;font-variant-numeric:tabular-nums}
@@ -69,11 +71,12 @@ body{background:#E3DFD6;color:var(--txt);font-family:Georgia,'Times New Roman',s
 .legend{display:flex;gap:14px;font-size:10.5px;color:var(--muted);margin-top:6px}
 .dotl{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:0}
 /* GAUGE + quick add */
-.gauge-row{display:flex;align-items:center;gap:16px}
-.gauge{position:relative;width:120px;height:74px;flex-shrink:0}
-.gauge .gv{position:absolute;left:0;right:0;bottom:2px;text-align:center}
+.gauge-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.gauge{width:120px;flex-shrink:0;text-align:center}
+/* El valor va DEBAJO del arco (flujo normal) — superpuesto se empalmaba
+   con los extremos del medidor en pantallas angostas. */
 .gauge .gv b{font-size:18px;font-variant-numeric:tabular-nums}
-.gauge .gv span{display:block;font-size:9.5px;color:var(--muted)}
+.gauge .gv span{display:block;font-size:9.5px;color:var(--muted);margin-top:2px}
 .qadd{display:flex;gap:6px;flex-wrap:wrap}
 .qchip{border:1px solid var(--border);background:var(--bg);border-radius:18px;padding:7px 11px;font-size:11.5px;font-family:Georgia,serif;color:var(--txt2);cursor:pointer;display:inline-flex;gap:5px;align-items:center}
 .qchip.add{border-style:dashed;color:var(--sage);font-weight:bold}
@@ -89,7 +92,7 @@ body{background:#E3DFD6;color:var(--txt);font-family:Georgia,'Times New Roman',s
 .stp{width:9px;height:9px;border-radius:50%;background:var(--bg2);border:1px solid var(--border)}
 .stp.on{background:var(--sage);border-color:var(--sage)}
 /* sabiduría */
-.quote{display:flex;gap:10px;align-items:center;background:var(--sagedim);border:none;border-radius:14px;padding:13px 15px;font-size:12px;font-style:italic;color:var(--sage2);line-height:1.55}
+.quote{position:relative;display:flex;gap:10px;align-items:center;background:var(--sagedim);border:none;border-radius:14px;padding:13px 15px;font-size:12px;font-style:italic;color:var(--sage2);line-height:1.55;margin-bottom:12px}
 .quote .qi{font-size:20px;flex-shrink:0}
 /* nav */
 .nav{position:absolute;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);display:flex;z-index:20}
@@ -108,7 +111,7 @@ h2.col{font-size:15px;color:var(--sage2);margin:4px 0 14px;text-align:center;wid
 
 <div class="intro">
   <h1>🪙 Padre Rico — Propuesta de rediseño visual del Dashboard</h1>
-  <p>Objetivo: <strong>bajar la carga de texto y que cada dato se entienda en un vistazo</strong>. El dashboard actual renderiza hasta ~17 tarjetas de texto (4–5 pantallas de scroll). La propuesta lo reduce a <strong>7 bloques visuales</strong>: cada uno comunica con <em>forma, color y un solo número grande</em> en lugar de párrafos. Todo lo demás vive a un tap ("ver más") o en su pestaña. La paleta, la tipografía Georgia y la personalidad de la app se conservan. El mockup de la izquierda es navegable (scrollea dentro del teléfono); a la derecha, la explicación de cada decisión.</p>
+  <p>Objetivo: <strong>bajar la carga de texto y que cada dato se entienda en un vistazo</strong>. El dashboard actual renderiza hasta ~17 tarjetas de texto (4–5 pantallas de scroll). La propuesta lo reduce a <strong>7 bloques visuales</strong>: cada uno comunica con <em>forma, color y un solo número grande</em> en lugar de párrafos. Todo lo demás vive a un tap ("ver más") o en su pestaña. La paleta, la tipografía Georgia y la personalidad de la app se conservan. El mockup del teléfono es navegable (scrollea dentro de él); cada bloque lleva un número verde y en la sección "Qué cambia y por qué" está la explicación de cada decisión. Hecho 100% a mano con HTML, CSS y SVG — sin herramientas externas.</p>
 </div>
 
 <div class="wrap">
@@ -118,8 +121,8 @@ h2.col{font-size:15px;color:var(--sage2);margin:4px 0 14px;text-align:center;wid
   <div class="content">
 
     <!-- 1 · HERO -->
-    <span class="tagref" style="top:118px;left:6px">1</span>
     <div class="card">
+      <span class="tagn">1</span>
       <div class="hero">
         <div class="ring">
           <svg width="108" height="108" viewBox="0 0 108 108">
@@ -142,8 +145,8 @@ h2.col{font-size:15px;color:var(--sage2);margin:4px 0 14px;text-align:center;wid
     </div>
 
     <!-- 2 · KPIs -->
-    <span class="tagref" style="top:330px;left:6px">2</span>
     <div class="kpis">
+      <span class="tagn">2</span>
       <div class="kpi good"><span class="ico">🏦</span><div class="v">$48,300</div><div class="l">Patrimonio neto</div>
         <svg class="spark" width="54" height="22"><polyline points="0,18 9,16 18,17 27,12 36,10 45,6 54,4" fill="none" stroke="var(--sage)" stroke-width="2"/></svg></div>
       <div class="kpi"><span class="ico">⛓️</span><div class="v">$31,900</div><div class="l">Deuda · ▼ 8% este mes</div>
@@ -155,16 +158,16 @@ h2.col{font-size:15px;color:var(--sage2);margin:4px 0 14px;text-align:center;wid
     </div>
 
     <!-- 3 · META -->
-    <span class="tagref" style="top:520px;left:6px">3</span>
     <div class="card">
+      <span class="tagn">3</span>
       <div class="ct2">🎯 Meta: +$60,000 de patrimonio <span class="more">dic 2026 ›</span></div>
       <div class="meta-track"><div class="meta-fill"><div class="meta-flag"></div></div><div class="meta-mark"></div></div>
       <div class="meta-row"><span><strong style="color:var(--sage2)">$25,400</strong> logrado (42%)</span><span style="color:var(--amber)">│ ritmo esperado 55%</span><span>$60,000</span></div>
     </div>
 
     <!-- 4 · EVOLUCIÓN -->
-    <span class="tagref" style="top:625px;left:6px">4</span>
     <div class="card">
+      <span class="tagn">4</span>
       <div class="ct2">📈 Tu historia en 6 capítulos <span class="more">ver todo ›</span></div>
       <svg width="100%" height="92" viewBox="0 0 330 92" preserveAspectRatio="none">
         <polygon points="0,70 55,64 110,66 165,52 220,44 275,30 330,22 330,92 0,92" fill="rgba(78,124,106,.13)"/>
@@ -176,14 +179,14 @@ h2.col{font-size:15px;color:var(--sage2);margin:4px 0 14px;text-align:center;wid
     </div>
 
     <!-- 5 · PRESUPUESTO DIARIO + captura -->
-    <span class="tagref" style="top:790px;left:6px">5</span>
     <div class="card">
+      <span class="tagn">5</span>
       <div class="ct2">🛒 Diarios de la quincena</div>
       <div class="gauge-row">
         <div class="gauge">
-          <svg width="120" height="70" viewBox="0 0 120 70">
-            <path d="M10,65 A52 52 0 0 1 110,65" fill="none" stroke="var(--bg2)" stroke-width="11" stroke-linecap="round"/>
-            <path d="M10,65 A52 52 0 0 1 86,22" fill="none" stroke="var(--amber)" stroke-width="11" stroke-linecap="round"/>
+          <svg width="110" height="60" viewBox="0 0 120 66">
+            <path d="M10,62 A52 52 0 0 1 110,62" fill="none" stroke="var(--bg2)" stroke-width="11" stroke-linecap="round"/>
+            <path d="M10,62 A52 52 0 0 1 86,19" fill="none" stroke="var(--amber)" stroke-width="11" stroke-linecap="round"/>
           </svg>
           <div class="gv"><b>$680</b><span>de $1,000 · quedan 4 días</span></div>
         </div>
@@ -197,8 +200,8 @@ h2.col{font-size:15px;color:var(--sage2);margin:4px 0 14px;text-align:center;wid
     </div>
 
     <!-- 6 · RETOS -->
-    <span class="tagref" style="top:960px;left:6px">6</span>
     <div class="card" style="padding-right:6px">
+      <span class="tagn">6</span>
       <div class="ct2">⚔️ Retos activos <span class="more" style="padding-right:10px">2 de 3 en verde</span></div>
       <div class="rail">
         <div class="reto ok"><div class="re">🍱</div><div class="rn">Llevar lunch</div><div class="rs">+$723 ahorrados</div><div class="steps"><span class="stp on"></span><span class="stp on"></span><span class="stp on"></span><span class="stp"></span><span class="stp"></span></div></div>
@@ -208,8 +211,7 @@ h2.col{font-size:15px;color:var(--sage2);margin:4px 0 14px;text-align:center;wid
     </div>
 
     <!-- 7 · SABIDURÍA -->
-    <span class="tagref" style="top:1135px;left:6px">7</span>
-    <div class="quote"><span class="qi">📖</span>"Parte de todo lo que ganas es tuyo para conservarlo." — Arkad · <u>leer más</u></div>
+    <div class="quote"><span class="tagn">7</span><span class="qi">📖</span>"Parte de todo lo que ganas es tuyo para conservarlo." — Arkad · <u>leer más</u></div>
 
   </div>
   <button class="fab">＋</button>

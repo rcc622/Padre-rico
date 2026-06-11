@@ -270,6 +270,10 @@ button:active{transform:scale(.97)}
 .dh-quote .qt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex:1;min-width:0}
 .dh-ct{font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .dh-ct .more{font-size:10.5px;color:var(--muted);font-weight:normal;cursor:pointer;white-space:nowrap}
+/* CTA fijo de Histórico: siempre visible para subir CSV / cerrar mes.
+   Corrido a la izquierda para no taparse con el FAB (bottom-right). */
+.hist-cta{position:fixed;bottom:calc(76px + env(safe-area-inset-bottom,0));left:50%;transform:translateX(calc(-50% - 39px));width:min(420px,calc(100vw - 130px));z-index:450;background:var(--sage);color:#fff;border:none;border-radius:12px;padding:13px 16px;font-size:13px;font-weight:bold;font-family:Georgia,serif;box-shadow:0 4px 16px rgba(78,124,106,.45);display:flex;align-items:center;justify-content:center;gap:7px;min-height:48px;cursor:pointer}
+.hist-cta:active{transform:translateX(calc(-50% - 39px)) scale(.97)}
 @media(max-width:420px){.dh-kpis{grid-template-columns:1fr 1fr;gap:8px}.dh-hero{gap:12px}.dh-ring{width:92px;height:92px}.dh-ring svg{width:92px;height:92px}.dh-kbig{font-size:26px}}
 </style>
 </head>
@@ -4059,7 +4063,7 @@ function rDash(){
       ${_committed
         ?`<button class="dh-pill ghost" onclick="openSavStatusModal()">✅ Ya te pagaste${(S.savStreak||0)>0?' · 🔥'+S.savStreak:''}</button>`
         :`<button class="dh-pill sage" onclick="openSavCommitModal()">🪙 Ya aparté mi ahorro</button>`}
-      <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cierre de quincena</button>
+      <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cerrar mes</button>
     </div>
   </div>
 
@@ -12115,7 +12119,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para

@@ -4733,6 +4733,7 @@ function openConciliaModal(dStart,dEnd){
     const sumCSV=soloCSV.reduce((a,t)=>a+t.amt,0);
     const chip=(n,v,c)=>'<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:'+c+'"><div style="font-size:16px;font-weight:bold">'+n+'</div><div style="font-size:9px;color:var(--muted);line-height:1.3">'+v+'</div></div>';
     let body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Rango: '+(dStart||'?')+' → '+(dEnd||'?')+' · empatado por monto (±$1) y fecha (±3 días).</div>';
+    body+='<div style="font-size:10px;color:var(--txt2);background:var(--sagedim2);border-radius:6px;padding:8px 10px;margin-bottom:12px;line-height:1.5">🧭 Esto es una <strong>auditoría</strong>: no mueve nada solo. "➕ Anotar" es opcional y <strong>no descuadra tu quincena</strong> — cada gasto cuenta en el ciclo de su fecha; si es de la quincena en curso, corrige tu disponible con la realidad del banco (el dinero ya salió).</div>';
     body+='<div style="display:flex;gap:6px;margin-bottom:14px">'
       +chip(matched.length,'✅ empatados','var(--sagedim)')
       +chip(soloCSV.length,'🏦 solo en CSV','rgba(184,92,74,.10)')
@@ -4775,20 +4776,58 @@ function openConciliaModal(dStart,dEnd){
     if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="flex:1" onclick="exportDiariosStatement(\''+(dStart||'')+'\',\''+(dEnd||'')+'\')">📋 Copiar bitácora</button><button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Listo</button>';
   }catch(e){toast('Error al conciliar: '+e.message);}
 }
-// "Estado de cuenta" de la bitácora de Diarios: texto listo para pegar
-// (WhatsApp, notas, Excel) y comparar contra el CSV del banco.
+// "Estado de cuenta" de la bitácora de Diarios: selector de periodo (mes o
+// rango del CSV cargado) con descarga .csv (abre en Excel/Sheets) o copia
+// como texto.
+const _MESES_L=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function exportDiariosStatement(dStart,dEnd){
   try{
-    const list=(S.gastosDiarios||[])
-      .filter(g=>!g.pending&&g.date&&(!dStart||!dEnd||(g.date>=dStart&&g.date<=dEnd)))
-      .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
-    if(!list.length){toast('Sin movimientos en la bitácora para ese rango');return;}
+    const all=(S.gastosDiarios||[]).filter(g=>!g.pending&&g.date);
+    if(!all.length){toast('Tu bitácora está vacía');return;}
+    const months=[...new Set(all.map(g=>String(g.date).slice(0,7)))].sort().reverse();
+    const mLbl=(m)=>{const p=m.split('-');return (_MESES_L[+p[1]-1]||p[1])+' '+p[0];};
+    window._expDiarioCtx={dStart:dStart||'',dEnd:dEnd||''};
+    let body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Elige el periodo. El CSV descargado abre directo en Excel/Sheets para compararlo con tu estado de cuenta.</div>';
+    body+='<select id="expDiarioRange" style="margin-bottom:14px">';
+    if(dStart&&dEnd)body+='<option value="__csv">📊 Rango del CSV ('+dStart+' → '+dEnd+')</option>';
+    months.forEach(m=>{
+      const n=all.filter(g=>String(g.date).startsWith(m)).length;
+      body+='<option value="'+m+'">'+mLbl(m)+' · '+n+' movimiento'+(n!==1?'s':'')+'</option>';
+    });
+    body+='</select>';
+    body+='<div style="display:flex;gap:8px"><button class="btn btn-sage" style="flex:1" onclick="_expDiarioRun(\'csv\')">⬇️ Descargar CSV</button><button class="btn btn-ghost" style="flex:1" onclick="_expDiarioRun(\'copy\')">📋 Copiar texto</button></div>';
+    showConfirm('📤 Exportar bitácora',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
+  }catch(e){toast('Error al exportar');}
+}
+function _expDiarioRun(kind){
+  try{
+    const sel=document.getElementById('expDiarioRange')?.value||'';
+    const ctx=window._expDiarioCtx||{};
+    const all=(S.gastosDiarios||[]).filter(g=>!g.pending&&g.date);
+    let list,label;
+    if(sel==='__csv'&&ctx.dStart&&ctx.dEnd){list=all.filter(g=>g.date>=ctx.dStart&&g.date<=ctx.dEnd);label=ctx.dStart+'_a_'+ctx.dEnd;}
+    else{list=all.filter(g=>String(g.date).startsWith(sel));label=sel;}
+    list=[...list].sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+    if(!list.length){toast('Sin movimientos en ese periodo');return;}
     const tot=list.reduce((a,g)=>a+(+g.amt||0),0);
-    const L=['📓 BITÁCORA DE DIARIOS'+(dStart&&dEnd?' · '+dStart+' → '+dEnd:''),''];
-    list.forEach(g=>L.push(g.date+' | '+(g.name||'—')+' | '+(g.cat||'otro')+(g.paidWith==='tdc'?' | TDC':' | débito')+' | '+fx(+g.amt||0)));
-    L.push('','TOTAL: '+fx(Math.round(tot))+' · '+list.length+' movimiento'+(list.length!==1?'s':''));
-    _copyText(L.join('\n'));
-    toast('📋 Bitácora copiada ('+list.length+' movs)');
+    if(kind==='csv'){
+      const esc=(v)=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+      const rows=['Fecha,Concepto,Categoria,Metodo,Monto'];
+      list.forEach(g=>rows.push([esc(g.date),esc(g.name||''),esc(g.cat||'otro'),esc(g.paidWith==='tdc'?'TDC':'Debito'),(+g.amt||0)].join(',')));
+      rows.push([esc('TOTAL'),esc(list.length+' movimientos'),'','',Math.round(tot)].join(','));
+      // BOM para que Excel respete acentos/emoji
+      const blob=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bitacora-diarios-'+label+'.csv';a.click();
+      toast('⬇️ CSV descargado ('+list.length+' movs)');
+    }else{
+      const L=['📓 BITÁCORA DE DIARIOS · '+label,''];
+      list.forEach(g=>L.push(g.date+' | '+(g.name||'—')+' | '+(g.cat||'otro')+(g.paidWith==='tdc'?' | TDC':' | débito')+' | '+fx(+g.amt||0)));
+      L.push('','TOTAL: '+fx(Math.round(tot))+' · '+list.length+' movimiento'+(list.length!==1?'s':''));
+      _copyText(L.join('\n'));
+      toast('📋 Copiado ('+list.length+' movs)');
+    }
   }catch(e){toast('Error al exportar');}
 }
 
@@ -10374,7 +10413,7 @@ function rHabitos(){
     return `
   <!-- ═══ GASTOS DIARIOS ═══ -->
   <div class="card">
-    <div class="ct">🛒 Gastos diarios · ${w.type==='1ra'?'1ra':'2da'} quincena</div>
+    <div class="row-b" style="margin-bottom:13px"><div class="ct" style="margin-bottom:0">🛒 Gastos diarios · ${w.type==='1ra'?'1ra':'2da'} quincena</div><button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11px" onclick="exportDiariosStatement()">📤 Exportar</button></div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Compras del día a día que pagas a débito: OXXO, delivery, transporte, snacks. No son recurrentes ni se pagan después — salen ahora.</div>
     ${(()=>{
       // Diagnóstico: muestra el total guardado en S.gastosDiarios vs el que

@@ -4692,6 +4692,106 @@ function showSangradorDetail(merchantKey){
   }catch(e){toast('Error: '+e.message);}
 }
 
+// ── Conciliación movimiento a movimiento: bitácora de Diarios vs CSV ──
+// Empata cada gasto del CSV con tu registro manual por monto (±1% o $1) y
+// fecha (±3 días). Lo que queda sin pareja es lo accionable: fugas que no
+// anotaste (lado CSV) o efectivo/otra cuenta (lado bitácora).
+function _csvYMD(s){
+  s=String(s||'').trim();
+  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if(m)return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  return /^\d{4}-\d{2}-\d{2}/.test(s)?s.slice(0,10):'';
+}
+const _dayDiff=(a,b)=>{try{const d=Math.abs((new Date(a+'T12:00')-new Date(b+'T12:00'))/864e5);return isNaN(d)?99:d;}catch(e){return 99;}};
+function openConciliaModal(dStart,dEnd){
+  try{
+    const fAll=filterByQna([...nuDebit,...nuCredit],qnaFilter);
+    if(!fAll.length){toast('Sube tu CSV primero');return;}
+    // Lado banco: todo lo NO excluido por tus reglas (fijos/deudas/transfers fuera)
+    const pool=fAll.map(t=>({desc:t.desc||'',amt:+t.amt||0,ymd:_csvYMD(t.date),matched:null}))
+      .filter(t=>{try{return classifyBucket(t.desc,t)!=='excluido';}catch(e){return true;}});
+    const diarios=(S.gastosDiarios||[])
+      .filter(g=>!g.pending&&g.date&&(!dStart||!dEnd||(g.date>=dStart&&g.date<=dEnd)))
+      .map(g=>({name:g.name||'',amt:+g.amt||0,date:g.date,cat:g.cat||'',paidWith:g.paidWith||'debito',matched:null}));
+    // Greedy: cada diario busca el cargo libre más cercano en fecha con el mismo monto
+    diarios.forEach(g=>{
+      let best=null,bestScore=Infinity;
+      pool.forEach(t=>{
+        if(t.matched)return;
+        const dAmt=Math.abs(t.amt-g.amt);
+        if(dAmt>Math.max(1,g.amt*0.01))return;
+        const dd=t.ymd?_dayDiff(t.ymd,g.date):4;
+        if(dd>3)return;
+        const score=dd*10+dAmt;
+        if(score<bestScore){bestScore=score;best=t;}
+      });
+      if(best){best.matched=g;g.matched=best;}
+    });
+    const matched=diarios.filter(g=>g.matched);
+    const soloCSV=pool.filter(t=>!t.matched).sort((a,b)=>b.amt-a.amt);
+    const soloBit=diarios.filter(g=>!g.matched).sort((a,b)=>b.amt-a.amt);
+    const sumCSV=soloCSV.reduce((a,t)=>a+t.amt,0);
+    const chip=(n,v,c)=>'<div style="flex:1;text-align:center;padding:8px 4px;border-radius:8px;background:'+c+'"><div style="font-size:16px;font-weight:bold">'+n+'</div><div style="font-size:9px;color:var(--muted);line-height:1.3">'+v+'</div></div>';
+    let body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Rango: '+(dStart||'?')+' → '+(dEnd||'?')+' · empatado por monto (±$1) y fecha (±3 días).</div>';
+    body+='<div style="display:flex;gap:6px;margin-bottom:14px">'
+      +chip(matched.length,'✅ empatados','var(--sagedim)')
+      +chip(soloCSV.length,'🏦 solo en CSV','rgba(184,92,74,.10)')
+      +chip(soloBit.length,'📓 solo en bitácora','rgba(160,112,48,.10)')
+      +'</div>';
+    if(soloCSV.length){
+      body+='<div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:6px">🏦 En el banco, no en tu bitácora · '+fx(Math.round(sumCSV))+'</div>';
+      body+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.4">Las fugas reales. Anótalas en 1 tap o recategorízalas si no son consumo (transfer, fijo…).</div>';
+      body+='<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:14px">';
+      soloCSV.forEach((t,i)=>{
+        const ref=_xref({desc:t.desc,amt:t.amt,date:t.ymd});
+        body+='<div style="padding:9px 11px;'+(i<soloCSV.length-1?'border-bottom:1px solid var(--border);':'')+'">'
+          +'<div class="row-b" style="gap:8px;margin-bottom:4px"><span style="font-size:11px;font-weight:bold;color:var(--txt);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(t.desc)+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(t.amt)+'</span></div>'
+          +'<div class="row-b"><span style="font-size:10px;color:var(--muted)">'+(t.ymd||'—')+'</span><span class="row" style="gap:6px">'
+          +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();openQuickDiario({name:_xget('+ref+').desc.slice(0,30),amt:_xget('+ref+').amt,date:_xget('+ref+').date||_todayYMD()})">➕ Anotar</button>'
+          +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(_xget('+ref+'))">✏️</button>'
+          +'</span></div></div>';
+      });
+      body+='</div>';
+    }
+    if(soloBit.length){
+      body+='<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:6px">📓 En tu bitácora, no en el CSV</div>';
+      body+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.4">Normal si fue efectivo, otra cuenta o 💳 TDC (este CSV es de débito).</div>';
+      body+='<div style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:14px">';
+      soloBit.forEach((g,i)=>{
+        body+='<div class="row-b" style="padding:8px 11px;gap:8px;'+(i<soloBit.length-1?'border-bottom:1px solid var(--border);':'')+'"><div style="flex:1;min-width:0"><div style="font-size:11px;font-weight:bold;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(g.name)+(g.paidWith==='tdc'?' <span style="color:var(--sky);font-weight:normal">💳 TDC</span>':'')+'</div><div style="font-size:10px;color:var(--muted)">'+g.date+'</div></div><span style="font-size:12px;color:var(--amber);font-weight:bold;flex-shrink:0">'+fx(g.amt)+'</span></div>';
+      });
+      body+='</div>';
+    }
+    if(matched.length){
+      body+='<details style="margin-bottom:4px"><summary style="font-size:10px;color:var(--sage);cursor:pointer;letter-spacing:.5px">▾ Ver los '+matched.length+' empatados</summary><div style="max-height:160px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-top:8px">';
+      matched.forEach((g,i)=>{
+        body+='<div class="row-b" style="padding:7px 11px;gap:8px;'+(i<matched.length-1?'border-bottom:1px solid var(--border);':'')+'"><div style="flex:1;min-width:0"><div style="font-size:11px;color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">✅ '+_escH(g.name)+' <span style="color:var(--muted)">↔</span> '+_escH(g.matched.desc.slice(0,24))+'</div><div style="font-size:9px;color:var(--muted)">'+g.date+(g.matched.ymd&&g.matched.ymd!==g.date?' ↔ '+g.matched.ymd:'')+'</div></div><span style="font-size:11px;color:var(--sage);font-weight:bold;flex-shrink:0">'+fx(g.amt)+'</span></div>';
+      });
+      body+='</div></details>';
+    }
+    if(!soloCSV.length&&!soloBit.length&&matched.length)body+='<div style="font-size:12px;color:var(--sage);font-weight:bold;text-align:center;padding:8px">🏆 Bitácora perfecta: todo empata con tu banco.</div>';
+    showConfirm('🔍 Empatar Diarios vs CSV',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+    if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="flex:1" onclick="exportDiariosStatement(\''+(dStart||'')+'\',\''+(dEnd||'')+'\')">📋 Copiar bitácora</button><button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Listo</button>';
+  }catch(e){toast('Error al conciliar: '+e.message);}
+}
+// "Estado de cuenta" de la bitácora de Diarios: texto listo para pegar
+// (WhatsApp, notas, Excel) y comparar contra el CSV del banco.
+function exportDiariosStatement(dStart,dEnd){
+  try{
+    const list=(S.gastosDiarios||[])
+      .filter(g=>!g.pending&&g.date&&(!dStart||!dEnd||(g.date>=dStart&&g.date<=dEnd)))
+      .sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+    if(!list.length){toast('Sin movimientos en la bitácora para ese rango');return;}
+    const tot=list.reduce((a,g)=>a+(+g.amt||0),0);
+    const L=['📓 BITÁCORA DE DIARIOS'+(dStart&&dEnd?' · '+dStart+' → '+dEnd:''),''];
+    list.forEach(g=>L.push(g.date+' | '+(g.name||'—')+' | '+(g.cat||'otro')+(g.paidWith==='tdc'?' | TDC':' | débito')+' | '+fx(+g.amt||0)));
+    L.push('','TOTAL: '+fx(Math.round(tot))+' · '+list.length+' movimiento'+(list.length!==1?'s':''));
+    _copyText(L.join('\n'));
+    toast('📋 Bitácora copiada ('+list.length+' movs)');
+  }catch(e){toast('Error al exportar');}
+}
+
 // Detect which txns in the CSV look like payments of fixed expenses from S.exp
 function detectFixedMatches(txns){
   if(!S.exp||!S.exp.length||!txns.length)return[];
@@ -5685,6 +5785,10 @@ function rQuincena(){
       <div class="row-b" style="padding:10px 0"><span style="font-size:12px;font-weight:bold;color:var(--txt)">Diferencia real</span><strong style="font-size:15px;color:${Math.abs(diff)<50?'var(--sage)':diff>0?'var(--terra)':'var(--amber)'}">${diff>=0?'+':''}${fx(Math.round(diff))}</strong></div>
       ${Math.abs(diff)<50?'<div style="font-size:11px;color:var(--sage);line-height:1.5">✅ Tu bitácora coincide con tu banco. Disciplina sólida.</div>':diff>0?'<div style="font-size:11px;color:var(--terra);line-height:1.5">⚠️ Hay <strong>'+fx(Math.round(diff))+'</strong> de consumo que no anotaste en Diarios. Son fugas reales — revisa el detalle de hormiga/impulso para identificarlas.</div>':'<div style="font-size:11px;color:var(--amber);line-height:1.5">Registraste más en Diarios que lo que el CSV ve. Puede ser efectivo u otra cuenta.</div>'}
       ${excludedTotal>0?`<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">💡 Ya descontamos <strong>${fx(Math.round(excludedTotal))}</strong> de transacciones marcadas como fijos, ahorro, deudas o transferencias propias (según tus reglas). Por eso la diferencia es más realista.</div>`:''}
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-sage btn-sm" style="flex:1" onclick="openConciliaModal('${dStart||''}','${dEnd||''}')">🔍 Empatar movimiento a movimiento</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportDiariosStatement('${dStart||''}','${dEnd||''}')">📋 Bitácora</button>
+      </div>
       <div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:10px;border-top:1px dashed var(--border);padding-top:8px">🔒 Esta comparación es solo informativa. El CSV <strong>nunca</strong> modifica tus Diarios, Plan de Acción ni Deudas automáticamente.</div>
     </div>`;
   })()}

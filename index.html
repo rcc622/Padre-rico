@@ -462,7 +462,7 @@ let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',do
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],diarioCatLabels:{},expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
@@ -522,6 +522,7 @@ function _normalizeState(st){
   if(!isObj(st.userCategories))st.userCategories={};
   if(!isObj(st.userCatLabels))st.userCatLabels={};
   if(!isObj(st.merchantAliases))st.merchantAliases={};
+  if(!isObj(st.diarioCatLabels))st.diarioCatLabels={};
   if(!isObj(st.txnCatExceptions))st.txnCatExceptions={};
   // Migración (idempotente): las claves de reglas/excepciones creadas cuando
   // la etiqueta "[...]" del banco se pegaba al comercio se re-llavean al
@@ -6101,7 +6102,12 @@ const DIARIO_CATS=[
 // que el usuario pueda agregar las suyas (Skincare, Cigarros, Lo que sea)
 // y elegir si cuentan como esencial (fuera de presup. hormiga/impulso).
 // Estructura: {k:'<uid>', n:'<nombre>', e:'<emoji>', esencial:<bool>, custom:true}
-const _allDiarioCats=()=>[...DIARIO_CATS,...(S.diarioUserCats||[])];
+// S.diarioCatLabels personaliza emoji/nombre de las de fábrica (la clave k
+// no cambia, así los gastos guardados siguen apuntando a su categoría).
+const _allDiarioCats=()=>{
+  const ov=S.diarioCatLabels||{};
+  return [...DIARIO_CATS.map(c=>{const o=ov[c.k];return o&&(o.e||o.n)?{...c,e:o.e||c.e,n:o.n||c.n}:c;}),...(S.diarioUserCats||[])];
+};
 const diarioCat=k=>_allDiarioCats().find(c=>c.k===k)||DIARIO_CATS[DIARIO_CATS.length-1];
 // Esencial = la categoría default 'esencial' o cualquier custom marcada
 // como esencial. Buscamos en runtime para que editar la categoría
@@ -7442,6 +7448,49 @@ function rmDiarioUserCat(k){
 }
 // Toggle del panel de gestión bajo los chips
 function toggleDiarioCatManage(){S._dcManageOpen=!S._dcManageOpen;sv();try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(_){}}
+// ── Renombrar categorías de Diarios DE FÁBRICA (emoji + nombre) ──────
+// La clave k no cambia: los gastos guardados siguen en su categoría.
+function openDiarioFactoryEdit(k){
+  const base=DIARIO_CATS.find(c=>c.k===k);
+  if(!base)return;
+  const curC=diarioCat(k);
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Edita emoji y nombre. Tus gastos guardados siguen en esta categoría — solo cambia cómo se ve.</div>';
+  body+='<div style="display:flex;gap:8px;margin-bottom:6px">'
+    +'<input type="text" id="dfcEmoji" value="'+_escA(curC.e)+'" maxlength="4" style="width:58px;text-align:center;font-size:18px;padding:9px 4px" aria-label="Emoji">'
+    +'<input type="text" id="dfcName" value="'+_escA(curC.n)+'" maxlength="28">'
+    +'</div>';
+  if((S.diarioCatLabels||{})[k])body+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Original: '+base.e+' '+_escH(base.n)+'</div>';
+  showConfirm('✏️ Editar categoría',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm()">Cancelar</button>'
+    +((S.diarioCatLabels||{})[k]?'<button class="btn btn-ghost" style="flex:0 0 auto" title="Restaurar original" onclick="_resetDiarioFactoryLabel(\''+k+'\')">↺</button>':'')
+    +'<button class="btn btn-sage" style="flex:1" onclick="_saveDiarioFactoryLabel(\''+k+'\')">Guardar</button>';
+  setTimeout(()=>{try{document.getElementById('dfcName')?.focus();}catch(_){}},120);
+}
+function _saveDiarioFactoryLabel(k){
+  try{
+    const base=DIARIO_CATS.find(c=>c.k===k);
+    if(!base)return;
+    const n=(document.getElementById('dfcName')?.value||'').trim();
+    const e=(document.getElementById('dfcEmoji')?.value||'').trim()||base.e;
+    if(!n){toast('⚠ Falta el nombre');document.getElementById('dfcName')?.focus();return;}
+    if(!S.diarioCatLabels)S.diarioCatLabels={};
+    if(e===base.e&&n===base.n)delete S.diarioCatLabels[k];
+    else S.diarioCatLabels[k]={e:e,n:n};
+    sv();
+    closeConfirm();
+    toast('✓ '+e+' '+n);
+    try{if(cur==='habitos')rHabitos();}catch(_){}
+    try{if(cur==='dash')rDash();}catch(_){}
+  }catch(e){toast('Error al guardar');}
+}
+function _resetDiarioFactoryLabel(k){
+  try{
+    if(S.diarioCatLabels&&S.diarioCatLabels[k]){delete S.diarioCatLabels[k];sv();toast('↺ Restaurada');}
+    closeConfirm();
+    try{if(cur==='habitos')rHabitos();}catch(_){}
+  }catch(e){}
+}
 // Versión directa: guarda el gasto en un solo tap, con método de pago
 // recibido como argumento (desde los botones del form). Reemplaza al flujo
 // viejo de addDiario+modal+_confirmDiario que tenía dos pasos y confundía.
@@ -7480,7 +7529,8 @@ function addDiario(){
   const d=document.getElementById('gdd')?.value||_todayYMD();
   if(!n||!a){toast('Concepto y monto requeridos');return;}
   // FASE 6b: abrir modal para elegir método (mismo patrón que Plan de Acción)
-  const catLabel=({snack:'🍪 Snack',bebida:'🥤 Bebida',delivery:'🍕 Delivery',transporte:'🚗 Transporte',minisuper:'🛒 Minisuper',impulso:'⚡ Impulso',esencial:'📋 Esencial',otro:'📦 Otro'})[_diarioCat]||_diarioCat;
+  const _cc=diarioCat(_diarioCat);
+  const catLabel=_cc?_cc.e+' '+_cc.n:_diarioCat;
   const body='<div style="padding:14px 16px;background:var(--bg);border-radius:10px;margin-bottom:14px;text-align:center">'
     +'<div style="font-size:14px;font-weight:bold;color:var(--txt);margin-bottom:2px">'+n+'</div>'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px">'+catLabel+' · '+d+'</div>'
@@ -9475,7 +9525,30 @@ try{
       // Ahorro apartado total = Págate Primero (savCommit) + neto de cajitas
       // de patrimonio. Ambos son "se queda y construye", van en la misma línea.
       const _ahorroApartado=_savAmt+_patrSavNet;
-      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_ahorroApartado+_metaOut+_metaRetOut;
+      // Movimientos DIRECTOS en activos dentro del ciclo (botones ➕ Depósito /
+      // ➖ Retiro de Finanzas → Activos). Antes no se reflejaban aquí y la
+      // proyección quedaba descuadrada. Se excluye todo lo que ya tiene su
+      // propia línea o no toca la cuenta: saldos iniciales, ajustes de saldo,
+      // Págate Primero (línea Ahorro apartado), movimientos ligados a metas
+      // (líneas de metas; sus evId viven en savGoals.deposits), retos/hábitos
+      // y usos de emergencia del ahorro.
+      let _assetMovs=[];
+      if(!showNext){try{
+        const _aw=cycleWindowFromKey(planCk());
+        const _sY=_ymdLocal(_aw.start),_eY=_ymdLocal(_aw.end);
+        const _metaEvIds=new Set();
+        (S.savGoals||[]).forEach(g=>(g.deposits||[]).forEach(d=>{if(d&&d.evId)_metaEvIds.add(d.evId);}));
+        const _sysConcept=(c)=>{c=String(c||'');return c==='Saldo inicial registrado'||c==='Saldo inicial (desde meta)'||c==='Ajuste de saldo'||c==='Ahorro de reto'||c.startsWith('Págate Primero')||c.startsWith('Hábito completado')||c.startsWith('🚨')||c.startsWith('💔');};
+        (S.assets||[]).forEach(a=>(a.events||[]).forEach(ev=>{
+          if(!ev||ev.type==='init')return;
+          if(!ev.date||ev.date<_sY||ev.date>_eY)return;
+          if(_metaEvIds.has(ev.id))return;
+          if(_sysConcept(ev.concept))return;
+          if(ev.type==='in'||ev.type==='out')_assetMovs.push({asset:a.name||'Activo',concept:ev.concept||'',amt:+ev.amount||0,t:ev.type});
+        }));
+      }catch(e){_assetMovs=[];}}
+      const _assetNet=_assetMovs.reduce((s,m)=>s+(m.t==='in'?m.amt:-m.amt),0); // + = salió de tu cuenta hacia activos
+      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_ahorroApartado+_metaOut+_metaRetOut+_assetNet;
       const _balance=incQ+_otEarned-_totalOut;
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
@@ -9499,6 +9572,7 @@ try{
           }
           return `<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🪙 Ahorro apartado (${items.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_ahorroApartado))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${items.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon} ${_escH(m.name)}${m.plan?' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>':''}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}</div></details>`;
         })():''}
+        ${_assetMovs.length>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sky)">🏦 Movimientos a activos (${_assetMovs.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:${_assetNet>=0?'var(--sky)':'var(--sage)'}">${_assetNet>=0?'−':'+'}${fx(Math.round(Math.abs(_assetNet)))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(74,110,140,.25);margin:2px 0 4px 4px">${_assetMovs.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.t==='in'?'➕':'➖'} ${_escH(m.asset)}${m.concept?' · '+_escH(m.concept):''}</span><span style="color:${m.t==='in'?'var(--sky)':'var(--sage)'};white-space:nowrap">${m.t==='in'?'−':'+'}${fx(Math.round(m.amt))}</span></div>`).join('')}<div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.5">Depósitos directos a tus activos salen de esta cuenta; retiros regresan a ella. Si un movimiento fue externo (no tocó tu quincena), edítalo desde Finanzas → Activos.</div><button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
           <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
           <strong style="color:${_balance>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(_balance))}</strong>
@@ -10551,7 +10625,11 @@ function rHabitos(){
           <select id="gdCatSel" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="selDiarioCat(this.value)">${_allDiarioCats().map(c=>{const sel=_diarioCat===c.k;const esBdg=c.custom&&c.esencial?' 🧾':'';return `<option value="${c.k}"${sel?' selected':''}>${c.e} ${_escH(c.n)}${esBdg}</option>`;}).join('')}</select>
           <button type="button" class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold;white-space:nowrap;padding:9px 11px" onclick="openDiarioCatModal()">+ Nueva</button>
         </div>
-        ${(S.diarioUserCats||[]).length>0?`<div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="toggleDiarioCatManage()">⚙️ Gestionar mis categorías (${(S.diarioUserCats||[]).length}) ${S._dcManageOpen?'▲':'▼'}</button>${S._dcManageOpen?`<div style="margin-top:8px;padding:10px;background:rgba(120,120,120,.04);border-radius:6px;border:1px solid var(--border)">${(S.diarioUserCats||[]).map(c=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${c.e} ${_escH(c.n)}</span>${c.esencial?'<span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">🧾 esencial</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioCatModal('${c.k}')">✏️</button><button type="button" class="btn btn-red btn-sm" style="padding:3px 6px;font-size:11px" onclick="rmDiarioUserCat('${c.k}')">✕</button></div></div>`).join('')}</div>`:''}</div>`:''}
+        <div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="toggleDiarioCatManage()">⚙️ Gestionar categorías (${_allDiarioCats().length}) ${S._dcManageOpen?'▲':'▼'}</button>${S._dcManageOpen?`<div style="margin-top:8px;padding:10px;background:rgba(120,120,120,.04);border-radius:6px;border:1px solid var(--border)">
+          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:4px">De fábrica · toca ✏️ para renombrar</div>
+          ${DIARIO_CATS.map(c=>{const cc=diarioCat(c.k);const ed=!!(S.diarioCatLabels||{})[c.k];return `<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${cc.e} ${_escH(cc.n)}</span>${ed?'<span style="font-size:9px;color:var(--amber)">editada</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioFactoryEdit('${c.k}')">✏️</button></div></div>`;}).join('')}
+          ${(S.diarioUserCats||[]).length>0?`<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin:10px 0 4px">Mis categorías</div>${(S.diarioUserCats||[]).map(c=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${c.e} ${_escH(c.n)}</span>${c.esencial?'<span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">🧾 esencial</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioCatModal('${c.k}')">✏️</button><button type="button" class="btn btn-red btn-sm" style="padding:3px 6px;font-size:11px" onclick="rmDiarioUserCat('${c.k}')">✕</button></div></div>`).join('')}`:''}
+        </div>`:''}</div>
         <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso. Puedes crear tus propias categorías y elegir si cuentan como esenciales.</div>
       </div>
       <div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="gdd" value="${todayISO}"></div>

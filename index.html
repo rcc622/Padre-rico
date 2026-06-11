@@ -462,7 +462,7 @@ let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',do
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
@@ -527,7 +527,7 @@ function _normalizeState(st){
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
   if(!isObj(st.simSliders))st.simSliders={};
-  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats'];
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats','userCatsCustom'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
   // mensual (a.inc). Los convertimos a tasa anual (a.yldPct) para que la
@@ -4268,6 +4268,21 @@ const USER_CATS=[
   {id:'X_ignorar',label:'🚫 Ignorar siempre',group:'otros',exclude:true},
 ];
 
+// ── Categorías personalizadas (botón "➕ Nueva" del modal de categorizar) ──
+// Viven en S.userCatsCustom como {id:'C_...',label,group}. Los flags de
+// comportamiento (hormiga/exclude) se derivan SIEMPRE del grupo al leer:
+// un dato viejo, editado a mano o de un respaldo nunca puede romper la
+// categorización ni colar un gasto al bucket equivocado.
+const _CUSTOM_CAT_FLAGS={hormiga:{hormiga:true},impulso:{},emergencia:{},fijo:{exclude:true},deuda:{exclude:true},otros:{exclude:true}};
+function allUserCats(){
+  try{
+    const customs=(S.userCatsCustom||[])
+      .filter(c=>c&&typeof c.id==='string'&&typeof c.label==='string'&&_CUSTOM_CAT_FLAGS[c.group])
+      .map(c=>({id:c.id,label:c.label,group:c.group,custom:true,..._CUSTOM_CAT_FLAGS[c.group]}));
+    return USER_CATS.concat(customs);
+  }catch(e){return USER_CATS;}
+}
+
 // Normalize merchant name for rule matching (similar to normalizeMerchant but simpler)
 function _catKey(desc){
   if(!desc)return'';
@@ -4309,7 +4324,7 @@ function removeUserCategory(desc){
 function getUserCatInfo(catId){
   if(!catId)return null;
   const baseId=String(catId).split(':')[0];
-  return USER_CATS.find(c=>c.id===baseId)||null;
+  return allUserCats().find(c=>c.id===baseId)||null;
 }
 
 // Extract target id from a linked catId like "X_fijo:12345" — returns "12345" or null
@@ -4803,12 +4818,18 @@ function _renderCatStep2(group){
     return '<button class="btn btn-sm" style="padding:8px 12px;font-size:12px;border:1px solid '+(isCur?brColor:'var(--border)')+';background:'+(isCur?bgColor:'var(--bg)')+';color:'+(isCur?txtColor:'var(--txt)')+';border-radius:6px;cursor:pointer;text-align:left" onclick="_applyCategorization(\''+fullId+'\')">'+label+'</button>';
   };
   body+='<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">';
+  // Botón "➕ Nueva" al final de cada sección: crea una categoría propia
+  // dentro del grupo sin salir del flujo de categorización.
+  const newBtn=(g)=>'<button class="btn btn-sm" style="padding:8px 12px;font-size:12px;border:1px dashed rgba(78,124,106,.5);background:var(--sagedim2);color:var(--sage);border-radius:6px;cursor:pointer;text-align:left;font-weight:bold" onclick="_openNewUserCat(\''+g+'\')">➕ Nueva categoría…</button>';
   if(group==='hormiga'){
-    USER_CATS.filter(c=>c.group==='hormiga').forEach(c=>{body+=btn(c,'var(--sagedim)','var(--sage)','var(--sage)');});
+    allUserCats().filter(c=>c.group==='hormiga').forEach(c=>{body+=btn(c,'var(--sagedim)','var(--sage)','var(--sage)');});
+    body+=newBtn('hormiga');
   } else if(group==='impulso'){
-    USER_CATS.filter(c=>c.group==='impulso').forEach(c=>{body+=btn(c,'rgba(160,112,48,.12)','#A07030','#A07030');});
+    allUserCats().filter(c=>c.group==='impulso').forEach(c=>{body+=btn(c,'rgba(160,112,48,.12)','#A07030','#A07030');});
+    body+=newBtn('impulso');
   } else if(group==='emergencia'){
-    USER_CATS.filter(c=>c.group==='emergencia').forEach(c=>{body+=btn(c,'rgba(184,92,74,.10)','var(--terra)','var(--terra)');});
+    allUserCats().filter(c=>c.group==='emergencia').forEach(c=>{body+=btn(c,'rgba(184,92,74,.10)','var(--terra)','var(--terra)');});
+    body+=newBtn('emergencia');
   } else if(group==='fijo'){
     if(!(S.exp||[]).length){
       body+='<div style="font-size:11px;color:var(--muted);font-style:italic;padding:8px">No tienes gastos fijos en Plan de Acción todavía.</div>';
@@ -4818,7 +4839,9 @@ function _renderCatStep2(group){
         body+=linkBtn('X_fijo',e.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
       });
     }
+    allUserCats().filter(c=>c.group==='fijo'&&c.custom).forEach(c=>{body+=btn(c,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');});
     body+=btn({id:'X_fijo',label:'❓ Otro fijo (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+    body+=newBtn('fijo');
   } else if(group==='deuda'){
     const debtList=(S.debts||[]).filter(d=>(+d.bal||0)>0||d.freq==='unico');
     if(!debtList.length){
@@ -4833,14 +4856,69 @@ function _renderCatStep2(group){
         body+=linkBtn('X_deuda',d.id,lbl,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
       });
     }
+    allUserCats().filter(c=>c.group==='deuda'&&c.custom).forEach(c=>{body+=btn(c,'rgba(74,110,140,.10)','var(--sky)','var(--sky)');});
     body+=btn({id:'X_deuda',label:'❓ Otra deuda (sin asociar)'},'rgba(74,110,140,.10)','var(--sky)','var(--sky)');
+    body+=newBtn('deuda');
   } else if(group==='otros'){
-    USER_CATS.filter(c=>c.group==='otros').forEach(c=>{body+=btn(c,'rgba(154,149,144,.12)','var(--muted)','var(--muted)');});
+    allUserCats().filter(c=>c.group==='otros').forEach(c=>{body+=btn(c,'rgba(154,149,144,.12)','var(--muted)','var(--muted)');});
+    body+=newBtn('otros');
   }
   body+='</div>';
   showConfirm('✏️ Categorizar gasto',body,null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="_renderCatStep1()">← Atrás</button><button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._pendingCat=null">Cancelar</button>';
+}
+
+// ── "➕ Nueva categoría": alta de una categoría propia dentro del grupo ──
+const _NEWCAT_GROUP_INFO={
+  hormiga:{n:'Hormiga',e:'🐜',hint:'Contará en tus gráficas de hormiga, igual que las de fábrica.'},
+  impulso:{n:'Impulso',e:'💥',hint:'Contará en el grupo de impulsos.'},
+  emergencia:{n:'Emergencia',e:'🚨',hint:'Contará en el grupo de emergencias.'},
+  fijo:{n:'Pago Fijo',e:'🏠',hint:'Se excluye del análisis de fugas, como los demás fijos.'},
+  deuda:{n:'Pago Deuda',e:'💳',hint:'Se excluye del análisis de fugas, como los demás pagos de deuda.'},
+  otros:{n:'Excluir',e:'🚫',hint:'Se excluye del análisis, como Ahorro o Transferencia propia.'},
+};
+function _openNewUserCat(group){
+  const gi=_NEWCAT_GROUP_INFO[group];
+  if(!gi)return;
+  const pc=window._pendingCat;
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Nueva categoría en <strong>'+gi.n+'</strong>. '+gi.hint+'</div>';
+  body+='<div style="display:flex;gap:8px;margin-bottom:12px">'
+    +'<input type="text" id="nucEmoji" value="'+gi.e+'" maxlength="4" style="width:58px;text-align:center;font-size:18px;padding:9px 4px" aria-label="Emoji">'
+    +'<input type="text" id="nucName" placeholder="Nombre (ej. Mascotas, Gasolina…)" maxlength="28">'
+    +'</div>';
+  if(pc&&pc.desc)body+='<div style="font-size:10px;color:var(--muted);margin-bottom:4px;line-height:1.5">Al crearla se asignará a <strong>'+_escH((pc.desc||'').slice(0,40))+'</strong> y quedará disponible para futuros gastos.</div>';
+  showConfirm('➕ Nueva categoría',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="_renderCatStep2(\''+group+'\')">← Atrás</button>'
+    +'<button class="btn btn-sage" style="flex:1" onclick="_saveNewUserCat(\''+group+'\')">Crear</button>';
+  setTimeout(()=>{try{document.getElementById('nucName')?.focus();}catch(_){}},120);
+}
+function _saveNewUserCat(group){
+  try{
+    if(!_CUSTOM_CAT_FLAGS[group]){toast('Grupo inválido');return;}
+    const name=(document.getElementById('nucName')?.value||'').trim();
+    const emoji=(document.getElementById('nucEmoji')?.value||'').trim()||(_NEWCAT_GROUP_INFO[group]||{}).e||'🏷️';
+    if(!name){toast('⚠ Ponle nombre a la categoría');document.getElementById('nucName')?.focus();return;}
+    // Si ya existe una con el mismo nombre en el grupo (de fábrica o propia),
+    // la reusamos — duplicarla partiría sus gráficas en dos buckets.
+    const dup=allUserCats().find(c=>c.group===group&&c.label.replace(/^\S+\s*/,'').toLowerCase()===name.toLowerCase());
+    if(dup){
+      if(window._pendingCat&&window._pendingCat.desc){_applyCategorization(dup.id);}
+      else{closeConfirm();toast('Ya existía: '+dup.label+' — la usé');}
+      return;
+    }
+    const id='C_'+Date.now();
+    if(!Array.isArray(S.userCatsCustom))S.userCatsCustom=[];
+    S.userCatsCustom.push({id:id,label:emoji+' '+name,group:group});
+    sv();
+    if(window._pendingCat&&window._pendingCat.desc){
+      _applyCategorization(id); // guarda la regla del comercio, cierra y refresca
+    }else{
+      closeConfirm();
+      toast('✅ Categoría creada: '+emoji+' '+name);
+    }
+  }catch(e){toast('Error al crear la categoría');}
 }
 
 function _applyCategorization(catId){

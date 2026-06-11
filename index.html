@@ -4741,7 +4741,7 @@ function openConciliaModal(dStart,dEnd){
       +'</div>';
     if(soloCSV.length){
       body+='<div style="font-size:10px;color:var(--terra);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:6px">🏦 En el banco, no en tu bitácora · '+fx(Math.round(sumCSV))+'</div>';
-      body+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.4">Las fugas reales. Anótalas en 1 tap o recategorízalas si no son consumo (transfer, fijo…).</div>';
+      body+='<div style="font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.5"><strong>➕ Anotar</strong>: fue consumo tuyo y se te pasó — lo escribe en TU bitácora (mismo widget de Diarios). <strong>✏️</strong>: no toca tu bitácora — le dice al análisis del CSV qué es este cargo (transfer, fijo, deuda…).</div>';
       body+='<div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;margin-bottom:14px">';
       soloCSV.forEach((t,i)=>{
         const ref=_xref({desc:t.desc,amt:t.amt,date:t.ymd});

@@ -8439,19 +8439,139 @@ function delAssetEvent(assetId,evId){
   const a=S.assets.find(x=>x.id===assetId);if(!a)return;
   const ev=(a.events||[]).find(e=>e.id===evId);if(!ev)return;
   const d=_eventDelta(ev); // efecto real en el saldo (con signo)
+  // Sincronización bidireccional: si este evento tiene espejo en una meta
+  // (dep.evId) o respalda un Págate Primero (concepto con el ciclo), esos
+  // registros se ajustan junto con él — antes quedaban "fantasmas" que el
+  // Estado de cuenta seguía contando.
+  let _mg=null;
+  (S.savGoals||[]).forEach(g=>(g.deposits||[]).forEach(dp=>{if(dp&&dp.evId===evId&&!_mg)_mg=g;}));
+  const _pp=String(ev.concept||'').match(/^Págate Primero(?: · top-up)? · (.+)$/);
+  const _ppCk=_pp?_pp[1].trim():null;
+  const _ppCommit=_ppCk&&(S.savCommits||{})[_ppCk]&&S.savCommits[_ppCk].assetId===assetId?S.savCommits[_ppCk]:null;
+  let extra='';
+  if(_mg)extra+='<br><br><span style="font-size:11px;color:var(--amber)">⚠ Ligado a la meta <strong>'+_escH(_mg.name)+'</strong>: su movimiento espejo también se eliminará (no quedará fantasma).</span>';
+  if(_ppCommit)extra+='<br><br><span style="font-size:11px;color:var(--amber)">⚠ Respalda tu <strong>Págate Primero</strong> de esa quincena: el registro se ajustará a lo que quede de respaldo real.</span>';
   showConfirm('¿Eliminar este movimiento?',
-    '<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a quitar <strong>'+(d>=0?'+':'−')+fx(Math.abs(d))+'</strong> ('+(ev.concept||'sin concepto')+'). El saldo se recalcula desde los movimientos restantes.</div>',
+    '<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a quitar <strong>'+(d>=0?'+':'−')+fx(Math.abs(d))+'</strong> ('+(ev.concept||'sin concepto')+'). El saldo se recalcula desde los movimientos restantes.'+extra+'</div>',
     ()=>{
       const newAssets=S.assets.map(x=>{
         if(x.id!==assetId)return x;
         return _recalcAsset({...x,events:(x.events||[]).filter(e=>e.id!==evId)});
       });
       const newBal=_recalcAsset(newAssets.find(x=>x.id===assetId)).val;
-      pt({assets:newAssets});
+      const patch={assets:newAssets};
+      if(_mg){
+        patch.savGoals=S.savGoals.map(gx=>{
+          if(gx.id!==_mg.id)return gx;
+          const dep2=(gx.deposits||[]).find(dp=>dp&&dp.evId===evId);
+          const saved=(+gx.saved||0)-(+(dep2&&dep2.amt)||0);
+          return{...gx,saved,deposits:(gx.deposits||[]).filter(dp=>!(dp&&dp.evId===evId)),done:saved>=gx.target};
+        });
+      }
+      if(_ppCommit){
+        const left=Math.max(0,(+_ppCommit.amount||0)-(+ev.amount||0));
+        const newCommits={...(S.savCommits||{})};
+        if(left>0)newCommits[_ppCk]={..._ppCommit,amount:left};
+        else{delete newCommits[_ppCk];patch.savStreak=Math.max(0,(S.savStreak||0)-1);}
+        patch.savCommits=newCommits;
+      }
+      pt(patch);
       _syncLinkedMetaSaved(assetId);
       toast('Movimiento eliminado · saldo '+fx(newBal));rFlujo();hdrUp&&hdrUp();
     }
   );
+}
+
+// ── 🩺 Validador de consistencia: caza registros fantasma ─────────────
+// Cruza cada movimiento de metas (dep.assetId/evId) y cada Págate Primero
+// contra su respaldo real en los activos. Lo que no tenga respaldo se
+// reporta con acciones para corregirlo — nada se borra solo.
+function _auditDepMatch(g,target){
+  return (g.deposits||[]).find(d=>d&&(
+    (target.id!=null&&d.id===target.id)||
+    (target.id==null&&target.evId!=null&&d.evId===target.evId)||
+    (target.id==null&&target.evId==null&&d.date===target.date&&(+d.amt||0)===(+target.amt||0))
+  ));
+}
+function _auditFixDep(goalId,target,mode){
+  try{
+    pt({savGoals:S.savGoals.map(g=>{
+      if(g.id!==goalId)return g;
+      const dep=_auditDepMatch(g,target);
+      if(!dep)return g;
+      if(mode==='unlink'){
+        return{...g,deposits:(g.deposits||[]).map(d=>{if(d!==dep)return d;const nd={...d};delete nd.assetId;delete nd.evId;return nd;})};
+      }
+      const saved=(+g.saved||0)-(+dep.amt||0);
+      return{...g,saved,deposits:(g.deposits||[]).filter(d=>d!==dep),done:saved>=g.target};
+    })});
+    toast(mode==='unlink'?'Movimiento desligado · se mantiene en la meta':'🗑 Fantasma eliminado de la meta');
+    openLedgerAudit();
+    try{if(cur==='plan')rPlan();}catch(e){}
+  }catch(e){toast('Error al corregir');}
+}
+function _auditFixCommit(ck){
+  try{
+    const c=(S.savCommits||{})[ck];if(!c)return;
+    const a=S.assets.find(x=>x.id===c.assetId);
+    const rx=new RegExp('^Págate Primero(?: · top-up)? · '+String(ck).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$');
+    const real=a?(a.events||[]).filter(ev=>ev&&ev.type==='in'&&rx.test(String(ev.concept||''))).reduce((s,ev)=>s+(+ev.amount||0),0):0;
+    const newCommits={...(S.savCommits||{})};
+    const patch={savCommits:newCommits};
+    if(real>0)newCommits[ck]={...c,amount:real};
+    else{delete newCommits[ck];patch.savStreak=Math.max(0,(S.savStreak||0)-1);}
+    pt(patch);
+    toast(real>0?'⚖️ Ajustado a '+fx(Math.round(real)):'🗑 Registro eliminado · racha ajustada');
+    openLedgerAudit();
+    try{if(cur==='plan')rPlan();}catch(e){}
+    try{if(cur==='dash')rDash();}catch(e){}
+  }catch(e){toast('Error al corregir');}
+}
+function openLedgerAudit(){
+  try{
+    const finds=[];
+    (S.savGoals||[]).forEach(g=>(g.deposits||[]).forEach(dep=>{
+      if(!dep||!dep.assetId||dep.evId==null)return;
+      const a=S.assets.find(x=>x.id===dep.assetId);
+      const ev=a?(a.events||[]).find(e=>e&&e.id===dep.evId):null;
+      if(!a||!ev)finds.push({type:'dep',g,dep,why:!a?'el activo ligado ya no existe':'el movimiento ya no existe en '+_escH(a.name||'el activo')});
+    }));
+    Object.entries(S.savCommits||{}).forEach(([ck,c])=>{
+      if(!c||!(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept'))return;
+      const amt=+c.amount||0;if(amt<=0)return;
+      const a=S.assets.find(x=>x.id===c.assetId);
+      const rx=new RegExp('^Págate Primero(?: · top-up)? · '+String(ck).replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'$');
+      const real=a?(a.events||[]).filter(ev=>ev&&ev.type==='in'&&rx.test(String(ev.concept||''))).reduce((s,ev)=>s+(+ev.amount||0),0):0;
+      if(real<amt-1)finds.push({type:'commit',ck,c,real,why:!a?'el activo ya no existe':'en el activo solo hay '+fx(Math.round(real))+' de respaldo'});
+    });
+    let body;
+    if(!finds.length){
+      body='<div style="text-align:center;padding:14px"><div style="font-size:40px;margin-bottom:8px">✅</div><div style="font-size:13px;color:var(--sage);font-weight:bold">Todo cuadra</div><div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6">Cada movimiento de tus metas y tu Págate Primero tiene respaldo real en tus activos.</div></div>';
+    }else{
+      body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Encontré <strong>'+finds.length+'</strong> registro'+(finds.length!==1?'s':'')+' sin respaldo real ("fantasmas"). Tú decides qué hacer con cada uno:</div>';
+      finds.forEach(f=>{
+        if(f.type==='dep'){
+          const ref1=_xref({g:f.g.id,t:{id:f.dep.id!=null?f.dep.id:null,evId:f.dep.evId!=null?f.dep.evId:null,date:f.dep.date||'',amt:+f.dep.amt||0}});
+          body+='<div style="padding:10px 12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;margin-bottom:10px;background:rgba(160,112,48,.05)">'
+            +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">'+(f.g.icon||'🎯')+' '+_escH(f.g.name)+' · '+((+f.dep.amt||0)>=0?'+':'−')+fx(Math.abs(+f.dep.amt||0))+'</div>'
+            +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">'+(f.dep.date||'')+(f.dep.note?' · '+_escH(f.dep.note):'')+' — '+f.why+'</div>'
+            +'<div style="display:flex;gap:6px"><button class="btn btn-red btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDep(x.g,x.t,\'del\')})(_xget('+ref1+'))">🗑 Eliminar de la meta</button><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDep(x.g,x.t,\'unlink\')})(_xget('+ref1+'))">Sí existió · desligar</button></div>'
+            +'</div>';
+        }else{
+          const ckRef=_xref(f.ck);
+          body+='<div style="padding:10px 12px;border:1px solid rgba(184,92,74,.3);border-radius:8px;margin-bottom:10px;background:rgba(184,92,74,.05)">'
+            +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">🪙 Págate Primero · '+_escH(String(f.ck))+'</div>'
+            +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">Registrado '+fx(Math.round(+f.c.amount||0))+', pero '+f.why+'.</div>'
+            +'<button class="btn btn-sage btn-sm" style="width:100%;font-size:10px" onclick="_auditFixCommit(_xget('+ckRef+'))">⚖️ Ajustar al respaldo real'+(f.real<=0?' (eliminar registro)':' → '+fx(Math.round(f.real)))+'</button>'
+            +'</div>';
+        }
+      });
+      body+='<div style="font-size:10px;color:var(--muted);line-height:1.5;margin-top:4px">💡 "Desligar" conserva el movimiento en la meta como registro virtual (sí pasó, solo no vive en ese activo). De aquí en adelante, borrar un movimiento desde el activo limpia también su espejo — esto no volverá a acumularse.</div>';
+    }
+    showConfirm('🩺 Validar movimientos',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+    if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm();try{if(cur===\'plan\')rPlan()}catch(e){}">Listo</button>';
+  }catch(e){toast('Error al validar');}
 }
 function quickUpdAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
@@ -9579,6 +9699,7 @@ try{
         </div>
         ${checkedAmt>0?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
       </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="openLedgerAudit()">🩺 Validar movimientos (caza fantasmas)</button>
     </div>`;
     })()}
 

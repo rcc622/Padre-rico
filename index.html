@@ -462,7 +462,7 @@ let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',do
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],txnCatExceptions:{},diarioUserCats:[],expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   tdcConfig:{limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false},
@@ -520,6 +520,7 @@ function _normalizeState(st){
   if(!isObj(st.gastoDiarioBudgetByCycle))st.gastoDiarioBudgetByCycle={};
   if(!isObj(st.recurringAch))st.recurringAch={};
   if(!isObj(st.userCategories))st.userCategories={};
+  if(!isObj(st.txnCatExceptions))st.txnCatExceptions={};
   if(!isObj(st.habitoFormado))st.habitoFormado={};
   if(!isObj(st.longCycleOverrides))st.longCycleOverrides={};
   if(!isObj(st.savCommits))st.savCommits={};
@@ -4320,6 +4321,40 @@ function removeUserCategory(desc){
   if(key&&S.userCategories[key]){delete S.userCategories[key];sv();}
 }
 
+// ── Excepciones por cargo ("solo esta vez") ─────────────────────────
+// La regla del comercio NO se toca: la excepción vive pegada al cargo
+// exacto (fecha|monto|comercio normalizado), así sobrevive a re-subir el
+// mismo CSV y nunca se filtra a cargos futuros del mismo comercio.
+function _txnKey(t){
+  if(!t)return null;
+  const k=_catKey(t.desc||'');
+  if(!k)return null;
+  return (t.date||'')+'|'+(+t.amt||0)+'|'+k;
+}
+function getTxnException(t){
+  try{
+    if(!S.txnCatExceptions)return null;
+    const k=_txnKey(t);
+    return k?S.txnCatExceptions[k]||null:null;
+  }catch(e){return null;}
+}
+// Categoría efectiva de una transacción: excepción del cargo > regla del comercio
+function applyTxnCategory(t){
+  return getTxnException(t)||applyUserCategory((t&&t.desc)||'');
+}
+function setTxnException(t,catId){
+  const k=_txnKey(t);
+  if(!k)return null;
+  if(!S.txnCatExceptions)S.txnCatExceptions={};
+  S.txnCatExceptions[k]=catId;
+  sv();
+  return k;
+}
+function removeTxnException(t){
+  const k=_txnKey(t);
+  if(k&&S.txnCatExceptions&&S.txnCatExceptions[k]){delete S.txnCatExceptions[k];sv();}
+}
+
 // Get catalog entry by id (strips ":targetId" suffix if present)
 function getUserCatInfo(catId){
   if(!catId)return null;
@@ -4423,9 +4458,10 @@ function detectH(txns){
   const r={};
   txns.forEach(t=>{
     const desc=t.desc||'';
-    // FIX: First check user-defined rules (overrides automatic HK matching)
+    // FIX: First check user-defined rules (overrides automatic HK matching).
+    // applyTxnCategory respeta la excepción "solo esta vez" del cargo exacto.
     try{
-      const userCat=applyUserCategory(desc);
+      const userCat=applyTxnCategory(t);
       if(userCat){
         const catInfo=getUserCatInfo(userCat);
         // Excluded categories: skip from hormiga
@@ -4464,7 +4500,7 @@ function detectImpulsoEmergencia(txns){
   const imp={},eme={};
   txns.forEach(t=>{
     try{
-      const userCat=applyUserCategory(t.desc||'');
+      const userCat=applyTxnCategory(t);
       if(!userCat)return;
       const info=getUserCatInfo(userCat);
       if(!info||info.exclude)return;
@@ -4492,10 +4528,11 @@ function detectImpulsoEmergencia(txns){
 // Servicio: suscripciones/fijos recurrentes
 const IMPULSO_KEYS=['AMAZON','MERCADO LIBRE','MERCADOLIBRE','SHEIN','TEMU','WISH','ALIEXPRESS','LINIO','ML ','STEAM','PLAYSTATION','XBOX','NINTENDO','GOOGLE PLAY','APPLE STORE','APPLE.COM/BILL','LIVERPOOL','PALACIO','COPPEL','ELEKTRA','BEST BUY','SUBURBIA','OLD NAVY','ZARA','H&M','PULL','BERSHKA','ADIDAS','NIKE','COSTCO','SAMS'];
 const SERVICIO_KEYS=['NETFLIX','SPOTIFY','DISNEY','HBO','YOUTUBE PREMIUM','AMAZON PRIME','PARAMOUNT','CRUNCHYROLL','TELCEL','AT&T','TOTALPLAY','IZZI','MEGACABLE','CFE','AGUA','GAS NATURAL','IENOVA','TELMEX'];
-function classifyBucket(desc){
-  // FIX: respect user-defined categories first (same as detectH)
+function classifyBucket(desc,txn){
+  // FIX: respect user-defined categories first (same as detectH).
+  // Si llega la transacción completa, la excepción "solo esta vez" manda.
   try{
-    const userCat=applyUserCategory(desc);
+    const userCat=txn?applyTxnCategory(txn):applyUserCategory(desc);
     if(userCat){
       const catInfo=getUserCatInfo(userCat);
       if(catInfo&&catInfo.exclude)return'excluido'; // fijo, ahorro, deuda, transfer, ignorar
@@ -4513,7 +4550,7 @@ function classifyBucket(desc){
 }
 function bucketTotals(txns){
   const r={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0,excluido:0};
-  txns.forEach(t=>{const b=classifyBucket(t.desc);if(r[b]!==undefined)r[b]+=t.amt;});
+  txns.forEach(t=>{const b=classifyBucket(t.desc,t);if(r[b]!==undefined)r[b]+=t.amt;});
   return r;
 }
 
@@ -4539,7 +4576,7 @@ function getTopSangradores(txns){
     // - Excluidos manualmente (fijo, deuda, ahorro, transfer, ignorar)
     // - Categorizados como impulso/emergencia (ya están identificados)
     // - Solo dejar pasar: hormiga categorizada o sin categorizar
-    const userCat=applyUserCategory(t.desc);
+    const userCat=applyTxnCategory(t);
     if(userCat){
       const catInfo=getUserCatInfo(userCat);
       if(catInfo){
@@ -4572,12 +4609,14 @@ function showSangradorDetail(merchantKey){
     body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5">Verifica que todas estas pertenezcan al mismo comercio. Si una está mal agrupada, tócala para recategorizarla aparte.</div>';
     body+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">';
     sorted.forEach((t,i)=>{
-      // Pasa la descripción por registro seguro en vez de interpolarla en el onclick
-      const descRef=_xref(t.desc||'');
+      // Pasa la transacción completa por registro seguro: con fecha y monto
+      // el modal puede ofrecer "solo esta vez" (excepción de este cargo).
+      const descRef=_xref({desc:t.desc||'',amt:+t.amt||0,date:t.date||''});
       const dt=t.date||'';
       const borderBot=i<sorted.length-1?'border-bottom:1px solid var(--border);':'';
-      // Show current category if any
-      const cur=applyUserCategory(t.desc);
+      // Show current category if any (la excepción del cargo manda)
+      const cur=applyTxnCategory(t);
+      const isExc=!!getTxnException(t);
       let curLbl='',curColor='var(--muted)';
       if(cur){
         const lbl=getCatDisplayLabel(cur);
@@ -4593,7 +4632,7 @@ function showSangradorDetail(merchantKey){
       }
       body+='<div style="padding:10px 12px;'+borderBot+'">'
         +'<div class="row-b" style="margin-bottom:2px;gap:8px"><span style="font-size:11px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(t.desc||'—')+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold;flex-shrink:0">'+fx(t.amt)+'</span></div>'
-        +(curLbl?'<div style="font-size:9px;color:'+curColor+';font-weight:bold;margin:3px 0">✓ '+_escH(curLbl)+'</div>':'')
+        +(curLbl?'<div style="font-size:9px;color:'+curColor+';font-weight:bold;margin:3px 0">'+(isExc?'1️⃣ ':'✓ ')+_escH(curLbl)+(isExc?' <span style="font-weight:normal;color:var(--amber)">· solo esta vez</span>':'')+'</div>':'')
         +'<div class="row-b" style="margin-top:4px">'
         +(dt?'<div style="font-size:10px;color:var(--muted)">'+_escH(dt)+'</div>':'<div></div>')
         +'<button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:10px" onclick="closeConfirm();showCategorizeModal(_xget('+descRef+'))">✏️ Recategorizar</button>'
@@ -4715,7 +4754,7 @@ function showHormigaDetail(idx){
       const sorted=[...txns].sort((a,b)=>b.amt-a.amt);
       sorted.forEach(t=>{
         const dt=t.date||'';
-        const descRef=_xref(t.desc||'');
+        const descRef=_xref({desc:t.desc||'',amt:+t.amt||0,date:t.date||''});
         body+='<div style="padding:10px 12px;border-bottom:1px solid var(--border)">'
           +'<div class="row-b" style="margin-bottom:2px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+_escH(t.desc||'—')+'</span><span style="font-size:13px;color:var(--terra);font-weight:bold;flex-shrink:0;margin-left:8px">'+fx(t.amt)+'</span></div>'
           +'<div class="row-b" style="margin-top:4px">'
@@ -4736,7 +4775,11 @@ function showHormigaDetail(idx){
 window._pendingCat=null;
 
 function showCategorizeModal(desc,currentCat){
-  window._pendingCat={desc:desc,currentCat:currentCat||applyUserCategory(desc)};
+  // Acepta un string (comercio → regla permanente) o un objeto
+  // {desc,amt,date} (cargo concreto → podrá elegir "solo esta vez").
+  const txn=(desc&&typeof desc==='object')?desc:null;
+  const d=txn?(txn.desc||''):desc;
+  window._pendingCat={desc:d,currentCat:currentCat||(txn?applyTxnCategory(txn):applyUserCategory(d)),txn:txn};
   _renderCatStep1();
 }
 
@@ -4749,11 +4792,14 @@ function _renderCatStep1(){
   const current=pc.currentCat;
   let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio detectado:</div>';
   body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:14px;word-break:break-word">'+short+'</div>';
+  const _hasExc=pc.txn&&getTxnException(pc.txn);
   if(current){
     const lbl=getCatDisplayLabel(current)||'?';
-    body+='<div style="font-size:10px;color:var(--sage);background:var(--sagedim);padding:6px 10px;border-radius:6px;margin-bottom:14px"><strong>Actual:</strong> '+lbl+'</div>';
+    body+=_hasExc
+      ?'<div style="font-size:10px;color:var(--amber);background:rgba(160,112,48,.10);padding:6px 10px;border-radius:6px;margin-bottom:14px"><strong>1️⃣ Excepción de este cargo:</strong> '+lbl+'</div>'
+      :'<div style="font-size:10px;color:var(--sage);background:var(--sagedim);padding:6px 10px;border-radius:6px;margin-bottom:14px"><strong>Actual:</strong> '+lbl+'</div>';
   }
-  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5"><strong>Paso 1 de 2</strong> · ¿Qué tipo de gasto es?</div>';
+  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5"><strong>Paso 1</strong> · ¿Qué tipo de gasto es?</div>';
   // 6 type tiles in 2-col grid
   const tiles=[
     {grp:'hormiga',e:'🐜',n:'Hormiga',d:'Habitual, frecuente',c:'var(--sage)',bg:'var(--sagedim)'},
@@ -4772,11 +4818,12 @@ function _renderCatStep1(){
       +'</button>';
   });
   body+='</div>';
-  // Remove rule shortcut at bottom
-  if(current){
-    body+='<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:14px">'
-      +'<button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="_removeCategorization()">🗑 Quitar regla actual</button>'
-      +'</div>';
+  // Remove rule / exception shortcuts at bottom
+  if(current||_hasExc){
+    body+='<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:14px">';
+    if(_hasExc)body+='<button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--amber);margin-bottom:6px" onclick="_removeTxnExceptionUI()">🗑 Quitar excepción de este cargo (vuelve a la regla)</button>';
+    if(current&&!(_hasExc&&!applyUserCategory(pc.desc)))body+='<button class="btn btn-ghost btn-sm" style="width:100%;font-size:10px;color:var(--muted)" onclick="_removeCategorization()">🗑 Quitar regla del comercio</button>';
+    body+='</div>';
   }
   showConfirm('✏️ Categorizar gasto',body,null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
@@ -4805,7 +4852,7 @@ function _renderCatStep2(group){
     deuda:{e:'💳',n:'Pago de Deuda',c:'var(--sky)',bg:'rgba(74,110,140,.10)'},
     otros:{e:'🚫',n:'Excluir del análisis',c:'var(--muted)',bg:'rgba(154,149,144,.12)'},
   }[group]||{e:'?',n:'?',c:'var(--muted)',bg:'var(--bg2)'};
-  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5"><strong>Paso 2 de 2</strong> · Elige la categoría</div>';
+  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.5"><strong>Paso 2</strong> · Elige la categoría</div>';
   body+='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:'+grpInfo.bg+';border-radius:6px;margin-bottom:12px"><span style="font-size:18px">'+grpInfo.e+'</span><span style="font-size:12px;font-weight:bold;color:'+grpInfo.c+'">'+grpInfo.n+'</span></div>';
   // Render buttons depending on group
   const btn=(c,bgColor,brColor,txtColor)=>{
@@ -4923,18 +4970,74 @@ function _saveNewUserCat(group){
 
 function _applyCategorization(catId){
   try{
-    if(!window._pendingCat||!window._pendingCat.desc)return;
-    const desc=window._pendingCat.desc;
-    setUserCategory(desc,catId);
+    const pc=window._pendingCat;
+    if(!pc||!pc.desc)return;
+    // Si venimos de un cargo concreto (con fecha y monto), pregunta el
+    // alcance: regla permanente vs excepción de este cargo. Si venimos del
+    // nivel comercio (lápiz de sangradores, lista de reglas), es regla directa.
+    if(pc.txn){_renderCatScope(catId);return;}
+    _commitCategorization(catId,'always');
+  }catch(e){toast('Error al categorizar');}
+}
+
+// ── PASO 3 (solo cargos concretos): ¿siempre o solo esta vez? ──
+function _renderCatScope(catId){
+  const pc=window._pendingCat;
+  if(!pc)return;
+  if(!pc.txn){_commitCategorization(catId,'always');return;}
+  pc.chosenCat=catId;
+  const info=getUserCatInfo(catId);
+  const lbl=info?info.label:catId;
+  const t=pc.txn;
+  const ruleCat=applyUserCategory(pc.desc);
+  const ruleLbl=ruleCat?(getCatDisplayLabel(ruleCat)||''):'';
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Cargo:</div>';
+  body+='<div style="font-size:12px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:8px 12px;border-radius:6px;margin-bottom:10px;word-break:break-word">'+_escH((pc.desc||'').slice(0,40))
+    +'<div style="font-size:10px;color:var(--muted);font-weight:normal;margin-top:3px">'+(t.date?_escH(t.date)+' · ':'')+fx(+t.amt||0)+'</div></div>';
+  body+='<div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--sagedim);border-radius:6px;margin-bottom:12px"><span style="font-size:12px;font-weight:bold;color:var(--sage2)">→ '+lbl+'</span></div>';
+  body+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5"><strong>Último paso</strong> · ¿Cómo la aplico?</div>';
+  body+='<button class="btn" style="width:100%;justify-content:flex-start;text-align:left;padding:12px 14px;margin-bottom:8px;border:1px solid rgba(78,124,106,.4);background:var(--sagedim2);color:var(--txt);border-radius:8px" onclick="_commitCategorization(window._pendingCat&&window._pendingCat.chosenCat,\'always\')">'
+    +'<div><div style="font-size:13px;font-weight:bold;color:var(--sage)">🔁 Siempre</div><div style="font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4;font-weight:normal">Crea la regla: cada cargo de este comercio será '+lbl+'</div></div></button>';
+  body+='<button class="btn" style="width:100%;justify-content:flex-start;text-align:left;padding:12px 14px;border:1px solid rgba(160,112,48,.45);background:rgba(160,112,48,.07);color:var(--txt);border-radius:8px" onclick="_commitCategorization(window._pendingCat&&window._pendingCat.chosenCat,\'once\')">'
+    +'<div><div style="font-size:13px;font-weight:bold;color:var(--amber)">1️⃣ Solo esta vez</div><div style="font-size:10px;color:var(--muted);margin-top:2px;line-height:1.4;font-weight:normal">Excepción solo para este cargo (ej. fue por un cumpleaños)'+(ruleLbl?' — el comercio sigue siendo '+_escH(ruleLbl):'')+'</div></div></button>';
+  showConfirm('✏️ Categorizar gasto',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="_renderCatStep2(window._pendingCat&&window._pendingCat.group||\'hormiga\')">← Atrás</button><button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._pendingCat=null">Cancelar</button>';
+}
+
+function _commitCategorization(catId,scope){
+  try{
+    const pc=window._pendingCat;
+    if(!pc||!pc.desc||!catId)return;
     const info=getUserCatInfo(catId);
     const lbl=info?info.label:catId;
+    if(scope==='once'&&pc.txn){
+      setTxnException(pc.txn,catId);
+      toast('1️⃣ Solo esta vez: '+lbl);
+    }else{
+      setUserCategory(pc.desc,catId);
+      // La regla nueva manda: si este cargo traía una excepción colgada, se quita.
+      if(pc.txn)removeTxnException(pc.txn);
+      toast('✅ Regla guardada: '+lbl);
+    }
     closeConfirm();
     window._pendingCat=null;
-    toast('✅ Regla guardada: '+lbl);
     // Refresh current view
     try{rQuincena();}catch(e){}
     try{if(typeof histView!=='undefined'&&histView==='cats')rHistoria();}catch(e){}
   }catch(e){toast('Error al categorizar');}
+}
+
+function _removeTxnExceptionUI(){
+  try{
+    const pc=window._pendingCat;
+    if(!pc||!pc.txn)return;
+    removeTxnException(pc.txn);
+    closeConfirm();
+    window._pendingCat=null;
+    toast('🗑 Excepción quitada — el cargo vuelve a la regla del comercio');
+    try{rQuincena();}catch(e){}
+  }catch(e){}
 }
 
 function _removeCategorization(){

@@ -521,6 +521,31 @@ function _normalizeState(st){
   if(!isObj(st.recurringAch))st.recurringAch={};
   if(!isObj(st.userCategories))st.userCategories={};
   if(!isObj(st.txnCatExceptions))st.txnCatExceptions={};
+  // Migración (idempotente): las claves de reglas/excepciones creadas cuando
+  // la etiqueta "[...]" del banco se pegaba al comercio se re-llavean al
+  // comercio real. Una clave que era SOLO etiqueta (o cuyo comercio quedó
+  // ilegible al recortar a 32 chars) se convierte en regla a nivel etiqueta.
+  try{
+    const _tagRe=/^\s*(\[[^\]]*\]\s*)+/;
+    const _migKey=(k)=>{
+      if(!_tagRe.test(k))return k;
+      if(/^\s*(\[[^\]]*\]\s*)+$/.test(k))return k.replace(/\s+/g,' ').trim();
+      const stripped=k.replace(_tagRe,'').trim().slice(0,32);
+      if(stripped.length>=3)return stripped;
+      const tm=k.match(/^\s*(\[[^\]]*\])/);
+      return tm?tm[1].replace(/\s+/g,' ').trim():k;
+    };
+    const uc={};
+    Object.entries(st.userCategories).forEach(([k,v])=>{const nk=_migKey(k);if(!(nk in uc))uc[nk]=v;});
+    st.userCategories=uc;
+    const tx={};
+    Object.entries(st.txnCatExceptions).forEach(([k,v])=>{
+      const i1=k.indexOf('|');const i2=i1<0?-1:k.indexOf('|',i1+1);
+      if(i2<0){tx[k]=v;return;}
+      tx[k.slice(0,i2+1)+_migKey(k.slice(i2+1))]=v;
+    });
+    st.txnCatExceptions=tx;
+  }catch(e){_logErr('migCatKeys',e);}
   if(!isObj(st.habitoFormado))st.habitoFormado={};
   if(!isObj(st.longCycleOverrides))st.longCycleOverrides={};
   if(!isObj(st.savCommits))st.savCommits={};
@@ -4287,7 +4312,15 @@ function allUserCats(){
 // Normalize merchant name for rule matching (similar to normalizeMerchant but simpler)
 function _catKey(desc){
   if(!desc)return'';
-  return desc.toUpperCase().trim().replace(/\s+/g,' ').replace(/\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/g,'').replace(/#\s*\d+/g,'').trim().slice(0,32);
+  let d=String(desc).toUpperCase().trim();
+  // La etiqueta "[...]" que algunos bancos pegan al inicio NO es parte del
+  // comercio. Con ella, comercios distintos compartían los primeros
+  // caracteres y una regla guardada para un cargo se derramaba a todo el
+  // grupo de la etiqueta. Si el texto es SOLO la etiqueta (regla a nivel
+  // etiqueta), se conserva tal cual como clave.
+  const noTag=d.replace(/^\s*(\[[^\]]*\]\s*)+/,'').trim();
+  if(noTag)d=noTag;
+  return d.replace(/\s+/g,' ').replace(/\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/g,'').replace(/#\s*\d+/g,'').trim().slice(0,32);
 }
 
 // Apply user rule to a transaction — returns catId (with optional ":targetId" suffix) or null
@@ -4300,6 +4333,14 @@ function applyUserCategory(desc){
   // Partial match: check if any stored rule key is a substring of this desc (or vice versa)
   for(const[ruleKey,catId]of Object.entries(S.userCategories)){
     if(ruleKey.length>=6&&(key.includes(ruleKey)||ruleKey.includes(key)))return catId;
+  }
+  // Regla a nivel etiqueta del banco: "[CAFETERÍA/RESTAURANTE]" → categoría
+  // para todo lo que el banco etiquete así. La regla del comercio específico
+  // (arriba) siempre le gana, y la excepción por cargo va antes que todo.
+  const tm=String(desc).toUpperCase().match(/^\s*(\[[^\]]{1,30}\])/);
+  if(tm){
+    const tk=tm[1].replace(/\s+/g,' ').trim();
+    if(S.userCategories[tk])return S.userCategories[tk];
   }
   return null;
 }
@@ -4559,6 +4600,11 @@ function bucketTotals(txns){
 function normalizeMerchant(desc){
   if(!desc)return'';
   let d=desc.toUpperCase().trim();
+  // La etiqueta "[...]" del banco no identifica al comercio: agrupar con
+  // ella metía comercios distintos al mismo "sangrador". Si el texto es
+  // solo la etiqueta, se conserva (no hay nada más para agrupar).
+  const noTag=d.replace(/^\s*(\[[^\]]*\]\s*)+/,'').trim();
+  if(noTag)d=noTag;
   // Remove common noise: dates, reference numbers, branch codes
   d=d.replace(/\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/g,''); // dates
   d=d.replace(/#\s*\d+/g,''); // #12345

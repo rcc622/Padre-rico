@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#F5F2EC">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -16,7 +16,7 @@
   --terra:#B85C4A;--terradim:rgba(184,92,74,.09);
   --sky:#4A6E8C;--skydim:rgba(74,110,140,.09);
   --amber:#A07030;--amberdim:rgba(160,112,48,.09);
-  --txt:#2C2925;--txt2:#5C5650;--muted:#9A9590;--r:10px;
+  --txt:#2C2925;--txt2:#5C5650;--muted:#7A756E;--r:10px;
   --shadow:0 1px 4px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.04);
 }
 *{box-sizing:border-box;margin:0;padding:0}
@@ -117,7 +117,7 @@ button:active{transform:scale(.97)}
 .ql-item:last-child{border-bottom:none}
 .ql-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
 /* Toast */
-#toast{position:fixed;bottom:calc(132px + env(safe-area-inset-bottom,0));left:50%;transform:translateX(-50%) translateY(20px);background:var(--sage2);color:#fff;padding:10px 22px;border-radius:10px;font-size:12px;font-family:Georgia,serif;font-weight:bold;opacity:0;transition:all .3s ease;pointer-events:none;z-index:999;box-shadow:0 4px 20px rgba(0,0,0,.2);white-space:nowrap}
+#toast{position:fixed;bottom:calc(132px + env(safe-area-inset-bottom,0));left:50%;transform:translateX(-50%) translateY(20px);background:var(--sage2);color:#fff;padding:10px 22px;border-radius:10px;font-size:12px;font-family:Georgia,serif;font-weight:bold;opacity:0;transition:all .3s ease;pointer-events:none;z-index:1100;box-shadow:0 4px 20px rgba(0,0,0,.2);white-space:normal;width:max-content;max-width:min(92vw,420px);text-align:center}
 /* FAB (Floating Action Button) — sube sobre la nav inferior */
 #fabContainer{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom,0));right:20px;z-index:500;display:flex;flex-direction:column;align-items:flex-end;gap:12px}
 #fabMenu{display:none;flex-direction:column;gap:10px;align-items:flex-end}
@@ -247,11 +247,11 @@ button:active{transform:scale(.97)}
       <div style="font-size:20px;color:var(--sage2);margin-bottom:8px;font-weight:bold">Tus ingresos</div>
       <div style="font-size:13px;color:var(--muted);margin-bottom:22px;line-height:1.7">Montos netos (lo que cae a tu cuenta). El bono semestral se prorratea en proyecciones.</div>
       <label>Salario fijo mensual (neto)</label>
-      <input type="number" id="ob-sal" placeholder="0" style="margin-bottom:11px">
+      <input type="number" id="ob-sal" placeholder="0" inputmode="decimal" style="margin-bottom:11px">
       <label>Bono fijo mensual (neto)</label>
-      <input type="number" id="ob-bf" placeholder="0" style="margin-bottom:11px">
+      <input type="number" id="ob-bf" placeholder="0" inputmode="decimal" style="margin-bottom:11px">
       <label>Bono variable semestral (estimado neto)</label>
-      <input type="number" id="ob-bv" placeholder="0" style="margin-bottom:22px">
+      <input type="number" id="ob-bv" placeholder="0" inputmode="decimal" style="margin-bottom:22px">
       <div class="row" style="gap:9px">
         <button class="btn btn-ghost" onclick="obPrev()">← Atrás</button>
         <button class="btn btn-sage" style="flex:1" onclick="obNext()">Siguiente →</button>
@@ -264,9 +264,9 @@ button:active{transform:scale(.97)}
       <label>Nombre</label>
       <input type="text" id="ob-dn" placeholder='"Tarjeta Nu", "Crédito nómina"...' style="margin-bottom:11px">
       <label>Saldo pendiente ($MXN)</label>
-      <input type="number" id="ob-db" placeholder="0" style="margin-bottom:11px">
+      <input type="number" id="ob-db" placeholder="0" inputmode="decimal" style="margin-bottom:11px">
       <label>Pago mensual fijo ($)</label>
-      <input type="number" id="ob-dm" placeholder="0" style="margin-bottom:11px">
+      <input type="number" id="ob-dm" placeholder="0" inputmode="decimal" style="margin-bottom:11px">
       <label>Fecha de liquidación programada (opcional)</label>
       <input type="date" id="ob-dliq" style="margin-bottom:22px">
       <div class="row" style="gap:9px">
@@ -326,10 +326,10 @@ button:active{transform:scale(.97)}
 </div>
 
 <!-- TOAST -->
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <!-- CONFIRM MODAL -->
-<div id="confirmModal" class="modal-overlay" style="display:none" onclick="if(event.target===this)closeConfirm()"></div>
+<div id="confirmModal" class="modal-overlay" role="dialog" aria-modal="true" style="display:none" onclick="if(event.target===this)closeConfirm()"></div>
 
 </div>
 <script>
@@ -356,10 +356,12 @@ window.__xref=window.__xref||new Map();
 let __xrefSeq=0;
 const _xref=(v)=>{const k=++__xrefSeq;window.__xref.set(k,v);return k;};
 const _xget=(k)=>window.__xref.get(+k);
-// ID robusto con alta entropía — evita colisiones por timestamp repetido
+// ID robusto con alta entropía — evita colisiones por timestamp repetido.
+// El fallback es string: Date.now()*1e6 excedía Number.MAX_SAFE_INTEGER y la
+// pérdida de precisión podía colisionar IDs en navegadores sin randomUUID.
 const _uid=()=>{
   try{if(typeof crypto!=='undefined'&&crypto.randomUUID)return crypto.randomUUID();}catch(_){}
-  return Date.now()*1e6+Math.floor(Math.random()*1e6);
+  return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10);
 };
 // Logger centralizado — no silencia errores pero no revienta la app
 const _logErr=(where,e)=>{try{console.error('[padre-rico]',where,e);}catch(_){}};
@@ -412,6 +414,11 @@ let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',do
   simCustoms:[], // FASE 7: conceptos personalizados del simulador (doctor, gym, etc.)
   simSliders:{}, // FASE 7b: última posición de los sliders del simulador — se hidrata a window._simVals al cargar la app para que sobrevivan al refresh
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
+// Copia profunda del estado por defecto, tomada ANTES de cargar datos.
+// Es la base limpia sobre la que se restauran respaldos: restaurar haciendo
+// merge sobre el estado VIVO dejaba claves del estado actual que el respaldo
+// no traía (mezcla de dos estados).
+const S_DEFAULT=JSON.parse(JSON.stringify(S));
 
 function migrate(){
   // Try loading v4 data first
@@ -506,6 +513,26 @@ function _normalizeState(st){
   if(typeof st.savPct!=='number')st.savPct=10;
   if(typeof st.impulsesBudget!=='number')st.impulsesBudget=2000;
   if(typeof st.gastoDiarioBudget!=='number')st.gastoDiarioBudget=0;
+  // Reunifica claves de ciclo de enero: cycleKey() generaba 'Y-0-1ra' (mes 0
+  // inexistente) para los días 1-14 de enero, mientras prevCycleKeyOf usaba
+  // '(Y-1)-12-1ra' para la MISMA quincena. Los datos quedaban partidos en dos
+  // claves. cycleKey() ya emite la forma canónica; aquí renombramos lo viejo.
+  try{
+    const _fixCk=(ck)=>{const m=String(ck||'').match(/^(\d+)-0-(1ra|2da)$/);return m?((+m[1]-1)+'-12-'+m[2]):ck;};
+    const _fixCkMap=(o)=>{
+      if(!o||typeof o!=='object')return;
+      Object.keys(o).forEach(k=>{const nk=_fixCk(k);if(nk!==k){if(!(nk in o))o[nk]=o[k];delete o[k];}});
+    };
+    ['paidItems','savCommits','gastoDiarioBudgetByCycle','longCycleOverrides','deficitDecisions','impulseSpent','overtimeLog'].forEach(k=>_fixCkMap(st[k]));
+    (st.incHistory||[]).forEach(h=>{if(h&&h.from)h.from=_fixCk(h.from);});
+    (st.survivalRetos||[]).forEach(r=>{if(r&&r.cycle)r.cycle=_fixCk(r.cycle);});
+    if(st.retoChecks&&typeof st.retoChecks==='object'){
+      Object.keys(st.retoChecks).forEach(k=>{
+        const m=k.match(/^(.*)_(\d+)-0-(1ra|2da)$/);
+        if(m){const nk=m[1]+'_'+((+m[2]-1)+'-12-'+m[3]);if(!(nk in st.retoChecks))st.retoChecks[nk]=st.retoChecks[k];delete st.retoChecks[k];}
+      });
+    }
+  }catch(e){_logErr('normalize.fixCk',e);}
   _migrateV6(st);
   _reconcileStandaloneMetas(st);
 }
@@ -543,10 +570,14 @@ function _migrateV6(st){
       localStorage.setItem('prv6_premerge_backup_date',new Date().toISOString());
     }
   }catch(e){}
-  (st.assets||[]).forEach(a=>{if(a&&!a.purpose)a.purpose='patrimonio';}); // activos: conservar por defecto
-  (st.savGoals||[]).forEach(g=>{if(g&&!g.tipo)g.tipo='consumo';});        // metas: consumo por defecto
-  st._cajitaSchema=1;
-  st.version=6;
+  // El flag se marca SOLO si la migración terminó sin errores — antes un
+  // error a la mitad dejaba el flag puesto y la migración nunca se reintentaba.
+  try{
+    (st.assets||[]).forEach(a=>{if(a&&!a.purpose)a.purpose='patrimonio';}); // activos: conservar por defecto
+    (st.savGoals||[]).forEach(g=>{if(g&&!g.tipo)g.tipo='consumo';});        // metas: consumo por defecto
+    st._cajitaSchema=1;
+    st.version=6;
+  }catch(e){_logErr('_migrateV6',e);}
   _migrateV7(st);
 }
 // FUSIÓN (Fase 7): fuente de verdad unificada para cajitas. Una meta ligada a
@@ -569,8 +600,9 @@ function _migrateV7(st){
         g.done=g.saved>=(+g.target||0);
       }
     });
-  }catch(e){}
-  st._cajitaUnifiedV7=1;
+    // Flag solo si terminó sin errores (si falla, se reintenta en la próxima carga)
+    st._cajitaUnifiedV7=1;
+  }catch(e){_logErr('_migrateV7',e);}
   _migrateV8(st);
 }
 // FUSIÓN (Fase 8): SALDO DERIVADO DE EVENTOS. Antes a.val era un valor
@@ -610,8 +642,9 @@ function _migrateV8(st){
       const a=aid!=null?byId[aid]:null;
       if(a){g.lastAssetId=a.id;g.saved=Math.round(+a.val||0);g.done=g.saved>=(+g.target||0);}
     });
-  }catch(e){}
-  st._derivedBalanceV8=1;
+    // Flag solo si terminó sin errores (si falla, se reintenta en la próxima carga)
+    st._derivedBalanceV8=1;
+  }catch(e){_logErr('_migrateV8',e);}
 }
 // Restaura el estado previo a la fusión (por si algo no cuadra). Llamable
 // desde consola: restorePremergeBackup()
@@ -750,32 +783,33 @@ let dStrat='snowball',planQ='actual',planView='pagos',debtSort='prox';
 let _planViewCk=null;
 function planCk(){return _planViewCk||cycleKey();}
 // Derive cycle window from a cycleKey string (e.g. "2026-3-1ra" → {start, end, type})
+// Frontera de quincenas: la 2da termina en min(29, último día del mes) y la
+// 1ra empieza EXACTAMENTE el día siguiente. En febrero new Date(y,1,29) rodaba
+// al 1 de marzo, y la 1ra empezaba el 28 — los días 28-feb y 1-mar quedaban en
+// DOS ventanas a la vez y los gastos de esos días se contaban doble.
+function _qnaEndDay(y,mo){return Math.min(29,new Date(y,mo+1,0).getDate());}
 function cycleWindowFromKey(ck){
   try{
     const m=ck.match(/^(\d+)-(\d+)-(1ra|2da)$/);
     if(!m)return getCycleWindow();
     const y=+m[1],mo=+m[2]-1,tipo=m[3]; // mo is 0-indexed label month
     if(tipo==='2da'){
-      // 2da qna: 15 to 29 of the labeled month
-      return {start:new Date(y,mo,15),end:new Date(y,mo,29),type:'2da'};
+      // 2da qna: 15 a min(29, fin de mes) del mes etiquetado
+      return {start:new Date(y,mo,15),end:new Date(y,mo,_qnaEndDay(y,mo)),type:'2da'};
     }
-    // 1ra qna: day 30 of month mo to day 14 of month mo+1
-    // '2026-3-1ra' → mo=2 (March 0-indexed) → start Mar 30, end Apr 14
-    const lastOfMo=new Date(y,mo+1,0).getDate(); // last day of month mo
-    return {start:new Date(y,mo,Math.min(30,lastOfMo)),end:new Date(y,mo+1,14),type:'1ra'};
+    // 1ra qna: día siguiente al fin de la 2da del mes mo, hasta el 14 de mo+1
+    // '2026-3-1ra' → mo=2 (marzo 0-indexed) → start Mar 30, end Abr 14
+    return {start:new Date(y,mo,_qnaEndDay(y,mo)+1),end:new Date(y,mo+1,14),type:'1ra'};
   }catch(e){return getCycleWindow();}
 }
 // Get all known cycle keys (from paidItems + current + next), sorted chronologically
 function allCycleKeys(){
   const keys=new Set(Object.keys(S.paidItems||{}));
   keys.add(cycleKey());
-  // Add next cycle. Convención: "1ra X" = empieza día 30 de mes X, termina 14 de X+1.
-  // "2da X" = 15-29 de mes X.
-  const cw=getCycleWindow();
-  const ne=new Date(cw.end);ne.setDate(ne.getDate()+1);
-  const nd=ne.getDate(),nm=ne.getMonth(),ny=ne.getFullYear();
-  const nextCk=nd>=15&&nd<=29?ny+'-'+(nm+1)+'-2da':ny+'-'+(nm+1)+'-1ra';
-  keys.add(nextCk);
+  // Add next cycle. Convención: "1ra X" = empieza ~día 30 de mes X, termina 14 de X+1.
+  // "2da X" = 15-29 de mes X. Se deriva del cycleKey actual (no de la fecha del
+  // día siguiente, que en los bordes de febrero/año etiquetaba mal el ciclo).
+  keys.add(nextCycleKeyOf(cycleKey()));
   // Sort chronologically: 2da X antes de 1ra X (mismo mes X)
   return [...keys].sort((a,b)=>{
     const pa=a.match(/(\d+)-(\d+)-(1ra|2da)/);
@@ -829,6 +863,12 @@ function showConfirm(title,body,onConfirm){
   m.style.display='flex';
 }
 function closeConfirm(){document.getElementById('confirmModal').style.display='none';_confirmCb=null;}
+// Escape cierra el modal de confirmación (accesibilidad de teclado)
+document.addEventListener('keydown',e=>{
+  if(e.key!=='Escape')return;
+  const m=document.getElementById('confirmModal');
+  if(m&&m.style.display!=='none')closeConfirm();
+});
 function execConfirm(){if(_confirmCb)_confirmCb();closeConfirm();}
 function showInfo(title,body){showConfirm(title,body,null);document.getElementById('confirmModal').querySelector('.modal-box > .row').innerHTML='<button class="btn btn-sage btn-sm" style="flex:1" onclick="closeConfirm()">Entendido</button>';}
 const INFO={
@@ -854,20 +894,27 @@ function cycleKey(){
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
   if(d>=15&&d<=29)return y+'-'+(m+1)+'-2da';
   if(d>=30)return y+'-'+(m+1)+'-1ra';
+  // d in [1..14]: el ciclo empezó ~día 30 del mes ANTERIOR (label = mes previo).
+  // En enero el mes previo es diciembre del año pasado — antes esto devolvía
+  // 'y-0-1ra' (mes 0 inexistente), distinta de la '(y-1)-12-1ra' que generaba
+  // prevCycleKeyOf para la MISMA quincena, y los datos se partían en dos claves.
+  if(m===0)return (y-1)+'-12-1ra';
   return y+'-'+m+'-1ra';
 }
-// Returns the cycleKey immediately before the current one
-function prevCycleKey(){
-  const today=new Date();today.setHours(0,0,0,0);
-  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
-  // Current cycle types:
-  //   d in [15..29] → current=2da of m+1, prev=1ra of m+1
-  //   d >= 30      → current=1ra of m+1, prev=2da of m (calendar month m)
-  //   d in [1..14] → current=1ra of m (prev cycle spans m-1 day 30 to m day 14), prev=2da of m-1
-  if(d>=15&&d<=29)return y+'-'+(m+1)+'-1ra';
-  if(d>=30)return y+'-'+(m+1)+'-2da';
-  // d in [1..14]: prev = 2da of m (month index m, label 2da)
-  return y+'-'+m+'-2da';
+// Returns the cycleKey immediately before the current one.
+// Delegamos en prevCycleKeyOf: la versión manual anterior devolvía '1ra X'
+// como "previo" de '2da X', pero por la convención de orden (2da X ocurre
+// ANTES que 1ra X) eso era el ciclo SIGUIENTE, no el anterior.
+function prevCycleKey(){return prevCycleKeyOf(cycleKey());}
+// Ciclo inmediatamente posterior a un cycleKey dado (inverso de prevCycleKeyOf)
+function nextCycleKeyOf(ck){
+  const m=String(ck||'').match(/^(\d+)-(\d+)-(1ra|2da)$/);
+  if(!m)return ck;
+  const y=+m[1],mo=+m[2],tipo=m[3];
+  if(tipo==='2da')return y+'-'+mo+'-1ra';
+  // 1ra X → 2da de X+1 (diciembre rueda a enero del año siguiente)
+  if(mo<12)return y+'-'+(mo+1)+'-2da';
+  return (y+1)+'-1-2da';
 }
 // Versión genérica: dado un cycleKey arbitrario, devuelve el ciclo
 // inmediatamente anterior. Útil para "el ciclo anterior al que estoy viendo"
@@ -884,18 +931,19 @@ function prevCycleKeyOf(ck){
   return (y-1)+'-12-1ra';
 }
 // Returns {start,end,type} for the cycle containing `ref` (default today)
+// Mismas fronteras que cycleWindowFromKey: 2da termina min(29, fin de mes) y
+// la 1ra empieza el día siguiente (en febrero la 1ra arranca el 1 de marzo).
 function getCycleWindow(ref){
   const t=ref?new Date(ref):new Date();t.setHours(0,0,0,0);
   const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();
   if(d>=15&&d<=29){
-    return {start:new Date(y,m,15),end:new Date(y,m,29),type:'2da'};
+    return {start:new Date(y,m,15),end:new Date(y,m,_qnaEndDay(y,m)),type:'2da'};
   }
   if(d>=30){
-    return {start:new Date(y,m,30),end:new Date(y,m+1,14),type:'1ra'};
+    return {start:new Date(y,m,_qnaEndDay(y,m)+1),end:new Date(y,m+1,14),type:'1ra'};
   }
-  // 1-14
-  const prevLast=new Date(y,m,0).getDate();
-  return {start:new Date(y,m-1,Math.min(30,prevLast)),end:new Date(y,m,14),type:'1ra'};
+  // 1-14: el ciclo empezó el día siguiente al fin de la 2da del mes anterior
+  return {start:new Date(y,m-1,_qnaEndDay(y,m-1)+1),end:new Date(y,m,14),type:'1ra'};
 }
 function diariosThisCycle(ck){
   const w=ck?cycleWindowFromKey(ck):getCycleWindow();
@@ -949,10 +997,15 @@ function toggleLongCycle(){
 // centralizada para que Dashboard y Plan coincidan.
 function dayInWindow(pd,w){
   if(!pd||!w)return false;
-  const s=w.start,e=w.end;const tds=[];
-  for(let tm=s.getMonth()-1;tm<=e.getMonth()+1;tm++){
-    const mx=new Date(s.getFullYear(),tm+1,0).getDate();
-    if(pd<=mx)tds.push(new Date(s.getFullYear(),tm,pd));
+  const s=w.start,e=w.end;
+  // Itera por offset de mes (Date rueda años): el loop por getMonth() crudo
+  // nunca iteraba en ciclos que cruzan el año (30-dic→14-ene).
+  const y0=s.getFullYear(),m0=s.getMonth();
+  const span=(e.getFullYear()-y0)*12+(e.getMonth()-m0);
+  const tds=[];
+  for(let k=-1;k<=span+1;k++){
+    const mx=new Date(y0,m0+k+1,0).getDate();
+    if(pd<=mx)tds.push(new Date(y0,m0+k,pd));
   }
   return tds.some(td=>td>=s&&td<=e);
 }
@@ -1274,13 +1327,10 @@ function genSurvivalRetos(deficit){
   const retos=[];
   const lastSnap=lastHormiga();
   const hormiga=lastSnap?.hormiga||{};
-  // Calculate quincena days
-  const td=new Date();td.setHours(0,0,0,0);
-  const dd=td.getDate(),mm=td.getMonth(),yy=td.getFullYear();
-  let qS,qE;
-  if(dd>=15&&dd<=29){qS=new Date(yy,mm,15);qE=new Date(yy,mm,29);}
-  else if(dd>=30){qS=new Date(yy,mm,30);qE=new Date(yy,mm+1,14);}
-  else{qS=new Date(yy,mm-1,Math.min(30,new Date(yy,mm,0).getDate()));qE=new Date(yy,mm,14);}
+  // Calculate quincena days — usa la ventana canónica (getCycleWindow) en
+  // vez de re-derivarla a mano con fronteras que divergían en febrero.
+  const _qw=getCycleWindow();
+  const qS=_qw.start,qE=_qw.end;
   const qnaDays=Math.round((qE-qS)/864e5)+1;
   
   const dData=hormiga['🚗 Delivery'];
@@ -2375,13 +2425,13 @@ function metaCycleAmt(g,ck){
 }
 function getExpSavePlan(){
   // Compute which monthly expenses need an "apartado" (save half each quincena)
-  const today=new Date();today.setHours(0,0,0,0);
-  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
-  let cStart,cEnd;
-  if(d>=15&&d<=29){cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
-  else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
-  else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
-  function dayInC(pd){if(!pd)return false;const tds=[];for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){const mx=new Date(cStart.getFullYear(),tm+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
+  // Ventana canónica del ciclo actual (antes se re-derivaba a mano con
+  // fronteras que divergían en febrero).
+  const _cw=getCycleWindow();
+  const cStart=_cw.start,cEnd=_cw.end;
+  // Itera por offset de mes (Date rueda años) — el loop por getMonth() crudo
+  // nunca iteraba en el ciclo 30-dic→14-ene y los apartados desaparecían.
+  function dayInC(pd){if(!pd)return false;const y0=cStart.getFullYear(),m0=cStart.getMonth();const span=(cEnd.getFullYear()-y0)*12+(cEnd.getMonth()-m0);const tds=[];for(let k=-1;k<=span+1;k++){const mx=new Date(y0,m0+k+1,0).getDate();if(pd<=mx)tds.push(new Date(y0,m0+k,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
   const plan=[];
   S.exp.forEach(e=>{
     const f=e.freq||'mensual';if(f!=='mensual')return;
@@ -2453,12 +2503,17 @@ function bonusInCycle(cStart,cEnd,inc){
   const lastDay=!!inc.bfLastDay;
   const pdCfg=+(inc.bfDate)||0;
   if(!lastDay&&!pdCfg)return false;
-  // Check each month that the cycle could span (from month before start to month after end)
-  const y0=cStart.getFullYear();
-  for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){
-    const lastOfMonth=new Date(y0,tm+1,0).getDate();
+  // Check each month that the cycle could span (from month before start to month after end).
+  // Itera por OFFSET de mes desde el inicio (Date rueda años automáticamente).
+  // Antes comparaba índices de mes crudos (getMonth()), y en el ciclo
+  // 30-dic→14-ene el loop iba de 10 a <=1: nunca iteraba y el bono mensual
+  // desaparecía del ingreso de esa quincena (falso déficit).
+  const y0=cStart.getFullYear(),m0=cStart.getMonth();
+  const span=(cEnd.getFullYear()-y0)*12+(cEnd.getMonth()-m0);
+  for(let k=-1;k<=span+1;k++){
+    const lastOfMonth=new Date(y0,m0+k+1,0).getDate();
     const effectiveDay=lastDay?lastOfMonth:Math.min(pdCfg,lastOfMonth);
-    const candidate=new Date(y0,tm,effectiveDay);
+    const candidate=new Date(y0,m0+k,effectiveDay);
     if(candidate>=cStart&&candidate<=cEnd)return true;
   }
   return false;
@@ -2474,7 +2529,10 @@ const payPeriodLabel=(f)=>f==='semanal'?'Pago semanal':f==='quincenal'?'Pago qui
 // Distinta de "abono/cuota de este ciclo pagada": esa NO liquida la deuda,
 // sólo cubre el periodo actual y la deuda sigue viva con saldo pendiente.
 const isDebtLiquidated=(d)=>(+d.bal||0)<=0||!!(d.curPay&&d.totalPays&&d.curPay>d.totalPays);
-const tExp=()=>S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0);
+// Excluye freq 'unico': un pago de una sola vez no es un gasto mensual
+// recurrente (igual que hace project() en el simulador — antes el score y el
+// simulador se contradecían porque flow() lo restaba todos los meses).
+const tExp=()=>S.exp.reduce((a,e)=>a+((e.freq||'mensual')==='unico'?0:toMonthly(+e.amt||0,e.freq||'mensual')),0);
 const savAmt=()=>mInc()*S.savPct/100;
 // Quincenal savings amount (half of monthly plan)
 const savAmtQ=()=>Math.round(savAmt()/2);
@@ -3013,7 +3071,10 @@ function showBonoPlays(){
     showInfo('💎 Jugada Estratégica',body);
   }catch(e){toast('Error al calcular jugadas');}
 }
-const tDebtPay=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)?0:toMonthly(+d.pay||0,d.freq||'mensual')),0);
+// Excluye deudas 'unico' del flujo mensual recurrente: un desembolso agendado
+// una sola vez aparecía como pago mensual perpetuo y deprimía flow()/score
+// para siempre (project() ya lo trataba bien; ahora ambos coinciden).
+const tDebtPay=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)||(d.freq||'mensual')==='unico'?0:toMonthly(+d.pay||0,d.freq||'mensual')),0);
 const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
 const tDebt=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)?0:(+d.bal||0)),0);
 const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
@@ -3124,14 +3185,17 @@ const tExtras=()=>{
   S.extras.forEach(x=>{
     if(x.tipo==='recurrente')total+=toMonthly(+x.amt||0,x.freq||'mensual');
     else{
-      // Unique: only count if date is in current month (approx)
+      // Unique: only count if date is in current month (approx).
+      // Sin fecha (legacy) NO se cuenta: antes un extra único viejo sin fecha
+      // inflaba el ingreso mensual para siempre.
       if(x.date){const d=new Date(x.date+'T12:00');if(d.getMonth()===cm&&d.getFullYear()===cy)total+=(+x.amt||0);}
-      else total+=(+x.amt||0);
     }
   });
   return total;
 };
-const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline)-new Date())/864e5))};
+// 'T12:00' fuerza parse en hora local — sin sufijo, 'YYYY-MM-DD' se parsea
+// como UTC y al oeste de Greenwich el deadline aparecía un día antes.
+const dLeft=()=>{if(!S.deadline)return 180;return Math.max(0,Math.ceil((new Date(S.deadline+'T12:00')-new Date())/864e5))};
 // % de tiempo transcurrido del plazo de la meta. Usa la fecha de inicio
 // real (goalBaseDate) → fecha límite, para que sea correcto aunque el
 // usuario haya elegido un plazo distinto a 6 meses. Si no hay anclas,
@@ -3313,7 +3377,7 @@ const setDL=()=>{
 };
 const drawDots=()=>{document.getElementById('dots').innerHTML=[1,2,3].map(i=>`<div class="dot ${i<obS?'ok':i===obS?'cur':''}"></div>`).join('')};
 function obNext(){
-  if(obS===1){const g=document.getElementById('ob-goal').value.trim();if(!g){alert('Escribe tu meta 🎯');return;}let dl=document.getElementById('ob-dl').value;if(!dl)dl=setDL();const delta=Math.max(0,+(document.getElementById('ob-delta').value)||0);pt({goal:g,deadline:dl,goalDelta:delta,goalBaseDate:_ymdLocal(new Date())});}
+  if(obS===1){const g=document.getElementById('ob-goal').value.trim();if(!g){toast('🎯 Escribe tu meta para continuar');document.getElementById('ob-goal')?.focus();return;}let dl=document.getElementById('ob-dl').value;if(!dl)dl=setDL();const delta=Math.max(0,+(document.getElementById('ob-delta').value)||0);pt({goal:g,deadline:dl,goalDelta:delta,goalBaseDate:_ymdLocal(new Date())});}
   else if(obS===2){pt({inc:{sal:+(document.getElementById('ob-sal').value)||0,bf:+(document.getElementById('ob-bf').value)||0,bv:+(document.getElementById('ob-bv').value)||0}});}
   obS++;document.querySelectorAll('.onb-step').forEach(x=>x.classList.remove('act'));document.getElementById('s'+obS)?.classList.add('act');drawDots();
 }
@@ -3403,6 +3467,9 @@ function go(tab){
   ({dash:rDash,quincena:rQuincena,flujo:rFlujo,plan:rPlan,habitos:rHabitos,historia:rHistoria})[tab]?.();
   hdrUp();
   _enableCardCollapse();
+  // Al cambiar de pestaña, arranca arriba — sin esto la nueva pestaña
+  // aparecía a media página si el usuario venía scrolleado.
+  window.scrollTo(0,0);
 }
 // Inicializa cards colapsables. Después de cada render busca todos los
 // .card > .ct y los convierte en toggles. Los cards arrancan expandidos.
@@ -4213,21 +4280,70 @@ function getCatDisplayLabel(catId){
   return info.label;
 }
 
+// Split de una línea CSV respetando campos entre comillas. Antes se hacía
+// split ingenuo por el separador, y un comercio como "OXXO, SA DE CV"
+// desplazaba todas las columnas de esa fila.
+function _splitCsvLine(line,sep){
+  const out=[];let cur='',inQ=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(inQ){
+      if(ch==='"'){
+        if(line[i+1]==='"'){cur+='"';i++;}   // comilla escapada ""
+        else inQ=false;
+      }else cur+=ch;
+    }else{
+      if(ch==='"')inQ=true;
+      else if(ch===sep){out.push(cur);cur='';}
+      else cur+=ch;
+    }
+  }
+  out.push(cur);
+  return out.map(x=>x.trim());
+}
+// Convierte un monto CSV a número detectando el separador decimal. Antes se
+// eliminaban TODAS las comas antes de parsear, así que "1234,56" (decimal
+// con coma, común en bancos) se convertía en 123456 — montos ×100 silenciosos.
+function _parseCsvAmount(raw){
+  let s=String(raw==null?'':raw).replace(/[$\s]/g,'').replace(/MXN|USD/gi,'');
+  if(!s)return NaN;
+  const neg=s.startsWith('-')||/^\(.*\)$/.test(s);
+  s=s.replace(/^[-+(]+|[)]+$/g,'');
+  const hasC=s.includes(','),hasD=s.includes('.');
+  if(hasC&&hasD){
+    // El separador que aparece más a la derecha es el decimal; el otro, miles.
+    if(s.lastIndexOf(',')>s.lastIndexOf('.'))s=s.replace(/\./g,'').replace(',','.');
+    else s=s.replace(/,/g,'');
+  }else if(hasC){
+    // Solo coma: decimal si va seguida de 1-2 dígitos al final; si no, miles.
+    if(/,\d{1,2}$/.test(s))s=s.replace(',','.');
+    else s=s.replace(/,/g,'');
+  }
+  // Solo punto (o ninguno): parseFloat directo.
+  const n=parseFloat(s);
+  return isNaN(n)?NaN:(neg?-n:n);
+}
+// Núm. de filas ilegibles del último CSV parseado — la UI avisa al usuario
+// en vez de descartarlas en silencio.
+let _lastParseSkipped=0;
 function parseNu(txt){
+  _lastParseSkipped=0;
   const lines=txt.trim().split(/\r?\n/);if(lines.length<2)return[];
   const sep=lines[0].includes(';')?';':',';
-  const hdr=lines[0].split(sep).map(h=>h.replace(/"/g,'').trim().toLowerCase());
+  const hdr=_splitCsvLine(lines[0],sep).map(h=>h.replace(/"/g,'').trim().toLowerCase());
   const di=hdr.findIndex(h=>h.includes('fecha')||h.includes('date'));
   const ni=hdr.findIndex(h=>h.includes('descri')||h.includes('concepto')||h.includes('estable')||h.includes('comercio'));
   const ai=hdr.findIndex(h=>h.includes('monto')||h.includes('valor')||h.includes('amount')||h.includes('importe'));
   if(ai===-1)return[];
   const res=[];
   for(let i=1;i<lines.length;i++){
-    const p=lines[i].split(sep).map(x=>x.replace(/^"|"$/g,'').trim());
-    if(p.length<=ai)continue;
-    const raw=(p[ai]||'').replace(/[$,\s]/g,'');
-    const n=parseFloat(raw.replace(',','.'));if(!n||n===0)continue;
-    res.push({date:p[di]||'',desc:p[ni]||p[1]||'',amt:Math.abs(n),isCharge:n<0||raw.startsWith('-')});
+    if(!lines[i].trim())continue;
+    const p=_splitCsvLine(lines[i],sep);
+    if(p.length<=ai){_lastParseSkipped++;continue;}
+    const rawStr=(p[ai]||'').trim();
+    const n=_parseCsvAmount(rawStr);
+    if(isNaN(n)||n===0){_lastParseSkipped++;continue;}
+    res.push({date:p[di]||'',desc:p[ni]||p[1]||'',amt:Math.abs(n),isCharge:n<0||rawStr.startsWith('-')});
   }
   return res.filter(t=>t.isCharge);
 }
@@ -5002,6 +5118,25 @@ function _reactivateFromRecaida(retoId,amt){
   }catch(e){closeConfirm();}
 }
 
+// Wrapper con detección de duplicados: re-subir el mismo CSV creaba otro
+// capítulo idéntico (mismo periodo) que ensuciaba historia, racha y promedios.
+// Si ya existe un capítulo con el mismo periodo, pide confirmación explícita.
+function saveSnapshotChecked(txns,source){
+  try{
+    const dates=txns.map(t=>_toValidYMD(t.date)).filter(Boolean).sort();
+    const ps=dates[0]||'',pe=dates[dates.length-1]||'';
+    const dup=ps&&pe?(S.snapshots||[]).find(s=>s&&s.periodStart===ps&&s.periodEnd===pe):null;
+    if(dup){
+      showConfirm('⚠ Posible capítulo duplicado',
+        '<div style="font-size:12px;color:var(--txt2);line-height:1.7">Ya existe un capítulo con el periodo <strong>'+_escH(ps)+' → '+_escH(pe)+'</strong> (guardado el '+_escH(dup.date||'?')+', '+fx(+dup.totalGasto||0)+' en '+(+dup.totalTxns||0)+' movimientos).<br><br>Si vuelves a guardarlo, los gastos de ese periodo se contarán <strong>dos veces</strong> en tu historia. ¿Seguro que quieres guardar otro capítulo igual?</div>',
+        ()=>{saveSnapshot(txns,source);nuTxns._saved=true;closeConfirm();rQuincena();});
+      return;
+    }
+  }catch(e){_logErr('saveSnapshotChecked',e);}
+  saveSnapshot(txns,source);
+  nuTxns._saved=true;
+  rQuincena();
+}
 function saveSnapshot(txns,source){
   source=source||'combined';
   const hd=detectH(txns);
@@ -5354,7 +5489,7 @@ function rQuincena(){
   ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
     <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo${qnaFilter!=='all'?' ('+qnaFilter+' qna)':''}?</div>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">${qnaFilter!=='all'?'Se guardarán solo las transacciones de la '+qnaFilter+' quincena.':'Guarda las métricas para comparar con futuras quincenas.'}</div>
-    <button class="btn btn-sage" onclick="saveSnapshot(filterByQna([...nuDebit,...nuCredit],qnaFilter),'debit');nuTxns._saved=true;rQuincena()">Guardar capítulo</button>
+    <button class="btn btn-sage" onclick="saveSnapshotChecked(filterByQna([...nuDebit,...nuCredit],qnaFilter),'debit')">Guardar capítulo</button>
   </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo guardado</div></div>`}
 
   <!-- RESUMEN COMBINADO -->
@@ -5450,7 +5585,8 @@ function _doFileRead(f,type){const r=new FileReader();r.onload=e=>{const txns=pa
   const pds=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):s;};
   const ds=txns.map(t=>pds(t.date)).filter(Boolean).sort();
   if(ds.length>=2){const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);if(diff>18)qnaFilter='all';else qnaFilter='all';}
-  toast('✓ '+txns.length+' transacciones de '+(type==='debit'?'débito':'crédito')+' leídas');rQuincena();};r.readAsText(f,'UTF-8');}
+  const skipMsg=_lastParseSkipped>0?' · ⚠ '+_lastParseSkipped+' fila'+(_lastParseSkipped!==1?'s':'')+' ilegible'+(_lastParseSkipped!==1?'s':'')+' omitida'+(_lastParseSkipped!==1?'s':''):'';
+  toast('✓ '+txns.length+' transacciones de '+(type==='debit'?'débito':'crédito')+' leídas'+skipMsg);rQuincena();};r.readAsText(f,'UTF-8');}
 function filterByQna(txns,filter){
   if(filter==='all')return txns;
   const pds2=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?+m[1]:+s.split('-')[2];};
@@ -5569,13 +5705,11 @@ function _realIncSummary(){
       else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cw.start&&xd<=cw.end)extUniQ+=(+x.amt||0);}
     });
     const totalThis=salQ+bonoQ+extRecQ+extUniQ;
-    // Next cycle
-    const ne=new Date(cw.end);ne.setDate(ne.getDate()+1);
-    const nd=ne.getDate();
-    let nStart,nEnd;
-    if(nd>=15&&nd<=29){nStart=new Date(ne.getFullYear(),ne.getMonth(),15);nEnd=new Date(ne.getFullYear(),ne.getMonth(),29);}
-    else{nStart=new Date(ne.getFullYear(),ne.getMonth(),Math.min(30,new Date(ne.getFullYear(),ne.getMonth()+1,0).getDate()));nEnd=new Date(ne.getFullYear(),ne.getMonth()+1,14);}
-    const nCk=nd>=15&&nd<=29?ne.getFullYear()+'-'+(ne.getMonth()+1)+'-2da':ne.getFullYear()+'-'+(ne.getMonth()+1)+'-1ra';
+    // Next cycle — derivado del cycleKey canónico (la derivación manual por
+    // "día siguiente al fin" etiquetaba mal el ciclo en los bordes de febrero)
+    const nCk=nextCycleKeyOf(cycleKey());
+    const _nW=cycleWindowFromKey(nCk);
+    const nStart=_nW.start,nEnd=_nW.end;
     const nIncH=getIncForCycle(nCk);
     const nSalQ=Math.round((+nIncH.sal||0)/2);
     const nHasBono=bonusInCycle(nStart,nEnd,nIncH);
@@ -6567,20 +6701,34 @@ function _deleteIncHistory(idx){
     closeConfirm();rFlujo();
   });
 }
-function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';if(!n||!a)return;
+function addExp(){const n=document.getElementById('en')?.value.trim();const a=+document.getElementById('ea')?.value;const c=document.getElementById('ec')?.value;const f=document.getElementById('ef')?.value||'mensual';
+  if(!n){toast('⚠ Falta el nombre del gasto');document.getElementById('en')?.focus();return;}
+  if(!isFinite(a)||a<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');document.getElementById('ea')?.focus();return;}
   const pd=(f==='mensual'||f==='bimestral')?(+(document.getElementById('epd')?.value)||0):0;
   const bm=f==='bimestral'?(document.getElementById('ebm')?.value||'par'):'';
   if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}:e)});editExpId=null;toast('✓ Gasto actualizado');}
   else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd,bimMeses:bm}]});toast('✓ Gasto registrado');}
   rFlujo();}
-function rmExp(id){pt({exp:S.exp.filter(e=>e.id!==id)});editExpId=null;toast('Gasto eliminado');rFlujo();}
+function rmExp(id){
+  const e=S.exp.find(x=>x.id===id);
+  showConfirm('🗑 ¿Eliminar gasto fijo?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(e?.name||'este gasto')+'</strong>'+(e?' ('+fx(+e.amt||0)+' / '+freqShort(e.freq||'mensual')+')':'')+'. Esta acción no se puede deshacer.</div>',()=>{
+    pt({exp:S.exp.filter(x=>x.id!==id)});editExpId=null;closeConfirm();toast('Gasto eliminado');rFlujo();
+  });
+}
 function editExp(id){editExpId=id;flujoView='gastos';rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
-function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const t=document.getElementById('xt')?.value||'unico';if(!n||!a)return;
+function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=+(document.getElementById('xa')?.value);const t=document.getElementById('xt')?.value||'unico';
+  if(!n){toast('⚠ Falta el concepto');document.getElementById('xn')?.focus();return;}
+  if(!isFinite(a)||a<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');document.getElementById('xa')?.focus();return;}
   const extra={id:Date.now(),name:n,amt:a,tipo:t};
   if(t==='recurrente'){extra.freq=document.getElementById('xf')?.value||'mensual';}
   else{extra.date=document.getElementById('xd')?.value||_todayYMD();}
   pt({extras:[...S.extras,extra]});toast('✓ Ingreso extra registrado');rFlujo();}
-function rmExtra(id){pt({extras:S.extras.filter(x=>String(x.id)!==String(id))});toast('Ingreso extra eliminado');rFlujo();}
+function rmExtra(id){
+  const x=S.extras.find(e=>String(e.id)===String(id));
+  showConfirm('🗑 ¿Eliminar ingreso extra?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(x?.name||'este ingreso')+'</strong>'+(x?' ('+fx(+x.amt||0)+')':'')+'. Esta acción no se puede deshacer.</div>',()=>{
+    pt({extras:S.extras.filter(e=>String(e.id)!==String(id))});closeConfirm();toast('Ingreso extra eliminado');rFlujo();
+  });
+}
 function editExtra(id){
   const x=S.extras.find(e=>String(e.id)===String(id));
   if(!x){toast('Ingreso no encontrado');return;}
@@ -6822,7 +6970,8 @@ function addDiarioDirect(method){
   if(!isFinite(a)||a<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');aEl?.focus();return;}
   const newDiario={id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:method||'debito'};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
-  _diarioCat='snack';
+  // La categoría se queda seleccionada: registrar 3 ubers seguidos no debe
+  // obligar a re-elegir "Transporte" cada vez (antes se reseteaba a 'snack').
   // Limpia el form
   if(nEl)nEl.value='';
   if(aEl)aEl.value='';
@@ -6831,6 +6980,9 @@ function addDiarioDirect(method){
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
   try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
   try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  // El re-render destruía el foco: para encadenar varios gastos seguidos el
+  // usuario tenía que volver a tocar "Concepto" cada vez. Lo devolvemos.
+  setTimeout(()=>{try{document.getElementById('gdn')?.focus();}catch(_){}},60);
 }
 function addDiario(){
   const n=document.getElementById('gdn')?.value.trim();
@@ -7122,7 +7274,7 @@ function openQuickDiario(prefill){
   const today=_todayYMD();
   const cats=_allDiarioCats();
   const body='<input type="text" id="qdn" placeholder="Concepto (Coca OXXO, Uber...)" value="'+_escA(prefill.name||'')+'" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
-    +'<input type="number" id="qda" placeholder="Monto $" value="'+(prefill.amt!=null&&prefill.amt!==''?_escA(String(prefill.amt)):'')+'" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
+    +'<input type="number" id="qda" placeholder="Monto $" inputmode="decimal" value="'+(prefill.amt!=null&&prefill.amt!==''?_escA(String(prefill.amt)):'')+'" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:12px">'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Categoría</div>'
     +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">'
     +'<select id="qdCatSel" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="_quickDiarioCat=this.value">'
@@ -7174,9 +7326,12 @@ function _openQuickDiarioNewCat(){
 }
 function _quickDiarioSave(method){
   const n=document.getElementById('qdn')?.value.trim();
-  const a=+(document.getElementById('qda')?.value);
+  // Mismo parseo que addDiarioDirect: acepta coma decimal ("20,50") — antes
+  // este modal usaba +value y la coma producía NaN→0 silencioso.
+  const a=parseFloat((document.getElementById('qda')?.value||'').replace(',','.').trim());
   const d=document.getElementById('qdd')?.value||_todayYMD();
-  if(!n||!a){toast('Concepto y monto requeridos');return;}
+  if(!n){toast('⚠ Falta el concepto');document.getElementById('qdn')?.focus();return;}
+  if(!isFinite(a)||a<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');document.getElementById('qda')?.focus();return;}
   const newDiario={id:Date.now(),name:n,amt:a,cat:_quickDiarioCat,date:d,paidWith:method};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
   _quickDiarioCat='snack';
@@ -7211,12 +7366,16 @@ function _switchDiarioToTDC(){
   if(typeof rDash==='function')try{rDash();}catch(e){}
 }
 function rmDiario(id){
-  pt({gastosDiarios:(S.gastosDiarios||[]).filter(g=>g.id!==id)});
-  toast('Gasto eliminado');
-  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
-  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
-  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
-  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  const g=(S.gastosDiarios||[]).find(x=>x.id===id);
+  showConfirm('🗑 ¿Eliminar gasto?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(g?.name||'este gasto')+'</strong>'+(g?' ('+fx(+g.amt||0)+(g.date?' · '+g.date:'')+')':'')+'. Esta acción no se puede deshacer.</div>',()=>{
+    pt({gastosDiarios:(S.gastosDiarios||[]).filter(x=>x.id!==id)});
+    closeConfirm();
+    toast('Gasto eliminado');
+    try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+    try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+    try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
+    try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  });
 }
 // Editor de un gasto diario ya registrado — concepto, monto, categoría,
 // fecha y método de pago. Los pre-registros pendientes desde retos no se
@@ -7448,7 +7607,8 @@ function addDebt(){
   const pago=+(document.getElementById('dm')?.value)||0;
   let b=+(document.getElementById('db')?.value)||0;
   if(f==='unico')b=pago;
-  if(!n||!b)return;
+  if(!n){toast('⚠ Falta el nombre de la deuda');document.getElementById('dn')?.focus();return;}
+  if(!isFinite(b)||b<=0){toast('⚠ Saldo inválido (debe ser mayor a 0)');document.getElementById(f==='unico'?'dm':'db')?.focus();return;}
   const npDate=document.getElementById('dpd')?.value||'';
   const pd=npDate?new Date(npDate+'T12:00').getDate():0;
   const liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');
@@ -8434,7 +8594,15 @@ function restoreBackup(){
   if(!bk){toast('No hay respaldo disponible');return;}
   showConfirm('¿Restaurar respaldo?',
     '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Se reemplazarán todos tus datos con el respaldo.<br><br><strong style="color:var(--terra)">Perderás los cambios posteriores.</strong></div>',
-    ()=>{try{S={...S,...JSON.parse(bk)};sv();toast('✅ Respaldo restaurado');go('plan');}catch{toast('Error al restaurar');}});
+    ()=>{try{
+      // Reemplazo sobre el estado por defecto + normalización — mismo
+      // endurecimiento que importData (el merge sobre el estado vivo mezclaba
+      // claves de dos estados distintos).
+      const fresh={...JSON.parse(JSON.stringify(S_DEFAULT)),...JSON.parse(bk)};
+      _normalizeState(fresh);
+      S=fresh;
+      sv();toast('✅ Respaldo restaurado');go('plan');
+    }catch(err){_logErr('restoreBackup',err);toast('Error al restaurar');}});
 }
 
 // ══ MOTOR DE PAGOS POR CICLO (fuente única de verdad) ═══════════════════
@@ -8446,7 +8614,9 @@ function restoreBackup(){
 // horas re-derivaba los números por su cuenta y daba cifras distintas — p.ej.
 // $14,786 en el modal vs $12,586 en el Plan).
 function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
-  const dayInCycle=(pd)=>{if(!pd)return false;const tds=[];for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){const mx=new Date(cStart.getFullYear(),tm+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);};
+  // Itera por offset de mes (Date rueda años) — el loop por getMonth() crudo
+  // nunca iteraba en el ciclo 30-dic→14-ene y los pagos con payDay se caían del Plan.
+  const dayInCycle=(pd)=>{if(!pd)return false;const y0=cStart.getFullYear(),m0=cStart.getMonth();const span=(cEnd.getFullYear()-y0)*12+(cEnd.getMonth()-m0);const tds=[];for(let k=-1;k<=span+1;k++){const mx=new Date(y0,m0+k+1,0).getDate();if(pd<=mx)tds.push(new Date(y0,m0+k,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);};
   // ── EXPENSES ──
   let expQ=0;const expDetail=[];
   S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
@@ -8486,13 +8656,16 @@ try{
   const today=new Date();today.setHours(0,0,0,0);
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
 
-  // ── CYCLE LOGIC ──
-  let cycleType,cycleStart,cycleEnd,cyclePayday;
-  if(d>=15&&d<=29){cycleType='2da';cycleStart=new Date(y,m,15);cycleEnd=new Date(y,m,29);cyclePayday=new Date(y,m,15);}
-  else{cycleType='1ra';if(d>=30){cycleStart=new Date(y,m,30);cycleEnd=new Date(y,m+1,14);cyclePayday=new Date(y,m,new Date(y,m+1,0).getDate());}else{const pld=new Date(y,m,0).getDate();cycleStart=new Date(y,m-1,Math.min(30,pld));cycleEnd=new Date(y,m,14);cyclePayday=new Date(y,m-1,pld);}}
-  let nextType,nextStart,nextEnd,nextPayday;
-  if(cycleType==='2da'){nextType='1ra';const ld=new Date(y,m+1,0).getDate();nextStart=new Date(y,m,30);nextEnd=new Date(y,m+1,14);nextPayday=new Date(y,m,ld);}
-  else{nextType='2da';if(d>=30){nextStart=new Date(y,m+1,15);nextEnd=new Date(y,m+1,29);nextPayday=new Date(y,m+1,15);}else{nextStart=new Date(y,m,15);nextEnd=new Date(y,m,29);nextPayday=new Date(y,m,15);}}
+  // ── CYCLE LOGIC ── ventanas canónicas (getCycleWindow / cycleWindowFromKey):
+  // la derivación manual anterior divergía en febrero y en el cruce de año.
+  // Payday: 2da = día 15; 1ra = último día del mes etiquetado (el anterior al
+  // mes donde termina el ciclo).
+  const _cw0=getCycleWindow();
+  const cycleType=_cw0.type,cycleStart=_cw0.start,cycleEnd=_cw0.end;
+  const cyclePayday=cycleType==='2da'?new Date(cycleStart.getFullYear(),cycleStart.getMonth(),15):new Date(cycleEnd.getFullYear(),cycleEnd.getMonth(),0);
+  const _nW0=cycleWindowFromKey(nextCycleKeyOf(cycleKey()));
+  const nextType=_nW0.type,nextStart=_nW0.start,nextEnd=_nW0.end;
+  const nextPayday=nextType==='2da'?new Date(nextStart.getFullYear(),nextStart.getMonth(),15):new Date(nextEnd.getFullYear(),nextEnd.getMonth(),0);
 
   // ── FASE 7 · Navegación: determinar qué ciclo estamos viendo ──
   const _viewCk=planCk();
@@ -8512,7 +8685,8 @@ try{
   const cPayday=showNext?nextPayday:(_isPast?(_viewCk.endsWith('-1ra')?30:15):cyclePayday);
   const fmtD=d2=>d2.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
   const qLabel=`${ct} quincena · ${fmtD(cStart)} → ${fmtD(cEnd)}`;
-  function dayInCycle(pd){if(!pd)return false;const tds=[];for(let tm=cStart.getMonth()-1;tm<=cEnd.getMonth()+1;tm++){const mx=new Date(cStart.getFullYear(),tm+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
+  // Reusa el helper central (corregido para ciclos que cruzan el año)
+  function dayInCycle(pd){return dayInWindow(pd,{start:cStart,end:cEnd});}
 
   // ── INCOME ── (usa snapshot histórico si existe)
   const incForCk=getIncForCycle(_viewCk);
@@ -9268,12 +9442,10 @@ function renderRetos(){
   try{
   const today=new Date();today.setHours(0,0,0,0);
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
-  // Quick budget calc
-  let cStart,cEnd;
-  if(d>=15&&d<=29){cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
-  else if(d>=30){cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
-  else{const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
-  function dayInC(pd){if(!pd)return false;const tds=[];for(let tm2=cStart.getMonth()-1;tm2<=cEnd.getMonth()+1;tm2++){const mx=new Date(cStart.getFullYear(),tm2+1,0).getDate();if(pd<=mx)tds.push(new Date(cStart.getFullYear(),tm2,pd));}return tds.some(td=>td>=cStart&&td<=cEnd);}
+  // Quick budget calc — ventana canónica + helper central corregido
+  const _rw=getCycleWindow();
+  const cStart=_rw.start,cEnd=_rw.end;
+  function dayInC(pd){return dayInWindow(pd,{start:cStart,end:cEnd});}
   const salQ=S.inc.sal/2;const bfQ=bonusInCycle(cStart,cEnd,S.inc)?(+S.inc.bf||0):0;
   let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extQ+=(+x.amt||0);}});
   const incQ=salQ+bfQ+extQ;
@@ -9375,13 +9547,9 @@ function renderRetos(){
                   const done=!!chk;
                   const pass=chk?.pass!==false;
                   const spent=chk?.spent||0;
-                  // Dates based on cycle, not activation
-                  const today4=new Date();today4.setHours(0,0,0,0);
-                  const d4=today4.getDate(),m4=today4.getMonth(),y4=today4.getFullYear();
-                  let cS4,cE4;
-                  if(d4>=15&&d4<=29){cS4=new Date(y4,m4,15);cE4=new Date(y4,m4,29);}
-                  else if(d4>=30){cS4=new Date(y4,m4,30);cE4=new Date(y4,m4+1,14);}
-                  else{cS4=new Date(y4,m4-1,Math.min(30,new Date(y4,m4,0).getDate()));cE4=new Date(y4,m4,14);}
+                  // Dates based on cycle, not activation — ventana canónica
+                  const _w4=getCycleWindow();
+                  const cS4=_w4.start,cE4=_w4.end;
                   let dateLbl='';
                   const shortM=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
                   if(r.track==='dia'){
@@ -10027,11 +10195,9 @@ function _otNumbers(){
   const RATE=172;
   const today=new Date();today.setHours(0,0,0,0);
   const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
-  // ── Ventana + clave del ciclo ACTUAL ──
-  let cStart,cEnd,cType;
-  if(d>=15&&d<=29){cType='2da';cStart=new Date(y,m,15);cEnd=new Date(y,m,29);}
-  else if(d>=30){cType='1ra';cStart=new Date(y,m,30);cEnd=new Date(y,m+1,14);}
-  else{cType='1ra';const pld=new Date(y,m,0).getDate();cStart=new Date(y,m-1,Math.min(30,pld));cEnd=new Date(y,m,14);}
+  // ── Ventana + clave del ciclo ACTUAL ── (ventana canónica)
+  const _ow=getCycleWindow();
+  const cStart=_ow.start,cEnd=_ow.end,cType=_ow.type;
   const curCk=cycleKey();
   // PENDIENTE esta qna = pagos obligatorios del ciclo actual que aún NO has
   // marcado como pagados. Usa el MISMO motor que el Plan, así cuadra al peso
@@ -10042,12 +10208,10 @@ function _otNumbers(){
   let pendingThis=0;
   cur.expDetail.forEach(e=>{const pt=e.paidType||'exp';if(_unpaid(pt,e.id))pendingThis+=(+e.amt||0);});
   cur.debtDetail.forEach(e=>{if(_unpaid('debt',e.id))pendingThis+=(+e.amt||0);});
-  // ── Ventana + clave de la PRÓXIMA qna ──
-  let nStart,nEnd,nType;
-  if(d>=15&&d<=29){nType='1ra';nStart=new Date(y,m,30);nEnd=new Date(y,m+1,14);}
-  else if(d>=30){nType='2da';nStart=new Date(y,m+1,15);nEnd=new Date(y,m+1,29);}
-  else{nType='2da';nStart=new Date(y,m,15);nEnd=new Date(y,m,29);}
-  const nCycleKey=nStart.getFullYear()+'-'+(nStart.getMonth()+1)+'-'+nType;
+  // ── Ventana + clave de la PRÓXIMA qna ── (derivada del cycleKey canónico)
+  const nCycleKey=nextCycleKeyOf(curCk);
+  const _onw=cycleWindowFromKey(nCycleKey);
+  const nStart=_onw.start,nEnd=_onw.end,nType=_onw.type;
   // PAGOS próxima qna = total obligatorio del ciclo (nada pagado todavía) =
   // EXACTAMENTE el "Total pendiente" que ves al navegar a la próxima quincena.
   const nx=buildCyclePayments(nCycleKey,nStart,nEnd,nType,true);
@@ -11137,7 +11301,7 @@ function getNextCycleDate(){
     let nextEnd;
     if(S.cycleMode==='quincenal'){
       if(d<=14)nextEnd=new Date(y,m,14);
-      else if(d<=29)nextEnd=new Date(y,m,29);
+      else if(d<=_qnaEndDay(y,m))nextEnd=new Date(y,m,_qnaEndDay(y,m));
       else nextEnd=new Date(y,m+1,14);
     } else {
       // Mensual: end of current month, or end of next if we're already past it
@@ -12237,6 +12401,8 @@ function toggleSnapDetail(id){expandedSnap=expandedSnap===id?null:id;rHistoria()
 function exportData(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='padre-rico-backup-'+_todayYMD()+'.json';a.click();
+  // Registra la fecha del último respaldo — alimenta el recordatorio periódico
+  try{S._lastExportAt=_todayYMD();sv();}catch(e){}
   toast('📤 Backup exportado');
 }
 
@@ -12473,18 +12639,37 @@ function exportForAI(){
     +'</div>');
   toast(copied?'🧠 Reporte copiado y descargado':'🧠 Reporte descargado');
 }
+// Restaura un respaldo JSON. Endurecido: valida la forma del archivo, pide
+// confirmación (es destructivo), reemplaza sobre el estado por defecto (no
+// merge sobre el estado vivo) y pasa lo importado por _normalizeState() —
+// que además corre las migraciones — para que un respaldo viejo no deje el
+// estado inconsistente.
 function importData(f){
   if(!f)return;
   const r=new FileReader();
   r.onload=e=>{
-    try{
-      const data=JSON.parse(e.target.result);
-      if(data.goal!==undefined){
-        S={...S,...data};sv();
-        toast('📥 Datos importados correctamente');
-        go('historia');
-      }else{alert('Archivo no válido.');}
-    }catch{alert('Error al leer el archivo.');}
+    let data;
+    try{data=JSON.parse(e.target.result);}
+    catch(err){_logErr('importData.parse',err);toast('⚠ El archivo no es un JSON válido');return;}
+    if(!data||typeof data!=='object'||Array.isArray(data)){toast('⚠ Archivo no válido');return;}
+    const known=['goal','inc','debts','exp','assets','snapshots','savGoals','gastosDiarios','paidItems'];
+    const hits=known.filter(k=>data[k]!==undefined).length;
+    if(hits<2){toast('⚠ No parece un respaldo de Padre Rico');return;}
+    const nSnaps=Array.isArray(data.snapshots)?data.snapshots.length:0;
+    const nDebts=Array.isArray(data.debts)?data.debts.length:0;
+    showConfirm('📥 ¿Restaurar este respaldo?',
+      '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">El respaldo trae <strong>'+nSnaps+' capítulo'+(nSnaps!==1?'s':'')+'</strong> y <strong>'+nDebts+' deuda'+(nDebts!==1?'s':'')+'</strong>.<br><br><strong style="color:var(--terra)">Reemplazará TODOS tus datos actuales.</strong> Si no estás seguro, exporta primero un respaldo de lo que tienes hoy.</div>',
+      ()=>{
+        try{
+          const fresh={...JSON.parse(JSON.stringify(S_DEFAULT)),...data};
+          _normalizeState(fresh);
+          S=fresh;
+          sv();
+          closeConfirm();
+          toast('📥 Datos importados correctamente');
+          go('historia');
+        }catch(err){_logErr('importData.apply',err);toast('⚠ Error al importar el respaldo');}
+      });
   };
   r.readAsText(f);
 }
@@ -12496,9 +12681,36 @@ function initPWA(){
   try{const sw=`const C='prv5-consolidZM-v2';self.addEventListener('install',e=>{self.skipWaiting();e.waitUntil(caches.open(C).then(c=>c.add('/')))});self.addEventListener('activate',e=>e.waitUntil(Promise.all([self.clients.claim(),caches.keys().then(ks=>Promise.all(ks.filter(k=>k!==C).map(k=>caches.delete(k))))])));self.addEventListener('fetch',e=>{const req=e.request;if(req.mode==='navigate'||req.destination==='document'){e.respondWith(fetch(req).then(r=>{const cp=r.clone();caches.open(C).then(c=>c.put('/',cp));return r;}).catch(()=>caches.match('/').then(r=>r||caches.match(req))));}else{e.respondWith(caches.match(req).then(r=>r||fetch(req).catch(()=>new Response(''))));}});`;navigator.serviceWorker?.register(URL.createObjectURL(new Blob([sw],{type:'text/javascript'}))).catch(()=>{});}catch{}
 }
 
+// ══ PROTECCIÓN DE DATOS ══════════════════════════════
+// 1) Multi-pestaña: cada pestaña mantiene su S en memoria y sv() escribe el
+//    estado completo — sin esto, la última en guardar borraba en silencio lo
+//    hecho en la otra. Al detectar que OTRA pestaña guardó, recargamos.
+window.addEventListener('storage',e=>{
+  if(e.key!==SK||e.newValue==null)return;
+  try{
+    ld();
+    const appVisible=document.getElementById('app')?.style.display==='flex';
+    if(appVisible&&typeof cur==='string'){go(cur);}
+    toast('🔄 Datos sincronizados desde otra pestaña');
+  }catch(err){_logErr('storage.sync',err);}
+});
+// 2) Pide almacenamiento persistente — sin esto Safari/iOS puede purgar
+//    localStorage (y TODOS los datos del usuario) tras días de inactividad.
+try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});}catch(e){}
+// 3) Recordatorio de respaldo: el export es manual; si hay datos valiosos y
+//    no se exporta hace 30+ días, recuerda hacerlo (una vez por sesión).
+function _backupReminder(){
+  try{
+    if(!(S.snapshots||[]).length&&!(S.debts||[]).length)return;
+    const last=S._lastExportAt?new Date(S._lastExportAt+'T12:00').getTime():0;
+    const days=last?Math.floor((Date.now()-last)/864e5):Infinity;
+    if(days>=30)setTimeout(()=>toast(last?'💾 Llevas '+days+' días sin respaldar — exporta un backup en Historia':'💾 Tip: exporta un respaldo de tus datos en Historia'),2500);
+  }catch(e){}
+}
+
 // ══ INIT ════════════════════════════════════════════
 ld();initPWA();
-if(S.done){launchApp();}else{setDL();drawDots();document.getElementById('onboarding').style.display='flex';}
+if(S.done){launchApp();_backupReminder();}else{setDL();drawDots();document.getElementById('onboarding').style.display='flex';}
 </script>
 </body>
 </html>

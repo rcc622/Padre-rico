@@ -4720,19 +4720,21 @@ function merchantAlias(descOrKey){
   }catch(e){return null;}
 }
 function merchantDisplay(descOrKey){return merchantAlias(descOrKey)||descOrKey;}
-function openMerchantRename(descOrKey,reopenDetail){
+function openMerchantRename(descOrKey,back){
   const k=normalizeMerchant(descOrKey);
   if(!k){toast('Comercio inválido');return;}
   const cur=(S.merchantAliases||{})[k]||'';
-  window._mAliasCtx={key:k,reopen:!!reopenDetail};
+  // back: 'cat' regresa al modal de categorizar; true reabre el desglose
+  window._mAliasCtx={key:k,back:back||null};
   let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Razón social en el estado de cuenta:</div>'
     +'<div style="font-size:12px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:8px 12px;border-radius:6px;margin-bottom:12px;word-break:break-word">'+_escH(k)+'</div>'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">¿Cómo se llama en realidad?</div>'
     +'<input type="text" id="mAliasName" value="'+_escA(cur)+'" placeholder="Ej. OXXO, Pastelería Panyoli…" maxlength="34" style="margin-bottom:8px">'
     +'<div style="font-size:10px;color:var(--muted);line-height:1.5">Solo cambia cómo se muestra en la app. Tus reglas y la agrupación siguen igual. Deja vacío y guarda para volver a la razón social.</div>';
   showConfirm('🏷️ Renombrar comercio',body,null);
+  const backClick=back==='cat'?'_renderCatStep1()':back?'showSangradorDetail(window._mAliasCtx&&window._mAliasCtx.key)':'closeConfirm()';
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
-  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="'+(reopenDetail?'showSangradorDetail(window._mAliasCtx&&window._mAliasCtx.key)':'closeConfirm()')+'">'+(reopenDetail?'← Atrás':'Cancelar')+'</button><button class="btn btn-sage" style="flex:1" onclick="_saveMerchantAlias()">Guardar</button>';
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="'+backClick+'">'+(back?'← Atrás':'Cancelar')+'</button><button class="btn btn-sage" style="flex:1" onclick="_saveMerchantAlias()">Guardar</button>';
   setTimeout(()=>{try{document.getElementById('mAliasName')?.focus();}catch(_){}},120);
 }
 function _saveMerchantAlias(){
@@ -4747,7 +4749,8 @@ function _saveMerchantAlias(){
     try{rQuincena();}catch(e){}
     try{if(cur==='dash')rDash();}catch(e){}
     try{if(cur==='historia')rHistoria();}catch(e){}
-    if(ctx.reopen){try{showSangradorDetail(ctx.key);window._mAliasCtx=null;return;}catch(e){}}
+    if(ctx.back==='cat'&&window._pendingCat){try{_renderCatStep1();window._mAliasCtx=null;return;}catch(e){}}
+    if(ctx.back){try{showSangradorDetail(ctx.key);window._mAliasCtx=null;return;}catch(e){}}
     window._mAliasCtx=null;
     closeConfirm();
   }catch(e){toast('Error al guardar');}
@@ -5037,7 +5040,8 @@ function _renderCatStep1(){
   const current=pc.currentCat;
   const _al1=merchantAlias(desc);
   let body='<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Comercio detectado:</div>';
-  body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:14px;word-break:break-word">'+(_al1?_escH(_al1)+'<div style="font-size:10px;color:var(--muted);font-weight:normal;margin-top:3px">EC: '+_escH(short)+'</div>':_escH(short))+'</div>';
+  body+='<div style="font-size:13px;font-weight:bold;color:var(--txt);background:var(--bg2);padding:10px 12px;border-radius:6px;margin-bottom:6px;word-break:break-word">'+(_al1?_escH(_al1)+'<div style="font-size:10px;color:var(--muted);font-weight:normal;margin-top:3px">EC: '+_escH(short)+'</div>':_escH(short))+'</div>';
+  body+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:14px;font-size:10px;padding:4px;min-height:30px" onclick="openMerchantRename(window._pendingCat&&window._pendingCat.desc,\'cat\')">🏷️ '+(_al1?'Cambiar nombre del comercio':'Renombrar comercio')+'</button>';
   const _hasExc=pc.txn&&getTxnException(pc.txn);
   if(current){
     const lbl=getCatDisplayLabel(current)||'?';

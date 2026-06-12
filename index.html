@@ -8394,45 +8394,75 @@ function delAsset(id){
 // Editar un movimiento del activo. Cambios en monto se aplican como delta
 // a asset.val. Los demás campos (fecha, concepto, type) sólo actualizan
 // el evento.
-function editAssetEvent(assetId,evId){
+// ── Modal ÚNICO de movimientos de activos ──────────────────────────────
+// Antes había tres ventanas distintas (➕ Depósito, ➖ Retiro, ✏️ Editar)
+// con campos, orden y semánticas diferentes (la de editar pedía signos
+// positivos/negativos). Ahora es UN formulario: toggle Entra/Sale, monto
+// siempre positivo, fecha y concepto — igual para registrar y editar.
+window._amCtx=null;
+function openAssetMovement(assetId,opts){
+  opts=opts||{};
   const a=S.assets.find(x=>x.id===assetId);if(!a)return;
-  const ev=(a.events||[]).find(e=>e.id===evId);if(!ev)return;
-  const types=[
-    {k:'init',l:'🌱 Saldo inicial'},
-    {k:'in',l:'🟢 Ingreso'},
-    {k:'out',l:'🔴 Retiro'},
-    {k:'adjust',l:'🔄 Ajuste'},
-    {k:'yield',l:'💎 Rendimiento'}
-  ];
-  const body='<div style="margin-bottom:10px"><label>Tipo</label><select id="_eaeType" style="width:100%;padding:9px;font-size:13px" onchange="document.getElementById(\'_eaeKindWrap\').style.display=this.value===\'out\'?\'block\':\'none\'">'
-    +types.map(t=>'<option value="'+t.k+'" '+(ev.type===t.k?'selected':'')+'>'+t.l+'</option>').join('')
-    +'</select></div>'
-    +'<div id="_eaeKindWrap" style="display:'+(ev.type==='out'?'block':'none')+';margin-bottom:10px"><label>Tipo de retiro (color)</label><select id="_eaeKind" style="width:100%;padding:9px;font-size:13px">'
-    +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'"'+(ev.kind===k?' selected':'')+'>'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
-    +'</select></div>'
-    +'<div style="margin-bottom:10px"><label>Monto ($)</label><input type="number" id="_eaeAmt" value="'+(+ev.amount||0)+'" style="width:100%;padding:9px;font-size:14px"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4">Positivo = entra al activo, negativo = sale. La diferencia se aplica al saldo.</div></div>'
-    +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_eaeDate" value="'+(ev.date||_todayYMD())+'"></div>'
-    +'<div style="margin-bottom:4px"><label>Concepto</label><input type="text" id="_eaeConcept" value="'+(ev.concept||'').replace(/"/g,'&quot;')+'" style="width:100%;padding:9px;font-size:13px"></div>';
-  showConfirm('✏️ Editar movimiento',body,()=>{
-    const newType=document.getElementById('_eaeType')?.value||ev.type;
-    // amount SIEMPRE positivo; el type define el signo. El saldo se recalcula
-    // desde los eventos, así que editar no puede descuadrarlo.
-    const newAmt=Math.abs(+(document.getElementById('_eaeAmt')?.value)||0);
-    const newDate=document.getElementById('_eaeDate')?.value||ev.date;
-    const newConcept=(document.getElementById('_eaeConcept')?.value||'').trim();
-    const newKind=newType==='out'?(document.getElementById('_eaeKind')?.value||'ajuste'):null;
-    const newAssets=S.assets.map(x=>{
-      if(x.id!==assetId)return x;
-      const newEvents=(x.events||[]).map(e=>{if(e.id!==evId)return e;const ne={...e,type:newType,amount:newAmt,date:newDate,concept:newConcept};if(newKind)ne.kind=newKind;else delete ne.kind;return ne;});
-      return _recalcAsset({...x,events:newEvents});
-    });
-    const newBal=_recalcAsset(newAssets.find(x=>x.id===assetId)).val;
-    pt({assets:newAssets});
-    _syncLinkedMetaSaved(assetId);
-    toast('✓ Movimiento actualizado · saldo '+fx(newBal));
-    rFlujo();hdrUp&&hdrUp();
-  });
+  const ev=opts.evId!=null?(a.events||[]).find(e=>e.id===opts.evId):null;
+  const isEdit=!!ev;
+  const special=isEdit&&ev.type!=='in'&&ev.type!=='out'?ev.type:null;
+  const dir=special?special:(isEdit?ev.type:(opts.mode==='out'?'out':'in'));
+  window._amCtx={assetId:assetId,evId:isEdit?ev.id:null,dir:dir,special:special};
+  const seg=(d,e,l,col,bg)=>'<button type="button" id="_amSeg_'+d+'" class="btn" style="flex:1;padding:13px 4px;font-size:13px;font-weight:bold;border-radius:8px;border:2px solid '+(dir===d?col:'var(--border)')+';background:'+(dir===d?bg:'var(--bg)')+';color:'+(dir===d?col:'var(--muted)')+'" onclick="_amSetDir(\''+d+'\')">'+e+' '+l+'</button>';
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">'+(isEdit?'Edita el movimiento de':'Registra un movimiento en')+' <strong style="color:var(--sage)">'+_escH(a.name)+'</strong> · saldo '+fx(a.val)+'</div>';
+  if(special){
+    const SL={init:'🌱 Saldo inicial',adjust:'🔄 Ajuste',yield:'💎 Rendimiento'};
+    body+='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;padding:8px 10px;background:var(--bg2);border-radius:6px">Tipo: <strong>'+(SL[special]||special)+'</strong> · movimiento especial, la dirección no se cambia</div>';
+  }else{
+    body+='<div style="display:flex;gap:8px;margin-bottom:12px">'+seg('in','🟢','Entra','var(--sage)','var(--sagedim)')+seg('out','🔴','Sale','var(--terra)','var(--terradim)')+'</div>';
+  }
+  body+='<div style="margin-bottom:10px"><label>Monto ($)</label><input type="number" id="_amAmt" inputmode="decimal" value="'+(isEdit?Math.abs(+ev.amount||0):'')+'" placeholder="0" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>';
+  body+='<div id="_amKindWrap" style="display:'+(dir==='out'&&!special?'block':'none')+';margin-bottom:10px"><label>¿Qué tipo de salida?</label><select id="_amKind" style="width:100%;padding:9px;font-size:13px">'+Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'"'+((ev&&ev.kind)===k?' selected':'')+'>'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')+'</select></div>';
+  body+='<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_amDate" value="'+((ev&&ev.date)||_todayYMD())+'"></div>';
+  body+='<div style="margin-bottom:4px"><label>Concepto (opcional)</label><input type="text" id="_amConcept" value="'+_escA((ev&&ev.concept)||'')+'" placeholder="Sueldo, transferencia, pago…" style="width:100%;padding:8px;font-size:13px"></div>';
+  showConfirm((isEdit?'✏️ Editar':'💰 Registrar')+' movimiento',body,()=>_amSave());
+  if(!isEdit)setTimeout(()=>{try{document.getElementById('_amAmt')?.focus();}catch(_){}},120);
 }
+function _amSetDir(d){
+  if(!window._amCtx||window._amCtx.special)return;
+  window._amCtx.dir=d;
+  const bi=document.getElementById('_amSeg_in'),bo=document.getElementById('_amSeg_out');
+  if(bi){bi.style.border='2px solid '+(d==='in'?'var(--sage)':'var(--border)');bi.style.background=d==='in'?'var(--sagedim)':'var(--bg)';bi.style.color=d==='in'?'var(--sage)':'var(--muted)';}
+  if(bo){bo.style.border='2px solid '+(d==='out'?'var(--terra)':'var(--border)');bo.style.background=d==='out'?'var(--terradim)':'var(--bg)';bo.style.color=d==='out'?'var(--terra)':'var(--muted)';}
+  const kw=document.getElementById('_amKindWrap');if(kw)kw.style.display=d==='out'?'block':'none';
+}
+function _amSave(){
+  const ctx=window._amCtx;if(!ctx)return;
+  const a=S.assets.find(x=>x.id===ctx.assetId);if(!a)return;
+  const amt=Math.abs(parseFloat(String(document.getElementById('_amAmt')?.value||'').replace(',','.'))||0);
+  if(amt<=0){toast('⚠ Monto requerido');return;}
+  const date=document.getElementById('_amDate')?.value||_todayYMD();
+  const dir=ctx.special||ctx.dir;
+  const concept=(document.getElementById('_amConcept')?.value||'').trim()||(dir==='out'?'Retiro':'Depósito');
+  const kind=dir==='out'?(document.getElementById('_amKind')?.value||'ajuste'):null;
+  let newAssets;
+  if(ctx.evId!=null){
+    newAssets=S.assets.map(x=>{
+      if(x.id!==ctx.assetId)return x;
+      const evs=(x.events||[]).map(e=>{if(e.id!==ctx.evId)return e;const ne={...e,type:dir,amount:amt,date:date,concept:concept};if(kind)ne.kind=kind;else delete ne.kind;return ne;});
+      return _recalcAsset({...x,events:evs});
+    });
+  }else{
+    const used=dir==='out'?Math.min(amt,+a.val||0):amt;
+    const ev=_mkAssetEvent(dir,used,concept,date);
+    if(kind)ev.kind=kind;
+    newAssets=_withAssetEvent(S.assets,ctx.assetId,ev);
+  }
+  const newBal=_recalcAsset(newAssets.find(x=>x.id===ctx.assetId)).val;
+  pt({assets:newAssets});
+  _syncLinkedMetaSaved(ctx.assetId);
+  window._amCtx=null;
+  toast((dir==='out'?'📉 −':'📈 +')+fx(amt)+' · Nuevo saldo '+fx(newBal));
+  rFlujo();hdrUp&&hdrUp();
+  try{if(cur==='plan')rPlan();}catch(e){}
+}
+// Wrapper de compatibilidad: todos los puntos de entrada van al modal único.
+function editAssetEvent(assetId,evId){openAssetMovement(assetId,{evId:evId});}
 // Eliminar un movimiento. Revierte su efecto en asset.val (resta el monto
 // del evento eliminado).
 function delAssetEvent(assetId,evId){
@@ -8597,25 +8627,8 @@ function quickUpdAsset(id){
   });
 }
 // Atajo para registrar un depósito explícito sin pensar en el saldo
-// final. Suma el monto al activo y crea evento 'in'.
-function depositAsset(id){
-  const a=S.assets.find(x=>x.id===id);if(!a)return;
-  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Registra un depósito a <strong style="color:var(--sage)">'+a.name+'</strong>.</div>'
-    +'<div style="margin-bottom:10px"><label>Monto del depósito ($)</label><input type="number" id="_depAmt" placeholder="0" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
-    +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_depDate" value="'+_todayYMD()+'"></div>'
-    +'<div style="margin-bottom:4px"><label>Concepto (opcional)</label><input type="text" id="_depConcept" placeholder="Sueldo, transferencia, rendimiento…" style="width:100%;padding:8px;font-size:13px"></div>';
-  showConfirm('➕ Depósito',body,()=>{
-    const amt=+(document.getElementById('_depAmt')?.value)||0;
-    if(amt<=0){toast('⚠ Monto requerido');return;}
-    const date=document.getElementById('_depDate')?.value||_todayYMD();
-    const concept=(document.getElementById('_depConcept')?.value||'').trim()||'Depósito';
-    const newAssets=_withAssetEvent(S.assets,id,_mkAssetEvent('in',amt,concept,date));
-    const newBal=_recalcAsset(newAssets.find(x=>x.id===id)).val;
-    pt({assets:newAssets});
-    _syncLinkedMetaSaved(id);
-    toast('📈 +'+fx(amt)+' · Nuevo saldo '+fx(newBal));rFlujo();hdrUp&&hdrUp();
-  });
-}
+// final. Va al modal único de movimientos preseleccionado en "Entra".
+function depositAsset(id){openAssetMovement(id,{mode:'in'});}
 // Atajo para registrar un retiro explícito. Resta el monto del activo
 // (sin pasar de 0) y crea evento 'out' con monto negativo.
 // Modal global "Registrar retiro" desde el card de Total en activos. Si
@@ -8637,26 +8650,7 @@ function openRetiroPicker(){
     setTimeout(()=>withdrawAsset(id),100);
   });
 }
-function withdrawAsset(id){
-  const a=S.assets.find(x=>x.id===id);if(!a)return;
-  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Registra un retiro de <strong style="color:var(--sage)">'+a.name+'</strong> (saldo actual <strong>'+fx(a.val)+'</strong>).</div>'
-    +'<div style="margin-bottom:10px"><label>Monto del retiro ($)</label><input type="number" id="_wdAmt" placeholder="0" max="'+a.val+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--terra)" onclick="this.select()"></div>'
-    +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_wdDate" value="'+_todayYMD()+'"></div>'
-    +'<div style="margin-bottom:4px"><label>Concepto (opcional)</label><input type="text" id="_wdConcept" placeholder="Pago, transferencia, gasto…" style="width:100%;padding:8px;font-size:13px"></div>';
-  showConfirm('➖ Retiro',body,()=>{
-    const amt=+(document.getElementById('_wdAmt')?.value)||0;
-    if(amt<=0){toast('⚠ Monto requerido');return;}
-    const used=Math.min(amt,+a.val||0);
-    const date=document.getElementById('_wdDate')?.value||_todayYMD();
-    const concept=(document.getElementById('_wdConcept')?.value||'').trim()||'Retiro';
-    // amount positivo; type 'out' define el signo. El saldo se recalcula.
-    const newAssets=_withAssetEvent(S.assets,id,_mkAssetEvent('out',used,concept,date));
-    const newBal=_recalcAsset(newAssets.find(x=>x.id===id)).val;
-    pt({assets:newAssets});
-    _syncLinkedMetaSaved(id);
-    toast('📉 −'+fx(used)+' · Nuevo saldo '+fx(newBal));rFlujo();hdrUp&&hdrUp();
-  });
-}
+function withdrawAsset(id){openAssetMovement(id,{mode:'out'});}
 // ══ SAVINGS STREAK (Fase 2 · Hooked) ════════════════════
 // ══ WIZARD DE AHORRO (Hooked guiado, 3 pasos) ═══════════
 let _savWizStep=1,_savWizData={amount:0,assetId:null,pct:10};
@@ -9679,7 +9673,7 @@ try{
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
         ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
         ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosCashCount(planCk())})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
-        ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:_metaOut<0?`<div class="row-b"><span style="color:var(--sage)">↩ Retirado de metas a tu cuenta</span><strong style="color:var(--sage)">+${fx(Math.round(-_metaOut))}</strong></div>`:''}
+        ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:_metaOut<0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">↩ Retirado de metas a tu cuenta (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">+${fx(Math.round(-_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.5">Saldo neto del ciclo: retiraste de metas más de lo que abonaste — ese dinero regresó a tu cuenta. Si algún movimiento no fue real, corrígelo en sus movimientos.</div><button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:''}
         ${_metaRetOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--terra)">🚨 Retiros de metas (${_metaRetBreakdown.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--terra)">−${fx(Math.round(_metaRetOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(184,92,74,.25);margin:2px 0 4px 4px">${_metaRetBreakdown.map(m=>{const _k=savGoalWdKind(m.kind);const _kl=_k?_k.e+' '+_k.n:'📉 Retiro';return `<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)} · <span style="font-size:9px">${_kl}</span>${m.note?' · '+_escH(m.note):''}</span><span style="color:var(--terra);white-space:nowrap">−${fx(Math.round(m.amt))}</span></div>`;}).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:''}
         ${_ahorroApartado>0?(()=>{
           // Línea unificada de Ahorro apartado: Págate Primero + cajitas de

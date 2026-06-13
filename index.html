@@ -8579,16 +8579,19 @@ function openLedgerAudit(){
       const ev=a?(a.events||[]).find(e=>e&&e.id===dep.evId):null;
       if(!a||!ev)finds.push({type:'dep',g,dep,why:!a?'el activo ligado ya no existe':'el movimiento ya no existe en '+_escH(a.name||'el activo')});
     }));
-    // Movimientos DESLIGADOS en metas que SÍ tienen cajita: viven solo en el
+    // Movimientos SIN espejo en metas que SÍ tienen cajita: viven solo en el
     // ledger de la meta (no se ven en los movimientos del activo) y son la
     // causa típica de líneas imposibles de rastrear en el Estado de cuenta.
+    // Cubre dos formas: desligados (sin assetId) y ligados sin evento
+    // (assetId presente pero evId vacío — registros de flujos antiguos).
     (S.savGoals||[]).forEach(g=>{
       const aid=_metaPrimaryAssetId(g);
       if(!aid)return;
       const an=(S.assets.find(x=>x.id===aid)||{}).name||'su cajita';
       (g.deposits||[]).forEach(dep=>{
-        if(!dep||dep.assetId||dep.evId!=null||dep._auditOk)return;
-        finds.push({type:'loose',g,dep,why:'vive solo en la meta — no existe en '+_escH(an)+', por eso no lo encuentras ahí'});
+        if(!dep||dep.evId!=null||dep._auditOk)return;
+        const tn=dep.assetId?((S.assets.find(x=>x.id===dep.assetId)||{}).name||'el activo'):an;
+        finds.push({type:'loose',g,dep,why:'vive solo en la meta — no hay movimiento espejo en '+_escH(tn)+', por eso no lo encuentras ahí'});
       });
     });
     Object.entries(S.savCommits||{}).forEach(([ck,c])=>{

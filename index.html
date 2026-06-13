@@ -9731,20 +9731,43 @@ try{
         +'</div>';
     }catch(e){return '';}})()}
 
-    <!-- PUENTE AL PLAN DE IA (vive en Día a día, no toca números) -->
+    <!-- PLAN DE IA · acciones de la quincena que estás viendo (por fecha) -->
     ${(()=>{try{
       const p=S.aiPlan;
-      if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length||showNext)return '';
+      if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length||_isPast)return '';
       const checks=p.checks||{};
+      const _ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      let vw;try{vw=cycleWindowFromKey(_viewCk);}catch(e){vw=getCycleWindow();}
+      const vs=_ymd(vw.start),ve=_ymd(vw.end);
+      let mi=-1;
+      for(let i=0;i<p.quincenas.length;i++){const rg=aiPlanQRange(i);if(rg&&rg.s<=ve&&rg.e>=vs){mi=i;break;}}
       let totalA=0,doneA=0;
       p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{totalA++;if(checks['q'+(i+1)+'_'+j])doneA++;}));
-      const pend=totalA-doneA;
-      const pct=totalA?Math.round(doneA/totalA*100):0;
-      return '<div class="card card-link" style="border:1px solid rgba(74,110,140,.35);background:rgba(74,110,140,.05);padding:13px 16px" onclick="setHabitView(\'plan\');go(\'habitos\')">'
-        +'<div class="row-b" style="margin-bottom:6px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Tu plan de acción</div><span style="font-size:11px;color:var(--sky);font-weight:bold">'+(pend>0?pend+' pendiente'+(pend!==1?'s':''):'✓ completo')+'</span></div>'
-        +'<div class="pw" style="height:6px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
-        +'<div style="font-size:10px;color:var(--muted);margin-top:7px">'+doneA+' de '+totalA+' acciones hechas · ábrelo en Día a día → 🤖 Plan IA ›</div>'
+      const pendAll=totalA-doneA;
+      if(mi<0){
+        return '<div class="card card-link" style="border:1px solid rgba(74,110,140,.3);background:rgba(74,110,140,.04);padding:12px 16px" onclick="setHabitView(\'plan\');go(\'habitos\')">'
+          +'<div class="row-b"><div style="font-size:11px;color:var(--sky);font-weight:bold">🤖 Tu plan de acción</div><span style="font-size:10px;color:var(--muted)">'+(pendAll>0?pendAll+' pendiente'+(pendAll!==1?'s':''):'✓ completo')+' ›</span></div>'
+          +'<div style="font-size:10px;color:var(--muted);margin-top:5px">Esta quincena no tiene acciones del plan. Velo completo en Día a día → 🤖 Plan IA.</div>'
+          +'</div>';
+      }
+      const q=p.quincenas[mi];
+      const acts=q.acciones||[];
+      const dN=acts.filter((_,j)=>checks['q'+(mi+1)+'_'+j]).length;
+      const rg=aiPlanQRange(mi);
+      const fechas=rg?aiPlanFmtRange(rg.s,rg.e):'';
+      const pct=acts.length?Math.round(dN/acts.length*100):0;
+      let h='<div class="card" style="border:1px solid rgba(74,110,140,.4);background:linear-gradient(135deg,rgba(74,110,140,.07),rgba(78,124,106,.04));padding:14px 16px">'
+        +'<div class="row-b" style="margin-bottom:2px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Plan de IA · esta quincena</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">'+dN+'/'+acts.length+'</span></div>'
+        +'<div style="font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:'+(fechas?'2px':'8px')+'">'+_escH(q.titulo)+'</div>'
+        +(fechas?'<div style="font-size:10px;color:var(--sky);font-weight:bold;margin-bottom:8px">📅 '+fechas+'</div>':'');
+      acts.forEach((a,j)=>{
+        const k='q'+(mi+1)+'_'+j;const on=!!checks[k];
+        h+='<label class="row" style="gap:10px;padding:7px 0;cursor:pointer;align-items:flex-start;border-top:1px solid rgba(74,110,140,.12)"><input type="checkbox" '+(on?'checked':'')+' onchange="aiPlanToggle(\''+k+'\')" style="width:auto;margin-top:2px;flex-shrink:0"><span style="font-size:12px;color:'+(on?'var(--muted)':'var(--txt2)')+';line-height:1.5'+(on?';text-decoration:line-through':'')+'">'+_escH(a.t)+(a.monto?' <strong style="color:var(--sky)">('+fx(a.monto)+')</strong>':'')+'</span></label>';
+      });
+      h+='<div class="pw" style="height:6px;margin-top:10px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
+        +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:10px;padding:4px" onclick="setHabitView(\'plan\');go(\'habitos\')">Ver plan completo ('+pendAll+' pendiente'+(pendAll!==1?'s':'')+') →</button>'
         +'</div>';
+      return h;
     }catch(e){return '';}})()}
 
     <!-- DEFICIT ALERT -->
@@ -13676,6 +13699,18 @@ function aiPlanFmtRange(a,b){
     const f=ymd=>new Date(ymd+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
     return f(a)+' – '+f(b);
   }catch(e){return '';}
+}
+// Rango YMD {s,e} de la quincena i (0-based): fechas de la IA si vienen,
+// si no, el cálculo por ciclos. Sirve para emparejar con el ciclo del Plan.
+function aiPlanQRange(i){
+  try{
+    const p=S.aiPlan;if(!p||!p.quincenas||!p.quincenas[i])return null;
+    const q=p.quincenas[i];
+    if(q.inicio&&q.fin)return {s:q.inicio,e:q.fin};
+    const w=aiPlanQWindow(i+1);if(!w)return null;
+    const ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    return {s:ymd(w.start),e:ymd(w.end)};
+  }catch(e){return null;}
 }
 function aiPlanToggle(key){
   if(!S.aiPlan)return;

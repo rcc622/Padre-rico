@@ -926,7 +926,7 @@ function fmtCycleRange(ck){
 let flujoView='ingresos',debtView='plazos';
 // Sub-vista de Día a día. Se persiste a localStorage para que al refrescar
 // el usuario regrese al mismo sub-tab donde estaba (Retos / Diarios / etc.)
-const _HABIT_VIEWS=['retos','diarios','impulsos'];
+const _HABIT_VIEWS=['retos','diarios','impulsos','plan'];
 let habitView=(()=>{try{const v=localStorage.getItem('prv5_habitView');return _HABIT_VIEWS.includes(v)?v:'retos';}catch(e){return 'retos';}})();
 function setHabitView(v){
   if(v==='ahorro'){flujoView='activos';go('flujo');return;}
@@ -9731,31 +9731,20 @@ try{
         +'</div>';
     }catch(e){return '';}})()}
 
-    <!-- PLAN DE LA IA (capa de seguimiento, no toca números) -->
+    <!-- PUENTE AL PLAN DE IA (vive en Día a día, no toca números) -->
     ${(()=>{try{
       const p=S.aiPlan;
       if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length||showNext)return '';
-      const curN=aiPlanCurrentQ();
-      const q=p.quincenas[Math.min(curN,p.quincenas.length)-1];
-      if(!q)return '';
       const checks=p.checks||{};
-      const qi=q.n-1;
-      const acts=q.acciones||[];
-      const doneN=acts.filter((_,j)=>checks['q'+q.n+'_'+j]).length;
-      const pct=acts.length?Math.round(doneN/acts.length*100):0;
-      const sevColor={leve:'var(--sage)',moderado:'var(--amber)',critico:'var(--terra)'}[p.severidad]||'var(--sage)';
-      const sevL={leve:'🟢 Leve',moderado:'🟡 Moderado',critico:'🔴 Crítico'}[p.severidad]||'';
-      let h='<div class="card" style="border:1px solid rgba(74,110,140,.35);background:linear-gradient(135deg,rgba(74,110,140,.06),rgba(78,124,106,.04));padding:14px 16px">'
-        +'<div class="row-b" style="margin-bottom:8px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Plan de tu IA · Quincena '+q.n+' de '+p.quincenas.length+'</div>'+(sevL?'<span style="font-size:10px;color:'+sevColor+';font-weight:bold">'+sevL+'</span>':'')+'</div>'
-        +'<div style="font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:8px">'+_escH(q.titulo)+'</div>';
-      acts.forEach((a,j)=>{
-        const k='q'+q.n+'_'+j;const on=!!checks[k];
-        h+='<label class="row" style="gap:9px;padding:6px 0;cursor:pointer;align-items:flex-start;border-top:1px solid rgba(74,110,140,.12)"><input type="checkbox" '+(on?'checked':'')+' onchange="aiPlanToggle(\''+k+'\')" style="width:auto;margin-top:2px;flex-shrink:0"><span style="font-size:12px;color:'+(on?'var(--muted)':'var(--txt2)')+';line-height:1.5'+(on?';text-decoration:line-through':'')+'">'+_escH(a.t)+(a.monto?' <strong style="color:var(--sky)">('+fx(a.monto)+')</strong>':'')+'</span></label>';
-      });
-      h+='<div class="pw" style="height:6px;margin-top:10px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
-        +'<div class="row-b" style="margin-top:8px"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 9px" onclick="aiPlanShowFull()">Ver plan completo →</button><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 9px;color:var(--muted)" onclick="aiPlanRemove()">🗑 Quitar</button></div>'
+      let totalA=0,doneA=0;
+      p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{totalA++;if(checks['q'+(i+1)+'_'+j])doneA++;}));
+      const pend=totalA-doneA;
+      const pct=totalA?Math.round(doneA/totalA*100):0;
+      return '<div class="card card-link" style="border:1px solid rgba(74,110,140,.35);background:rgba(74,110,140,.05);padding:13px 16px" onclick="setHabitView(\'plan\');go(\'habitos\')">'
+        +'<div class="row-b" style="margin-bottom:6px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Tu plan de acción</div><span style="font-size:11px;color:var(--sky);font-weight:bold">'+(pend>0?pend+' pendiente'+(pend!==1?'s':''):'✓ completo')+'</span></div>'
+        +'<div class="pw" style="height:6px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:7px">'+doneA+' de '+totalA+' acciones hechas · ábrelo en Día a día → 🤖 Plan IA ›</div>'
         +'</div>';
-      return h;
     }catch(e){return '';}})()}
 
     <!-- DEFICIT ALERT -->
@@ -10766,7 +10755,10 @@ function rHabitos(){
   const avoided=resolved.filter(w=>!w.bought);
   const totalSaved=avoided.reduce((a,w)=>a+(+w.price||0),0);
 
-  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','Retos','life-buoy'],['diarios','Diarios','shopping-cart'],['impulsos','Impulsos','hourglass']].map(([id,l,ic])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setHabitView('${id}')">${lu(ic,'15px','margin-right:5px;vertical-align:-.2em')}${l}</button>`).join('')}</div>`;
+  // Badge de pendientes del plan de IA (acciones sin palomear)
+  const _aiPend=(()=>{try{const p=S.aiPlan;if(!p||!Array.isArray(p.quincenas))return 0;const ch=p.checks||{};let n=0;p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{if(!ch['q'+(i+1)+'_'+j])n++;}));return n;}catch(e){return 0;}})();
+  const _planChipLabel='Plan IA'+(_aiPend>0?' ('+_aiPend+')':'');
+  const habNav=`<div class="chips" style="margin-bottom:14px">${[['retos','Retos','life-buoy'],['diarios','Diarios','shopping-cart'],['impulsos','Impulsos','hourglass'],['plan',_planChipLabel,'robot']].map(([id,l,ic])=>`<button class="chip" style="${habitView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="setHabitView('${id}')">${ic==='robot'?'🤖 ':lu(ic,'15px','margin-right:5px;vertical-align:-.2em')}${l}</button>`).join('')}</div>`;
 
   document.getElementById('tab-habitos').innerHTML=`
   ${habNav}
@@ -11013,8 +11005,60 @@ function rHabitos(){
 
   `:''}
 
+  ${habitView==='plan'?renderAIPlanSection():''}
 
   `;
+}
+
+// Sección "🤖 Plan IA" en Día a día: el plan importado vive aquí como una
+// lista de PENDIENTES que vas palomeando — sin cálculo de "quincena actual"
+// (eso causaba el desfase). Cada acción es un pendiente; al palomearla pasa
+// a hechas. Nunca toca números: es pura capa de seguimiento.
+function renderAIPlanSection(){
+  try{
+    const p=S.aiPlan;
+    if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length){
+      return `<div class="card" style="text-align:center;padding:26px 16px">
+        <div style="font-size:36px;margin-bottom:8px">🤖</div>
+        <div style="font-size:13px;font-weight:bold;color:var(--txt);margin-bottom:6px">Aún no tienes un plan de acción</div>
+        <div style="font-size:12px;color:var(--muted);line-height:1.7;margin-bottom:16px">1. Exporta tu reporte y pégalo en una IA (Claude, ChatGPT…).<br>2. La IA te devuelve tu plan estratégico.<br>3. Impórtalo aquí y aparecerá como pendientes que vas palomeando.</div>
+        <button class="btn btn-sage btn-sm" style="width:100%;margin-bottom:8px" onclick="exportForAI()">🧠 Exportar reporte para IA</button>
+        <button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>
+      </div>`;
+    }
+    const checks=p.checks||{};
+    let totalA=0,doneA=0;
+    p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{totalA++;if(checks['q'+(i+1)+'_'+j])doneA++;}));
+    const pct=totalA?Math.round(doneA/totalA*100):0;
+    const sevColor={leve:'var(--sage)',moderado:'var(--amber)',critico:'var(--terra)'}[p.severidad]||'var(--sage)';
+    const sevL={leve:'🟢 Leve',moderado:'🟡 Moderado',critico:'🔴 Crítico'}[p.severidad]||'';
+    // Header
+    let h=`<div class="card" style="border:1px solid rgba(74,110,140,.35);background:linear-gradient(135deg,rgba(74,110,140,.06),rgba(78,124,106,.04));padding:14px 16px">
+      <div class="row-b" style="margin-bottom:8px"><div style="font-size:11px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Tu plan de acción</div>${sevL?`<span style="font-size:11px;color:${sevColor};font-weight:bold">${sevL}</span>`:''}</div>
+      ${p.resumen?`<div style="font-size:12px;font-style:italic;color:var(--txt2);line-height:1.5;margin-bottom:10px">“${_escH(p.resumen)}”</div>`:''}
+      <div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px"><span>${doneA} de ${totalA} acciones hechas</span><span style="color:${sevColor};font-weight:bold">${pct}%</span></div>
+      <div class="pw" style="height:7px"><div class="pb" style="width:${pct}%;background:var(--sky)"></div></div>
+      ${p.estrategiaDeuda?`<div style="font-size:10px;color:var(--muted);margin-top:8px">Estrategia de deuda sugerida: <strong>${p.estrategiaDeuda==='nieve'?'❄️ Bola de Nieve':'⛰️ Avalancha'}</strong></div>`:''}
+      <div class="row" style="gap:8px;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" style="flex:1;font-size:11px" onclick="openAIPlanImport()">🔄 Reemplazar</button>
+        <button class="btn btn-ghost btn-sm" style="flex:1;font-size:11px;color:var(--muted)" onclick="aiPlanRemove()">🗑 Quitar plan</button>
+      </div>
+    </div>`;
+    // Una tarjeta por quincena con sus acciones como checkboxes
+    p.quincenas.forEach((q,i)=>{
+      const acts=q.acciones||[];
+      const dN=acts.filter((_,j)=>checks['q'+(i+1)+'_'+j]).length;
+      const allDone=acts.length>0&&dN===acts.length;
+      h+=`<div class="card" style="padding:12px 16px${allDone?';opacity:.65':''}">
+        <div class="row-b" style="margin-bottom:8px"><div style="font-size:12px;font-weight:bold;color:var(--txt)">${allDone?'✅ ':''}${_escH(q.titulo)}</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">${dN}/${acts.length}</span></div>`;
+      acts.forEach((a,j)=>{
+        const k='q'+(i+1)+'_'+j;const on=!!checks[k];
+        h+=`<label class="row" style="gap:10px;padding:7px 0;cursor:pointer;align-items:flex-start;border-top:1px solid rgba(74,110,140,.1)"><input type="checkbox" ${on?'checked':''} onchange="aiPlanToggle('${k}')" style="width:auto;margin-top:2px;flex-shrink:0"><span style="font-size:12px;color:${on?'var(--muted)':'var(--txt2)'};line-height:1.5${on?';text-decoration:line-through':''}">${_escH(a.t)}${a.monto?` <strong style="color:var(--sky)">(${fx(a.monto)})</strong>`:''}</span></label>`;
+      });
+      h+=`</div>`;
+    });
+    return h;
+  }catch(e){return '<div class="card" style="padding:16px"><div style="font-size:12px;color:var(--muted)">No se pudo mostrar el plan.</div></div>';}
 }
 
 // ══ OVERTIME TRACKING ══════════════════════════════
@@ -13507,9 +13551,18 @@ function buildAIReport(){
 // previa. Adoptar guarda S.aiPlan: una CAPA DE SEGUIMIENTO con checklist
 // por quincena que nunca modifica gastos, deudas ni saldos. El único
 // cambio numérico posible (% de ahorro) es un checkbox explícito.
+// Prompt suelto para pedirle a la IA SOLO el bloque JSON, por si la
+// conversación no arrancó con el reporte (que ya lo incluye) o la IA lo omitió.
+const _AI_JSON_PROMPT='Con base en el plan de acción que me diste, genera SOLO un bloque de código JSON válido (sin texto antes ni después) con este esquema exacto. Lo importaré a mi app para darle seguimiento por quincena:\n\n```json\n{"padreRicoPlan":1,"severidad":"leve|moderado|critico","horizonteQnas":6,"savPct":12,"estrategiaDeuda":"nieve|avalancha","resumen":"una línea con la idea central","quincenas":[{"n":1,"titulo":"Quincena 1 — arranque","acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}\n```\n\nReglas: montos en números simples (sin $ ni comas; usa null si no aplica), máximo 6 acciones por quincena, y una entrada en "quincenas" por cada quincena de tu plan.';
+function copyAIJSONPrompt(){
+  const ok=_copyText(_AI_JSON_PROMPT);
+  toast(ok?'📋 Prompt copiado · pégalo en tu IA':'No se pudo copiar');
+}
 function openAIPlanImport(){
   const body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Pega aquí la <strong>respuesta completa</strong> de la IA (Claude, ChatGPT…). La app extrae solo el bloque del plan y te muestra una vista previa — nada se aplica sin tu aprobación.</div>'
-    +'<textarea id="aiPlanPaste" placeholder="Pega la respuesta de la IA…" style="width:100%;height:170px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-family:monospace;background:var(--bg);resize:vertical"></textarea>'
+    +'<textarea id="aiPlanPaste" placeholder="Pega la respuesta de la IA…" style="width:100%;height:160px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-family:monospace;background:var(--bg);resize:vertical"></textarea>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">¿La IA no incluyó el bloque del plan? Cópiale este prompt y pídeselo:</div>'
+    +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:6px;font-size:11px" onclick="copyAIJSONPrompt()">📋 Copiar prompt para pedir el plan</button>'
     +(S.aiPlan?'<div style="font-size:10px;color:var(--amber);margin-top:8px">⚠ Ya tienes un plan activo: importar otro lo reemplaza (tus palomitas se reinician).</div>':'');
   showConfirm('📥 Importar plan de IA',body,()=>{const t=document.getElementById('aiPlanPaste')?.value||'';setTimeout(()=>_aiPlanPreview(t),60);});
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
@@ -13558,7 +13611,7 @@ function _aiPlanPreview(text){
   const p=r.plan;
   window._aiPlanDraft=p;
   const sevL={leve:'🟢 Leve',moderado:'🟡 Moderado',critico:'🔴 Crítico'};
-  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Vista previa. Adoptar el plan <strong>no toca tus números</strong>: es una capa de seguimiento con palomitas en tu Plan.</div>';
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Vista previa. Adoptar el plan <strong>no toca tus números</strong>: vivirá en <strong>Día a día → 🤖 Plan IA</strong> como pendientes que vas palomeando.</div>';
   body+='<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">'
     +'<span class="badge bdg-amber">'+(sevL[p.severidad]||p.severidad)+'</span>'
     +'<span class="badge bdg-sage">'+p.quincenas.length+' quincena'+(p.quincenas.length!==1?'s':'')+'</span>'
@@ -13583,10 +13636,9 @@ function _aiPlanAdopt(){
   if(p.estrategiaDeuda){try{dStrat=p.estrategiaDeuda==='nieve'?'snowball':'avalanche';}catch(e){}}
   pt(patch);
   window._aiPlanDraft=null;
-  toast('🤖 Plan adoptado · síguelo en tu Plan');
-  try{if(cur==='plan')rPlan();}catch(e){}
-  try{if(cur==='historia')rHistoria();}catch(e){}
-  try{go('plan');}catch(e){}
+  toast('🤖 Plan adoptado · síguelo en Día a día → 🤖 Plan IA');
+  try{habitView='plan';localStorage.setItem('prv5_habitView','plan');}catch(e){}
+  try{go('habitos');}catch(e){}
 }
 function aiPlanCurrentQ(){
   const p=S.aiPlan;if(!p||!p.importedAt)return 1;
@@ -13597,10 +13649,10 @@ function aiPlanToggle(key){
   const checks={...(S.aiPlan.checks||{})};
   checks[key]=!checks[key];
   pt({aiPlan:{...S.aiPlan,checks}});
-  try{rPlan();}catch(e){}
+  try{if(cur==='habitos')rHabitos();else if(cur==='plan')rPlan();}catch(e){}
 }
 function aiPlanRemove(){
-  showConfirm('🗑 Quitar plan de IA','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se quita la capa de seguimiento. <strong>Tus números no cambian.</strong> Puedes importar otro plan cuando quieras desde Historia.</div>',()=>{pt({aiPlan:null});toast('Plan de IA eliminado');try{rPlan();}catch(e){}});
+  showConfirm('🗑 Quitar plan de IA','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se quita la capa de seguimiento. <strong>Tus números no cambian.</strong> Puedes importar otro plan cuando quieras.</div>',()=>{pt({aiPlan:null});toast('Plan de IA eliminado');try{if(cur==='habitos')rHabitos();}catch(e){}try{if(cur==='plan')rPlan();}catch(e){}});
 }
 function aiPlanShowFull(){
   const p=S.aiPlan;if(!p)return;
@@ -13628,17 +13680,19 @@ function exportForAI(){
   // 2) Copiar al portapapeles (para pegarlo directo en el chat)
   const copied=_copyText(txt);
   const kb=Math.max(1,Math.round(txt.length/1024));
-  showInfo('🧠 Reporte para IA listo',
-    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">'
-    +'Generé un reporte de tu historia financiera ('+kb+' KB) optimizado para que una IA lo analice.'
-    +(copied?'<br><br>✅ <strong>Ya está copiado en tu portapapeles.</strong>':'')
-    +'<br><br>📎 También lo descargué como <strong>.md</strong> por si prefieres adjuntar el archivo.'
-    +'<br><br><strong>Cómo usarlo:</strong><br>'
-    +'1. Abre un chat con tu IA (Claude, ChatGPT…).<br>'
-    +'2. '+(copied?'Pega el reporte (Ctrl/Cmd-V) o adjunta el .md.':'Adjunta el archivo .md descargado.')+'<br>'
-    +'3. Envía. El reporte ya incluye la petición de análisis.'
-    +'<br><br><span style="font-size:11px;color:var(--muted)">Solo se exporta tu información financiera (montos, deudas, gastos, capítulos). No se envía nada automáticamente — el control es 100% tuyo.</span>'
-    +'</div>');
+  // Guardamos el texto para el botón "copiar" del modal (no interpolarlo en
+  // onclick: es largo y rompería el HTML). La ventana de código permite
+  // seleccionar/copiar a mano en móvil, donde el portapapeles a veces falla.
+  window._aiReportTxt=txt;
+  const body='<div style="font-size:12px;line-height:1.6;color:var(--txt2)">'
+    +'Tu reporte ('+kb+' KB) ya incluye el <strong>prompt completo</strong>: la IA te dará un análisis a fondo, una estrategia y tu plan de acción listo para reimportar.'
+    +'</div>'
+    +'<div style="font-size:11px;color:var(--txt2);line-height:1.7;margin:12px 0 6px"><strong>Cómo usarlo:</strong><br>1. Copia el reporte (botón de abajo) o adjunta el <strong>.md</strong> descargado.<br>2. Pégalo en tu IA (Claude, ChatGPT…) y envía.<br>3. Copia su respuesta y vuelve a <strong>📥 Importar plan de IA</strong>.</div>'
+    +'<textarea readonly onclick="this.select()" style="width:100%;height:140px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:10px;font-family:monospace;background:var(--bg);resize:vertical;color:var(--txt2)">'+_escH(txt)+'</textarea>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Toca el recuadro para seleccionar todo. Solo se exporta tu info financiera — nada se envía solo.</div>';
+  showConfirm('🧠 Reporte para IA listo',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm()">Cerrar</button><button class="btn btn-sage" style="flex:1" onclick="(function(){var ok=_copyText(window._aiReportTxt||\'\');toast(ok?\'📋 Reporte copiado\':\'Selecciona el texto y copia manualmente\');})()">📋 Copiar reporte</button>';
   toast(copied?'🧠 Reporte copiado y descargado':'🧠 Reporte descargado');
 }
 // Restaura un respaldo JSON. Endurecido: valida la forma del archivo, pide

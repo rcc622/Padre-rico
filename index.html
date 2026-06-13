@@ -469,6 +469,7 @@ let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',do
   tdcPayments:[],
   simCustoms:[], // FASE 7: conceptos personalizados del simulador (doctor, gym, etc.)
   simSliders:{}, // FASE 7b: última posición de los sliders del simulador — se hidrata a window._simVals al cargar la app para que sobrevivan al refresh
+  aiPlan:null, // Plan importado desde una IA (capa de seguimiento, nunca toca números)
   cycleMode:'mensual'}; // FASE 1 BARRAS: 'mensual' | 'quincenal' — controla cadencia de capítulos
 // Copia profunda del estado por defecto, tomada ANTES de cargar datos.
 // Es la base limpia sobre la que se restauran respaldos: restaurar haciendo
@@ -523,6 +524,7 @@ function _normalizeState(st){
   if(!isObj(st.userCatLabels))st.userCatLabels={};
   if(!isObj(st.merchantAliases))st.merchantAliases={};
   if(!isObj(st.diarioCatLabels))st.diarioCatLabels={};
+  if(st.aiPlan!=null&&(typeof st.aiPlan!=='object'||Array.isArray(st.aiPlan)||!Array.isArray(st.aiPlan.quincenas)))st.aiPlan=null;
   if(!isObj(st.txnCatExceptions))st.txnCatExceptions={};
   // Migración (idempotente): las claves de reglas/excepciones creadas cuando
   // la etiqueta "[...]" del banco se pegaba al comercio se re-llavean al
@@ -9729,6 +9731,33 @@ try{
         +'</div>';
     }catch(e){return '';}})()}
 
+    <!-- PLAN DE LA IA (capa de seguimiento, no toca números) -->
+    ${(()=>{try{
+      const p=S.aiPlan;
+      if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length||showNext)return '';
+      const curN=aiPlanCurrentQ();
+      const q=p.quincenas[Math.min(curN,p.quincenas.length)-1];
+      if(!q)return '';
+      const checks=p.checks||{};
+      const qi=q.n-1;
+      const acts=q.acciones||[];
+      const doneN=acts.filter((_,j)=>checks['q'+q.n+'_'+j]).length;
+      const pct=acts.length?Math.round(doneN/acts.length*100):0;
+      const sevColor={leve:'var(--sage)',moderado:'var(--amber)',critico:'var(--terra)'}[p.severidad]||'var(--sage)';
+      const sevL={leve:'🟢 Leve',moderado:'🟡 Moderado',critico:'🔴 Crítico'}[p.severidad]||'';
+      let h='<div class="card" style="border:1px solid rgba(74,110,140,.35);background:linear-gradient(135deg,rgba(74,110,140,.06),rgba(78,124,106,.04));padding:14px 16px">'
+        +'<div class="row-b" style="margin-bottom:8px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Plan de tu IA · Quincena '+q.n+' de '+p.quincenas.length+'</div>'+(sevL?'<span style="font-size:10px;color:'+sevColor+';font-weight:bold">'+sevL+'</span>':'')+'</div>'
+        +'<div style="font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:8px">'+_escH(q.titulo)+'</div>';
+      acts.forEach((a,j)=>{
+        const k='q'+q.n+'_'+j;const on=!!checks[k];
+        h+='<label class="row" style="gap:9px;padding:6px 0;cursor:pointer;align-items:flex-start;border-top:1px solid rgba(74,110,140,.12)"><input type="checkbox" '+(on?'checked':'')+' onchange="aiPlanToggle(\''+k+'\')" style="width:auto;margin-top:2px;flex-shrink:0"><span style="font-size:12px;color:'+(on?'var(--muted)':'var(--txt2)')+';line-height:1.5'+(on?';text-decoration:line-through':'')+'">'+_escH(a.t)+(a.monto?' <strong style="color:var(--sky)">('+fx(a.monto)+')</strong>':'')+'</span></label>';
+      });
+      h+='<div class="pw" style="height:6px;margin-top:10px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
+        +'<div class="row-b" style="margin-top:8px"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 9px" onclick="aiPlanShowFull()">Ver plan completo →</button><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 9px;color:var(--muted)" onclick="aiPlanRemove()">🗑 Quitar</button></div>'
+        +'</div>';
+      return h;
+    }catch(e){return '';}})()}
+
     <!-- DEFICIT ALERT -->
     ${mUnpaidT>0&&!showNext?`<div class="card card-red" style="padding:14px 18px">
       <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mUnpaidT))}</strong> (${mUnpaid.length} gasto${mUnpaid.length!==1?'s':''} y deudas). Selecciónalos y aplícalos conforme vayas pagando.</div>
@@ -12877,7 +12906,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button></div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en tu Plan</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para
@@ -13299,6 +13328,21 @@ function buildAIReport(){
   L.push('> Sé directo y honesto. Usa MIS números (no ejemplos), da metas medibles');
   L.push('> en pesos y fechas, y si te falta un dato, decláralo como supuesto en');
   L.push('> vez de preguntarme.');
+  L.push('> ');
+  L.push('> ## 6 · BLOQUE PARA LA APP (OBLIGATORIO, AL FINAL DE TU RESPUESTA)');
+  L.push('> Cierra tu respuesta con UN bloque de código JSON válido (sin');
+  L.push('> comentarios ni texto adentro) con este esquema exacto — me sirve para');
+  L.push('> importar tu plan a la app y darle seguimiento quincena a quincena:');
+  L.push('> ```json');
+  L.push('> {"padreRicoPlan":1,"severidad":"leve|moderado|critico",');
+  L.push('>  "horizonteQnas":6,"savPct":12,"estrategiaDeuda":"nieve|avalancha",');
+  L.push('>  "resumen":"una línea con la idea central del plan",');
+  L.push('>  "quincenas":[{"n":1,"titulo":"Quincena 1 — arranque",');
+  L.push('>    "acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}');
+  L.push('> ```');
+  L.push('> Reglas del bloque: montos en números simples (sin $ ni comas), máximo');
+  L.push('> 6 acciones por quincena, "horizonteQnas" = total de quincenas del plan');
+  L.push('> del punto 5 y "quincenas" debe traer una entrada por cada una.');
   L.push('');
   L.push('_Exportado: '+_todayYMD()+' · Cadencia de capítulos: '+cycleLabel()+'_');
   L.push('');
@@ -13457,6 +13501,117 @@ function buildAIReport(){
   return L.join('\n');
 }
 
+// ── 📥 PLAN DE LA IA ──────────────────────────────────────────────────
+// El usuario pega la respuesta de la IA; se extrae SOLO el bloque JSON
+// "padreRicoPlan", se valida/sanea a un esquema fijo y se muestra vista
+// previa. Adoptar guarda S.aiPlan: una CAPA DE SEGUIMIENTO con checklist
+// por quincena que nunca modifica gastos, deudas ni saldos. El único
+// cambio numérico posible (% de ahorro) es un checkbox explícito.
+function openAIPlanImport(){
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6">Pega aquí la <strong>respuesta completa</strong> de la IA (Claude, ChatGPT…). La app extrae solo el bloque del plan y te muestra una vista previa — nada se aplica sin tu aprobación.</div>'
+    +'<textarea id="aiPlanPaste" placeholder="Pega la respuesta de la IA…" style="width:100%;height:170px;padding:10px;border:1px solid var(--border);border-radius:8px;font-size:11px;font-family:monospace;background:var(--bg);resize:vertical"></textarea>'
+    +(S.aiPlan?'<div style="font-size:10px;color:var(--amber);margin-top:8px">⚠ Ya tienes un plan activo: importar otro lo reemplaza (tus palomitas se reinician).</div>':'');
+  showConfirm('📥 Importar plan de IA',body,()=>{const t=document.getElementById('aiPlanPaste')?.value||'';setTimeout(()=>_aiPlanPreview(t),60);});
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" style="flex:1" onclick="execConfirm()">Leer plan</button>';
+}
+function _parseAIPlan(text){
+  try{
+    const i=String(text||'').indexOf('"padreRicoPlan"');
+    if(i<0)return{err:'No encontré el bloque del plan (falta "padreRicoPlan"). Pídele a la IA que incluya el bloque JSON que el reporte le solicita al final, y pega su respuesta completa.'};
+    const start=text.lastIndexOf('{',i);
+    if(start<0)return{err:'El bloque del plan está malformado.'};
+    let depth=0,end=-1;
+    for(let k=start;k<text.length;k++){const ch=text[k];if(ch==='{')depth++;else if(ch==='}'){depth--;if(depth===0){end=k;break;}}}
+    if(end<0)return{err:'El bloque JSON está incompleto (le falta cerrar llaves).'};
+    let obj;
+    try{obj=JSON.parse(text.slice(start,end+1));}catch(e){return{err:'El JSON del plan no es válido: '+e.message};}
+    if(+obj.padreRicoPlan!==1)return{err:'Versión del bloque no soportada.'};
+    const sevRaw=String(obj.severidad||'').toLowerCase();
+    const sev=sevRaw.indexOf('crit')>=0||sevRaw.indexOf('crít')>=0?'critico':sevRaw.indexOf('lev')>=0?'leve':'moderado';
+    const qs=Array.isArray(obj.quincenas)?obj.quincenas.slice(0,26):[];
+    if(!qs.length)return{err:'El plan no trae quincenas.'};
+    const clean={
+      v:1,
+      severidad:sev,
+      horizonteQnas:Math.min(26,Math.max(1,Math.round(+obj.horizonteQnas||qs.length))),
+      savPct:obj.savPct!=null&&isFinite(+obj.savPct)?Math.min(50,Math.max(1,Math.round(+obj.savPct))):null,
+      estrategiaDeuda:/aval/i.test(String(obj.estrategiaDeuda||''))?'avalancha':(/niev|snow/i.test(String(obj.estrategiaDeuda||''))?'nieve':null),
+      resumen:String(obj.resumen||'').slice(0,220),
+      quincenas:qs.map((q,qi)=>({
+        n:qi+1,
+        titulo:String((q&&q.titulo)||('Quincena '+(qi+1))).slice(0,90),
+        acciones:(Array.isArray(q&&q.acciones)?q.acciones.slice(0,8):[]).map(a=>({
+          t:String((a&&a.t)||(typeof a==='string'?a:'')).slice(0,160),
+          monto:a&&a.monto!=null&&isFinite(+a.monto)?Math.round(+a.monto):null
+        })).filter(a=>a.t)
+      })).filter(q=>q.acciones.length)
+    };
+    if(!clean.quincenas.length)return{err:'Las quincenas del plan no traen acciones legibles.'};
+    return{plan:clean};
+  }catch(e){return{err:'Error al leer el plan: '+e.message};}
+}
+window._aiPlanDraft=null;
+function _aiPlanPreview(text){
+  const r=_parseAIPlan(text);
+  if(r.err){showInfo('📥 Importar plan de IA','<div style="font-size:12px;color:var(--terra);line-height:1.7">⚠ '+_escH(r.err)+'</div><div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">Tip: vuelve a exportar el reporte (🧠) — el prompt ya le pide a la IA el bloque correcto — y pega su respuesta completa.</div>');return;}
+  const p=r.plan;
+  window._aiPlanDraft=p;
+  const sevL={leve:'🟢 Leve',moderado:'🟡 Moderado',critico:'🔴 Crítico'};
+  let body='<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Vista previa. Adoptar el plan <strong>no toca tus números</strong>: es una capa de seguimiento con palomitas en tu Plan.</div>';
+  body+='<div class="row" style="gap:6px;margin-bottom:10px;flex-wrap:wrap">'
+    +'<span class="badge bdg-amber">'+(sevL[p.severidad]||p.severidad)+'</span>'
+    +'<span class="badge bdg-sage">'+p.quincenas.length+' quincena'+(p.quincenas.length!==1?'s':'')+'</span>'
+    +(p.estrategiaDeuda?'<span class="badge bdg-sky">Deuda: '+(p.estrategiaDeuda==='nieve'?'Bola de Nieve':'Avalancha')+'</span>':'')
+    +'</div>';
+  if(p.resumen)body+='<div style="font-size:12px;font-style:italic;color:var(--txt2);margin-bottom:10px;line-height:1.5">“'+_escH(p.resumen)+'”</div>';
+  body+='<div style="max-height:230px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px 12px;margin-bottom:10px">';
+  p.quincenas.forEach(q=>{
+    body+='<div style="font-size:11px;font-weight:bold;color:var(--sage);margin:8px 0 3px">'+_escH(q.titulo)+'</div>';
+    q.acciones.forEach(a=>{body+='<div style="font-size:11px;color:var(--txt2);padding:2px 0;line-height:1.5">• '+_escH(a.t)+(a.monto?' <strong>('+fx(a.monto)+')</strong>':'')+'</div>';});
+  });
+  body+='</div>';
+  if(p.savPct&&p.savPct!==S.savPct)body+='<label class="row" style="gap:8px;font-size:11px;color:var(--txt2);margin-bottom:4px;cursor:pointer"><input type="checkbox" id="aiPlanApplySav" style="width:auto"> Adoptar también su <strong>'+p.savPct+'%</strong> de "págate primero" (hoy: '+S.savPct+'%)</label>';
+  showConfirm('🤖 Plan de la IA · vista previa',body,()=>{_aiPlanAdopt();});
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._aiPlanDraft=null">Cancelar</button><button class="btn btn-sage" style="flex:1" onclick="execConfirm()">✓ Adoptar plan</button>';
+}
+function _aiPlanAdopt(){
+  const p=window._aiPlanDraft;if(!p)return;
+  const patch={aiPlan:{...p,importedAt:_todayYMD(),checks:{}}};
+  try{if(document.getElementById('aiPlanApplySav')?.checked&&p.savPct)patch.savPct=p.savPct;}catch(e){}
+  if(p.estrategiaDeuda){try{dStrat=p.estrategiaDeuda==='nieve'?'snowball':'avalanche';}catch(e){}}
+  pt(patch);
+  window._aiPlanDraft=null;
+  toast('🤖 Plan adoptado · síguelo en tu Plan');
+  try{if(cur==='plan')rPlan();}catch(e){}
+  try{if(cur==='historia')rHistoria();}catch(e){}
+  try{go('plan');}catch(e){}
+}
+function aiPlanCurrentQ(){
+  const p=S.aiPlan;if(!p||!p.importedAt)return 1;
+  try{const d=Math.floor((new Date()-new Date(p.importedAt+'T12:00'))/864e5);return Math.min((p.quincenas||[]).length||1,Math.max(1,Math.floor(d/15)+1));}catch(e){return 1;}
+}
+function aiPlanToggle(key){
+  if(!S.aiPlan)return;
+  const checks={...(S.aiPlan.checks||{})};
+  checks[key]=!checks[key];
+  pt({aiPlan:{...S.aiPlan,checks}});
+  try{rPlan();}catch(e){}
+}
+function aiPlanRemove(){
+  showConfirm('🗑 Quitar plan de IA','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se quita la capa de seguimiento. <strong>Tus números no cambian.</strong> Puedes importar otro plan cuando quieras desde Historia.</div>',()=>{pt({aiPlan:null});toast('Plan de IA eliminado');try{rPlan();}catch(e){}});
+}
+function aiPlanShowFull(){
+  const p=S.aiPlan;if(!p)return;
+  const checks=p.checks||{};
+  let body=p.resumen?'<div style="font-size:12px;font-style:italic;color:var(--txt2);margin-bottom:8px;line-height:1.5">“'+_escH(p.resumen)+'”</div>':'';
+  (p.quincenas||[]).forEach((q,i)=>{
+    body+='<div style="font-size:11px;font-weight:bold;color:var(--sage);margin:10px 0 4px">'+_escH(q.titulo)+'</div>';
+    (q.acciones||[]).forEach((a,j)=>{const k='q'+(i+1)+'_'+j;body+='<div style="font-size:11px;color:var(--txt2);padding:2px 0;line-height:1.5">'+(checks[k]?'✅':'⬜')+' '+_escH(a.t)+(a.monto?' <strong>('+fx(a.monto)+')</strong>':'')+'</div>';});
+  });
+  showInfo('🤖 Plan completo de la IA',body);
+}
 function exportForAI(){
   let txt='';
   try{txt=buildAIReport();}

@@ -9731,45 +9731,6 @@ try{
         +'</div>';
     }catch(e){return '';}})()}
 
-    <!-- PLAN DE IA · acciones de la quincena que estás viendo (por fecha) -->
-    ${(()=>{try{
-      const p=S.aiPlan;
-      if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length||_isPast)return '';
-      const checks=p.checks||{};
-      const _ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-      let vw;try{vw=cycleWindowFromKey(_viewCk);}catch(e){vw=getCycleWindow();}
-      const vs=_ymd(vw.start),ve=_ymd(vw.end);
-      let mi=-1;
-      for(let i=0;i<p.quincenas.length;i++){const rg=aiPlanQRange(i);if(rg&&rg.s<=ve&&rg.e>=vs){mi=i;break;}}
-      let totalA=0,doneA=0;
-      p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{totalA++;if(checks['q'+(i+1)+'_'+j])doneA++;}));
-      const pendAll=totalA-doneA;
-      if(mi<0){
-        return '<div class="card card-link" style="border:1px solid rgba(74,110,140,.3);background:rgba(74,110,140,.04);padding:12px 16px" onclick="setHabitView(\'plan\');go(\'habitos\')">'
-          +'<div class="row-b"><div style="font-size:11px;color:var(--sky);font-weight:bold">🤖 Tu plan de acción</div><span style="font-size:10px;color:var(--muted)">'+(pendAll>0?pendAll+' pendiente'+(pendAll!==1?'s':''):'✓ completo')+' ›</span></div>'
-          +'<div style="font-size:10px;color:var(--muted);margin-top:5px">Esta quincena no tiene acciones del plan. Velo completo en Día a día → 🤖 Plan IA.</div>'
-          +'</div>';
-      }
-      const q=p.quincenas[mi];
-      const acts=q.acciones||[];
-      const dN=acts.filter((_,j)=>checks['q'+(mi+1)+'_'+j]).length;
-      const rg=aiPlanQRange(mi);
-      const fechas=rg?aiPlanFmtRange(rg.s,rg.e):'';
-      const pct=acts.length?Math.round(dN/acts.length*100):0;
-      let h='<div class="card" style="border:1px solid rgba(74,110,140,.4);background:linear-gradient(135deg,rgba(74,110,140,.07),rgba(78,124,106,.04));padding:14px 16px">'
-        +'<div class="row-b" style="margin-bottom:2px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Plan de IA · esta quincena</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">'+dN+'/'+acts.length+'</span></div>'
-        +'<div style="font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:'+(fechas?'2px':'8px')+'">'+_escH(q.titulo)+'</div>'
-        +(fechas?'<div style="font-size:10px;color:var(--sky);font-weight:bold;margin-bottom:8px">📅 '+fechas+'</div>':'');
-      acts.forEach((a,j)=>{
-        const k='q'+(mi+1)+'_'+j;const on=!!checks[k];
-        h+='<label class="row" style="gap:10px;padding:7px 0;cursor:pointer;align-items:flex-start;border-top:1px solid rgba(74,110,140,.12)"><input type="checkbox" '+(on?'checked':'')+' onchange="aiPlanToggle(\''+k+'\')" style="width:auto;margin-top:2px;flex-shrink:0"><span style="font-size:12px;color:'+(on?'var(--muted)':'var(--txt2)')+';line-height:1.5'+(on?';text-decoration:line-through':'')+'">'+_escH(a.t)+(a.monto?' <strong style="color:var(--sky)">('+fx(a.monto)+')</strong>':'')+'</span></label>';
-      });
-      h+='<div class="pw" style="height:6px;margin-top:10px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
-        +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:10px;padding:4px" onclick="setHabitView(\'plan\');go(\'habitos\')">Ver plan completo ('+pendAll+' pendiente'+(pendAll!==1?'s':'')+') →</button>'
-        +'</div>';
-      return h;
-    }catch(e){return '';}})()}
-
     <!-- DEFICIT ALERT -->
     ${mUnpaidT>0&&!showNext?`<div class="card card-red" style="padding:14px 18px">
       <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mUnpaidT))}</strong> (${mUnpaid.length} gasto${mUnpaid.length!==1?'s':''} y deudas). Selecciónalos y aplícalos conforme vayas pagando.</div>
@@ -9983,6 +9944,53 @@ try{
         </div>`;
       })()}
     </div>
+
+    <!-- PLAN DE IA · acciones de la quincena vista (después de pendientes) -->
+    ${(()=>{try{
+      const p=S.aiPlan;
+      if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length||_isPast)return '';
+      const checks=p.checks||{};
+      const _ymd=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      let vw;try{vw=cycleWindowFromKey(_viewCk);}catch(e){vw=getCycleWindow();}
+      const vs=_ymd(vw.start),ve=_ymd(vw.end);
+      let mi=-1;
+      for(let i=0;i<p.quincenas.length;i++){const rg=aiPlanQRange(i);if(rg&&rg.s<=ve&&rg.e>=vs){mi=i;break;}}
+      let totalA=0,doneA=0;
+      p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{totalA++;if(checks['q'+(i+1)+'_'+j])doneA++;}));
+      const pendAll=totalA-doneA;
+      // Los checks solo se activan cuando estamos DENTRO de la quincena (ciclo
+      // actual) — igual que los pendientes. En vista de próxima/otra: solo lectura.
+      const editable=_isCurrent;
+      if(mi<0){
+        return '<div class="card card-link" style="border:1px solid rgba(74,110,140,.3);background:rgba(74,110,140,.04);padding:12px 16px" onclick="setHabitView(\'plan\');go(\'habitos\')">'
+          +'<div class="row-b"><div style="font-size:11px;color:var(--sky);font-weight:bold">🤖 Tu plan de acción</div><span style="font-size:10px;color:var(--muted)">'+(pendAll>0?pendAll+' pendiente'+(pendAll!==1?'s':''):'✓ completo')+' ›</span></div>'
+          +'<div style="font-size:10px;color:var(--muted);margin-top:5px">Esta quincena no tiene acciones del plan. Velo completo en Día a día → 🤖 Plan IA.</div>'
+          +'</div>';
+      }
+      const q=p.quincenas[mi];
+      const acts=q.acciones||[];
+      const dN=acts.filter((_,j)=>checks['q'+(mi+1)+'_'+j]).length;
+      const rg=aiPlanQRange(mi);
+      const fechas=rg?aiPlanFmtRange(rg.s,rg.e):'';
+      const pct=acts.length?Math.round(dN/acts.length*100):0;
+      let h='<div class="card" style="border:1px solid rgba(74,110,140,.4);background:linear-gradient(135deg,rgba(74,110,140,.07),rgba(78,124,106,.04));padding:14px 16px">'
+        +'<div class="row-b" style="margin-bottom:2px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Plan de IA · esta quincena</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">'+dN+'/'+acts.length+'</span></div>'
+        +'<div style="font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:'+(fechas?'2px':'8px')+'">'+_escH(q.titulo)+'</div>'
+        +(fechas?'<div style="font-size:10px;color:var(--sky);font-weight:bold;margin-bottom:8px">📅 '+fechas+(editable?'':' · solo lectura hasta que llegue')+'</div>':'');
+      acts.forEach((a,j)=>{
+        const k='q'+(mi+1)+'_'+j;const on=!!checks[k];
+        // Checkbox interactivo solo si estamos dentro de la quincena; si no,
+        // se muestra deshabilitado (como los pendientes en vista futura).
+        const cb=editable
+          ? '<input type="checkbox" '+(on?'checked':'')+' onchange="aiPlanToggle(\''+k+'\')" style="width:auto;margin-top:2px;flex-shrink:0">'
+          : '<input type="checkbox" '+(on?'checked':'')+' disabled style="width:auto;margin-top:2px;flex-shrink:0;opacity:.45">';
+        h+='<label class="row" style="gap:10px;padding:7px 0;'+(editable?'cursor:pointer;':'')+'align-items:flex-start;border-top:1px solid rgba(74,110,140,.12)">'+cb+'<span style="font-size:12px;color:'+(on?'var(--muted)':'var(--txt2)')+';line-height:1.5'+(on?';text-decoration:line-through':'')+'">'+_escH(a.t)+(a.monto?' <strong style="color:var(--sky)">('+fx(a.monto)+')</strong>':'')+'</span></label>';
+      });
+      h+='<div class="pw" style="height:6px;margin-top:10px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
+        +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:10px;padding:4px" onclick="setHabitView(\'plan\');go(\'habitos\')">Ver plan completo ('+pendAll+' pendiente'+(pendAll!==1?'s':'')+') →</button>'
+        +'</div>';
+      return h;
+    }catch(e){return '';}})()}
 
     <!-- AHORROS OPCIONAL -->
     ${optional.length>0?`<div class="card" style="border-left:3px solid var(--sage)">
@@ -11148,7 +11156,28 @@ function _otNumbers(){
   });
   try{getExpSavePlan().forEach(e=>{const amt=Math.round(+e.half||0);if(amt>0)metaItems.push({key:'apt_'+e.id,label:'💰 '+(e.name||'Apartado'),amt});});}catch(e){}
   const metasOpc=Math.round(_otMetaSum(metaItems));
-  return {RATE,pendingThis:Math.round(pendingThis),nextPagos:Math.round(nextPagos),pagateP,metaItems,metasOpc,nextIncome,nBonus};
+  // Acciones del PLAN DE IA con monto, de la quincena ACTUAL y aún pendientes.
+  // Seleccionables igual que metas, para que el objetivo de horas también
+  // pueda cubrir lo que tu plan de IA te pide pagar esta quincena.
+  const aiItems=[];
+  try{
+    const p=S.aiPlan;
+    if(p&&Array.isArray(p.quincenas)){
+      const _ymd=dt=>dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');
+      const cs=_ymd(cStart),ce=_ymd(cEnd);
+      let mi=-1;
+      for(let i=0;i<p.quincenas.length;i++){const rg=aiPlanQRange(i);if(rg&&rg.s<=ce&&rg.e>=cs){mi=i;break;}}
+      if(mi>=0){
+        const checks=p.checks||{};
+        (p.quincenas[mi].acciones||[]).forEach((a,j)=>{
+          const amt=Math.round(+a.monto||0);
+          if(amt>0&&!checks['q'+(mi+1)+'_'+j])aiItems.push({key:'ai_q'+(mi+1)+'_'+j,label:'🤖 '+(a.t||'Acción'),amt});
+        });
+      }
+    }
+  }catch(e){}
+  const aiOpc=Math.round(_otMetaSum(aiItems));
+  return {RATE,pendingThis:Math.round(pendingThis),nextPagos:Math.round(nextPagos),pagateP,metaItems,metasOpc,aiItems,aiOpc,nextIncome,nBonus};
 }
 // ¿Está seleccionado este item de meta/apartado? Default: sí (true) salvo que
 // el usuario lo haya desmarcado explícitamente (S.otMetaSel[key]===false).
@@ -11157,6 +11186,8 @@ function _otMetaSum(items){return (items||[]).filter(it=>_otMetaSelected(it.key)
 // Monto de metas/apartados que entra al objetivo: 0 si el master está apagado,
 // si no, la suma de los items seleccionados.
 function _otMetasIncl(n,inclM){return inclM?Math.round(_otMetaSum(n.metaItems)):0;}
+// Monto del plan de IA que entra al objetivo (items seleccionados).
+function _otAiIncl(n,inclA){return inclA?Math.round(_otMetaSum(n.aiItems||[])):0;}
 // Marca/desmarca un item concreto y recalcula en vivo.
 function _otMetaToggle(key){
   if(!S.otMetaSel)S.otMetaSel={};
@@ -11164,8 +11195,9 @@ function _otMetaToggle(key){
   sv();_otApplyToggles();
 }
 // Déficit y horas necesarias según qué ahorros se incluyan.
-function _otDeficit(n,inclP,inclM){
-  const deficit=Math.max(0,n.pendingThis+n.nextPagos+(inclP?n.pagateP:0)+_otMetasIncl(n,inclM)-n.nextIncome);
+function _otDeficit(n,inclP,inclM,inclA){
+  if(inclA===undefined)inclA=!!S.otInclAi; // compat: callsites viejos heredan el flag
+  const deficit=Math.max(0,n.pendingThis+n.nextPagos+(inclP?n.pagateP:0)+_otMetasIncl(n,inclM)+_otAiIncl(n,inclA)-n.nextIncome);
   const hours=deficit>0?Math.ceil(deficit/n.RATE*10)/10:0;
   return {deficit:Math.round(deficit),hours};
 }
@@ -11179,9 +11211,11 @@ function _otToggleRow(n){
 // Contenido interno de la fila de interruptores. Se re-renderiza en vivo para
 // mostrar/ocultar la lista de metas y refrescar la suma de seleccionados.
 function _otToggleInner(n){
-  const inclP=!!S.otInclPagate,inclM=!!S.otInclMetas;
+  const inclP=!!S.otInclPagate,inclM=!!S.otInclMetas,inclA=!!S.otInclAi;
   const items=n.metaItems||[];
+  const aiItems=n.aiItems||[];
   const selSum=_otMetaSum(items);
+  const aiSum=_otMetaSum(aiItems);
   let h='<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:.8px;font-weight:bold;margin-bottom:8px">¿Incluir ahorro en el objetivo?</div>'
     +'<label class="row-b" style="cursor:pointer;margin-bottom:8px;font-size:12px;color:var(--txt2)"><span>🪙 Págate Primero ('+(S.savPct||0)+'%) <strong style="color:var(--sage)">'+fx(n.pagateP)+'</strong></span><input type="checkbox" id="_otTogP" '+(inclP?'checked':'')+' onchange="_otApplyToggles()" style="width:18px;height:18px"></label>'
     +'<label class="row-b" style="cursor:pointer;font-size:12px;color:var(--txt2)"><span>🎯 Metas y apartados <strong style="color:var(--sage)">'+fx(selSum)+'</strong></span><input type="checkbox" id="_otTogM" '+(inclM?'checked':'')+' onchange="_otApplyToggles()" style="width:18px;height:18px"></label>';
@@ -11195,7 +11229,17 @@ function _otToggleInner(n){
       h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">No tienes metas ni apartados pendientes este ciclo.</div>';
     }
   }
-  h+='<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">Si los enciendes, el objetivo de horas crece para que tus horas extra también cubran ese ahorro.</div>';
+  // Toggle del plan de IA (solo si hay acciones con monto esta quincena)
+  if(aiItems.length){
+    h+='<label class="row-b" style="cursor:pointer;font-size:12px;color:var(--txt2);margin-top:8px;border-top:1px solid rgba(78,124,106,.15);padding-top:8px"><span>🤖 Plan de IA (esta qna) <strong style="color:var(--sky)">'+fx(aiSum)+'</strong></span><input type="checkbox" id="_otTogA" '+(inclA?'checked':'')+' onchange="_otApplyToggles()" style="width:18px;height:18px"></label>';
+    if(inclA){
+      h+='<div style="margin:8px 0 2px 4px;padding-left:8px;border-left:2px solid rgba(74,110,140,.3)">'
+        +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Elige cuáles incluir</div>'
+        +aiItems.map(it=>{const on=_otMetaSelected(it.key);return '<label class="row-b" style="cursor:pointer;font-size:11px;color:var(--txt2);padding:3px 0"><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+it.label+' <strong style="color:var(--sky)">'+fx(it.amt)+'</strong></span><input type="checkbox" '+(on?'checked':'')+' onchange="_otMetaToggle(\''+it.key+'\')" style="width:16px;height:16px;flex-shrink:0"></label>';}).join('')
+        +'</div>';
+    }
+  }
+  h+='<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">Si los enciendes, el objetivo de horas crece para que tus horas extra también cubran ese ahorro o esas acciones.</div>';
   return h;
 }
 // Recalcula en vivo el déficit/horas/target cuando cambias los interruptores.
@@ -11203,11 +11247,12 @@ function _otApplyToggles(){
   if(!_otState)return;
   const inclP=!!document.getElementById('_otTogP')?.checked;
   const inclM=!!document.getElementById('_otTogM')?.checked;
-  S.otInclPagate=inclP;S.otInclMetas=inclM;sv();
+  const inclA=document.getElementById('_otTogA')?!!document.getElementById('_otTogA').checked:!!S.otInclAi;
+  S.otInclPagate=inclP;S.otInclMetas=inclM;S.otInclAi=inclA;sv();
   // Re-renderiza la fila (muestra/oculta la lista de metas + suma seleccionada).
   const wrap=document.getElementById('_otToggleWrap');
   if(wrap)wrap.innerHTML=_otToggleInner(_otState.n);
-  const {deficit,hours}=_otDeficit(_otState.n,inclP,inclM);
+  const {deficit,hours}=_otDeficit(_otState.n,inclP,inclM,inclA);
   _otState.deficit=deficit;_otState.hours=hours;
   const dEl=document.getElementById('_otDeficit');
   if(dEl){dEl.textContent=fx(deficit);dEl.style.color=deficit>0?'var(--terra)':'var(--sage)';}
@@ -11229,12 +11274,14 @@ function _otApplyToggles(){
   }
 }
 // Bloque de desglose compartido (pagos arriba, ahorro como líneas aparte).
-function _otBreakdown(n,inclP,inclM,deficit,deficitLabel){
+function _otBreakdown(n,inclP,inclM,deficit,deficitLabel,inclA){
+  if(inclA===undefined)inclA=!!S.otInclAi;
   return '<div style="font-size:12px;line-height:1.9;color:var(--txt2);margin-bottom:12px">'
     +'<div class="row-b"><span>Pendiente esta qna:</span><strong style="color:var(--terra)">'+fx(Math.round(n.pendingThis))+'</strong></div>'
     +'<div class="row-b"><span>Pagos próxima qna <span style="font-size:9px;color:var(--muted)">(= Plan de Acción)</span>:</span><strong style="color:var(--terra)">'+fx(Math.round(n.nextPagos))+'</strong></div>'
     +(inclP?'<div class="row-b"><span style="color:var(--sage)">+ 🪙 Págate Primero:</span><strong style="color:var(--sage)">'+fx(Math.round(n.pagateP))+'</strong></div>':'')
     +(inclM?'<div class="row-b"><span style="color:var(--sage)">+ 🎯 Metas y apartados:</span><strong style="color:var(--sage)">'+fx(_otMetasIncl(n,inclM))+'</strong></div>':'')
+    +(inclA&&(n.aiItems||[]).length?'<div class="row-b"><span style="color:var(--sky)">+ 🤖 Plan de IA:</span><strong style="color:var(--sky)">'+fx(_otAiIncl(n,inclA))+'</strong></div>':'')
     +'<div class="row-b"><span>Ingreso próxima qna'+(n.nBonus>0?' <span style="font-size:10px;color:var(--sage)">(+bono)</span>':'')+':</span><strong style="color:var(--sage)">'+fx(Math.round(n.nextIncome))+'</strong></div>'
     +'<div class="row-b" style="border-top:1px solid var(--border);padding-top:5px;margin-top:5px"><span style="font-weight:bold">'+deficitLabel+':</span><strong id="_otDeficit" style="color:'+(deficit>0?'var(--terra)':'var(--sage)')+'">'+fx(deficit)+'</strong></div>'
     +'</div>';
@@ -11242,10 +11289,10 @@ function _otBreakdown(n,inclP,inclM,deficit,deficitLabel){
 function showOvertimeCalc(){
   const n=_otNumbers();
   const RATE=n.RATE;
-  const inclP=!!S.otInclPagate,inclM=!!S.otInclMetas;
-  const {deficit,hours}=_otDeficit(n,inclP,inclM);
+  const inclP=!!S.otInclPagate,inclM=!!S.otInclMetas,inclA=!!S.otInclAi;
+  const {deficit,hours}=_otDeficit(n,inclP,inclM,inclA);
   _otState={mode:'calc',n,deficit,hours};
-  const body=_otBreakdown(n,inclP,inclM,deficit,'Déficit total')
+  const body=_otBreakdown(n,inclP,inclM,deficit,'Déficit total',inclA)
     +_otToggleRow(n)
     +(deficit>0?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Para cubrir necesitas <strong id="_otHoursNeed">'+hours.toFixed(1)+'</strong>h a $'+RATE+'/hr.</div>'
     :'<div style="font-size:11px;color:var(--sage);margin-bottom:8px">✅ Sin déficit con lo seleccionado. Puedes registrar horas extra como ingreso adicional. <span id="_otHoursNeed" style="display:none">0</span></div>')

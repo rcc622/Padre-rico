@@ -9962,8 +9962,8 @@ try{
       // actual) — igual que los pendientes. En vista de próxima/otra: solo lectura.
       const editable=_isCurrent;
       if(mi<0){
-        return '<div class="card card-link" style="border:1px solid rgba(74,110,140,.3);background:rgba(74,110,140,.04);padding:12px 16px" onclick="setHabitView(\'plan\');go(\'habitos\')">'
-          +'<div class="row-b"><div style="font-size:11px;color:var(--sky);font-weight:bold">🤖 Tu plan de acción</div><span style="font-size:10px;color:var(--muted)">'+(pendAll>0?pendAll+' pendiente'+(pendAll!==1?'s':''):'✓ completo')+' ›</span></div>'
+        return '<div class="card card-link" style="border-left:3px solid var(--sky);padding:12px 16px" onclick="setHabitView(\'plan\');go(\'habitos\')">'
+          +'<div class="row-b" style="flex-wrap:nowrap;gap:8px"><div style="font-size:11px;color:var(--sky);font-weight:bold">🤖 Tu plan de acción</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">'+(pendAll>0?pendAll+' pendiente'+(pendAll!==1?'s':''):'✓ completo')+' ›</span></div>'
           +'<div style="font-size:10px;color:var(--muted);margin-top:5px">Esta quincena no tiene acciones del plan. Velo completo en Día a día → 🤖 Plan IA.</div>'
           +'</div>';
       }
@@ -9973,8 +9973,8 @@ try{
       const rg=aiPlanQRange(mi);
       const fechas=rg?aiPlanFmtRange(rg.s,rg.e):'';
       const pct=acts.length?Math.round(dN/acts.length*100):0;
-      let h='<div class="card" style="border:1px solid rgba(74,110,140,.4);background:linear-gradient(135deg,rgba(74,110,140,.07),rgba(78,124,106,.04));padding:14px 16px">'
-        +'<div class="row-b" style="margin-bottom:2px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Plan de IA · esta quincena</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">'+dN+'/'+acts.length+'</span></div>'
+      let h='<div class="card" style="border-left:3px solid var(--sky);padding:14px 16px">'
+        +'<div class="row-b" style="margin-bottom:2px;flex-wrap:nowrap;gap:8px"><div style="font-size:10px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Plan de IA · esta quincena</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">'+dN+'/'+acts.length+'</span></div>'
         +'<div style="font-size:12px;font-weight:bold;color:var(--txt);margin-bottom:'+(fechas?'2px':'8px')+'">'+_escH(q.titulo)+'</div>'
         +(fechas?'<div style="font-size:10px;color:var(--sky);font-weight:bold;margin-bottom:8px">📅 '+fechas+(editable?'':' · solo lectura hasta que llegue')+'</div>':'');
       acts.forEach((a,j)=>{
@@ -9982,9 +9982,11 @@ try{
         // Checkbox interactivo solo si estamos dentro de la quincena; si no,
         // se muestra deshabilitado (como los pendientes en vista futura).
         const cb=editable
-          ? '<input type="checkbox" '+(on?'checked':'')+' onchange="aiPlanToggle(\''+k+'\')" style="width:auto;margin-top:2px;flex-shrink:0">'
-          : '<input type="checkbox" '+(on?'checked':'')+' disabled style="width:auto;margin-top:2px;flex-shrink:0;opacity:.45">';
-        h+='<label class="row" style="gap:10px;padding:7px 0;'+(editable?'cursor:pointer;':'')+'align-items:flex-start;border-top:1px solid rgba(74,110,140,.12)">'+cb+'<span style="font-size:12px;color:'+(on?'var(--muted)':'var(--txt2)')+';line-height:1.5'+(on?';text-decoration:line-through':'')+'">'+_escH(a.t)+(a.monto?' <strong style="color:var(--sky)">('+fx(a.monto)+')</strong>':'')+'</span></label>';
+          ? '<input type="checkbox" '+(on?'checked':'')+' onchange="aiPlanToggle(\''+k+'\')" style="width:auto;margin-top:1px;flex:0 0 auto">'
+          : '<input type="checkbox" '+(on?'checked':'')+' disabled style="width:auto;margin-top:1px;flex:0 0 auto;opacity:.45">';
+        // flex-wrap:nowrap + span flex:1/min-width:0 => el texto se ajusta DENTRO
+        // de su columna en vez de caer debajo del checkbox.
+        h+='<label style="display:flex;flex-wrap:nowrap;gap:10px;padding:7px 0;'+(editable?'cursor:pointer;':'')+'align-items:flex-start;border-top:1px solid var(--border)"><span style="flex:0 0 auto;margin-top:1px">'+cb+'</span><span style="flex:1;min-width:0;font-size:12px;color:'+(on?'var(--muted)':'var(--txt2)')+';line-height:1.5'+(on?';text-decoration:line-through':'')+'">'+_escH(a.t)+(a.monto?' <strong style="color:var(--sky)">('+fx(a.monto)+')</strong>':'')+'</span></label>';
       });
       h+='<div class="pw" style="height:6px;margin-top:10px"><div class="pb" style="width:'+pct+'%;background:var(--sky)"></div></div>'
         +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:10px;padding:4px" onclick="setHabitView(\'plan\');go(\'habitos\')">Ver plan completo ('+pendAll+' pendiente'+(pendAll!==1?'s':'')+') →</button>'
@@ -11064,8 +11066,8 @@ function renderAIPlanSection(){
     const sevColor={leve:'var(--sage)',moderado:'var(--amber)',critico:'var(--terra)'}[p.severidad]||'var(--sage)';
     const sevL={leve:'🟢 Leve',moderado:'🟡 Moderado',critico:'🔴 Crítico'}[p.severidad]||'';
     // Header
-    let h=`<div class="card" style="border:1px solid rgba(74,110,140,.35);background:linear-gradient(135deg,rgba(74,110,140,.06),rgba(78,124,106,.04));padding:14px 16px">
-      <div class="row-b" style="margin-bottom:8px"><div style="font-size:11px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Tu plan de acción</div>${sevL?`<span style="font-size:11px;color:${sevColor};font-weight:bold">${sevL}</span>`:''}</div>
+    let h=`<div class="card" style="border-left:3px solid var(--sky);padding:14px 16px">
+      <div class="row-b" style="margin-bottom:8px;flex-wrap:nowrap;gap:8px"><div style="font-size:11px;color:var(--sky);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">🤖 Tu plan de acción</div>${sevL?`<span style="font-size:11px;color:${sevColor};font-weight:bold;white-space:nowrap">${sevL}</span>`:''}</div>
       ${p.resumen?`<div style="font-size:12px;font-style:italic;color:var(--txt2);line-height:1.5;margin-bottom:10px">“${_escH(p.resumen)}”</div>`:''}
       <div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px"><span>${doneA} de ${totalA} acciones hechas</span><span style="color:${sevColor};font-weight:bold">${pct}%</span></div>
       <div class="pw" style="height:7px"><div class="pb" style="width:${pct}%;background:var(--sky)"></div></div>
@@ -11087,11 +11089,11 @@ function renderAIPlanSection(){
       if(q.inicio&&q.fin){fechas=aiPlanFmtRange(q.inicio,q.fin);}
       else{const win=aiPlanQWindow(i+1);fechas=win?aiPlanFmtWin(win):'';}
       h+=`<div class="card" style="padding:12px 16px${allDone?';opacity:.65':''}">
-        <div class="row-b" style="margin-bottom:${fechas?'3px':'8px'}"><div style="font-size:12px;font-weight:bold;color:var(--txt)">${allDone?'✅ ':''}${_escH(q.titulo)}</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">${dN}/${acts.length}</span></div>
+        <div class="row-b" style="margin-bottom:${fechas?'3px':'8px'};flex-wrap:nowrap;gap:8px"><div style="font-size:12px;font-weight:bold;color:var(--txt);min-width:0">${allDone?'✅ ':''}${_escH(q.titulo)}</div><span style="font-size:10px;color:var(--muted);white-space:nowrap;flex:0 0 auto">${dN}/${acts.length}</span></div>
         ${fechas?`<div style="font-size:10px;color:var(--sky);margin-bottom:8px;font-weight:bold">📅 ${fechas}</div>`:''}`;
       acts.forEach((a,j)=>{
         const k='q'+(i+1)+'_'+j;const on=!!checks[k];
-        h+=`<label class="row" style="gap:10px;padding:7px 0;cursor:pointer;align-items:flex-start;border-top:1px solid rgba(74,110,140,.1)"><input type="checkbox" ${on?'checked':''} onchange="aiPlanToggle('${k}')" style="width:auto;margin-top:2px;flex-shrink:0"><span style="font-size:12px;color:${on?'var(--muted)':'var(--txt2)'};line-height:1.5${on?';text-decoration:line-through':''}">${_escH(a.t)}${a.monto?` <strong style="color:var(--sky)">(${fx(a.monto)})</strong>`:''}</span></label>`;
+        h+=`<label style="display:flex;flex-wrap:nowrap;gap:10px;padding:7px 0;cursor:pointer;align-items:flex-start;border-top:1px solid var(--border)"><input type="checkbox" ${on?'checked':''} onchange="aiPlanToggle('${k}')" style="width:auto;margin-top:1px;flex:0 0 auto"><span style="flex:1;min-width:0;font-size:12px;color:${on?'var(--muted)':'var(--txt2)'};line-height:1.5${on?';text-decoration:line-through':''}">${_escH(a.t)}${a.monto?` <strong style="color:var(--sky)">(${fx(a.monto)})</strong>`:''}</span></label>`;
       });
       h+=`</div>`;
     });

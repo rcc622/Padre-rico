@@ -8462,7 +8462,20 @@ function _amSave(){
     newAssets=_withAssetEvent(S.assets,ctx.assetId,ev);
   }
   const newBal=_recalcAsset(newAssets.find(x=>x.id===ctx.assetId)).val;
-  pt({assets:newAssets});
+  const patch={assets:newAssets};
+  // Editar un evento que tiene espejo en una meta (dep.evId) sincroniza el
+  // espejo: monto/dirección y fecha. Antes la meta se quedaba con el dato
+  // viejo y el Estado de cuenta descuadraba sin pista visible.
+  if(ctx.evId!=null&&(dir==='in'||dir==='out')){
+    const expected=(dir==='out'?-1:1)*amt;
+    patch.savGoals=S.savGoals.map(g=>{
+      const dep=(g.deposits||[]).find(d=>d&&d.evId===ctx.evId);
+      if(!dep||(+dep.amt||0)===expected&&dep.date===date)return g;
+      const saved=(+g.saved||0)+(expected-(+dep.amt||0));
+      return{...g,saved,deposits:(g.deposits||[]).map(d=>d===dep?{...d,amt:expected,date:date}:d),done:saved>=g.target};
+    });
+  }
+  pt(patch);
   _syncLinkedMetaSaved(ctx.assetId);
   window._amCtx=null;
   toast((dir==='out'?'📉 −':'📈 +')+fx(amt)+' · Nuevo saldo '+fx(newBal));
@@ -8553,6 +8566,27 @@ function _auditFixDep(goalId,target,mode){
     try{if(cur==='plan')rPlan();}catch(e){}
   }catch(e){toast('Error al corregir');}
 }
+// Iguala el espejo de la meta al evento real de la cajita (monto/dirección
+// y fecha), ajustando lo ahorrado por la diferencia.
+function _auditSyncDep(goalId,target){
+  try{
+    pt({savGoals:S.savGoals.map(g=>{
+      if(g.id!==goalId)return g;
+      const dep=_auditDepMatch(g,target);
+      if(!dep)return g;
+      const a=S.assets.find(x=>x.id===dep.assetId);
+      const ev=a?(a.events||[]).find(e=>e&&e.id===dep.evId):null;
+      if(!ev)return g;
+      const expected=(ev.type==='out'?-1:1)*(+ev.amount||0);
+      const diff=expected-(+dep.amt||0);
+      const saved=(+g.saved||0)+diff;
+      return{...g,saved,deposits:(g.deposits||[]).map(d=>d===dep?{...d,amt:expected,date:ev.date||d.date}:d),done:saved>=g.target};
+    })});
+    toast('⚖️ Igualado a la cajita');
+    openLedgerAudit();
+    try{if(cur==='plan')rPlan();}catch(e){}
+  }catch(e){toast('Error al igualar');}
+}
 function _auditFixCommit(ck){
   try{
     const c=(S.savCommits||{})[ck];if(!c)return;
@@ -8606,7 +8640,13 @@ function openLedgerAudit(){
       if(!dep||!dep.assetId||dep.evId==null)return;
       const a=S.assets.find(x=>x.id===dep.assetId);
       const ev=a?(a.events||[]).find(e=>e&&e.id===dep.evId):null;
-      if(!a||!ev)finds.push({type:'dep',g,dep,why:!a?'el activo ligado ya no existe':'el movimiento ya no existe en '+_escH(a.name||'el activo')});
+      if(!a||!ev){finds.push({type:'dep',g,dep,why:!a?'el activo ligado ya no existe':'el movimiento ya no existe en '+_escH(a.name||'el activo')});return;}
+      // DESINCRONIZADO: el evento existe pero con OTRO monto/dirección (se
+      // editó en la cajita y el espejo de la meta quedó con el dato viejo).
+      const expected=(ev.type==='out'?-1:1)*(+ev.amount||0);
+      if(Math.abs((+dep.amt||0)-expected)>0.5&&!dep._auditOk){
+        finds.push({type:'sync',g,dep,expected,aName:a.name||'la cajita',why:'la meta dice '+((+dep.amt||0)>=0?'+':'−')+fx(Math.abs(+dep.amt||0))+' pero en '+_escH(a.name||'la cajita')+' es '+(expected>=0?'+':'−')+fx(Math.abs(expected))});
+      }
     }));
     // Movimientos SIN espejo en metas que SÍ tienen cajita: viven solo en el
     // ledger de la meta (no se ven en los movimientos del activo) y son la
@@ -8637,7 +8677,14 @@ function openLedgerAudit(){
     }else{
       body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Encontré <strong>'+finds.length+'</strong> registro'+(finds.length!==1?'s':'')+' sin respaldo real ("fantasmas"). Tú decides qué hacer con cada uno:</div>';
       finds.forEach(f=>{
-        if(f.type==='loose'){
+        if(f.type==='sync'){
+          const refS=_xref({g:f.g.id,t:{id:f.dep.id!=null?f.dep.id:null,evId:f.dep.evId!=null?f.dep.evId:null,date:f.dep.date||'',amt:+f.dep.amt||0}});
+          body+='<div style="padding:10px 12px;border:1px solid rgba(160,112,48,.35);border-radius:8px;margin-bottom:10px;background:rgba(160,112,48,.05)">'
+            +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">'+(f.g.icon||'🎯')+' '+_escH(f.g.name)+' · '+_escH(f.dep.note||'movimiento')+' <span style="font-size:9px;color:var(--amber);font-weight:normal">desincronizado</span></div>'
+            +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">'+(f.dep.date||'')+' — '+f.why+'</div>'
+            +'<div style="display:flex;gap:6px"><button class="btn btn-sage btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditSyncDep(x.g,x.t)})(_xget('+refS+'))">⚖️ Igualar a '+_escH(f.aName)+'</button><button class="btn btn-ghost btn-sm" style="flex:0 0 auto;font-size:10px" onclick="(function(x){_auditFixDep(x.g,x.t,\'keep\')})(_xget('+refS+'))">✓ Así está bien</button></div>'
+            +'</div>';
+        }else if(f.type==='loose'){
           const refL=_xref({g:f.g.id,t:{id:f.dep.id!=null?f.dep.id:null,evId:null,date:f.dep.date||'',amt:+f.dep.amt||0}});
           body+='<div style="padding:10px 12px;border:1px solid rgba(74,110,140,.35);border-radius:8px;margin-bottom:10px;background:rgba(74,110,140,.05)">'
             +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">'+(f.g.icon||'🎯')+' '+_escH(f.g.name)+' · '+((+f.dep.amt||0)>=0?'+':'−')+fx(Math.abs(+f.dep.amt||0))+' <span style="font-size:9px;color:var(--sky);font-weight:normal">desligado</span></div>'

@@ -13336,15 +13336,22 @@ function buildAIReport(){
   L.push('> están mis datos REALES. Entrégame, en este orden y con encabezados');
   L.push('> claros:');
   L.push('> ');
+  L.push('> IMPORTANTE: la composición de mi gasto variable sale de mi BITÁCORA');
+  L.push('> DIARIA (sección 6) — lo que registro día a día. NO uses estados de');
+  L.push('> cuenta ni "capítulos" para analizar mis hábitos (no van en este');
+  L.push('> reporte; en mi app solo alimentan proyecciones). Analiza la');
+  L.push('> composición de mi gasto con base en lo que registro.');
+  L.push('> ');
   L.push('> ## 1 · ANÁLISIS PROFUNDO DEL ESTADO ACTUAL (AS-IS)');
   L.push('> - Diagnóstico con mis números: flujo libre, deuda/ingreso, patrimonio,');
   L.push('>   ritmo de ahorro. Fortalezas y focos rojos, sin endulzar nada.');
-  L.push('> - Tendencia entre capítulos: ¿mejoro o empeoro, y por qué?');
+  L.push('> - Tendencia de mi gasto registrado (sección 6): ¿mejoro o empeoro?');
   L.push('> - Clasifica mi caso: 🟢 LEVE / 🟡 MODERADO / 🔴 CRÍTICO, y justifícalo —');
   L.push('>   esta severidad define el horizonte del plan del punto 5.');
   L.push('> ');
   L.push('> ## 2 · ESTRATEGIA CONTRA GASTOS HORMIGA');
-  L.push('> - Mis 3-5 fugas principales con costo por quincena y anualizado.');
+  L.push('> - Mis 3-5 fugas principales (de mi bitácora diaria) con costo por');
+  L.push('>   quincena y anualizado.');
   L.push('> - Para cada una: táctica concreta de reducción (nada genérico) y');
   L.push('>   cuánto dinero libera al mes si la cumplo.');
   L.push('> ');
@@ -13411,7 +13418,6 @@ function buildAIReport(){
   {const _mb=metaMoneyBreakdown();if(_mb.consumoTotal>0)L.push('  - De eso, **'+fxn(_mb.consumoTotal)+'** está comprometido a metas de consumo (se gastará); patrimonio que construye: **'+fxn(nwBuild())+'**.');}
   L.push('- **Ingreso pasivo (rendimiento de activos):** '+fxn(pasivo)+'/mes');
   L.push('- **Ratio deuda / ingreso anual:** '+(drA*100).toFixed(0)+'%');
-  L.push('- **Capítulos registrados:** '+(S.snapshots||[]).length+' · racha: '+qStreak()+' consecutivos');
   L.push('');
   L.push('_El score (0-100) pondera: flujo libre 30, deuda/ingreso 20, ahorro 15, patrimonio 15, constancia 10, ingreso pasivo 10, metas de ahorro 10 (abonar +5 / completar +5); penaliza déficit hasta −15; se topa a 100._');
   L.push('');
@@ -13480,68 +13486,57 @@ function buildAIReport(){
     });
     L.push('');
   }
-  // ── 6. Historial por capítulos ────────────────────────
-  const snaps=[...(S.snapshots||[])].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
-  if(snaps.length){
-    const hTot=(sn)=>Object.values(sn.hormiga||{}).reduce((a,v)=>a+((v&&v.total)||0),0);
-    L.push('## 6 · Evolución por capítulos');
+  // ── 6. Gastos registrados día a día (la bitácora REAL del usuario) ────
+  // Fuente de la composición de gasto variable: lo que el usuario anota cada
+  // día (S.gastosDiarios), NO los capítulos del estado de cuenta — esos
+  // quedan solo como dato informativo para proyecciones, fuera de este
+  // reporte, para no contaminar el análisis de hábitos.
+  const diarios=(S.gastosDiarios||[]).filter(g=>g&&!g.pending&&(+g.amt||0)>0);
+  if(diarios.length){
+    L.push('## 6 · Gastos que registro día a día (mi bitácora)');
     L.push('');
-    L.push('| # | Periodo | Origen | Gasto | Hormiga | Deuda | Patrimonio | Score |');
-    L.push('|--:|---|---|--:|--:|--:|--:|--:|');
-    snaps.forEach((sn,i)=>{
-      const per=sn.periodStart?fmtDate(sn.periodStart)+'→'+fmtDate(sn.periodEnd):fmtDate(sn.date);
-      const src=sn.source==='debit'?'Débito':sn.source==='credit'?'Crédito':'EC';
-      L.push('| '+(i+1)+' | '+per+' | '+src+' | '+fxn(sn.totalGasto)+' | '+fxn(hTot(sn))+' | '+fxn(sn.deudaTotal)+' | '+fxn(sn.patrimonio)+' | '+(sn.score||0)+' |');
-    });
+    L.push('> Esta es la fuente real de mi composición de gasto variable: lo que anoto cada día. Básate en esto para analizar mis hábitos y fugas. (No incluyo los estados de cuenta/capítulos: en mi app son solo informativos para proyecciones.)');
     L.push('');
-    // Tendencia (primer vs último capítulo)
-    const f=snaps[0],lst=snaps[snaps.length-1];
-    if(snaps.length>1){
-      const dlt=(a,b)=>{const d=(b||0)-(a||0);return (d>=0?'+':'')+fxn(d);};
-      L.push('**Tendencia (capítulo 1 → '+snaps.length+'):** Patrimonio '+dlt(f.patrimonio,lst.patrimonio)+' · Deuda '+dlt(f.deudaTotal,lst.deudaTotal)+' · Score '+((lst.score||0)-(f.score||0)>=0?'+':'')+((lst.score||0)-(f.score||0))+' pts.');
+    const byCat={};
+    diarios.forEach(g=>{const k=g.cat||'otro';if(!byCat[k])byCat[k]={total:0,n:0,es:isEsencial(g)};byCat[k].total+=(+g.amt||0);byCat[k].n++;});
+    const catRows=Object.entries(byCat).sort((a,b)=>b[1].total-a[1].total);
+    const totalD=diarios.reduce((a,g)=>a+(+g.amt||0),0);
+    const totalHormiga=catRows.filter(([,d])=>!d.es).reduce((a,[,d])=>a+d.total,0);
+    L.push('| Categoría | Total | Movs | Promedio | Tipo |');
+    L.push('|---|--:|--:|--:|---|');
+    catRows.forEach(([k,d])=>{const cc=diarioCat(k);L.push('| '+(cc?cc.e+' '+cc.n:k)+' | '+fxn(d.total)+' | '+d.n+' | '+fxn(Math.round(d.total/d.n))+' | '+(d.es?'esencial':'🐜 hormiga')+' |');});
+    L.push('| **Total registrado** | **'+fxn(totalD)+'** | '+diarios.length+' | | |');
+    L.push('');
+    L.push('**Gasto hormiga (no esencial) que registro:** '+fxn(totalHormiga)+' de '+fxn(totalD)+' ('+(totalD>0?Math.round(totalHormiga/totalD*100):0)+'%) — proyectado a 12 meses según el periodo cubierto abajo.');
+    L.push('');
+    // Tendencia por mes
+    const byMonth={};
+    diarios.forEach(g=>{const m=String(g.date||'').slice(0,7);if(m.length!==7)return;if(!byMonth[m])byMonth[m]={total:0,horm:0,n:0};byMonth[m].total+=(+g.amt||0);byMonth[m].n++;if(!isEsencial(g))byMonth[m].horm+=(+g.amt||0);});
+    const monthRows=Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1);
+    if(monthRows.length){
+      L.push('### Tendencia mensual (solo lo que registro)');
+      L.push('');
+      L.push('| Mes | Gasto registrado | De eso, hormiga | Movs |');
+      L.push('|---|--:|--:|--:|');
+      monthRows.slice(-6).forEach(([m,d])=>L.push('| '+m+' | '+fxn(d.total)+' | '+fxn(d.horm)+' | '+d.n+' |'));
       L.push('');
     }
-    // Detalle de los últimos capítulos (máx 6 para que sea pegable)
-    const detail=snaps.slice(-6);
-    L.push('### Detalle de los últimos '+detail.length+' capítulos');
+    // Top gastos registrados
+    const top=[...diarios].sort((a,b)=>(+b.amt||0)-(+a.amt||0)).slice(0,10);
+    L.push('### Mis 10 gastos diarios más grandes');
     L.push('');
-    detail.forEach((sn,idx)=>{
-      const capNum=snaps.length-detail.length+idx+1;
-      const per=sn.periodStart?fmtDate(sn.periodStart)+' → '+fmtDate(sn.periodEnd):fmtDate(sn.date);
-      L.push('**Capítulo '+capNum+'** ('+per+') — gasto '+fxn(sn.totalGasto)+' en '+(sn.totalTxns||0)+' movimientos · score '+(sn.score||0)+' · patrimonio '+fxn(sn.patrimonio));
-      const hcats=Object.entries(sn.hormiga||{}).filter(([,d])=>d&&d.total>0).sort((a,b)=>b[1].total-a[1].total).slice(0,6);
-      if(hcats.length){
-        L.push('- 🐜 Gastos hormiga: '+hcats.map(([c,d])=>c+' '+fxn(d.total)+' ('+d.count+')').join(' · '));
-      }
-      const top=(sn.topByAmt||[]).slice(0,6);
-      if(top.length){
-        L.push('- 💸 Top gastos: '+top.map(t=>t.desc+' '+fxn(t.amt)).join(' · '));
-      }
-      const com=(sn.topCommerces||[]).slice(0,5);
-      if(com.length){
-        L.push('- 🏪 Comercios frecuentes: '+com.map(c=>c.name+' ×'+c.count).join(' · '));
-      }
-      L.push('');
-    });
+    top.forEach(g=>{const cc=diarioCat(g.cat);L.push('- '+(g.date||'')+' · '+(g.name||'—')+' — '+fxn(+g.amt||0)+(cc?' ('+cc.n+')':'')+(g.paidWith==='tdc'?' · TDC':''));});
+    L.push('');
   }else{
-    L.push('## 6 · Evolución por capítulos');
+    L.push('## 6 · Gastos que registro día a día (mi bitácora)');
     L.push('');
-    L.push('_Aún no hay capítulos. Sube un estado de cuenta (CSV) en Cierre de quincena para empezar a registrar tu historia._');
+    L.push('_Aún no registro gastos diarios. Para que el análisis se base en mi gasto real, debo empezar a anotarlos en Día a día → Diarios._');
     L.push('');
   }
-  // ── 7. Petición de análisis ───────────────────────────
+  // ── 7. Cierre ─────────────────────────────────────────
   L.push('---');
   L.push('');
-  L.push('## 🎯 Lo que quiero que analices');
-  L.push('');
-  L.push('1. **Diagnóstico:** ¿Qué tan sana está mi situación HOY? Mis 3 mayores fortalezas y mis 3 focos rojos.');
-  L.push('2. **Tendencia:** Viendo la evolución de los capítulos, ¿voy hacia la libertad financiera o hacia la carrera de la rata? Justifícalo con mis números.');
-  L.push('3. **Fugas:** Identifica mis gastos hormiga/patrones de fuga y cuánto me cuestan proyectados a 12 meses.');
-  L.push('4. **Deudas:** Dado mi caso, ¿bola de nieve o avalancha? Dame un orden concreto de ataque.');
-  L.push('5. **Activos:** ¿Cómo acelero la construcción de activos e ingreso pasivo para cubrir mis gastos?');
-  L.push('6. **Plan 90 días:** 3 acciones priorizadas, medibles y realistas con mi flujo libre actual.');
-  L.push('');
-  L.push('_Fuente: app Padre Rico 🪙 — datos 100% reales del usuario._');
+  L.push('_Fuente: app Padre Rico 🪙 — datos 100% reales del usuario. La composición de gasto sale de mi bitácora diaria (sección 6); los estados de cuenta no se incluyen aquí (en la app solo alimentan proyecciones). El prompt con lo que espero de ti está al inicio de este documento._');
   return L.join('\n');
 }
 

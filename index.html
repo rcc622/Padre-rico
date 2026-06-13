@@ -2230,7 +2230,8 @@ function _closeMetaWithLeftover(g,st){
   const opt=(val,label,sub)=>'<label class="row" style="gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_clDest" value="'+val+'" style="margin:0;flex-shrink:0"><div style="flex:1;min-width:0"><div style="font-size:13px;color:var(--txt);font-weight:bold">'+label+'</div>'+(sub?'<div style="font-size:10px;color:var(--muted);margin-top:1px">'+sub+'</div>':'')+'</div></label>';
   let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Vas a cerrar <strong>'+(g.icon||'🎯')+' '+_escH(g.name)+'</strong> y te quedan <strong style="color:var(--sage)">'+fx(bal)+'</strong> a favor. ¿Qué hago con ese dinero?</div>'
     +'<div style="max-height:46vh;overflow-y:auto;margin:0 -2px;padding:0 2px">'
-    +opt('leave','🚫 Dejarlo donde está','La cajita conserva el saldo');
+    +opt('leave','🚫 Dejarlo donde está','La cajita conserva el saldo')
+    +opt('cuenta','💵 Regresarlo a mi cuenta','Vuelve a tu quincena · se refleja en el Estado de tu cuenta del Plan');
   if(otherAssets.length){
     body+='<div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:.5px;font-weight:bold;margin:10px 0 5px">💎 Mover a otra cajita</div>'
       +otherAssets.map(a=>opt('asset:'+a.id,(a.gen?'📈 ':'💎 ')+_escH(a.name),'Saldo '+fx(a.val))).join('');
@@ -2271,6 +2272,13 @@ function _execCloseMeta(id){
       const tid=+sel.split(':')[1];const td=debts.find(x=>x.id===tid);
       debts=debts.map(x=>x.id===tid?{...x,bal:Math.max(0,(+x.bal||0)-bal)}:x);
       msg='⛓️ '+fx(bal)+' → '+(td?td.name:'deuda');
+    }else if(sel==='cuenta'){
+      // Regresa a la cuenta de la quincena: no hay destino que registrar.
+      // Si la cajita estaba ligada a un activo, el paso 1 ya creó el retiro
+      // (cuenta como entrada a tu cuenta en el Estado del Plan); si era
+      // standalone, el paso 3 registra el egreso en la meta y el Estado lo
+      // muestra como "Retirado de metas a tu cuenta".
+      msg='💵 '+fx(bal)+' → tu cuenta';
     }
   }
   // 3) Registra el egreso en la meta origen y la archiva.

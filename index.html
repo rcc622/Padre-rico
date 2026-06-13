@@ -11049,10 +11049,12 @@ function renderAIPlanSection(){
       const acts=q.acciones||[];
       const dN=acts.filter((_,j)=>checks['q'+(i+1)+'_'+j]).length;
       const allDone=acts.length>0&&dN===acts.length;
-      // Rango de fechas real de esta quincena, alineado a los ciclos de la app
-      // partiendo del ciclo en que se importó el plan.
-      const win=aiPlanQWindow(i+1);
-      const fechas=win?aiPlanFmtWin(win):'';
+      // Fechas de la quincena: las que la IA puso en el JSON (inicio/fin) son
+      // la verdad — reflejan en qué quincena decidió arrancar el plan. Solo si
+      // no vienen, caemos al cálculo por ciclos desde la fecha de importación.
+      let fechas='';
+      if(q.inicio&&q.fin){fechas=aiPlanFmtRange(q.inicio,q.fin);}
+      else{const win=aiPlanQWindow(i+1);fechas=win?aiPlanFmtWin(win):'';}
       h+=`<div class="card" style="padding:12px 16px${allDone?';opacity:.65':''}">
         <div class="row-b" style="margin-bottom:${fechas?'3px':'8px'}"><div style="font-size:12px;font-weight:bold;color:var(--txt)">${allDone?'✅ ':''}${_escH(q.titulo)}</div><span style="font-size:10px;color:var(--muted);white-space:nowrap">${dN}/${acts.length}</span></div>
         ${fechas?`<div style="font-size:10px;color:var(--sky);margin-bottom:8px;font-weight:bold">📅 ${fechas}</div>`:''}`;
@@ -13393,12 +13395,17 @@ function buildAIReport(){
   L.push('> {"padreRicoPlan":1,"severidad":"leve|moderado|critico",');
   L.push('>  "horizonteQnas":6,"savPct":12,"estrategiaDeuda":"nieve|avalancha",');
   L.push('>  "resumen":"una línea con la idea central del plan",');
-  L.push('>  "quincenas":[{"n":1,"titulo":"Quincena 1 — arranque",');
+  L.push('>  "quincenas":[{"n":1,"titulo":"Sellar fugas (tema, SIN fechas)",');
+  L.push('>    "inicio":"2026-06-15","fin":"2026-06-29",');
   L.push('>    "acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}');
   L.push('> ```');
   L.push('> Reglas del bloque: montos en números simples (sin $ ni comas), máximo');
   L.push('> 6 acciones por quincena, "horizonteQnas" = total de quincenas del plan');
-  L.push('> del punto 5 y "quincenas" debe traer una entrada por cada una.');
+  L.push('> del punto 5 y "quincenas" una entrada por cada una. FECHAS: pon "inicio"');
+  L.push('> y "fin" de cada quincena en formato YYYY-MM-DD; mis quincenas van del');
+  L.push('> día 30 al 14 (1ra) y del 15 al 29 (2da). HOY es '+_todayYMD()+', así que');
+  L.push('> arranca la Q1 en la quincena donde convenga empezar. El "titulo" es solo');
+  L.push('> el tema (sin fechas; la app las muestra desde inicio/fin).');
   L.push('');
   L.push('_Exportado: '+_todayYMD()+' · Cadencia de capítulos: '+cycleLabel()+'_');
   L.push('');
@@ -13553,7 +13560,7 @@ function buildAIReport(){
 // cambio numérico posible (% de ahorro) es un checkbox explícito.
 // Prompt suelto para pedirle a la IA SOLO el bloque JSON, por si la
 // conversación no arrancó con el reporte (que ya lo incluye) o la IA lo omitió.
-const _AI_JSON_PROMPT='Con base en el plan de acción que me diste, genera SOLO un bloque de código JSON válido (sin texto antes ni después) con este esquema exacto. Lo importaré a mi app para darle seguimiento por quincena:\n\n```json\n{"padreRicoPlan":1,"severidad":"leve|moderado|critico","horizonteQnas":6,"savPct":12,"estrategiaDeuda":"nieve|avalancha","resumen":"una línea con la idea central","quincenas":[{"n":1,"titulo":"Quincena 1 — arranque","acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}\n```\n\nReglas: montos en números simples (sin $ ni comas; usa null si no aplica), máximo 6 acciones por quincena, y una entrada en "quincenas" por cada quincena de tu plan.';
+const _AI_JSON_PROMPT='Con base en el plan de acción que me diste, genera SOLO un bloque de código JSON válido (sin texto antes ni después) con este esquema exacto. Lo importaré a mi app para darle seguimiento por quincena:\n\n```json\n{"padreRicoPlan":1,"severidad":"leve|moderado|critico","horizonteQnas":6,"savPct":12,"estrategiaDeuda":"nieve|avalancha","resumen":"una línea con la idea central","quincenas":[{"n":1,"titulo":"Tema de la quincena (sin fechas)","inicio":"2026-06-15","fin":"2026-06-29","acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}\n```\n\nReglas: montos en números simples (sin $ ni comas; usa null si no aplica), máximo 6 acciones por quincena, y una entrada en "quincenas" por cada quincena de tu plan. FECHAS: incluye "inicio" y "fin" de cada quincena en formato YYYY-MM-DD (mis quincenas van del 30 al 14 y del 15 al 29). El "titulo" es solo el tema, sin fechas.';
 function copyAIJSONPrompt(){
   const ok=_copyText(_AI_JSON_PROMPT);
   toast(ok?'📋 Prompt copiado · pégalo en tu IA':'No se pudo copiar');
@@ -13594,6 +13601,8 @@ function _parseAIPlan(text){
       quincenas:qs.map((q,qi)=>({
         n:qi+1,
         titulo:String((q&&q.titulo)||('Quincena '+(qi+1))).slice(0,90),
+        inicio:_toValidYMD((q&&q.inicio)||'')||null,
+        fin:_toValidYMD((q&&q.fin)||'')||null,
         acciones:(Array.isArray(q&&q.acciones)?q.acciones.slice(0,8):[]).map(a=>({
           t:String((a&&a.t)||(typeof a==='string'?a:'')).slice(0,160),
           monto:a&&a.monto!=null&&isFinite(+a.monto)?Math.round(+a.monto):null
@@ -13659,6 +13668,13 @@ function aiPlanFmtWin(w){
   try{
     const f=d=>d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
     return f(w.start)+' – '+f(w.end);
+  }catch(e){return '';}
+}
+// Formatea un rango de fechas YMD (las que la IA da en el JSON).
+function aiPlanFmtRange(a,b){
+  try{
+    const f=ymd=>new Date(ymd+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    return f(a)+' – '+f(b);
   }catch(e){return '';}
 }
 function aiPlanToggle(key){

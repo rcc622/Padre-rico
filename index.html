@@ -13249,23 +13249,56 @@ function buildAIReport(){
   const L=[];
   const fxn=(n)=>fx(n||0);
   const pad=(s,n)=>String(s).padEnd(n);
-  // ── 0. Encabezado / instrucciones para la IA ──────────
+  // ── 0. Encabezado / PROMPT precargado para la IA ──────
+  // El usuario solo adjunta este reporte en Claude/ChatGPT/etc. y la IA ya
+  // sabe exactamente qué entregar: As-Is profundo, estrategia anti-hormiga,
+  // plan de deudas, plan de ahorro y plan de acción por quincenas con
+  // horizonte adaptativo (base 3 meses; crítico → más; leve → 1 mes).
   L.push('# 📊 HISTORIAL FINANCIERO — APP "PADRE RICO"');
   L.push('');
-  L.push('> **Instrucciones para la IA que lee esto:** Soy usuario de una app de');
-  L.push('> finanzas personales basada en *Padre Rico Padre Pobre* (Kiyosaki) y');
-  L.push('> *El Hombre Más Rico de Babilonia*. Abajo está mi historial financiero');
-  L.push('> real. Quiero que actúes como un **asesor financiero estratégico** y me');
-  L.push('> des un análisis **profundo, honesto y accionable**:');
+  L.push('> **PROMPT PARA LA IA QUE LEE ESTE REPORTE** — Actúa como un asesor');
+  L.push('> financiero estratégico de clase mundial, con la filosofía de *Padre');
+  L.push('> Rico Padre Pobre* y *El Hombre Más Rico de Babilonia* (págate a ti');
+  L.push('> primero, tapa las fugas, elimina deudas, construye activos). Abajo');
+  L.push('> están mis datos REALES. Entrégame, en este orden y con encabezados');
+  L.push('> claros:');
   L.push('> ');
-  L.push('> 1. Diagnóstico de mi salud financiera (fortalezas y focos rojos).');
-  L.push('> 2. Análisis de tendencia: ¿voy mejorando o empeorando, y por qué?');
-  L.push('> 3. Mis fugas de dinero (gastos hormiga / patrones) y cuánto me cuestan al año.');
-  L.push('> 4. Estrategia de deudas (¿bola de nieve o avalancha en mi caso concreto?).');
-  L.push('> 5. Plan para salir de la "carrera de la rata": construir activos e ingreso pasivo.');
-  L.push('> 6. 3 acciones concretas y priorizadas para los próximos 90 días.');
+  L.push('> ## 1 · ANÁLISIS PROFUNDO DEL ESTADO ACTUAL (AS-IS)');
+  L.push('> - Diagnóstico con mis números: flujo libre, deuda/ingreso, patrimonio,');
+  L.push('>   ritmo de ahorro. Fortalezas y focos rojos, sin endulzar nada.');
+  L.push('> - Tendencia entre capítulos: ¿mejoro o empeoro, y por qué?');
+  L.push('> - Clasifica mi caso: 🟢 LEVE / 🟡 MODERADO / 🔴 CRÍTICO, y justifícalo —');
+  L.push('>   esta severidad define el horizonte del plan del punto 5.');
   L.push('> ');
-  L.push('> Sé directo, usa mis números reales y dame metas medibles.');
+  L.push('> ## 2 · ESTRATEGIA CONTRA GASTOS HORMIGA');
+  L.push('> - Mis 3-5 fugas principales con costo por quincena y anualizado.');
+  L.push('> - Para cada una: táctica concreta de reducción (nada genérico) y');
+  L.push('>   cuánto dinero libera al mes si la cumplo.');
+  L.push('> ');
+  L.push('> ## 3 · ESTRATEGIA DE DEUDAS — TERMINAR MÁS RÁPIDO');
+  L.push('> - Con mis deudas reales: compara bola de nieve vs avalancha y');
+  L.push('>   recomienda UNA, con orden de ataque y fecha estimada de liquidación.');
+  L.push('> - Calcula cuánto adelanto la liquidación si redirijo a la deuda #1');
+  L.push('>   el dinero liberado de hormiga (punto 2).');
+  L.push('> ');
+  L.push('> ## 4 · PLAN DE AHORRO');
+  L.push('> - % de "págate a ti primero" recomendado para MI caso y monto exacto');
+  L.push('>   por quincena.');
+  L.push('> - Prioridades: colchón de emergencia (meta en pesos y fecha) y después');
+  L.push('>   activos que generen ingreso.');
+  L.push('> ');
+  L.push('> ## 5 · PLAN DE ACCIÓN POR QUINCENAS');
+  L.push('> - Horizonte según la severidad del punto 1: base **3 meses (6');
+  L.push('>   quincenas)**. Si mi caso es CRÍTICO, extiéndelo al tiempo que de');
+  L.push('>   verdad necesite (6, 9, 12 meses — tú decides y lo justificas). Si es');
+  L.push('>   LEVE y se resuelve en 1 mes, hazlo de 1 mes. No estires por estirar.');
+  L.push('> - Desglósalo QUINCENA POR QUINCENA: acciones concretas, montos exactos');
+  L.push('>   y un indicador medible por quincena para saber si voy a tiempo.');
+  L.push('> - Cierra con los 3 hábitos de mayor impacto si los mantengo de por vida.');
+  L.push('> ');
+  L.push('> Sé directo y honesto. Usa MIS números (no ejemplos), da metas medibles');
+  L.push('> en pesos y fechas, y si te falta un dato, decláralo como supuesto en');
+  L.push('> vez de preguntarme.');
   L.push('');
   L.push('_Exportado: '+_todayYMD()+' · Cadencia de capítulos: '+cycleLabel()+'_');
   L.push('');

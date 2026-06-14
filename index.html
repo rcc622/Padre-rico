@@ -7956,7 +7956,8 @@ function editDiario(id){
     +'<label style="font-size:11px;color:var(--muted)">Fecha</label>'
     +'<input type="date" id="gdEdD" value="'+_escA(g.date||_todayYMD())+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
     +'<label style="font-size:11px;color:var(--muted)">Método de pago</label>'
-    +'<select id="gdEdM" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif;background:#fff"><option value="debito"'+(g.paidWith!=='tdc'?' selected':'')+'>💵 Débito</option><option value="tdc"'+(g.paidWith==='tdc'?' selected':'')+'>💳 TDC</option></select>';
+    +'<select id="gdEdM" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif;background:#fff"><option value="debito"'+(g.paidWith!=='tdc'?' selected':'')+'>💵 Débito</option><option value="tdc"'+(g.paidWith==='tdc'?' selected':'')+'>💳 TDC</option></select>'
+    +'<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-bottom:8px">¿Esto no fue un gasto tuyo, sino dinero que prestaste? Conviértelo en cuenta por cobrar y deja de contarlo como gasto consumido.</div><button type="button" class="btn btn-ghost btn-sm" style="width:100%;color:var(--sky);border-color:rgba(74,110,140,.4)" onclick="convertDiarioToCobranza('+id+')">🤝 No fue gasto, fue un préstamo →</button></div>';
   showConfirm('✏️ Editar gasto diario',body,()=>{
     const n=(document.getElementById('gdEdN')?.value||'').trim();
     const a=parseFloat((document.getElementById('gdEdA')?.value||'').replace(',','.').trim());
@@ -7967,6 +7968,32 @@ function editDiario(id){
     if(!isFinite(a)||a<=0){toast('⚠ Monto inválido');return;}
     pt({gastosDiarios:(S.gastosDiarios||[]).map(x=>x.id===id?{...x,name:n,amt:a,cat:c,date:d,paidWith:m}:x)});
     closeConfirm();toast('✓ Gasto actualizado');
+    try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+    try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+    try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
+    try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  });
+}
+// M2 · Reclasificar un gasto diario como préstamo otorgado (cuenta por cobrar).
+// Un préstamo a un tercero NO es gasto consumido: es un activo. Esto lo mueve
+// de S.gastosDiarios a S.cobranzas (la función Cobranza ya existente) para que
+// deje de contar como hormiga/consumo y pase a "lo que me deben". Cuando le
+// paguen, el flujo de Cobranza lo registra como ingreso extra.
+function convertDiarioToCobranza(id){
+  const g=(S.gastosDiarios||[]).find(x=>x.id===id);
+  if(!g){toast('Gasto no encontrado');return;}
+  // Prefill del deudor: quita prefijos tipo "Préstamo/Le presté a" del concepto.
+  const guess=(g.name||'').replace(/^\s*(pr[eé]stamo|le prest[eé]( a)?|presto a|pago a|fiado a)\s*/i,'').trim();
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Esto se moverá de tus gastos a <strong>💵 Cobranza</strong> (cuenta por cobrar): deja de contar como gasto consumido y suma a lo que te deben. Cuando te paguen, lo marcas como cobrado y entra como ingreso.</div>'
+    +'<label style="font-size:11px;color:var(--muted)">¿Quién te debe?</label>'
+    +'<input type="text" id="cvDebtor" value="'+_escA(guess||g.name||'')+'" placeholder="Nombre de quien te debe" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.6">Monto: <strong style="color:var(--sky)">'+fx(+g.amt||0)+'</strong> · Concepto: <strong>'+_escH(g.name||'—')+'</strong>'+(g.date?' · '+g.date:'')+'</div>';
+  showConfirm('🤝 Convertir en préstamo',body,()=>{
+    const debtor=(document.getElementById('cvDebtor')?.value||'').trim();
+    if(!debtor){toast('¿Quién te debe?');return;}
+    const c={id:_uid(),debtor,concept:g.name||'',amount:+g.amt||0,dateLent:g.date||_todayYMD(),dateExpected:'',paid:false};
+    pt({cobranzas:[...(S.cobranzas||[]),c],gastosDiarios:(S.gastosDiarios||[]).filter(x=>x.id!==id)});
+    closeConfirm();toast('🤝 Movido a Cobranza · '+fx(+g.amt||0)+' por cobrar');
     try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
     try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
     try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}

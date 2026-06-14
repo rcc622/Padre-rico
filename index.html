@@ -10860,6 +10860,12 @@ function rHabitos(){
     const byCat={};
     budgetList.forEach(g=>{const k=g.cat||'otro';byCat[k]=(byCat[k]||0)+(+g.amt||0);});
     const maxCat=Math.max(...Object.values(byCat),1);
+    // M4 · "Otro" como cajón de sastre: avisa para reclasificar cuando acumula
+    // demasiados movimientos o se come una tajada grande del gasto del ciclo.
+    const otroAmt=byCat['otro']||0;
+    const otroCount=budgetList.filter(g=>(g.cat||'otro')==='otro').length;
+    const otroPct=totalQ>0?Math.round(otroAmt/totalQ*100):0;
+    const otroAlert=otroCount>0&&(otroCount>=5||otroPct>=30);
     const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===_ymdLocal(y))return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
     const longAuto=isLongCycleAuto();
     const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
@@ -10989,6 +10995,12 @@ function rHabitos(){
   </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
 
   ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
+
+  ${otroAlert?`<div class="card card-amber" style="border:1px solid var(--amber)">
+    <div class="ct">📦 Demasiado en "${_escH(diarioCat('otro').n)}"</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:6px">Llevas <strong>${otroCount} movimiento${otroCount!==1?'s':''}</strong> en <strong>${_escH(diarioCat('otro').n)}</strong> por <strong>${fx(Math.round(otroAmt))}</strong>${otroPct>0?` (${otroPct}% de tu gasto de la quincena)`:''}. Esa categoría es un cajón de sastre: esconde fugas reales (comida fuera, antojos…) y ensucia tu análisis.</div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.6">Edita esos gastos (✏️ en la lista de arriba) y dales una categoría real para ver de verdad en qué se te va el dinero. Si te falta una, créala desde el selector de categoría.</div>
+  </div>`:''}
 
   ${cycleList.length>0?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
     <div class="ct">📖 Cerrar quincena manualmente</div>

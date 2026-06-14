@@ -1032,6 +1032,15 @@ function getCycleWindow(ref){
   // 1-14: el ciclo empezó el día siguiente al fin de la 2da del mes anterior
   return {start:new Date(y,m-1,_qnaEndDay(y,m-1)+1),end:new Date(y,m,14),type:'1ra'};
 }
+// ¿Un ingreso extra ÚNICO (x.date 'YYYY-MM-DD') cae dentro de la ventana
+// [start,end]? Comparación por STRING para evitar el bug de medianoche: x.date
+// se parseaba a las 12:00 y `end` queda a las 00:00, así que un extra fechado el
+// ÚLTIMO día del ciclo (p.ej. hoy si hoy es fin de quincena) caía fuera y no se
+// contaba en el Ingreso del Plan. Mismo criterio que diariosThisCycle.
+function extraUnicoEnVentana(x,start,end){
+  if(!x||!x.date)return false;
+  return x.date>=_ymdLocal(start)&&x.date<=_ymdLocal(end);
+}
 function diariosThisCycle(ck){
   const w=ck?cycleWindowFromKey(ck):getCycleWindow();
   // Comparamos como strings YYYY-MM-DD para evitar el bug donde un gasto
@@ -1478,7 +1487,7 @@ function genSurvivalRetos(deficit){
   // Calcular disponible actual (mismo cálculo que renderRetos)
   const disponibleActual=(()=>{try{
     const bfQ=bonusInCycle(qS,qE,S.inc)?(+S.inc.bf||0):0;
-    let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=qS&&xd<=qE)extQ+=(+x.amt||0);}});
+    let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,qS,qE))extQ+=(+x.amt||0);});
     const incQ=salarioQ+bfQ+extQ;
     let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
     let dbtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(db.pay||0);else dbtQ+=mo/2;});
@@ -2649,9 +2658,8 @@ function calcCycleBalance(ck){
     (S.extras||[]).forEach(x=>{
       if(x.tipo==='recurrente'){
         ingreso+=toMonthly(+x.amt||0,x.freq||'mensual')/2;
-      }else if(x.date){
-        const xd=new Date(x.date+'T12:00');
-        if(xd>=w.start&&xd<=w.end)ingreso+=(+x.amt||0);
+      }else if(extraUnicoEnVentana(x,w.start,w.end)){
+        ingreso+=(+x.amt||0);
       }
     });
     // Horas extra del ciclo anterior — si están marcadas como pagadas, ya
@@ -6246,7 +6254,7 @@ function _realIncSummary(){
     let extRecQ=0,extUniQ=0;
     S.extras.forEach(x=>{
       if(x.tipo==='recurrente')extRecQ+=Math.round(toMonthly(+x.amt||0,x.freq||'mensual')/2);
-      else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cw.start&&xd<=cw.end)extUniQ+=(+x.amt||0);}
+      else if(extraUnicoEnVentana(x,cw.start,cw.end))extUniQ+=(+x.amt||0);
     });
     const totalThis=salQ+bonoQ+extRecQ+extUniQ;
     // Next cycle — derivado del cycleKey canónico (la derivación manual por
@@ -6261,7 +6269,7 @@ function _realIncSummary(){
     let nExtRecQ=0,nExtUniQ=0;
     S.extras.forEach(x=>{
       if(x.tipo==='recurrente')nExtRecQ+=Math.round(toMonthly(+x.amt||0,x.freq||'mensual')/2);
-      else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=nStart&&xd<=nEnd)nExtUniQ+=(+x.amt||0);}
+      else if(extraUnicoEnVentana(x,nStart,nEnd))nExtUniQ+=(+x.amt||0);
     });
     const totalNext=nSalQ+nBonoQ+nExtRecQ+nExtUniQ;
     const fmtD=dt=>dt.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
@@ -9576,8 +9584,16 @@ try{
   const salQ=(+incForCk.sal||0)/2;
   const bfThisQ=bonusInCycle(cStart,cEnd,incForCk)?(+incForCk.bf||0):0;
   let extrasQ=0;
-  S.extras.forEach(x=>{if(x.tipo==='recurrente'){extrasQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;}else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extrasQ+=(+x.amt||0);}});
+  S.extras.forEach(x=>{if(x.tipo==='recurrente'){extrasQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;}else if(extraUnicoEnVentana(x,cStart,cEnd))extrasQ+=(+x.amt||0);});
   const incQ=salQ+bfThisQ+extrasQ;
+  // Desglose del Ingreso para el desplegable del Estado de cuenta (antes se
+  // mostraba solo el total, sin abrir salario / bono / cada extra).
+  const _incParts=[{ic:'💼',n:'Salario (quincenal)',a:salQ}];
+  if(bfThisQ>0)_incParts.push({ic:'🎁',n:'Bono fijo',a:bfThisQ});
+  S.extras.forEach(x=>{
+    if(x.tipo==='recurrente'){const mo=toMonthly(+x.amt||0,x.freq||'mensual')/2;if(mo>0)_incParts.push({ic:'➕',n:(x.name||'Extra')+' · recurrente',a:mo});}
+    else if(extraUnicoEnVentana(x,cStart,cEnd))_incParts.push({ic:'➕',n:(x.name||'Extra'),a:(+x.amt||0)});
+  });
   // Horas extra: las horas trabajadas en un ciclo se cobran al inicio del
   // siguiente (payroll). Por eso, para el ciclo VIENDO se suma como ingreso
   // esperado las OT no pagadas del ciclo inmediatamente anterior. Aplica a
@@ -9896,7 +9912,7 @@ try{
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
       <div style="font-size:13px;line-height:2.2">
-        <div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>
+        ${_incParts.length>1?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">💵 Ingreso <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_incParts.map(p=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.ic} ${_escH(p.n)}</span><span style="color:var(--sage);white-space:nowrap">+${fx(Math.round(p.a))}</span></div>`).join('')}</div></details>`:`<div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>`}
         ${_otEarned>0?`<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra ${showNext?'(este ciclo → próx. payroll)':'(ciclo anterior · por cobrar)'}</span><strong style="color:var(--sky)">+${fx(_otEarned)}</strong></div>`:''}
         ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
         ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
@@ -10427,7 +10443,7 @@ function renderRetos(){
   const cStart=_rw.start,cEnd=_rw.end;
   function dayInC(pd){return dayInWindow(pd,{start:cStart,end:cEnd});}
   const salQ=S.inc.sal/2;const bfQ=bonusInCycle(cStart,cEnd,S.inc)?(+S.inc.bf||0):0;
-  let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=cStart&&xd<=cEnd)extQ+=(+x.amt||0);}});
+  let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,cStart,cEnd))extQ+=(+x.amt||0);});
   const incQ=salQ+bfQ+extQ;
   let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
   let debtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(db.nextPay){const np=new Date(db.nextPay+'T12:00');if(np>=cStart&&np<=cEnd)debtQ+=(+db.pay||0);}else if(f==='quincenal')debtQ+=(db.pay||0);else if(pd>0&&dayInC(pd))debtQ+=mo;else if(!pd)debtQ+=mo/2;});
@@ -13553,7 +13569,7 @@ function _quincenalSnapshot(){
   const bono=(+S.inc.bf||0);
   const bfHits=bonusInCycle(qS,qE,S.inc);
   const bfQ=bfHits?bono:0;
-  let extQ=0;(S.extras||[]).forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=qS&&xd<=qE)extQ+=(+x.amt||0);}});
+  let extQ=0;(S.extras||[]).forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,qS,qE))extQ+=(+x.amt||0);});
   const incQ=salQ+bfQ+extQ;
   let expQ=0;(S.exp||[]).forEach(e=>{const f=e.freq||'mensual';if(f==='unico')return;const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
   let dbtQ=0;(S.debts||[]).forEach(db=>{if(isDebtLiquidated(db)||(db.freq||'mensual')==='unico')return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(+db.pay||0);else dbtQ+=mo/2;});

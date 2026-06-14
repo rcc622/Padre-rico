@@ -4888,16 +4888,22 @@ function _expDiarioRun(kind){
     const tot=list.reduce((a,g)=>a+(+g.amt||0),0);
     if(kind==='csv'){
       const esc=(v)=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-      const rows=['Fecha,Concepto,Categoria,Metodo,Monto'];
-      list.forEach(g=>rows.push([esc(g.date),esc(g.name||''),esc(g.cat||'otro'),esc(g.paidWith==='tdc'?'TDC':'Debito'),(+g.amt||0)].join(',')));
-      rows.push([esc('TOTAL'),esc(list.length+' movimientos'),'','',Math.round(tot)].join(','));
+      // Esquema machine-readable: columnas en minúsculas, montos crudos (sin $
+      // ni miles), fechas ISO, método y tipo de categoría por línea, es_credito
+      // booleano. SIN fila TOTAL embebida (rompía el parseo con pandas); el
+      // total va en el toast y en la metadata del reporte para IA.
+      const rows=['fecha,concepto,categoria,tipo_categoria,metodo,es_credito,monto'];
+      // Resolver la clave de categoría a su nombre legible. Las categorías
+      // propias usan un UUID como clave; sin esto el CSV exportaba el UUID
+      // crudo (y las categorías borradas caían como "Otro" via diarioCat).
+      list.forEach(g=>rows.push([esc(g.date),esc(g.name||''),esc(diarioCat(g.cat).n),esc(isEsencial(g)?'esencial':'hormiga'),esc(g.paidWith==='tdc'?'TDC':'Debito'),(g.paidWith==='tdc'?'true':'false'),(+g.amt||0)].join(',')));
       // BOM para que Excel respete acentos/emoji
       const blob=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bitacora-diarios-'+label+'.csv';a.click();
-      toast('⬇️ CSV descargado ('+list.length+' movs)');
+      toast('⬇️ CSV descargado ('+list.length+' movs · '+fx(Math.round(tot))+')');
     }else{
       const L=['📓 BITÁCORA DE DIARIOS · '+label,''];
-      list.forEach(g=>L.push(g.date+' | '+(g.name||'—')+' | '+(g.cat||'otro')+(g.paidWith==='tdc'?' | TDC':' | débito')+' | '+fx(+g.amt||0)));
+      list.forEach(g=>L.push(g.date+' | '+(g.name||'—')+' | '+diarioCat(g.cat).n+(g.paidWith==='tdc'?' | TDC':' | débito')+' | '+fx(+g.amt||0)));
       L.push('','TOTAL: '+fx(Math.round(tot))+' · '+list.length+' movimiento'+(list.length!==1?'s':''));
       _copyText(L.join('\n'));
       toast('📋 Copiado ('+list.length+' movs)');
@@ -7958,7 +7964,8 @@ function editDiario(id){
     +'<label style="font-size:11px;color:var(--muted)">Fecha</label>'
     +'<input type="date" id="gdEdD" value="'+_escA(g.date||_todayYMD())+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
     +'<label style="font-size:11px;color:var(--muted)">Método de pago</label>'
-    +'<select id="gdEdM" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif;background:#fff"><option value="debito"'+(g.paidWith!=='tdc'?' selected':'')+'>💵 Débito</option><option value="tdc"'+(g.paidWith==='tdc'?' selected':'')+'>💳 TDC</option></select>';
+    +'<select id="gdEdM" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif;background:#fff"><option value="debito"'+(g.paidWith!=='tdc'?' selected':'')+'>💵 Débito</option><option value="tdc"'+(g.paidWith==='tdc'?' selected':'')+'>💳 TDC</option></select>'
+    +'<div style="margin-top:14px;padding-top:12px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);line-height:1.5;margin-bottom:8px">¿Esto no fue un gasto tuyo, sino dinero que prestaste? Conviértelo en cuenta por cobrar y deja de contarlo como gasto consumido.</div><button type="button" class="btn btn-ghost btn-sm" style="width:100%;color:var(--sky);border-color:rgba(74,110,140,.4)" onclick="convertDiarioToCobranza('+id+')">🤝 No fue gasto, fue un préstamo →</button></div>';
   showConfirm('✏️ Editar gasto diario',body,()=>{
     const n=(document.getElementById('gdEdN')?.value||'').trim();
     const a=parseFloat((document.getElementById('gdEdA')?.value||'').replace(',','.').trim());
@@ -7969,6 +7976,32 @@ function editDiario(id){
     if(!isFinite(a)||a<=0){toast('⚠ Monto inválido');return;}
     pt({gastosDiarios:(S.gastosDiarios||[]).map(x=>x.id===id?{...x,name:n,amt:a,cat:c,date:d,paidWith:m}:x)});
     closeConfirm();toast('✓ Gasto actualizado');
+    try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+    try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+    try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
+    try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  });
+}
+// M2 · Reclasificar un gasto diario como préstamo otorgado (cuenta por cobrar).
+// Un préstamo a un tercero NO es gasto consumido: es un activo. Esto lo mueve
+// de S.gastosDiarios a S.cobranzas (la función Cobranza ya existente) para que
+// deje de contar como hormiga/consumo y pase a "lo que me deben". Cuando le
+// paguen, el flujo de Cobranza lo registra como ingreso extra.
+function convertDiarioToCobranza(id){
+  const g=(S.gastosDiarios||[]).find(x=>x.id===id);
+  if(!g){toast('Gasto no encontrado');return;}
+  // Prefill del deudor: quita prefijos tipo "Préstamo/Le presté a" del concepto.
+  const guess=(g.name||'').replace(/^\s*(pr[eé]stamo|le prest[eé]( a)?|presto a|pago a|fiado a)\s*/i,'').trim();
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Esto se moverá de tus gastos a <strong>💵 Cobranza</strong> (cuenta por cobrar): deja de contar como gasto consumido y suma a lo que te deben. Cuando te paguen, lo marcas como cobrado y entra como ingreso.</div>'
+    +'<label style="font-size:11px;color:var(--muted)">¿Quién te debe?</label>'
+    +'<input type="text" id="cvDebtor" value="'+_escA(guess||g.name||'')+'" placeholder="Nombre de quien te debe" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
+    +'<div style="font-size:11px;color:var(--muted);line-height:1.6">Monto: <strong style="color:var(--sky)">'+fx(+g.amt||0)+'</strong> · Concepto: <strong>'+_escH(g.name||'—')+'</strong>'+(g.date?' · '+g.date:'')+'</div>';
+  showConfirm('🤝 Convertir en préstamo',body,()=>{
+    const debtor=(document.getElementById('cvDebtor')?.value||'').trim();
+    if(!debtor){toast('¿Quién te debe?');return;}
+    const c={id:_uid(),debtor,concept:g.name||'',amount:+g.amt||0,dateLent:g.date||_todayYMD(),dateExpected:'',paid:false};
+    pt({cobranzas:[...(S.cobranzas||[]),c],gastosDiarios:(S.gastosDiarios||[]).filter(x=>x.id!==id)});
+    closeConfirm();toast('🤝 Movido a Cobranza · '+fx(+g.amt||0)+' por cobrar');
     try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
     try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
     try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
@@ -10871,6 +10904,12 @@ function rHabitos(){
     const byCat={};
     budgetList.forEach(g=>{const k=g.cat||'otro';byCat[k]=(byCat[k]||0)+(+g.amt||0);});
     const maxCat=Math.max(...Object.values(byCat),1);
+    // M4 · "Otro" como cajón de sastre: avisa para reclasificar cuando acumula
+    // demasiados movimientos o se come una tajada grande del gasto del ciclo.
+    const otroAmt=byCat['otro']||0;
+    const otroCount=budgetList.filter(g=>(g.cat||'otro')==='otro').length;
+    const otroPct=totalQ>0?Math.round(otroAmt/totalQ*100):0;
+    const otroAlert=otroCount>0&&(otroCount>=5||otroPct>=30);
     const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===_ymdLocal(y))return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
     const longAuto=isLongCycleAuto();
     const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
@@ -11000,6 +11039,12 @@ function rHabitos(){
   </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
 
   ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
+
+  ${otroAlert?`<div class="card card-amber" style="border:1px solid var(--amber)">
+    <div class="ct">📦 Demasiado en "${_escH(diarioCat('otro').n)}"</div>
+    <div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:6px">Llevas <strong>${otroCount} movimiento${otroCount!==1?'s':''}</strong> en <strong>${_escH(diarioCat('otro').n)}</strong> por <strong>${fx(Math.round(otroAmt))}</strong>${otroPct>0?` (${otroPct}% de tu gasto de la quincena)`:''}. Esa categoría es un cajón de sastre: esconde fugas reales (comida fuera, antojos…) y ensucia tu análisis.</div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.6">Edita esos gastos (✏️ en la lista de arriba) y dales una categoría real para ver de verdad en qué se te va el dinero. Si te falta una, créala desde el selector de categoría.</div>
+  </div>`:''}
 
   ${cycleList.length>0?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
     <div class="ct">📖 Cerrar quincena manualmente</div>
@@ -13434,6 +13479,32 @@ function _copyText(txt){
 // estratégico. A diferencia de exportData() — que vuelca el JSON crudo para
 // restaurar — esto produce un documento curado, con contexto, métricas
 // derivadas, evolución por capítulos y una petición explícita de análisis.
+// Vista quincenal del ciclo ACTUAL — espejo de la matemática que la app ya usa
+// en el Plan de Acción. El reporte da la foto en mensual (sección 1) pero el
+// plan que se le pide a la IA es quincenal: sin este bloque la IA dividiría
+// mensual÷2 a ojo, y quincenal ≠ mensual÷2 porque (a) el bono fijo entra
+// COMPLETO solo en la quincena donde cae su fecha de pago, (b) los gastos
+// semanales se multiplican por las semanas REALES del ciclo (2 ó 3) y (c) los
+// ítems de frecuencia quincenal entran enteros. Mismo set de ítems que la foto
+// mensual (excluye 'único' y deudas liquidadas), así la suma de las 2 quincenas
+// del mes reconcilia con las cifras mensuales de la sección 1.
+function _quincenalSnapshot(){
+  const w=getCycleWindow();const qS=w.start,qE=w.end;
+  const weeksInC=getWeeksInCycle(w);
+  const salQ=Math.round(((+S.inc.sal)||0)/2);
+  const bono=(+S.inc.bf||0);
+  const bfHits=bonusInCycle(qS,qE,S.inc);
+  const bfQ=bfHits?bono:0;
+  let extQ=0;(S.extras||[]).forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=qS&&xd<=qE)extQ+=(+x.amt||0);}});
+  const incQ=salQ+bfQ+extQ;
+  let expQ=0;(S.exp||[]).forEach(e=>{const f=e.freq||'mensual';if(f==='unico')return;const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
+  let dbtQ=0;(S.debts||[]).forEach(db=>{if(isDebtLiquidated(db)||(db.freq||'mensual')==='unico')return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(+db.pay||0);else dbtQ+=mo/2;});
+  const savQ=savAmtQ();
+  const freeQ=Math.round(incQ-expQ-dbtQ-savQ);
+  return {type:w.type,weeks:weeksInC,bfHits,salQ:Math.round(salQ),bono:Math.round(bono),
+    bfQ:Math.round(bfQ),extQ:Math.round(extQ),incQ:Math.round(incQ),expQ:Math.round(expQ),
+    dbtQ:Math.round(dbtQ),savQ:Math.round(savQ),freeQ,start:_ymdLocal(qS),end:_ymdLocal(qE)};
+}
 function buildAIReport(){
   const L=[];
   const fxn=(n)=>fx(n||0);
@@ -13490,6 +13561,10 @@ function buildAIReport(){
   L.push('>   LEVE y se resuelve en 1 mes, hazlo de 1 mes. No estires por estirar.');
   L.push('> - Desglósalo QUINCENA POR QUINCENA: acciones concretas, montos exactos');
   L.push('>   y un indicador medible por quincena para saber si voy a tiempo.');
+  L.push('> - Para los montos quincenales NO dividas mis cifras mensuales entre 2:');
+  L.push('>   usa mi "Vista quincenal" (sección 1c), que ya trae el ingreso, los');
+  L.push('>   gastos y el flujo libre REALES por quincena — con el bono y las');
+  L.push('>   semanas extra ya considerados.');
   L.push('> - Cierra con los 3 hábitos de mayor impacto si los mantengo de por vida.');
   L.push('> ');
   L.push('> Sé directo y honesto. Usa MIS números (no ejemplos), da metas medibles');
@@ -13518,6 +13593,26 @@ function buildAIReport(){
   L.push('');
   L.push('_Exportado: '+_todayYMD()+' · Cadencia de capítulos: '+cycleLabel()+'_');
   L.push('');
+  // ── 0. Metadata machine-readable + reconciliación (E9) ──
+  // Bloque para parseo/validación automática: periodo cubierto por la bitácora,
+  // moneda, fecha de export, esquema y cifras de control. Si la suma del ledger
+  // (sección 6) no cuadrara con el total declarado, 'cuadra' lo marcaría.
+  const _dgAll=(S.gastosDiarios||[]).filter(g=>g&&!g.pending&&(+g.amt||0)>0);
+  const _dgDates=_dgAll.map(g=>String(g.date||'')).filter(d=>d.length>=10).sort();
+  const _pIni=_dgDates[0]||'',_pFin=_dgDates[_dgDates.length-1]||'';
+  const _sumLedger=Math.round(_dgAll.reduce((a,g)=>a+(+g.amt||0),0)*100)/100;
+  const _meta={export:'padre-rico',version:2,moneda:'MXN',fechaExport:_todayYMD(),
+    periodoBitacora:{inicio:_pIni,fin:_pFin},
+    reconciliacion:{movs:_dgAll.length,sumaLedger:_sumLedger,cuadra:true},
+    deudaActiva:Math.round(tDebt()),patrimonioNeto:Math.round(nw())};
+  L.push('## 0 · Metadata (lectura para máquina)');
+  L.push('');
+  L.push('> Bloque para parseo/validación. Las cifras de mi bitácora (sección 6) deben cuadrar con `reconciliacion`. Montos crudos en '+(_meta.moneda)+'.');
+  L.push('');
+  L.push('```json');
+  L.push(JSON.stringify(_meta));
+  L.push('```');
+  L.push('');
   // ── 1. Foto actual ────────────────────────────────────
   const inc=mInc(),ext=tExtras(),exp=tExp(),dPay=tDebtPay(),sav=savAmt();
   const fl=flow(),deuda=tDebt(),act=tAss(),patr=nw(),pasivo=passInc(),sc=score();
@@ -13542,6 +13637,58 @@ function buildAIReport(){
   L.push('');
   L.push('_El score (0-100) pondera: flujo libre 30, deuda/ingreso 20, ahorro 15, patrimonio 15, constancia 10, ingreso pasivo 10, metas de ahorro 10 (abonar +5 / completar +5); penaliza déficit hasta −15; se topa a 100._');
   L.push('');
+  // Desglose auditable del score (antes solo se daba el total).
+  {const _sb=scoreBreakdown();
+   L.push('**Desglose del score ('+_sb.total+'/100):** '+_sb.parts.map(p=>p.label+' '+p.pts+'/'+p.max).join(' · ')+(_sb.penalty>0?' · penalización déficit −'+_sb.penalty:''));
+   L.push('');}
+  // ── 1b. Validaciones de cuadre ────────────────────────
+  // Hace transparentes las inconsistencias en vez de dejar que la IA adivine
+  // qué número usar: deuda excluida por liquidación, flujo que depende de
+  // ingresos extra no garantizados, y ahorro programado que no se ejecuta.
+  const _rawDebtAll=(S.debts||[]).reduce((a,d)=>a+Math.max(0,+d.bal||0),0);
+  const _debtGap=Math.round(_rawDebtAll-deuda);
+  L.push('## 1b · Validaciones (cuadre automático)');
+  L.push('');
+  L.push('> Chequeos de la app sobre sus propios números. Lo marcado ⚠️ es una bandera para revisar, no un dato a asumir.');
+  L.push('');
+  if(_debtGap!==0){
+    L.push('- ⚠️ **Deuda:** la "Deuda total" ('+fxn(deuda)+') excluye '+fxn(_debtGap)+' de saldos > 0 marcados como liquidados (préstamos a meses con todos sus pagos hechos pero saldo residual, o con fecha de liquidación ya vencida). Suma de TODOS los saldos vivos: '+fxn(_rawDebtAll)+' — detalle en sección 3 → Liquidadas. Si esos saldos siguen vivos, tu deuda real es '+fxn(_rawDebtAll)+' y tu patrimonio '+fxn(act-_rawDebtAll)+'.');
+  }else{
+    L.push('- ✅ **Deuda:** la "Deuda total" ('+fxn(deuda)+') coincide con la suma de todos los saldos vivos.');
+  }
+  L.push('- '+(Math.round(act-deuda)===Math.round(patr)?'✅':'⚠️')+' **Patrimonio neto:** activos '+fxn(act)+' − deuda '+fxn(deuda)+' = '+fxn(act-deuda)+(Math.round(act-deuda)===Math.round(patr)?' (cuadra con lo reportado).':' ≠ '+fxn(patr)+' reportado.'));
+  L.push('- **Flujo libre '+fxn(fl)+':** ingreso '+fxn(inc)+(ext>0?' + extra prom. '+fxn(ext):'')+' − fijos '+fxn(exp)+' − pago deuda '+fxn(dPay)+' − ahorro '+fxn(sav)+'.'+(ext>0?' ⚠️ Incluye '+fxn(ext)+' de ingresos extra promedio (no garantizados); sin ellos el flujo sería '+fxn(fl-ext)+'.':''));
+  if((+sav>0)&&((S.savStreak||0)===0))L.push('- ⚠️ **Ahorro programado vs real:** '+fxn(sav)+'/mes programado ('+(S.savPct||0)+'%) pero racha de ahorro 0 — es una meta, no dinero que ya estés apartando. No lo tomes como seguro en el plan hasta ejecutarlo.');
+  L.push('');
+  // ── 1c. Vista quincenal del ciclo actual (mensual vs quincenal) ──
+  // La foto (sección 1) está en mensual, pero el Plan de Acción (sección 5) y el
+  // JSON son quincenales. Sin un puente explícito la IA divide mensual÷2 a ojo y
+  // sus montos no cuadran con lo que el usuario ve en la app. Aquí va el
+  // equivalente quincenal REAL del ciclo en curso, con la nota de por qué no es
+  // un simple mensual÷2 (bono que cae en una sola quincena, ciclos de 3 semanas).
+  {const _q=_quincenalSnapshot();
+   const _incM=inc+ext; // ingreso mensual total: salario + bono + extras
+   L.push('## 1c · Vista quincenal (ciclo actual)');
+   L.push('');
+   L.push('> El Plan de Acción (sección 5) y el JSON son QUINCENALES; la foto de arriba es mensual. Este es el equivalente quincenal del ciclo en curso, calculado como lo hace la app — **NO es mensual÷2**. Usa estos montos para el plan por quincena.');
+   L.push('');
+   L.push('**Ciclo actual:** '+(_q.type==='1ra'?'1ra quincena':'2da quincena')+' · '+fmtDate(_q.start)+' → '+fmtDate(_q.end)+' · '+_q.weeks+' semana'+(_q.weeks!==1?'s':'')+(_q.weeks===3?' (quincena larga)':''));
+   L.push('');
+   L.push('| Concepto | Esta quincena | Mensual÷2 (ingenuo) |');
+   L.push('|---|--:|--:|');
+   L.push('| Ingreso | '+fxn(_q.incQ)+' | '+fxn(Math.round(_incM/2))+' |');
+   L.push('| Gastos fijos | −'+fxn(_q.expQ)+' | −'+fxn(Math.round(exp/2))+' |');
+   L.push('| Pago de deudas | −'+fxn(_q.dbtQ)+' | −'+fxn(Math.round(dPay/2))+' |');
+   L.push('| Ahorro programado | −'+fxn(_q.savQ)+' | −'+fxn(Math.round(sav/2))+' |');
+   L.push('| **Flujo libre** | **'+fxn(_q.freeQ)+'** | **'+fxn(Math.round(fl/2))+'** |');
+   L.push('');
+   const _notes=[];
+   if(_q.bono>0)_notes.push('**Bono fijo '+fxn(_q.bono)+'/mes:** '+(_q.bfHits?'cae en ESTA quincena, así que entra completo aquí (no a la mitad); en la otra quincena entra $0.':'NO cae en esta quincena (entra $0 aquí; completo en la otra).'));
+   if(_q.weeks!==2)_notes.push('**Ciclo de '+_q.weeks+' semanas:** los gastos de frecuencia semanal se cuentan '+_q.weeks+' veces (no 2), por eso los fijos de esta quincena suben respecto a un mes÷2.');
+   _notes.forEach(n=>L.push('- '+n));
+   if(_notes.length)L.push('');
+   L.push('> Por eso quincenal ≠ mensual÷2. Para el plan por quincena parte del **flujo libre de '+fxn(_q.freeQ)+'** de este ciclo, y ajústalo en las quincenas donde el bono caiga (o no) y en las de 3 semanas. La suma de las 2 quincenas de un mes reconcilia con las cifras mensuales de la sección 1.');
+   L.push('');}
   // ── 2. Gastos fijos por categoría ─────────────────────
   const expByCat={};
   (S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';expByCat[k]=(expByCat[k]||0)+toMonthly(+e.amt||0,e.freq||'mensual');});
@@ -13557,8 +13704,13 @@ function buildAIReport(){
   }
   // ── 3. Deudas ─────────────────────────────────────────
   const debts=(S.debts||[]);
-  const actDebts=debts.filter(d=>(+d.bal||0)>0);
-  const liqDebts=debts.filter(d=>(+d.bal||0)<=0);
+  // Misma definición de "activa/liquidada" que tDebt() (isDebtLiquidated) para
+  // que el Total activo de esta tabla reconcilie con la Deuda total de la foto
+  // (sección 1). Antes filtraba por bal>0, así que una deuda MSI con todos sus
+  // pagos hechos pero saldo residual aparecía aquí pero no en el total → no
+  // cuadraban entre sí.
+  const actDebts=debts.filter(d=>!isDebtLiquidated(d));
+  const liqDebts=debts.filter(d=>isDebtLiquidated(d));
   L.push('## 3 · Deudas');
   L.push('');
   if(actDebts.length){
@@ -13566,9 +13718,12 @@ function buildAIReport(){
     L.push('');
     L.push('| Deuda | Grupo | Saldo | Pago | Frec. | Interés | Liquida |');
     L.push('|---|---|--:|--:|---|---|---|');
+    const _todayD=_todayYMD();
     actDebts.slice().sort((a,b)=>(+b.bal||0)-(+a.bal||0)).forEach(d=>{
       const intr=d.hasInterest&&d.interestPct?(d.interestPct+'% · '+fxn(d.interestAmt||0)):'—';
-      L.push('| '+(d.name||'?')+' | '+(d.group||'—')+' | '+fxn(+d.bal||0)+' | '+fxn(+d.pay||0)+' | '+freqShort(d.freq||'mensual')+' | '+intr+' | '+(d.liqDate?fmtDate(d.liqDate):'—')+' |');
+      // Marca deudas activas cuya fecha de liquidación ya pasó pero siguen con saldo.
+      const liqCell=d.liqDate?(fmtDate(d.liqDate)+(String(d.liqDate)<_todayD?' ⚠️ vencida':'')):'—';
+      L.push('| '+(d.name||'?')+' | '+(d.group||'—')+' | '+fxn(+d.bal||0)+' | '+fxn(+d.pay||0)+' | '+freqShort(d.freq||'mensual')+' | '+intr+' | '+liqCell+' |');
     });
     L.push('| **Total activo** | | **'+fxn(actDebts.reduce((a,d)=>a+(+d.bal||0),0))+'** | **'+fxn(dPay)+'/mes** | | | |');
     L.push('');
@@ -13579,7 +13734,13 @@ function buildAIReport(){
   if(liqDebts.length){
     L.push('### Liquidadas');
     L.push('');
-    liqDebts.forEach(d=>L.push('- ✅ '+(d.name||'?')+(d.liqDate?' — liquidada '+fmtDate(d.liqDate):'')+(d.pay?' (liberó '+fxn(+d.pay||0)+'/'+freqShort(d.freq||'mensual')+')':'')));
+    liqDebts.forEach(d=>{
+      // Si una deuda quedó marcada como liquidada (todos los pagos MSI hechos)
+      // pero conserva saldo > 0, no la escondemos: la señalamos para que el
+      // usuario revise si de verdad está pagada o si falta corregir el saldo.
+      const resid=(+d.bal||0)>0?' · ⚠️ saldo residual '+fxn(+d.bal||0)+' (marcada como pagada pero con saldo > 0 — revisa si de verdad está liquidada)':'';
+      L.push('- ✅ '+(d.name||'?')+(d.liqDate?' — liquidada '+fmtDate(d.liqDate):'')+(d.pay?' (liberó '+fxn(+d.pay||0)+'/'+freqShort(d.freq||'mensual')+')':'')+resid);
+    });
     L.push('');
   }
   // ── 4. Activos ────────────────────────────────────────
@@ -13601,9 +13762,12 @@ function buildAIReport(){
   if(goals.length){
     L.push('## 5 · Metas de ahorro');
     L.push('');
+    const _todayG=_todayYMD();
     goals.forEach(g=>{
       const tgt=+g.target||0,svd=+g.saved||0,pct=tgt>0?Math.round(svd/tgt*100):0;
-      L.push('- **'+(g.name||'Meta')+'** — '+fxn(svd)+' / '+fxn(tgt)+' ('+pct+'%)'+(g.deadline?' · meta '+fmtDate(g.deadline):''));
+      // Marca metas cuya fecha límite ya pasó sin completarse.
+      const venc=(g.deadline&&!g.done&&String(g.deadline)<_todayG)?' ⚠️ vencida sin completar':'';
+      L.push('- **'+(g.name||'Meta')+'** — '+fxn(svd)+' / '+fxn(tgt)+' ('+pct+'%)'+(g.deadline?' · meta '+fmtDate(g.deadline):'')+venc);
     });
     L.push('');
   }
@@ -13618,6 +13782,12 @@ function buildAIReport(){
     L.push('');
     L.push('> Esta es la fuente real de mi composición de gasto variable: lo que anoto cada día. Básate en esto para analizar mis hábitos y fugas. (No incluyo los estados de cuenta/capítulos: en mi app son solo informativos para proyecciones.)');
     L.push('');
+    // Escapa el pipe para que conceptos/categorías no rompan las tablas markdown.
+    const _mdCell=(s)=>String(s==null?'':s).replace(/\|/g,'\\|').replace(/\r?\n/g,' ').trim();
+    // E4 · Declarar el rango exacto y avisar que los agregados son acumulados de
+    // TODO el periodo (no de un solo mes), para no inducir lecturas falsas.
+    L.push('**Periodo de esta bitácora:** '+(_pIni||'—')+' → '+(_pFin||'—')+' · '+_dgAll.length+' movimientos · suma '+fxn(_sumLedger)+'. ⚠️ Los agregados de abajo cubren TODO este rango, no un solo mes (salvo la "Tendencia mensual"). Para cortes por mes exacto usa el **ledger crudo** del final de esta sección.');
+    L.push('');
     const byCat={};
     diarios.forEach(g=>{const k=g.cat||'otro';if(!byCat[k])byCat[k]={total:0,n:0,es:isEsencial(g)};byCat[k].total+=(+g.amt||0);byCat[k].n++;});
     const catRows=Object.entries(byCat).sort((a,b)=>b[1].total-a[1].total);
@@ -13629,6 +13799,19 @@ function buildAIReport(){
     L.push('| **Total registrado** | **'+fxn(totalD)+'** | '+diarios.length+' | | |');
     L.push('');
     L.push('**Gasto hormiga (no esencial) que registro:** '+fxn(totalHormiga)+' de '+fxn(totalD)+' ('+(totalD>0?Math.round(totalHormiga/totalD*100):0)+'%) — proyectado a 12 meses según el periodo cubierto abajo.');
+    L.push('');
+    // E2 · Desglose por método de pago. El total con TDC es deuda devengada:
+    // gasto ya hecho a crédito que aún no toca el corte y NO está en la "Deuda
+    // total" de la foto (sección 1). Se declara explícito para no cruzarlo a mano.
+    const byMethod={tdc:{n:0,t:0},deb:{n:0,t:0}};
+    diarios.forEach(g=>{const mk=g.paidWith==='tdc'?'tdc':'deb';byMethod[mk].n++;byMethod[mk].t+=(+g.amt||0);});
+    L.push('### Por método de pago');
+    L.push('');
+    L.push('| Método | Movs | Monto | % del registrado |');
+    L.push('|---|--:|--:|--:|');
+    [['💳 TDC (crédito)','tdc'],['💵 Débito / efectivo','deb']].forEach(([lbl,mk])=>{const d=byMethod[mk];if(d.n>0)L.push('| '+lbl+' | '+d.n+' | '+fxn(d.t)+' | '+(totalD>0?Math.round(d.t/totalD*100):0)+'% |');});
+    L.push('');
+    if(byMethod.tdc.t>0)L.push('> ⚠️ **Deuda TDC devengada del periodo: '+fxn(byMethod.tdc.t)+'** ('+byMethod.tdc.n+' mov'+(byMethod.tdc.n!==1?'s':'')+'). Es gasto ya hecho a crédito que todavía no aparece en la "Deuda total" de la sección 1 (se reconoce al llegar el corte). Tenlo en cuenta al evaluar mi patrimonio real.');
     L.push('');
     // Tendencia por mes
     const byMonth={};
@@ -13644,9 +13827,22 @@ function buildAIReport(){
     }
     // Top gastos registrados
     const top=[...diarios].sort((a,b)=>(+b.amt||0)-(+a.amt||0)).slice(0,10);
-    L.push('### Mis 10 gastos diarios más grandes');
+    L.push('### Mis 10 gastos diarios más grandes (de todo el periodo registrado)');
     L.push('');
     top.forEach(g=>{const cc=diarioCat(g.cat);L.push('- '+(g.date||'')+' · '+(g.name||'—')+' — '+fxn(+g.amt||0)+(cc?' ('+cc.n+')':'')+(g.paidWith==='tdc'?' · TDC':''));});
+    L.push('');
+    // E1 · Ledger crudo: una fila por movimiento para auditar línea por línea y
+    // poder recalcular cualquier corte por mes sin pedir otro archivo. Montos
+    // crudos (sin $) y fechas ISO para parseo directo; categoría legible (sin
+    // UUID) y tipo_categoria/método por línea.
+    L.push('### Ledger crudo · todas las líneas del periodo ('+(_pIni||'—')+' → '+(_pFin||'—')+')');
+    L.push('');
+    L.push('| fecha | concepto | categoria | tipo_categoria | metodo | monto |');
+    L.push('|---|---|---|---|---|--:|');
+    [...diarios].sort((a,b)=>String(a.date||'')<String(b.date||'')?-1:String(a.date||'')>String(b.date||'')?1:0).forEach(g=>{
+      const cc=diarioCat(g.cat);
+      L.push('| '+(g.date||'')+' | '+_mdCell(g.name||'—')+' | '+_mdCell(cc.n)+' | '+(isEsencial(g)?'esencial':'hormiga')+' | '+(g.paidWith==='tdc'?'TDC':'Debito')+' | '+(+g.amt||0)+' |');
+    });
     L.push('');
   }else{
     L.push('## 6 · Gastos que registro día a día (mi bitácora)');

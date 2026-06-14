@@ -4889,7 +4889,10 @@ function _expDiarioRun(kind){
     if(kind==='csv'){
       const esc=(v)=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
       const rows=['Fecha,Concepto,Categoria,Metodo,Monto'];
-      list.forEach(g=>rows.push([esc(g.date),esc(g.name||''),esc(g.cat||'otro'),esc(g.paidWith==='tdc'?'TDC':'Debito'),(+g.amt||0)].join(',')));
+      // Resolver la clave de categoría a su nombre legible. Las categorías
+      // propias usan un UUID como clave; sin esto el CSV exportaba el UUID
+      // crudo (y las categorías borradas caían como "Otro" via diarioCat).
+      list.forEach(g=>rows.push([esc(g.date),esc(g.name||''),esc(diarioCat(g.cat).n),esc(g.paidWith==='tdc'?'TDC':'Debito'),(+g.amt||0)].join(',')));
       rows.push([esc('TOTAL'),esc(list.length+' movimientos'),'','',Math.round(tot)].join(','));
       // BOM para que Excel respete acentos/emoji
       const blob=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
@@ -4897,7 +4900,7 @@ function _expDiarioRun(kind){
       toast('⬇️ CSV descargado ('+list.length+' movs)');
     }else{
       const L=['📓 BITÁCORA DE DIARIOS · '+label,''];
-      list.forEach(g=>L.push(g.date+' | '+(g.name||'—')+' | '+(g.cat||'otro')+(g.paidWith==='tdc'?' | TDC':' | débito')+' | '+fx(+g.amt||0)));
+      list.forEach(g=>L.push(g.date+' | '+(g.name||'—')+' | '+diarioCat(g.cat).n+(g.paidWith==='tdc'?' | TDC':' | débito')+' | '+fx(+g.amt||0)));
       L.push('','TOTAL: '+fx(Math.round(tot))+' · '+list.length+' movimiento'+(list.length!==1?'s':''));
       _copyText(L.join('\n'));
       toast('📋 Copiado ('+list.length+' movs)');
@@ -13543,8 +13546,13 @@ function buildAIReport(){
   }
   // ── 3. Deudas ─────────────────────────────────────────
   const debts=(S.debts||[]);
-  const actDebts=debts.filter(d=>(+d.bal||0)>0);
-  const liqDebts=debts.filter(d=>(+d.bal||0)<=0);
+  // Misma definición de "activa/liquidada" que tDebt() (isDebtLiquidated) para
+  // que el Total activo de esta tabla reconcilie con la Deuda total de la foto
+  // (sección 1). Antes filtraba por bal>0, así que una deuda MSI con todos sus
+  // pagos hechos pero saldo residual aparecía aquí pero no en el total → no
+  // cuadraban entre sí.
+  const actDebts=debts.filter(d=>!isDebtLiquidated(d));
+  const liqDebts=debts.filter(d=>isDebtLiquidated(d));
   L.push('## 3 · Deudas');
   L.push('');
   if(actDebts.length){
@@ -13565,7 +13573,13 @@ function buildAIReport(){
   if(liqDebts.length){
     L.push('### Liquidadas');
     L.push('');
-    liqDebts.forEach(d=>L.push('- ✅ '+(d.name||'?')+(d.liqDate?' — liquidada '+fmtDate(d.liqDate):'')+(d.pay?' (liberó '+fxn(+d.pay||0)+'/'+freqShort(d.freq||'mensual')+')':'')));
+    liqDebts.forEach(d=>{
+      // Si una deuda quedó marcada como liquidada (todos los pagos MSI hechos)
+      // pero conserva saldo > 0, no la escondemos: la señalamos para que el
+      // usuario revise si de verdad está pagada o si falta corregir el saldo.
+      const resid=(+d.bal||0)>0?' · ⚠️ saldo residual '+fxn(+d.bal||0)+' (marcada como pagada pero con saldo > 0 — revisa si de verdad está liquidada)':'';
+      L.push('- ✅ '+(d.name||'?')+(d.liqDate?' — liquidada '+fmtDate(d.liqDate):'')+(d.pay?' (liberó '+fxn(+d.pay||0)+'/'+freqShort(d.freq||'mensual')+')':'')+resid);
+    });
     L.push('');
   }
   // ── 4. Activos ────────────────────────────────────────

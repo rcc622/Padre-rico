@@ -13465,6 +13465,32 @@ function _copyText(txt){
 // estratégico. A diferencia de exportData() — que vuelca el JSON crudo para
 // restaurar — esto produce un documento curado, con contexto, métricas
 // derivadas, evolución por capítulos y una petición explícita de análisis.
+// Vista quincenal del ciclo ACTUAL — espejo de la matemática que la app ya usa
+// en el Plan de Acción. El reporte da la foto en mensual (sección 1) pero el
+// plan que se le pide a la IA es quincenal: sin este bloque la IA dividiría
+// mensual÷2 a ojo, y quincenal ≠ mensual÷2 porque (a) el bono fijo entra
+// COMPLETO solo en la quincena donde cae su fecha de pago, (b) los gastos
+// semanales se multiplican por las semanas REALES del ciclo (2 ó 3) y (c) los
+// ítems de frecuencia quincenal entran enteros. Mismo set de ítems que la foto
+// mensual (excluye 'único' y deudas liquidadas), así la suma de las 2 quincenas
+// del mes reconcilia con las cifras mensuales de la sección 1.
+function _quincenalSnapshot(){
+  const w=getCycleWindow();const qS=w.start,qE=w.end;
+  const weeksInC=getWeeksInCycle(w);
+  const salQ=Math.round(((+S.inc.sal)||0)/2);
+  const bono=(+S.inc.bf||0);
+  const bfHits=bonusInCycle(qS,qE,S.inc);
+  const bfQ=bfHits?bono:0;
+  let extQ=0;(S.extras||[]).forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(x.date){const xd=new Date(x.date+'T12:00');if(xd>=qS&&xd<=qE)extQ+=(+x.amt||0);}});
+  const incQ=salQ+bfQ+extQ;
+  let expQ=0;(S.exp||[]).forEach(e=>{const f=e.freq||'mensual';if(f==='unico')return;const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
+  let dbtQ=0;(S.debts||[]).forEach(db=>{if(isDebtLiquidated(db)||(db.freq||'mensual')==='unico')return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(+db.pay||0);else dbtQ+=mo/2;});
+  const savQ=savAmtQ();
+  const freeQ=Math.round(incQ-expQ-dbtQ-savQ);
+  return {type:w.type,weeks:weeksInC,bfHits,salQ:Math.round(salQ),bono:Math.round(bono),
+    bfQ:Math.round(bfQ),extQ:Math.round(extQ),incQ:Math.round(incQ),expQ:Math.round(expQ),
+    dbtQ:Math.round(dbtQ),savQ:Math.round(savQ),freeQ,start:_ymdLocal(qS),end:_ymdLocal(qE)};
+}
 function buildAIReport(){
   const L=[];
   const fxn=(n)=>fx(n||0);
@@ -13521,6 +13547,10 @@ function buildAIReport(){
   L.push('>   LEVE y se resuelve en 1 mes, hazlo de 1 mes. No estires por estirar.');
   L.push('> - Desglósalo QUINCENA POR QUINCENA: acciones concretas, montos exactos');
   L.push('>   y un indicador medible por quincena para saber si voy a tiempo.');
+  L.push('> - Para los montos quincenales NO dividas mis cifras mensuales entre 2:');
+  L.push('>   usa mi "Vista quincenal" (sección 1c), que ya trae el ingreso, los');
+  L.push('>   gastos y el flujo libre REALES por quincena — con el bono y las');
+  L.push('>   semanas extra ya considerados.');
   L.push('> - Cierra con los 3 hábitos de mayor impacto si los mantengo de por vida.');
   L.push('> ');
   L.push('> Sé directo y honesto. Usa MIS números (no ejemplos), da metas medibles');
@@ -13616,6 +13646,35 @@ function buildAIReport(){
   L.push('- **Flujo libre '+fxn(fl)+':** ingreso '+fxn(inc)+(ext>0?' + extra prom. '+fxn(ext):'')+' − fijos '+fxn(exp)+' − pago deuda '+fxn(dPay)+' − ahorro '+fxn(sav)+'.'+(ext>0?' ⚠️ Incluye '+fxn(ext)+' de ingresos extra promedio (no garantizados); sin ellos el flujo sería '+fxn(fl-ext)+'.':''));
   if((+sav>0)&&((S.savStreak||0)===0))L.push('- ⚠️ **Ahorro programado vs real:** '+fxn(sav)+'/mes programado ('+(S.savPct||0)+'%) pero racha de ahorro 0 — es una meta, no dinero que ya estés apartando. No lo tomes como seguro en el plan hasta ejecutarlo.');
   L.push('');
+  // ── 1c. Vista quincenal del ciclo actual (mensual vs quincenal) ──
+  // La foto (sección 1) está en mensual, pero el Plan de Acción (sección 5) y el
+  // JSON son quincenales. Sin un puente explícito la IA divide mensual÷2 a ojo y
+  // sus montos no cuadran con lo que el usuario ve en la app. Aquí va el
+  // equivalente quincenal REAL del ciclo en curso, con la nota de por qué no es
+  // un simple mensual÷2 (bono que cae en una sola quincena, ciclos de 3 semanas).
+  {const _q=_quincenalSnapshot();
+   const _incM=inc+ext; // ingreso mensual total: salario + bono + extras
+   L.push('## 1c · Vista quincenal (ciclo actual)');
+   L.push('');
+   L.push('> El Plan de Acción (sección 5) y el JSON son QUINCENALES; la foto de arriba es mensual. Este es el equivalente quincenal del ciclo en curso, calculado como lo hace la app — **NO es mensual÷2**. Usa estos montos para el plan por quincena.');
+   L.push('');
+   L.push('**Ciclo actual:** '+(_q.type==='1ra'?'1ra quincena':'2da quincena')+' · '+fmtDate(_q.start)+' → '+fmtDate(_q.end)+' · '+_q.weeks+' semana'+(_q.weeks!==1?'s':'')+(_q.weeks===3?' (quincena larga)':''));
+   L.push('');
+   L.push('| Concepto | Esta quincena | Mensual÷2 (ingenuo) |');
+   L.push('|---|--:|--:|');
+   L.push('| Ingreso | '+fxn(_q.incQ)+' | '+fxn(Math.round(_incM/2))+' |');
+   L.push('| Gastos fijos | −'+fxn(_q.expQ)+' | −'+fxn(Math.round(exp/2))+' |');
+   L.push('| Pago de deudas | −'+fxn(_q.dbtQ)+' | −'+fxn(Math.round(dPay/2))+' |');
+   L.push('| Ahorro programado | −'+fxn(_q.savQ)+' | −'+fxn(Math.round(sav/2))+' |');
+   L.push('| **Flujo libre** | **'+fxn(_q.freeQ)+'** | **'+fxn(Math.round(fl/2))+'** |');
+   L.push('');
+   const _notes=[];
+   if(_q.bono>0)_notes.push('**Bono fijo '+fxn(_q.bono)+'/mes:** '+(_q.bfHits?'cae en ESTA quincena, así que entra completo aquí (no a la mitad); en la otra quincena entra $0.':'NO cae en esta quincena (entra $0 aquí; completo en la otra).'));
+   if(_q.weeks!==2)_notes.push('**Ciclo de '+_q.weeks+' semanas:** los gastos de frecuencia semanal se cuentan '+_q.weeks+' veces (no 2), por eso los fijos de esta quincena suben respecto a un mes÷2.');
+   _notes.forEach(n=>L.push('- '+n));
+   if(_notes.length)L.push('');
+   L.push('> Por eso quincenal ≠ mensual÷2. Para el plan por quincena parte del **flujo libre de '+fxn(_q.freeQ)+'** de este ciclo, y ajústalo en las quincenas donde el bono caiga (o no) y en las de 3 semanas. La suma de las 2 quincenas de un mes reconcilia con las cifras mensuales de la sección 1.');
+   L.push('');}
   // ── 2. Gastos fijos por categoría ─────────────────────
   const expByCat={};
   (S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';expByCat[k]=(expByCat[k]||0)+toMonthly(+e.amt||0,e.freq||'mensual');});

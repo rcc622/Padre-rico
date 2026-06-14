@@ -11256,6 +11256,12 @@ function _otApplyToggles(){
   if(wrap)wrap.innerHTML=_otToggleInner(_otState.n);
   const {deficit,hours}=_otDeficit(_otState.n,inclP,inclM,inclA);
   _otState.deficit=deficit;_otState.hours=hours;
+  // Re-renderiza el DESGLOSE completo para que las líneas (Págate/Metas/IA)
+  // aparezcan/desaparezcan junto con los toggles. Antes solo se actualizaba el
+  // número del déficit y las líneas quedaban "pegadas" mostrando montos que ya
+  // no contaban.
+  const bdWrap=document.getElementById('_otBdWrap');
+  if(bdWrap)bdWrap.innerHTML=_otBreakdown(_otState.n,inclP,inclM,deficit,_otState.bdLabel||'Déficit total',inclA);
   const dEl=document.getElementById('_otDeficit');
   if(dEl){dEl.textContent=fx(deficit);dEl.style.color=deficit>0?'var(--terra)':'var(--sage)';}
   const hEl=document.getElementById('_otHoursNeed');
@@ -11293,8 +11299,8 @@ function showOvertimeCalc(){
   const RATE=n.RATE;
   const inclP=!!S.otInclPagate,inclM=!!S.otInclMetas,inclA=!!S.otInclAi;
   const {deficit,hours}=_otDeficit(n,inclP,inclM,inclA);
-  _otState={mode:'calc',n,deficit,hours};
-  const body=_otBreakdown(n,inclP,inclM,deficit,'Déficit total',inclA)
+  _otState={mode:'calc',n,deficit,hours,bdLabel:'Déficit total'};
+  const body='<div id="_otBdWrap">'+_otBreakdown(n,inclP,inclM,deficit,'Déficit total',inclA)+'</div>'
     +_otToggleRow(n)
     +(deficit>0?'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Para cubrir necesitas <strong id="_otHoursNeed">'+hours.toFixed(1)+'</strong>h a $'+RATE+'/hr.</div>'
     :'<div style="font-size:11px;color:var(--sage);margin-bottom:8px">✅ Sin déficit con lo seleccionado. Puedes registrar horas extra como ingreso adicional. <span id="_otHoursNeed" style="display:none">0</span></div>')
@@ -11394,15 +11400,15 @@ function recalcOvertime(otCk){
   const ot=S.overtimeLog?.[ck];
   if(!ot){toast('No hay reto activo');return;}
   const n=_otNumbers();
-  const inclP=!!S.otInclPagate,inclM=!!S.otInclMetas;
-  const {deficit,hours}=_otDeficit(n,inclP,inclM);
+  const inclP=!!S.otInclPagate,inclM=!!S.otInclMetas,inclA=!!S.otInclAi;
+  const {deficit,hours}=_otDeficit(n,inclP,inclM,inclA);
   const loggedH=ot.entries.reduce((a,e)=>a+(+e.hours||0),0);
   const newTargetH=Math.max(hours,loggedH); // nunca menor a lo ya registrado
   const curTargetH=+ot.targetHrs||0;
   const delta=newTargetH-curTargetH;
   const deltaLabel=delta>0?'+'+delta.toFixed(1)+'h':delta<0?delta.toFixed(1)+'h':'sin cambio';
-  _otState={mode:'recalc',n,deficit,hours,ot,newTargetH};
-  const body=_otBreakdown(n,inclP,inclM,deficit,'Déficit actualizado')
+  _otState={mode:'recalc',n,deficit,hours,ot,newTargetH,bdLabel:'Déficit actualizado'};
+  const body='<div id="_otBdWrap">'+_otBreakdown(n,inclP,inclM,deficit,'Déficit actualizado',inclA)+'</div>'
     +_otToggleRow(n)
     +'<div style="padding:12px;background:rgba(74,110,140,.06);border-radius:8px;margin-bottom:12px">'
     +'<div class="row-b" style="font-size:11px;margin-bottom:4px"><span style="color:var(--muted)">Target anterior</span><strong>'+curTargetH.toFixed(1)+'h</strong></div>'

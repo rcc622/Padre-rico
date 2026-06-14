@@ -6630,6 +6630,7 @@ function rFlujo(){try{
       <div><label id="dpdLbl">${df==='unico'?'Fecha de pago':'Próximo pago'}</label><input type="date" id="dpd" value="${ed&&ed.nextPay?ed.nextPay:(ed&&ed.payDay?calcNextPayISO(ed.payDay):'')}" oninput="if(document.getElementById('dpf')?.value==='unico'){document.getElementById('dliq').value=this.value}"></div>
       <div id="debtLiqWrap" style="${df==='unico'?'display:none':''}"><label>Fecha liquidación</label><input type="date" id="dliq" value="${ed?ed.liqDate||'':''}"></div>
     </div>
+    <div id="debtRowFirst" style="${df==='unico'?'display:none':''};margin-bottom:10px"><label>Fecha primer pago (opcional)</label><input type="date" id="dfp" value="${ed&&ed.firstPay?_escA(ed.firstPay):''}"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Cuándo empieza a pagarse esta deuda. Si es a futuro, no aparece en el Plan de Acción hasta la quincena de esa fecha.</div></div>
     <div id="debtRowNota" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
       <div><label>Nota / Etiqueta</label><input type="text" id="dnote" placeholder="CFE, Telmex..." value="${ed?ed.note||'':''}"></div>
       <div id="debtGrpWrap"><label>Grupo</label><input type="text" id="dgrp" list="grpList" placeholder="Amazon, ML, Nu..." value="${ed&&ed.group?ed.group:''}"><datalist id="grpList">${[...new Set(S.debts.map(x=>x.group).filter(Boolean))].map(g=>'<option value="'+g+'">').join('')}</datalist></div>
@@ -6787,7 +6788,7 @@ function rFlujo(){try{
           :'');
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
-          '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+_escH(d.name)+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+_escH(d.note)+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+_escH(d.group)+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
+          '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+_escH(d.name)+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+_escH(d.note)+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+_escH(d.group)+'</span>':'')+(d.firstPay&&d.firstPay>_todayYMD()?'<span class="badge bdg-amber">🗓️ inicia '+fmtDate(d.firstPay)+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
           '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
@@ -6801,12 +6802,19 @@ function rFlujo(){try{
             (pd&&nextDays2<=3&&!_appliedThisQ?'<div style="font-size:10px;color:var(--terra)">'+(nextDays2<0?'Vencido hace '+Math.abs(nextDays2)+' día'+(nextDays2===-1?'':'s'):nextDays2===0?'¡HOY!':nextDays2===1?'Mañana':'En '+nextDays2+' días')+' ⚠️</div>':'')+
           '</div>'+
         '</div>'+
-        '<div class="row-b" style="font-size:11px;color:var(--muted);margin-bottom:4px">'+
-          '<span>Saldo: <strong style="color:var(--terra)">'+fx(d.bal)+'</strong></span>'+
-          (hasMSI?'<span>Pagado: <strong style="color:var(--sage)">'+fx(paidAmt)+'</strong> ('+paidCount+'/'+d.totalPays+')</span>':'')+
+        '<div class="row-b" style="font-size:12px;margin-bottom:4px">'+
+          '<span style="color:var(--muted)">💰 Te falta</span>'+
+          '<strong style="color:var(--terra);font-size:15px">'+fx(d.bal)+'</strong>'+
         '</div>'+
-        (hasMSI?'<div class="pw" style="height:5px"><div class="pb" style="width:'+pctPaid+'%;background:var(--sage)"></div></div><div class="row-b" style="font-size:10px;color:var(--muted);margin-top:3px"><span>'+Math.round(pctPaid)+'% completado</span>'+(d.liqDate?'<span>Liquida: '+fmtDate(d.liqDate)+'</span>':'')+'</div>'
-        :(d.liqDate?'<div style="font-size:10px;color:var(--muted)">Liquida: '+fmtDate(d.liqDate)+'</div>':''))+
+        (hasMSI
+          ?'<div class="pw" style="height:6px"><div class="pb" style="width:'+pctPaid+'%;background:var(--sage)"></div></div>'+
+           '<div class="row-b" style="font-size:10px;color:var(--muted);margin-top:3px">'+
+             '<span>✓ '+paidCount+' de '+d.totalPays+' cuotas · faltan '+Math.max(0,d.totalPays-paidCount)+'</span>'+
+             (d.liqDate?'<span>Liquida '+fmtDate(d.liqDate)+'</span>':'')+
+           '</div>'
+          :((+d.pay||0)>0&&d.freq!=='unico'&&_restPagos>0
+            ?'<div class="row-b" style="font-size:10px;color:var(--muted);margin-top:2px"><span>≈ '+_restPagos+' pago'+(_restPagos!==1?'s':'')+' de '+fx(+d.pay||0)+' para liquidar</span>'+(d.liqDate?'<span>Liquida '+fmtDate(d.liqDate)+'</span>':'')+'</div>'
+            :(d.liqDate?'<div style="font-size:10px;color:var(--muted);margin-top:2px">Liquida '+fmtDate(d.liqDate)+'</div>':'')))+
       '</div>';
       });
       return html;
@@ -8054,6 +8062,7 @@ function updDebtUnico(){
   const isU=sel.value==='unico';
   const show=(id,disp)=>{const el=document.getElementById(id);if(el)el.style.display=disp;};
   show('debtLiqWrap',isU?'none':'');
+  show('debtRowFirst',isU?'none':'');
   show('debtRowMsi',isU?'none':'grid');
   show('debtSaldoWrap',isU?'none':'');
   show('debtIntSwitch',isU?'none':'block');
@@ -8176,8 +8185,9 @@ function addDebt(){
   const totalToPay=hasInt?(+(document.getElementById('dTotal')?.value)||0):0;
   const interestAmt=hasInt&&totalToPay>principal?totalToPay-principal:0;
   const interestPct=hasInt&&principal>0?+(interestAmt/principal*100).toFixed(2):0;
+  const firstPay=f==='unico'?'':(_toValidYMD(document.getElementById('dfp')?.value||'')||'');
   pt({debts:[...S.debts,{
-    id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,
+    id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,firstPay:firstPay,
     note:document.getElementById('dnote')?.value.trim()||'',
     curPay:f==='unico'?0:(+(document.getElementById('dcur')?.value)||0),
     totalPays:f==='unico'?0:(+(document.getElementById('dtot')?.value)||0),
@@ -9165,7 +9175,8 @@ function saveDebt(){
   const totalToPay=hasInt?(+(document.getElementById('dTotal')?.value)||0):0;
   const interestAmt=hasInt&&totalToPay>principal?totalToPay-principal:0;
   const interestPct=hasInt&&principal>0?+(interestAmt/principal*100).toFixed(2):0;
-  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||'',hasInterest:hasInt,principal,totalToPay,interestAmt,interestPct}:d)});
+  const firstPay=f==='unico'?'':(_toValidYMD(document.getElementById('dfp')?.value||'')||'');
+  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',firstPay:firstPay,note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||'',hasInterest:hasInt,principal,totalToPay,interestAmt,interestPct}:d)});
   editDebtId=null;toast('✓ Deuda actualizada');rFlujo();
 }
 
@@ -9409,6 +9420,9 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
   let debtPayQ=0;const debtDetail=[];
   const _urgLiqIds=new Set(upcoming().filter(dd3=>{const ld=new Date(dd3.liqDate+'T12:00');return ld>=cStart&&ld<=cEnd;}).map(dd3=>dd3.id));
   S.debts.forEach(db=>{
+    // Primer pago a futuro: la deuda no genera pago en ciclos que terminan
+    // antes de esa fecha (igual que el 'comienzo' de un gasto fijo).
+    if(db.firstPay&&_cEndYMD<db.firstPay)return;
     const _appliedInView=!!(S.paidItems[viewCk]&&S.paidItems[viewCk]['debt_'+db.id]);
     const _isLiquidated=isDebtLiquidated(db);
     if(_isLiquidated&&!_appliedInView)return;

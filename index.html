@@ -13501,9 +13501,10 @@ function _quincenalSnapshot(){
   let dbtQ=0;(S.debts||[]).forEach(db=>{if(isDebtLiquidated(db)||(db.freq||'mensual')==='unico')return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(+db.pay||0);else dbtQ+=mo/2;});
   const savQ=savAmtQ();
   const freeQ=Math.round(incQ-expQ-dbtQ-savQ);
+  const freeQNoExtra=Math.round(incQ-extQ-expQ-dbtQ-savQ); // #7 · flujo antes del extra
   return {type:w.type,weeks:weeksInC,bfHits,salQ:Math.round(salQ),bono:Math.round(bono),
     bfQ:Math.round(bfQ),extQ:Math.round(extQ),incQ:Math.round(incQ),expQ:Math.round(expQ),
-    dbtQ:Math.round(dbtQ),savQ:Math.round(savQ),freeQ,start:_ymdLocal(qS),end:_ymdLocal(qE)};
+    dbtQ:Math.round(dbtQ),savQ:Math.round(savQ),freeQ,freeQNoExtra,start:_ymdLocal(qS),end:_ymdLocal(qE)};
 }
 function buildAIReport(){
   const L=[];
@@ -13600,9 +13601,14 @@ function buildAIReport(){
   const _dgAll=(S.gastosDiarios||[]).filter(g=>g&&!g.pending&&(+g.amt||0)>0);
   const _dgDates=_dgAll.map(g=>String(g.date||'')).filter(d=>d.length>=10).sort();
   const _pIni=_dgDates[0]||'',_pFin=_dgDates[_dgDates.length-1]||'';
+  // #3 · Fechas reales de corte de la bitácora: además de inicio/fin, cuántos
+  // DÍAS abarca y a cuántas QUINCENAS equivale — la IA proyecta a 12 meses y sin
+  // el span exacto no sabe si los agregados cubren 3 semanas o 4 meses.
+  const _periodDias=(_pIni&&_pFin)?Math.round((new Date(_pFin+'T12:00')-new Date(_pIni+'T12:00'))/864e5)+1:0;
+  const _periodQnas=_periodDias>0?+(_periodDias/15).toFixed(1):0;
   const _sumLedger=Math.round(_dgAll.reduce((a,g)=>a+(+g.amt||0),0)*100)/100;
   const _meta={export:'padre-rico',version:2,moneda:'MXN',fechaExport:_todayYMD(),
-    periodoBitacora:{inicio:_pIni,fin:_pFin},
+    periodoBitacora:{inicio:_pIni,fin:_pFin,dias:_periodDias,quincenas:_periodQnas},
     reconciliacion:{movs:_dgAll.length,sumaLedger:_sumLedger,cuadra:true},
     deudaActiva:Math.round(tDebt()),patrimonioNeto:Math.round(nw())};
   L.push('## 0 · Metadata (lectura para máquina)');
@@ -13616,6 +13622,7 @@ function buildAIReport(){
   // ── 1. Foto actual ────────────────────────────────────
   const inc=mInc(),ext=tExtras(),exp=tExp(),dPay=tDebtPay(),sav=savAmt();
   const fl=flow(),deuda=tDebt(),act=tAss(),patr=nw(),pasivo=passInc(),sc=score();
+  const _qsnap=_quincenalSnapshot(); // #7 · capacidad real por quincena (reusado en 1c y #9)
   const rk=getRank(sc);
   const drA=deuda/Math.max(inc*12,1);
   L.push('## 1 · Foto financiera de hoy');
@@ -13666,28 +13673,31 @@ function buildAIReport(){
   // sus montos no cuadran con lo que el usuario ve en la app. Aquí va el
   // equivalente quincenal REAL del ciclo en curso, con la nota de por qué no es
   // un simple mensual÷2 (bono que cae en una sola quincena, ciclos de 3 semanas).
-  {const _q=_quincenalSnapshot();
+  {const _q=_qsnap;
    const _incM=inc+ext; // ingreso mensual total: salario + bono + extras
-   L.push('## 1c · Vista quincenal (ciclo actual)');
+   L.push('## 1c · Capacidad real por quincena (ciclo actual)');
    L.push('');
-   L.push('> El Plan de Acción (sección 5) y el JSON son QUINCENALES; la foto de arriba es mensual. Este es el equivalente quincenal del ciclo en curso, calculado como lo hace la app — **NO es mensual÷2**. Usa estos montos para el plan por quincena.');
+   L.push('> El Plan de Acción (sección 5) y el JSON son QUINCENALES; la foto de arriba es mensual. Esta es la capacidad quincenal REAL del ciclo en curso, calculada como lo hace la app — **NO es mensual÷2**. Usa estos montos para el plan por quincena.');
    L.push('');
    L.push('**Ciclo actual:** '+(_q.type==='1ra'?'1ra quincena':'2da quincena')+' · '+fmtDate(_q.start)+' → '+fmtDate(_q.end)+' · '+_q.weeks+' semana'+(_q.weeks!==1?'s':'')+(_q.weeks===3?' (quincena larga)':''));
    L.push('');
    L.push('| Concepto | Esta quincena | Mensual÷2 (ingenuo) |');
    L.push('|---|--:|--:|');
-   L.push('| Ingreso | '+fxn(_q.incQ)+' | '+fxn(Math.round(_incM/2))+' |');
+   L.push('| Ingreso (con extra) | '+fxn(_q.incQ)+' | '+fxn(Math.round(_incM/2))+' |');
+   if(_q.extQ>0)L.push('| — de eso, ingreso extra | '+fxn(_q.extQ)+' | '+fxn(Math.round(ext/2))+' |');
    L.push('| Gastos fijos | −'+fxn(_q.expQ)+' | −'+fxn(Math.round(exp/2))+' |');
-   L.push('| Pago de deudas | −'+fxn(_q.dbtQ)+' | −'+fxn(Math.round(dPay/2))+' |');
+   L.push('| Pago deuda (mínimo) | −'+fxn(_q.dbtQ)+' | −'+fxn(Math.round(dPay/2))+' |');
    L.push('| Ahorro programado | −'+fxn(_q.savQ)+' | −'+fxn(Math.round(sav/2))+' |');
-   L.push('| **Flujo libre** | **'+fxn(_q.freeQ)+'** | **'+fxn(Math.round(fl/2))+'** |');
+   L.push('| **Flujo libre (con extra)** | **'+fxn(_q.freeQ)+'** | **'+fxn(Math.round(fl/2))+'** |');
+   if(_q.extQ>0)L.push('| **Flujo libre (sin extra)** | **'+fxn(_q.freeQNoExtra)+'** | **'+fxn(Math.round((fl-ext)/2))+'** |');
    L.push('');
    const _notes=[];
+   if(_q.extQ>0)_notes.push('**Ingreso extra '+fxn(_q.extQ)+' esta quincena:** no es garantizado. El flujo libre confiable es el de **sin extra** ('+fxn(_q.freeQNoExtra)+'); el de con extra ('+fxn(_q.freeQ)+') solo si el extra entra.');
    if(_q.bono>0)_notes.push('**Bono fijo '+fxn(_q.bono)+'/mes:** '+(_q.bfHits?'cae en ESTA quincena, así que entra completo aquí (no a la mitad); en la otra quincena entra $0.':'NO cae en esta quincena (entra $0 aquí; completo en la otra).'));
    if(_q.weeks!==2)_notes.push('**Ciclo de '+_q.weeks+' semanas:** los gastos de frecuencia semanal se cuentan '+_q.weeks+' veces (no 2), por eso los fijos de esta quincena suben respecto a un mes÷2.');
    _notes.forEach(n=>L.push('- '+n));
    if(_notes.length)L.push('');
-   L.push('> Por eso quincenal ≠ mensual÷2. Para el plan por quincena parte del **flujo libre de '+fxn(_q.freeQ)+'** de este ciclo, y ajústalo en las quincenas donde el bono caiga (o no) y en las de 3 semanas. La suma de las 2 quincenas de un mes reconcilia con las cifras mensuales de la sección 1.');
+   L.push('> Por eso quincenal ≠ mensual÷2. Para el plan por quincena parte del **flujo libre sin extra de '+fxn(_q.freeQNoExtra)+'** de este ciclo, y ajústalo en las quincenas donde el bono caiga (o no) y en las de 3 semanas. La suma de las 2 quincenas de un mes reconcilia con las cifras mensuales de la sección 1.');
    L.push('');}
   // ── 2. Gastos fijos por categoría ─────────────────────
   const expByCat={};
@@ -13786,7 +13796,7 @@ function buildAIReport(){
     const _mdCell=(s)=>String(s==null?'':s).replace(/\|/g,'\\|').replace(/\r?\n/g,' ').trim();
     // E4 · Declarar el rango exacto y avisar que los agregados son acumulados de
     // TODO el periodo (no de un solo mes), para no inducir lecturas falsas.
-    L.push('**Periodo de esta bitácora:** '+(_pIni||'—')+' → '+(_pFin||'—')+' · '+_dgAll.length+' movimientos · suma '+fxn(_sumLedger)+'. ⚠️ Los agregados de abajo cubren TODO este rango, no un solo mes (salvo la "Tendencia mensual"). Para cortes por mes exacto usa el **ledger crudo** del final de esta sección.');
+    L.push('**Periodo de esta bitácora:** '+(_pIni||'—')+' → '+(_pFin||'—')+' · '+(_periodDias>0?_periodDias+' días (~'+_periodQnas+' quincenas) · ':'')+_dgAll.length+' movimientos · suma '+fxn(_sumLedger)+'. ⚠️ Los agregados de abajo cubren TODO este rango'+(_periodDias>0?' ('+_periodDias+' días)':'')+', no un solo mes (salvo la "Tendencia mensual"). Para cortes por mes exacto usa el **ledger crudo** del final de esta sección.');
     L.push('');
     const byCat={};
     diarios.forEach(g=>{const k=g.cat||'otro';if(!byCat[k])byCat[k]={total:0,n:0,es:isEsencial(g)};byCat[k].total+=(+g.amt||0);byCat[k].n++;});
@@ -13850,7 +13860,47 @@ function buildAIReport(){
     L.push('_Aún no registro gastos diarios. Para que el análisis se base en mi gasto real, debo empezar a anotarlos en Día a día → Diarios._');
     L.push('');
   }
-  // ── 7. Cierre ─────────────────────────────────────────
+  // ── 7. analisisInput · bloque consolidado para máquina (#9) ───────────
+  // Reúne en UN objeto: periodo real de la bitácora con días y quincenas (#3),
+  // capacidad real por quincena con flujo antes/después de extra (#7) y deudas
+  // normalizadas con pago mensual + quincenal, tasa, vencimiento, esPagoMinimo y
+  // prioridad de ataque (#4). Así la IA parsea una sola estructura en vez de
+  // raspar las tablas en prosa.
+  {
+    const _payM=(d)=>{const f=d.freq||'mensual';return f==='unico'?0:toMonthly(+d.pay||0,f);};
+    const _payQ=(d)=>{const f=d.freq||'mensual';if(f==='unico')return 0;return f==='quincenal'?(+d.pay||0):toMonthly(+d.pay||0,f)/2;};
+    // esPagoMinimo (inferido): deuda con interés y SIN calendario MSI fijo — el
+    // pago actual es tipo "mínimo" y hay margen para abonar más. Las MSI tienen
+    // cuota fija (no es un mínimo reducible).
+    const _esMin=(d)=>!!(d.hasInterest&&!(+d.totalPays>0));
+    const _nd=actDebts.map(d=>({
+      nombre:d.name||'?',grupo:d.group||null,saldo:Math.round(+d.bal||0),freq:d.freq||'mensual',
+      pagoMensual:Math.round(_payM(d)),pagoQuincenal:Math.round(_payQ(d)),
+      tasaPct:d.hasInterest?(+d.interestPct||0):0,interesMonto:d.hasInterest?Math.round(+d.interestAmt||0):0,
+      vencimiento:d.liqDate||null,esPagoMinimo:_esMin(d)}));
+    // prioridad (avalancha): mayor tasa primero; empate por interés en $ y saldo.
+    [..._nd].sort((a,b)=>(b.tasaPct-a.tasaPct)||(b.interesMonto-a.interesMonto)||(b.saldo-a.saldo)).forEach((d,i)=>{d.prioridad=i+1;});
+    const _ai={
+      analisisInput:1,moneda:'MXN',fechaExport:_todayYMD(),
+      periodo:{inicio:_pIni||null,fin:_pFin||null,dias:_periodDias,quincenas:_periodQnas},
+      foto:{ingresoMensual:Math.round(inc),extraMensualProm:Math.round(ext),gastosFijosMensual:Math.round(exp),
+        pagoDeudaMensual:Math.round(dPay),ahorroMensual:Math.round(sav),flujoMensual:Math.round(fl),
+        deudaTotal:Math.round(deuda),activos:Math.round(act),patrimonio:Math.round(patr),score:sc},
+      capacidadQuincenal:{ciclo:_qsnap.type,inicio:_qsnap.start,fin:_qsnap.end,semanas:_qsnap.weeks,
+        ingreso:_qsnap.incQ,ingresoSinExtra:_qsnap.incQ-_qsnap.extQ,extra:_qsnap.extQ,
+        gastosFijos:_qsnap.expQ,deudaMinima:_qsnap.dbtQ,ahorro:_qsnap.savQ,
+        flujoLibreAntesExtra:_qsnap.freeQNoExtra,flujoLibreDespuesExtra:_qsnap.freeQ},
+      deudas:_nd};
+    L.push('## 7 · analisisInput (bloque consolidado para máquina)');
+    L.push('');
+    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra). `deudas` van normalizadas: `pagoMensual`/`pagoQuincenal` equivalentes, `tasaPct`, `vencimiento`, `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve).');
+    L.push('');
+    L.push('```json');
+    L.push(JSON.stringify(_ai));
+    L.push('```');
+    L.push('');
+  }
+  // ── 8. Cierre ─────────────────────────────────────────
   L.push('---');
   L.push('');
   L.push('_Fuente: app Padre Rico 🪙 — datos 100% reales del usuario. La composición de gasto sale de mi bitácora diaria (sección 6); los estados de cuenta no se incluyen aquí (en la app solo alimentan proyecciones). El prompt con lo que espero de ti está al inicio de este documento._');

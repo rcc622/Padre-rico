@@ -6828,7 +6828,7 @@ function rFlujo(){try{
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
           '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+_escH(d.name)+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+_escH(d.note)+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+_escH(d.group)+'</span>':'')+(d.firstPay&&d.firstPay>_todayYMD()?'<span class="badge bdg-amber">🗓️ inicia '+fmtDate(d.firstPay)+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
-          '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
+          '<div class="row debt-card-actions" style="gap:4px">'+(_isLiquidated&&(+d.bal||0)>0?'<button class="btn btn-sm" onclick="limpiarSaldoDeuda('+d.id+')" style="padding:4px 8px;background:var(--amberdim);color:var(--amber);border:1px solid rgba(160,112,48,.35)" title="Limpiar saldo residual (marcar 100% pagada)">🧹</button>':'')+'<button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
@@ -9438,6 +9438,29 @@ function reactivarDeuda(id){
       toast('↩️ '+d.name+' reactivada');
       try{flujoView='deudas';if(typeof go==='function')go('flujo');else{rFlujo&&rFlujo();hdrUp&&hdrUp();}}catch(e){rFlujo&&rFlujo();}
       if(!(recovered>0))setTimeout(()=>{try{editDebt(id);}catch(e){}},350);
+    });
+}
+
+// 🧹 Limpiar saldo: pone el saldo de una deuda en $0 y la marca liquidada, SIN
+// registrar ningún pago. Para deudas que el usuario ya pagó por fuera de la app
+// y quedaron con saldo residual (MSI con todos sus pagos hechos pero saldo > 0,
+// o un préstamo que se liquidó adelantado). A diferencia de "Toca para liquidar"
+// del Plan de Acción, NO crea un movimiento/pago — solo limpia el dato, así no
+// inventa un egreso que no ocurrió hoy. Reversible con Reactivar.
+function limpiarSaldoDeuda(id){
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){toast('Deuda no encontrada');return;}
+  const resid=+d.bal||0;
+  showConfirm('🧹 ¿Limpiar saldo de '+_escH(d.name)+'?',
+    '<div style="font-size:13px;line-height:1.7;color:var(--txt2)">Voy a poner su saldo (<strong>'+fx(resid)+'</strong>) en <strong>$0</strong> y marcarla como liquidada'+(d.liqDate?'':' hoy')+'.<br><br>Esto <strong>NO registra ningún pago</strong> — solo limpia el dato, para deudas que ya pagaste por fuera. Desaparecerán las alertas de "saldo residual". Si te equivocaste, puedes <strong>Reactivarla</strong> desde Mi Historia → 🏁 Liquidadas.</div>',
+    ()=>{
+      try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('limpiarSaldoDeuda.backup',e);}
+      d.bal=0;
+      if(!d.liqDate)d.liqDate=_todayYMD();
+      sv();
+      try{checkAch&&checkAch();}catch(e){_logErr('limpiarSaldoDeuda.checkAch',e);}
+      toast('🧹 Saldo de '+d.name+' limpiado');
+      try{if(typeof cur==='string'&&typeof go==='function')go(cur);else{rFlujo&&rFlujo();rHistoria&&rHistoria();}}catch(e){try{rFlujo&&rFlujo();}catch(_){}}
     });
 }
 
@@ -13113,13 +13136,15 @@ function rHistoria(){
           <div>
             <div style="font-weight:bold;color:var(--sage);font-size:13px">${d.name}</div>
             <div style="font-size:10px;color:var(--muted)">${cat}${d.liqDate?' · Liquidada: '+fmtDate(d.liqDate):''}${d.note?' · '+d.note:''}</div>
+            ${(+d.bal||0)>0?`<div style="font-size:10px;color:var(--amber);margin-top:2px">⚠️ saldo residual ${fx(+d.bal||0)} — marcada como pagada pero con saldo > 0</div>`:''}
           </div>
           <div style="text-align:right">
             <div style="font-size:14px;font-weight:bold;color:var(--sage);text-decoration:line-through">${fx(d.pay)}</div>
             <div style="font-size:9px;color:var(--sage)">/${freqCap(d.freq||'mensual')}</div>
           </div>
         </div>
-        <div class="row" style="justify-content:flex-end;margin-top:6px">
+        <div class="row" style="justify-content:flex-end;gap:6px;margin-top:6px">
+          ${(+d.bal||0)>0?`<button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:var(--amberdim);color:var(--amber);border:1px solid rgba(160,112,48,.35)" onclick="limpiarSaldoDeuda(${d.id})">🧹 Limpiar saldo</button>`:''}
           <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:rgba(78,124,106,.12);color:var(--sage);border:1px solid rgba(78,124,106,.35)" onclick="reactivarDeuda(${d.id})">↩️ Reactivar</button>
         </div>
       </div>`;}).join('')}

@@ -13593,6 +13593,29 @@ function buildAIReport(){
   L.push('');
   L.push('_El score (0-100) pondera: flujo libre 30, deuda/ingreso 20, ahorro 15, patrimonio 15, constancia 10, ingreso pasivo 10, metas de ahorro 10 (abonar +5 / completar +5); penaliza déficit hasta −15; se topa a 100._');
   L.push('');
+  // Desglose auditable del score (antes solo se daba el total).
+  {const _sb=scoreBreakdown();
+   L.push('**Desglose del score ('+_sb.total+'/100):** '+_sb.parts.map(p=>p.label+' '+p.pts+'/'+p.max).join(' · ')+(_sb.penalty>0?' · penalización déficit −'+_sb.penalty:''));
+   L.push('');}
+  // ── 1b. Validaciones de cuadre ────────────────────────
+  // Hace transparentes las inconsistencias en vez de dejar que la IA adivine
+  // qué número usar: deuda excluida por liquidación, flujo que depende de
+  // ingresos extra no garantizados, y ahorro programado que no se ejecuta.
+  const _rawDebtAll=(S.debts||[]).reduce((a,d)=>a+Math.max(0,+d.bal||0),0);
+  const _debtGap=Math.round(_rawDebtAll-deuda);
+  L.push('## 1b · Validaciones (cuadre automático)');
+  L.push('');
+  L.push('> Chequeos de la app sobre sus propios números. Lo marcado ⚠️ es una bandera para revisar, no un dato a asumir.');
+  L.push('');
+  if(_debtGap!==0){
+    L.push('- ⚠️ **Deuda:** la "Deuda total" ('+fxn(deuda)+') excluye '+fxn(_debtGap)+' de saldos > 0 marcados como liquidados (préstamos a meses con todos sus pagos hechos pero saldo residual, o con fecha de liquidación ya vencida). Suma de TODOS los saldos vivos: '+fxn(_rawDebtAll)+' — detalle en sección 3 → Liquidadas. Si esos saldos siguen vivos, tu deuda real es '+fxn(_rawDebtAll)+' y tu patrimonio '+fxn(act-_rawDebtAll)+'.');
+  }else{
+    L.push('- ✅ **Deuda:** la "Deuda total" ('+fxn(deuda)+') coincide con la suma de todos los saldos vivos.');
+  }
+  L.push('- '+(Math.round(act-deuda)===Math.round(patr)?'✅':'⚠️')+' **Patrimonio neto:** activos '+fxn(act)+' − deuda '+fxn(deuda)+' = '+fxn(act-deuda)+(Math.round(act-deuda)===Math.round(patr)?' (cuadra con lo reportado).':' ≠ '+fxn(patr)+' reportado.'));
+  L.push('- **Flujo libre '+fxn(fl)+':** ingreso '+fxn(inc)+(ext>0?' + extra prom. '+fxn(ext):'')+' − fijos '+fxn(exp)+' − pago deuda '+fxn(dPay)+' − ahorro '+fxn(sav)+'.'+(ext>0?' ⚠️ Incluye '+fxn(ext)+' de ingresos extra promedio (no garantizados); sin ellos el flujo sería '+fxn(fl-ext)+'.':''));
+  if((+sav>0)&&((S.savStreak||0)===0))L.push('- ⚠️ **Ahorro programado vs real:** '+fxn(sav)+'/mes programado ('+(S.savPct||0)+'%) pero racha de ahorro 0 — es una meta, no dinero que ya estés apartando. No lo tomes como seguro en el plan hasta ejecutarlo.');
+  L.push('');
   // ── 2. Gastos fijos por categoría ─────────────────────
   const expByCat={};
   (S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';expByCat[k]=(expByCat[k]||0)+toMonthly(+e.amt||0,e.freq||'mensual');});
@@ -13622,9 +13645,12 @@ function buildAIReport(){
     L.push('');
     L.push('| Deuda | Grupo | Saldo | Pago | Frec. | Interés | Liquida |');
     L.push('|---|---|--:|--:|---|---|---|');
+    const _todayD=_todayYMD();
     actDebts.slice().sort((a,b)=>(+b.bal||0)-(+a.bal||0)).forEach(d=>{
       const intr=d.hasInterest&&d.interestPct?(d.interestPct+'% · '+fxn(d.interestAmt||0)):'—';
-      L.push('| '+(d.name||'?')+' | '+(d.group||'—')+' | '+fxn(+d.bal||0)+' | '+fxn(+d.pay||0)+' | '+freqShort(d.freq||'mensual')+' | '+intr+' | '+(d.liqDate?fmtDate(d.liqDate):'—')+' |');
+      // Marca deudas activas cuya fecha de liquidación ya pasó pero siguen con saldo.
+      const liqCell=d.liqDate?(fmtDate(d.liqDate)+(String(d.liqDate)<_todayD?' ⚠️ vencida':'')):'—';
+      L.push('| '+(d.name||'?')+' | '+(d.group||'—')+' | '+fxn(+d.bal||0)+' | '+fxn(+d.pay||0)+' | '+freqShort(d.freq||'mensual')+' | '+intr+' | '+liqCell+' |');
     });
     L.push('| **Total activo** | | **'+fxn(actDebts.reduce((a,d)=>a+(+d.bal||0),0))+'** | **'+fxn(dPay)+'/mes** | | | |');
     L.push('');
@@ -13663,9 +13689,12 @@ function buildAIReport(){
   if(goals.length){
     L.push('## 5 · Metas de ahorro');
     L.push('');
+    const _todayG=_todayYMD();
     goals.forEach(g=>{
       const tgt=+g.target||0,svd=+g.saved||0,pct=tgt>0?Math.round(svd/tgt*100):0;
-      L.push('- **'+(g.name||'Meta')+'** — '+fxn(svd)+' / '+fxn(tgt)+' ('+pct+'%)'+(g.deadline?' · meta '+fmtDate(g.deadline):''));
+      // Marca metas cuya fecha límite ya pasó sin completarse.
+      const venc=(g.deadline&&!g.done&&String(g.deadline)<_todayG)?' ⚠️ vencida sin completar':'';
+      L.push('- **'+(g.name||'Meta')+'** — '+fxn(svd)+' / '+fxn(tgt)+' ('+pct+'%)'+(g.deadline?' · meta '+fmtDate(g.deadline):'')+venc);
     });
     L.push('');
   }

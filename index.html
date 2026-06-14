@@ -2899,6 +2899,33 @@ function tdcAccumulated(){
   const allDetails=[...b.current.charges,...b.billed.flatMap(c=>c.charges)];
   return {used:Math.round(b.grandTotal),details:allDetails};
 }
+// M1 · TDC DEVENGADA (informativa). Total de cargos a crédito YA hechos pero
+// aún sin pagar (tdcCleared!==true), de la bitácora diaria y de los pagos
+// aplicados con TDC. A diferencia de tdcBuckets/tdcAccumulated, NO requiere
+// config de corte: aquí solo importa cuánto debes hoy de tarjeta.
+// IMPORTANTE: es SOLO informativa — NO entra a nw()/score/meta. Si pagas la TDC
+// completa cada ciclo, restarla del patrimonio lo haría rebotar en sierra cada
+// quincena sin reflejar deuda real (el efectivo con que la pagas no se rastrea
+// como activo). Se muestra como alerta junto al patrimonio, no se descuenta.
+function tdcDevengado(){
+  let t=0;
+  (S.gastosDiarios||[]).forEach(g=>{ if(g&&g.paidWith==='tdc'&&!g.tdcCleared&&!g.pending) t+=(+g.amt||0); });
+  Object.keys(S.paidItems||{}).forEach(ck=>{
+    const items=S.paidItems[ck]; if(!items||typeof items!=='object') return;
+    Object.keys(items).forEach(key=>{
+      if(key.startsWith('_')) return;
+      const v=items[key];
+      if(!v||typeof v!=='object'||!v.applied||v.paidWith!=='tdc'||v.tdcCleared||v.tdcPayment) return;
+      let amt=+v.amt||+v.realAmt||0;
+      if(!amt){ const parts=key.split('_'),type=parts[0],id=+parts[1];
+        if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)amt=+d.pay||0;}
+        else if(type==='exp'||type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
+      }
+      t+=amt;
+    });
+  });
+  return Math.round(t);
+}
 function tdcSave(){
   const limit=+(document.getElementById('tdcLimit')?.value)||0;
   const due=+(document.getElementById('tdcDueDay')?.value)||null;
@@ -4124,6 +4151,11 @@ function rDash(){
       <div class="dh-spark" style="font-size:13px;letter-spacing:2px">${streak>0?'🔥'.repeat(Math.min(streak,4)):''}</div>
     </div>
   </div>
+
+  <!-- M1 · ALERTA TDC DEVENGADA (informativa; no se descuenta del patrimonio) -->
+  ${tdcDevengado()>0?`<div class="card card-amber" style="margin:-2px 0 12px;cursor:pointer" onclick="flujoView='deudas';go('flujo')">
+    <div style="font-size:11.5px;color:var(--txt2);line-height:1.55">💳 <strong>Debes ${fx(tdcDevengado())} de TDC sin pagar</strong> — gastos a crédito que aún no liquidas. Tu patrimonio real hoy sería <strong>${fx(nwBuild()-tdcDevengado())}</strong>. <span style="color:var(--muted)">(informativo; no se resta del número de arriba) ›</span></div>
+  </div>`:''}
 
   <!-- HORMIGA DETAIL (expandable) -->
   ${lastSnap&&hormigaTotal?`
@@ -6598,6 +6630,7 @@ function rFlujo(){try{
        en el simulador. -->
   <div style="margin-bottom:13px">
     ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?activeDebts.length+' activas':'¡Sin deudas!')}
+    ${tdcDevengado()>0?`<div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-top:8px;padding:8px 10px;background:var(--amberdim);border-radius:8px">💳 <strong>TDC devengada: ${fx(tdcDevengado())}</strong> — gastos a crédito ya hechos pero sin pagar. No cuenta en la "Deuda total" de arriba (es float del ciclo, lo pagas en el corte), pero sí baja tu <strong>patrimonio real de hoy</strong> a ${fx(nwBuild()-tdcDevengado())}.</div>`:''}
   </div>
 
   <!-- ═══ CALCULADORA DE INTERÉS STANDALONE ═══ -->
@@ -13623,6 +13656,7 @@ function buildAIReport(){
   const inc=mInc(),ext=tExtras(),exp=tExp(),dPay=tDebtPay(),sav=savAmt();
   const fl=flow(),deuda=tDebt(),act=tAss(),patr=nw(),pasivo=passInc(),sc=score();
   const _qsnap=_quincenalSnapshot(); // #7 · capacidad real por quincena (reusado en 1c y #9)
+  const _tdcDev=tdcDevengado(); // M1 · TDC devengada (informativa, no se resta de nw)
   const rk=getRank(sc);
   const drA=deuda/Math.max(inc*12,1);
   L.push('## 1 · Foto financiera de hoy');
@@ -13638,6 +13672,7 @@ function buildAIReport(){
   L.push('- **Flujo libre mensual:** '+fxn(fl)+(fl<0?'  ⚠️ DÉFICIT':''));
   L.push('- **Activos totales:** '+fxn(act)+' · **Deuda total:** '+fxn(deuda));
   L.push('- **Patrimonio neto:** '+fxn(patr)+(patr<0?'  (negativo — debes más de lo que tienes)':''));
+  if(_tdcDev>0)L.push('  - ⚠️ **TDC devengada (sin pagar): '+fxn(_tdcDev)+'**. Gasto a crédito ya hecho que no cuenta en la deuda formal (se paga en el corte). El patrimonio de arriba NO la resta —porque el usuario paga su TDC completa cada ciclo y el efectivo con que la paga tampoco se rastrea como activo, así que restarla lo haría rebotar—; pero hoy mismo el **patrimonio real ≈ '+fxn(patr-_tdcDev)+'**. Tenla en cuenta como float pendiente del ciclo.');
   {const _mb=metaMoneyBreakdown();if(_mb.consumoTotal>0)L.push('  - De eso, **'+fxn(_mb.consumoTotal)+'** está comprometido a metas de consumo (se gastará); patrimonio que construye: **'+fxn(nwBuild())+'**.');}
   L.push('- **Ingreso pasivo (rendimiento de activos):** '+fxn(pasivo)+'/mes');
   L.push('- **Ratio deuda / ingreso anual:** '+(drA*100).toFixed(0)+'%');
@@ -13821,7 +13856,7 @@ function buildAIReport(){
     L.push('|---|--:|--:|--:|');
     [['💳 TDC (crédito)','tdc'],['💵 Débito / efectivo','deb']].forEach(([lbl,mk])=>{const d=byMethod[mk];if(d.n>0)L.push('| '+lbl+' | '+d.n+' | '+fxn(d.t)+' | '+(totalD>0?Math.round(d.t/totalD*100):0)+'% |');});
     L.push('');
-    if(byMethod.tdc.t>0)L.push('> ⚠️ **Deuda TDC devengada del periodo: '+fxn(byMethod.tdc.t)+'** ('+byMethod.tdc.n+' mov'+(byMethod.tdc.n!==1?'s':'')+'). Es gasto ya hecho a crédito que todavía no aparece en la "Deuda total" de la sección 1 (se reconoce al llegar el corte). Tenlo en cuenta al evaluar mi patrimonio real.');
+    if(byMethod.tdc.t>0)L.push('> 💳 **Gasto total a crédito (TDC) en el periodo: '+fxn(byMethod.tdc.t)+'** ('+byMethod.tdc.n+' mov'+(byMethod.tdc.n!==1?'s':'')+'). Es el throughput de tarjeta de TODO el rango registrado (no lo que debo hoy). Lo que debo HOY sin pagar es la **TDC devengada** de la sección 1 ('+fxn(_tdcDev)+'). Ninguno aparece en la "Deuda total" formal.');
     L.push('');
     // Tendencia por mes
     const byMonth={};
@@ -13885,7 +13920,8 @@ function buildAIReport(){
       periodo:{inicio:_pIni||null,fin:_pFin||null,dias:_periodDias,quincenas:_periodQnas},
       foto:{ingresoMensual:Math.round(inc),extraMensualProm:Math.round(ext),gastosFijosMensual:Math.round(exp),
         pagoDeudaMensual:Math.round(dPay),ahorroMensual:Math.round(sav),flujoMensual:Math.round(fl),
-        deudaTotal:Math.round(deuda),activos:Math.round(act),patrimonio:Math.round(patr),score:sc},
+        deudaTotal:Math.round(deuda),activos:Math.round(act),patrimonio:Math.round(patr),
+        tdcDevengada:_tdcDev,patrimonioReal:Math.round(patr)-_tdcDev,score:sc},
       capacidadQuincenal:{ciclo:_qsnap.type,inicio:_qsnap.start,fin:_qsnap.end,semanas:_qsnap.weeks,
         ingreso:_qsnap.incQ,ingresoSinExtra:_qsnap.incQ-_qsnap.extQ,extra:_qsnap.extQ,
         gastosFijos:_qsnap.expQ,deudaMinima:_qsnap.dbtQ,ahorro:_qsnap.savQ,
@@ -13893,7 +13929,7 @@ function buildAIReport(){
       deudas:_nd};
     L.push('## 7 · analisisInput (bloque consolidado para máquina)');
     L.push('');
-    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra). `deudas` van normalizadas: `pagoMensual`/`pagoQuincenal` equivalentes, `tasaPct`, `vencimiento`, `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve).');
+    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra). `deudas` van normalizadas: `pagoMensual`/`pagoQuincenal` equivalentes, `tasaPct`, `vencimiento`, `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve).');
     L.push('');
     L.push('```json');
     L.push(JSON.stringify(_ai));

@@ -10070,8 +10070,8 @@ try{
     document.getElementById('tab-plan').innerHTML=`
     ${subNav}
 
-    <!-- PLAN DE IA (tracker completo, al inicio de Estrategia) -->
-    ${S.aiPlan&&Array.isArray(S.aiPlan.quincenas)&&S.aiPlan.quincenas.length?renderAIPlanSection():''}
+    <!-- PLAN DE IA (tracker completo, al inicio de Estrategia; CTA si no hay) -->
+    ${renderAIPlanSection()}
 
     <!-- PENDING WARNING -->
     ${hasPending&&!showNext?`<div class="card" style="border-left:3px solid var(--amber);padding:14px 18px">

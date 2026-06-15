@@ -1246,6 +1246,37 @@ function undoApply(type,id){
   }
   sv();toast('↩ Pago revertido a seleccionado');rPlan();
 }
+// Editar el monto REAL de un pago aplicado, por ciclo+key (sirve para items
+// reconciliados que no aparecen en la lista normal del Plan, p.ej. una renta
+// que el CSV reconcilió por el doble de su valor). Actualiza realAmt y amt.
+function _editAppliedAmt(ck,key){
+  try{
+    const items=(S.paidItems||{})[ck];const v=items&&items[key];
+    if(!v||typeof v!=='object'){toast('Este pago no es editable');return;}
+    const curAmt=v.realAmt!=null?+v.realAmt:(+v.amt||0);
+    showConfirm('✎ Editar monto pagado','<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;line-height:1.6">Ajusta el monto REAL que pagaste de <strong>'+_escH(v.name||key)+'</strong> en '+_escH(ck)+'.</div><input type="number" inputmode="decimal" id="_edAppAmt" value="'+curAmt+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">',function(){
+      const el=document.getElementById('_edAppAmt');const nv=el?(+el.value||0):curAmt;
+      const it=(S.paidItems||{})[ck]||{};
+      pt({paidItems:{...S.paidItems,[ck]:{...it,[key]:{...it[key],realAmt:nv,amt:nv}}}});
+      toast('✓ Monto actualizado a '+fx(Math.round(nv)));
+      try{if(cur==='plan')rPlan();}catch(e){}
+      try{if(cur==='dash')rDash();}catch(e){}
+    });
+  }catch(e){toast('Error al editar');}
+}
+// Elimina un pago aplicado por ciclo+key (item reconciliado que no fue real).
+function _delAppliedItem(ck,key){
+  try{
+    const items=(S.paidItems||{})[ck];if(!items||!items[key]){toast('Ya no existe');return;}
+    showConfirm('🗑 Eliminar pago','<div style="font-size:12px;color:var(--txt2);line-height:1.6">¿Quitar este pago del ciclo '+_escH(ck)+'? Dejará de restar de tu saldo.</div>',function(){
+      const next={...((S.paidItems||{})[ck]||{})};delete next[key];
+      pt({paidItems:{...S.paidItems,[ck]:next}});
+      toast('🗑 Pago eliminado');
+      try{if(cur==='plan')rPlan();}catch(e){}
+      try{if(cur==='dash')rDash();}catch(e){}
+    });
+  }catch(e){toast('Error');}
+}
 function togglePaid(type,id){
   const ck=planCk();
   if(!S.paidItems[ck])S.paidItems[ck]={};
@@ -8733,6 +8764,25 @@ function _auditFixCommit(ck){
     try{if(cur==='dash')rDash();}catch(e){}
   }catch(e){toast('Error al corregir');}
 }
+// Resuelve un pago fantasma (item aplicado cuyo gasto/deuda/meta ya no existe).
+// 'del' lo borra de paidItems (deja de restar del saldo de ese ciclo).
+// 'keep' lo marca con _orphanOk para que siga contando (sí lo pagaste) pero ya
+// no se vuelva a reportar como fantasma en la auditoría.
+function _auditFixPaidItem(o,action){
+  try{
+    const ck=o&&o.ck,key=o&&o.key;
+    const items=(S.paidItems||{})[ck];
+    if(!items||!items[key]){toast('Ya no existe');openLedgerAudit();return;}
+    const next={...items};
+    if(action==='del'){delete next[key];}
+    else{const v=next[key];next[key]=(typeof v==='object')?{...v,_orphanOk:true}:v;}
+    pt({paidItems:{...S.paidItems,[ck]:next}});
+    toast(action==='del'?'🗑 Pago fantasma eliminado':'✓ Conservado como real');
+    openLedgerAudit();
+    try{if(cur==='plan')rPlan();}catch(e){}
+    try{if(cur==='dash')rDash();}catch(e){}
+  }catch(e){toast('Error al corregir');}
+}
 // Eliminar un movimiento de meta directo desde el desglose del Estado de
 // cuenta (Plan). Localiza el depósito por id/evId/fecha+monto, revierte su
 // efecto en el activo ligado si lo hay, y ajusta lo ahorrado de la meta.
@@ -8800,6 +8850,36 @@ function openLedgerAudit(){
       const real=a?(a.events||[]).filter(ev=>ev&&ev.type==='in'&&rx.test(String(ev.concept||''))).reduce((s,ev)=>s+(+ev.amount||0),0):0;
       if(real<amt-1)finds.push({type:'commit',ck,c,real,why:!a?'el activo ya no existe':'en el activo solo hay '+fx(Math.round(real))+' de respaldo'});
     });
+    // FANTASMAS EN PAGOS APLICADOS: items marcados como pagados en paidItems cuyo
+    // gasto / deuda / meta YA NO EXISTE (lo borraste en una iteración pasada). Siguen
+    // contando como salida en el saldo de ese ciclo (en Inicio y en el Plan), inflando
+    // el déficit. Estos son los "errores acumulados". Se listan para que decidas: si el
+    // pago fue real (la deuda existió y la pagaste) lo conservas; si fue un registro
+    // viejo sin sustento, lo eliminas y el saldo de ese ciclo se corrige.
+    const _entExists=(t,id)=>{
+      if(t==='exp'||t==='expw2'||t==='expw3')return (S.exp||[]).some(x=>x.id===id);
+      if(t==='debt')return (S.debts||[]).some(x=>x.id===id);
+      if(t==='sav')return (S.savGoals||[]).some(x=>x.id===id);
+      if(t==='imp')return (S.waitList||[]).some(x=>x.id===id);
+      return true; // tdcpay/apt y otros no se evalúan como huérfanos
+    };
+    Object.keys(S.paidItems||{}).forEach(ck=>{
+      const items=S.paidItems[ck];if(!items||typeof items!=='object')return;
+      Object.keys(items).forEach(key=>{
+        if(key.startsWith('_')||key.startsWith('tdcpay_')||key.startsWith('apt_'))return;
+        const v=items[key];
+        const applied=typeof v==='object'?!!v.applied:(v==='applied');
+        if(!applied||typeof v!=='object'||v._orphanOk)return;
+        if(v.paidWith==='tdc')return; // TDC no resta del efectivo; no infla este saldo
+        const parts=key.split('_');const t=parts[0];const id=+(parts.slice(1).join('_'));
+        if(!['exp','expw2','expw3','debt','sav','imp'].includes(t))return;
+        if(_entExists(t,id))return;
+        const amt=v.realAmt!=null?+v.realAmt:(+v.amt||0);
+        if(Math.abs(amt)<1)return; // montos en 0 no afectan el saldo (ruido)
+        const tl=t==='debt'?'la deuda':t==='sav'?'la meta':t==='imp'?'el impulso':'el gasto';
+        finds.push({type:'paid',ck,key,amt:Math.round(amt),vname:v.name||'',tl});
+      });
+    });
     let body;
     if(!finds.length){
       body='<div style="text-align:center;padding:14px"><div style="font-size:40px;margin-bottom:8px">✅</div><div style="font-size:13px;color:var(--sage);font-weight:bold">Todo cuadra</div><div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6">Cada movimiento de tus metas y tu Págate Primero tiene respaldo real en tus activos.</div></div>';
@@ -8826,6 +8906,13 @@ function openLedgerAudit(){
             +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">'+(f.g.icon||'🎯')+' '+_escH(f.g.name)+' · '+((+f.dep.amt||0)>=0?'+':'−')+fx(Math.abs(+f.dep.amt||0))+'</div>'
             +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">'+(f.dep.date||'')+(f.dep.note?' · '+_escH(f.dep.note):'')+' — '+f.why+'</div>'
             +'<div style="display:flex;gap:6px"><button class="btn btn-red btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDep(x.g,x.t,\'del\')})(_xget('+ref1+'))">🗑 Eliminar de la meta</button><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDep(x.g,x.t,\'unlink\')})(_xget('+ref1+'))">Sí existió · desligar</button></div>'
+            +'</div>';
+        }else if(f.type==='paid'){
+          const refPi=_xref({ck:f.ck,key:f.key});
+          body+='<div style="padding:10px 12px;border:1px solid rgba(184,92,74,.35);border-radius:8px;margin-bottom:10px;background:rgba(184,92,74,.05)">'
+            +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">👻 '+_escH(f.vname||'(borrado)')+' · '+fx(f.amt)+' <span style="font-size:9px;color:var(--terra);font-weight:normal">pago fantasma</span></div>'
+            +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">Ciclo '+_escH(String(f.ck))+' — '+f.tl+' ya no existe pero este pago de '+fx(f.amt)+' sigue restando del saldo.</div>'
+            +'<div style="display:flex;gap:6px"><button class="btn btn-red btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixPaidItem(x,\'del\')})(_xget('+refPi+'))">🗑 Eliminar (no fue real)</button><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixPaidItem(x,\'keep\')})(_xget('+refPi+'))">✓ Sí lo pagué, conservar</button></div>'
             +'</div>';
         }else{
           const ckRef=_xref(f.ck);
@@ -9991,7 +10078,7 @@ try{
         ${_incParts.length>1?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">💵 Ingreso <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_incParts.map(p=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.ic} ${_escH(p.n)}</span><span style="color:var(--sage);white-space:nowrap">+${fx(Math.round(p.a))}</span></div>`).join('')}</div></details>`:`<div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>`}
         ${_otEarned>0?`<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra ${showNext?'(este ciclo → próx. payroll)':'(ciclo anterior · por cobrar)'}</span><strong style="color:var(--sky)">+${fx(_otEarned)}</strong></div>`:''}
         ${(appliedAmt2-_reconciledTotal)>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2-_reconciledTotal))}</strong></div>`:''}
-        ${_reconciledTotal>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🧾 Pagos reconciliados (${_reconciledApplied.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_reconciledTotal))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_reconciledApplied.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escH(m.name)}</span><span style="color:var(--sage);white-space:nowrap">−${fx(m.amt)}</span></div>`).join('')}<div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.5">Pagos que registraste/reconciliaste y cuyo gasto fijo tiene su fecha de pago en otra quincena. Si el monto no es correcto, edítalo en Plan → Pagos (botón ↩ para reaplicar).</div></div></details>`:''}
+        ${_reconciledTotal>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🧾 Pagos reconciliados (${_reconciledApplied.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_reconciledTotal))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_reconciledApplied.map(m=>`<div class="row-b" style="font-size:11px;padding:2px 0;line-height:1.6;gap:6px;flex-wrap:nowrap"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escH(m.name)}</span><span class="row" style="gap:5px;flex-shrink:0;flex-wrap:nowrap"><span style="color:var(--sage);white-space:nowrap">−${fx(m.amt)}</span><button title="Editar monto pagado" style="background:none;border:1px solid var(--border);border-radius:4px;color:var(--muted);cursor:pointer;font-size:10px;padding:1px 5px" onclick="event.stopPropagation();_editAppliedAmt('${planCk()}','${m.key}')">✎</button><button title="Eliminar este pago" style="background:none;border:1px solid rgba(184,92,74,.35);border-radius:4px;color:var(--terra);cursor:pointer;font-size:10px;padding:1px 5px" onclick="event.stopPropagation();_delAppliedItem('${planCk()}','${m.key}')">🗑</button></span></div>`).join('')}<div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.5">Pagos que registraste/reconciliaste y cuyo gasto fijo tiene su fecha de pago en otra quincena. Usa ✎ para corregir el monto (p.ej. una renta duplicada) o 🗑 para quitarlo.</div></div></details>`:''}
         ${checkedAmt>0&&!_isPast?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
         ${checkedAmt>0&&_isPast?`<div class="row-b" style="font-style:italic;opacity:.6"><span style="color:var(--muted)">☑ Seleccionados sin aplicar (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length}) · no contados</span><strong style="color:var(--muted)">(${fx(Math.round(checkedAmt))})</strong></div>`:''}
         ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
@@ -13681,17 +13768,28 @@ function exportAudit(){
           selectedItems.push(rec);
         }
       }
-      // ── Motor B: applied desde el plan VIVO (lo que usa el Estado de Cuenta) ──
-      let planApplied=0,planSelected=0;const planMissing=[];
+      // ── Motor B: applied como lo computa el Estado de Cuenta UNIFICADO ──
+      // = applied agendado por el plan vivo + reconciliados (aplicados que el
+      //   calendario no agenda en esta ventana) + tdcpay. Espejo del EC vivo.
+      let planApplied=0,planSelected=0;const planMissing=[];const _inPlanK=new Set();
       try{
         const bcp=buildCyclePayments(ck,w.start,w.end,w.type,false);
-        const scan=(arr,defType)=>{(arr||[]).forEach(e=>{const key=(e.paidType||defType)+'_'+e.id;const st=stOf(key);if(!st)return;if(st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.amt);if(st.applied)planApplied+=v;else planSelected+=v;});};
+        const scan=(arr,defType)=>{(arr||[]).forEach(e=>{const key=(e.paidType||defType)+'_'+e.id;_inPlanK.add(key);const st=stOf(key);if(!st)return;if(st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.amt);if(st.applied)planApplied+=v;else planSelected+=v;});};
         scan(bcp.expDetail,'exp');scan(bcp.debtDetail,'debt');
-        getExpSavePlan().forEach(e=>{const st=stOf('apt_'+e.id);if(!st||st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.half);if(st.applied)planApplied+=v;else planSelected+=v;});
+        getExpSavePlan().forEach(e=>{_inPlanK.add('apt_'+e.id);const st=stOf('apt_'+e.id);if(!st||st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.half);if(st.applied)planApplied+=v;else planSelected+=v;});
+        (S.savGoals||[]).forEach(g=>_inPlanK.add('sav_'+g.id));
         // items aplicados en stored que NO aparecen en el plan vivo → huérfanos del EC
         appliedItems.forEach(r=>{if(r.key.startsWith('tdcpay_'))return;if(!r.exists)planMissing.push(r);});
       }catch(e){}
       planApplied+=tdcpay;
+      // Reconciliados: aplicados (no tdc) cuyo key no está en el plan agendado.
+      let reconAudit=0;
+      Object.keys(paid).forEach(k=>{
+        if(k.startsWith('_')||k.startsWith('tdcpay_')||_inPlanK.has(k))return;
+        const st=stOf(k);if(!st||!st.applied||st.method==='tdc')return;
+        const amt=st.realAmt!=null?st.realAmt:(st.amt||0);
+        if(amt){planApplied+=amt;reconAudit+=amt;}
+      });
       // ── Diarios ──
       let diariosCash=0,diariosTdc=0,diariosPending=0;const diariosList=[];
       (S.gastosDiarios||[]).forEach(g=>{
@@ -13729,12 +13827,16 @@ function exportAudit(){
       const homeBalance=calcCycleBalance(ck); // número autoritativo del banner de Inicio
       const metaOut=metaAbono+metaAjuste-metaRetGastado;     // 🎯 Apartado a metas (neto consumo)
       const ahorroApartado=savCommitAmt+patrNet;             // 🪙 Ahorro apartado
-      const ecTotalOut=planApplied+storedSelected+diariosCash+ahorroApartado+metaOut+metaRetGastado+assetNet;
+      // En quincenas cerradas (pasadas) los "seleccionados sin aplicar" no
+      // cuentan (igual que el EC vivo); en la actual/futura sí (proyección).
+      const _isPastCk=ckToOrder(ck)<ckToOrder(cycleKey());
+      const ecTotalOut=planApplied+(_isPastCk?0:storedSelected)+diariosCash+ahorroApartado+metaOut+metaRetGastado+assetNet;
       const ecBalance=_r2(incQ-ecTotalOut); // EC pone OT=0 en pasados
       report.ciclos.push({
         ck,rango:fmtCycleRange(ck),esActual:ck===cycleKey(),
         balanceInicio_home:homeBalance,
         balancePlan_ec:ecBalance,
+        reconciliados:_r2(reconAudit),
         delta_home_menos_ec:_r2((homeBalance||0)-ecBalance),
         appliedStored_vs_plan:{stored:_r2(storedApplied),plan:_r2(planApplied-tdcpay),diferencia:_r2(storedApplied-(planApplied-tdcpay))},
         ingreso:{salQ:_r2(salQ),bfQ:_r2(bfQ),extrasQ:_r2(extrasQ),incQ,otPrevPaid},

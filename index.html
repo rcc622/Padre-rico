@@ -13185,7 +13185,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para
@@ -13526,6 +13526,154 @@ function exportData(){
   // Registra la fecha del último respaldo — alimenta el recordatorio periódico
   try{S._lastExportAt=_todayYMD();sv();}catch(e){}
   toast('📤 Backup exportado');
+}
+
+// ══ AUDITORÍA DE CUADRE ══════════════════════════════════
+// Exporta, por cada quincena conocida, una reconciliación lado a lado de los
+// DOS motores de balance que existen en la app:
+//   (A) "balanceInicio_home" = calcCycleBalance(ck) — el número del banner de
+//       Inicio y de la detección de déficit. Suma los items APLICADOS guardados
+//       en S.paidItems[ck] (aunque el gasto/deuda ya no exista en el plan).
+//   (B) "balancePlan_ec" = reconstrucción del Estado de Cuenta del Plan — usa el
+//       plan VIVO (buildCyclePayments → expDetail/debtDetail) e incluye además
+//       movimientos a activos, seleccionados (proyección) y retiros de metas.
+// El "delta" y la lista de "huerfanos" (items aplicados cuyo gasto/deuda ya no
+// existe) revelan exactamente de dónde viene el descuadre. Read-only: NO toca
+// ningún dato; solo lee S y genera el reporte.
+function exportAudit(){
+  try{
+    const _r2=n=>Math.round(+n||0);
+    const _entity=(key)=>{
+      const parts=String(key).split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
+      if(t==='tdcpay'||t==='apt')return {t,id:idn,exists:true,name:''};
+      if(t==='exp'||t==='expw2'||t==='expw3'){const e=(S.exp||[]).find(x=>x.id===idn);return {t,id:idn,exists:!!e,name:e?e.name:'',amt:e?+e.amt||0:null};}
+      if(t==='debt'){const d=(S.debts||[]).find(x=>x.id===idn);return {t,id:idn,exists:!!d,name:d?d.name:'',amt:d?+d.pay||0:null};}
+      if(t==='sav'){const g=(S.savGoals||[]).find(x=>x.id===idn);return {t,id:idn,exists:!!g,name:g?g.name:'',amt:g?savGoalPerQ(g):null};}
+      if(t==='imp'){const i=(S.waitList||[]).find(x=>x.id===idn);return {t,id:idn,exists:!!i,name:i?i.name:'',amt:i?+i.price||0:null};}
+      return {t,id:idn,exists:true,name:''};
+    };
+    const cycles=allCycleKeys();
+    const report={
+      generadoEl:new Date().toISOString(),
+      hoy:_todayYMD(),
+      cicloActual:cycleKey(),
+      nota:'Auditoría de cuadre. Compara el balance del banner de Inicio (motor calcCycleBalance) contra el Estado de Cuenta del Plan para cada quincena. delta = home - plan. huerfanos = items aplicados cuyo gasto/deuda ya no existe en el plan (causa típica del déficit fantasma).',
+      ingresoBase:{sal:S.inc&&S.inc.sal,bf:S.inc&&S.inc.bf,bfDate:S.inc&&S.inc.bfDate,bfLastDay:S.inc&&S.inc.bfLastDay},
+      incHistory:S.incHistory||[],
+      tdcConfig:S.tdcConfig||null,
+      catalogos:{
+        exp:(S.exp||[]).map(e=>({id:e.id,name:e.name,amt:+e.amt||0,freq:e.freq||'mensual',cat:e.cat||''})),
+        debts:(S.debts||[]).map(d=>({id:d.id,name:d.name,pay:+d.pay||0,bal:+d.bal||0,freq:d.freq||'mensual',curPay:d.curPay,totalPays:d.totalPays})),
+        savGoals:(S.savGoals||[]).map(g=>({id:g.id,name:g.name,tipo:g.tipo||'consumo',target:+g.target||0,saved:+g.saved||0,done:!!g.done})),
+        waitList:(S.waitList||[]).map(i=>({id:i.id,name:i.name,price:+i.price||0}))
+      },
+      ciclos:[]
+    };
+    cycles.forEach(ck=>{
+      const w=cycleWindowFromKey(ck);
+      const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
+      const paid=(S.paidItems||{})[ck]||{};
+      // ── Ingreso (compartido por ambos motores) ──
+      const inc=getIncForCycle(ck);
+      const salQ=(+inc.sal||0)/2;
+      const bfQ=bonusInCycle(w.start,w.end,inc)?(+inc.bf||0):0;
+      let extrasQ=0;(S.extras||[]).forEach(x=>{if(x.tipo==='recurrente')extrasQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,w.start,w.end))extrasQ+=(+x.amt||0);});
+      const incQ=_r2(salQ+bfQ+extrasQ);
+      const otSrcCk=prevCycleKeyOf(ck);
+      const otSrc=(S.overtimeLog||{})[otSrcCk];
+      const otPrevPaid=(otSrc&&otSrc.accepted&&otSrc.paid)?(otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+otSrc.rate||0)),0):0;
+      // ── Lectura de estado por item (sin depender de la vista del Plan) ──
+      const stOf=(key)=>{const v=paid[key];if(v==null)return null;const isObj=typeof v==='object';return {applied:isObj?!!v.applied:(v==='applied'),method:(isObj&&v.paidWith)||'debito',realAmt:(isObj&&v.realAmt!=null)?+v.realAmt:null,amt:isObj?(+v.amt||0):0,name:(isObj&&v.name)||''};};
+      // ── Motor A: applied desde S.paidItems (lo que usa calcCycleBalance) ──
+      const appliedItems=[],selectedItems=[],huerfanos=[];
+      let storedApplied=0,storedAppliedTdc=0,tdcpay=0,storedSelected=0;
+      for(const k in paid){
+        if(k.startsWith('_'))continue;
+        const st=stOf(k);if(!st)continue;
+        const ent=_entity(k);
+        let amt=st.realAmt!=null?st.realAmt:st.amt;
+        let fromLive=false;
+        if(!amt&&ent.amt!=null){amt=ent.amt;fromLive=true;}
+        const rec={key:k,amt:_r2(amt),method:st.method,fromLive,exists:ent.exists,name:st.name||ent.name};
+        if(k.startsWith('tdcpay_')){tdcpay+=amt;appliedItems.push(rec);continue;}
+        if(st.applied){
+          if(st.method==='tdc')storedAppliedTdc+=amt;else storedApplied+=amt;
+          appliedItems.push(rec);
+          if(!ent.exists)huerfanos.push(rec);
+        }else{
+          if(st.method!=='tdc')storedSelected+=amt;
+          selectedItems.push(rec);
+        }
+      }
+      // ── Motor B: applied desde el plan VIVO (lo que usa el Estado de Cuenta) ──
+      let planApplied=0,planSelected=0;const planMissing=[];
+      try{
+        const bcp=buildCyclePayments(ck,w.start,w.end,w.type,false);
+        const scan=(arr,defType)=>{(arr||[]).forEach(e=>{const key=(e.paidType||defType)+'_'+e.id;const st=stOf(key);if(!st)return;if(st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.amt);if(st.applied)planApplied+=v;else planSelected+=v;});};
+        scan(bcp.expDetail,'exp');scan(bcp.debtDetail,'debt');
+        getExpSavePlan().forEach(e=>{const st=stOf('apt_'+e.id);if(!st||st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.half);if(st.applied)planApplied+=v;else planSelected+=v;});
+        // items aplicados en stored que NO aparecen en el plan vivo → huérfanos del EC
+        appliedItems.forEach(r=>{if(r.key.startsWith('tdcpay_'))return;if(!r.exists)planMissing.push(r);});
+      }catch(e){}
+      planApplied+=tdcpay;
+      // ── Diarios ──
+      let diariosCash=0,diariosTdc=0,diariosPending=0;const diariosList=[];
+      (S.gastosDiarios||[]).forEach(g=>{
+        if(!g.date||g.date<startYMD||g.date>endYMD)return;
+        const amt=+g.amt||0;
+        if(g.pending)diariosPending+=amt;else if(g.paidWith==='tdc')diariosTdc+=amt;else diariosCash+=amt;
+        diariosList.push({date:g.date,amt:_r2(amt),paidWith:g.paidWith||'debito',pending:!!g.pending,cat:g.cat||'',name:(g.name||g.desc||'').slice(0,40)});
+      });
+      // ── Metas (depósitos en ventana) ──
+      let metaAbono=0,metaAjuste=0,metaRetGastado=0,patrNet=0;const metaMovs=[];
+      (S.savGoals||[]).forEach(g=>{
+        const esPatr=(g.tipo||'consumo')==='patrimonio';
+        (g.deposits||[]).forEach(d=>{
+          if(!d||!d.date||d.date<startYMD||d.date>endYMD)return;
+          const amt=+d.amt||0;
+          metaMovs.push({goal:g.name,tipo:esPatr?'patrimonio':'consumo',amt:_r2(amt),kind:d.kind||'',date:d.date,note:(d.note||'').slice(0,30)});
+          if(esPatr){patrNet+=amt;return;}
+          if(amt>0)metaAbono+=amt;else if((d.kind||'')==='ajuste')metaAjuste+=amt;else metaRetGastado+=(-amt);
+        });
+      });
+      const savC=(S.savCommits||{})[ck];
+      const savCommitAmt=(savC&&['committed','intact','emergency-kept'].includes(savC.status))?(+savC.amount||0):0;
+      // ── Movimientos directos a activos (mismo filtro que el EC) ──
+      const metaEvIds=new Set();(S.savGoals||[]).forEach(g=>(g.deposits||[]).forEach(d=>{if(d&&d.evId)metaEvIds.add(d.evId);}));
+      const sysConcept=(c)=>{c=String(c||'');return c==='Saldo inicial registrado'||c==='Saldo inicial (desde meta)'||c==='Ajuste de saldo'||c==='Ahorro de reto'||c.startsWith('Págate Primero')||c.startsWith('Hábito completado')||c.startsWith('🚨')||c.startsWith('💔');};
+      let assetNet=0;const assetMovs=[];
+      (S.assets||[]).forEach(a=>(a.events||[]).forEach(ev=>{
+        if(!ev||ev.type==='init')return;
+        if(!ev.date||ev.date<startYMD||ev.date>endYMD)return;
+        if(metaEvIds.has(ev.id))return;
+        if(sysConcept(ev.concept))return;
+        if(ev.type==='in'||ev.type==='out'){const amt=+ev.amount||0;assetNet+=(ev.type==='in'?amt:-amt);assetMovs.push({asset:a.name,concept:(ev.concept||'').slice(0,30),type:ev.type,amt:_r2(amt),date:ev.date});}
+      }));
+      // ── Balances ──
+      const homeBalance=calcCycleBalance(ck); // número autoritativo del banner de Inicio
+      const metaOut=metaAbono+metaAjuste-metaRetGastado;     // 🎯 Apartado a metas (neto consumo)
+      const ahorroApartado=savCommitAmt+patrNet;             // 🪙 Ahorro apartado
+      const ecTotalOut=planApplied+storedSelected+diariosCash+ahorroApartado+metaOut+metaRetGastado+assetNet;
+      const ecBalance=_r2(incQ-ecTotalOut); // EC pone OT=0 en pasados
+      report.ciclos.push({
+        ck,rango:fmtCycleRange(ck),esActual:ck===cycleKey(),
+        balanceInicio_home:homeBalance,
+        balancePlan_ec:ecBalance,
+        delta_home_menos_ec:_r2((homeBalance||0)-ecBalance),
+        appliedStored_vs_plan:{stored:_r2(storedApplied),plan:_r2(planApplied-tdcpay),diferencia:_r2(storedApplied-(planApplied-tdcpay))},
+        ingreso:{salQ:_r2(salQ),bfQ:_r2(bfQ),extrasQ:_r2(extrasQ),incQ,otPrevPaid},
+        salidas:{storedApplied:_r2(storedApplied),storedAppliedTdc:_r2(storedAppliedTdc),tdcpay:_r2(tdcpay),storedSelected:_r2(storedSelected),diariosCash:_r2(diariosCash),diariosTdc:_r2(diariosTdc),diariosPending:_r2(diariosPending),savCommit:savCommitAmt,metaAbono:_r2(metaAbono),metaAjuste:_r2(metaAjuste),metaRetGastado:_r2(metaRetGastado),patrNet:_r2(patrNet),assetNet:_r2(assetNet)},
+        huerfanos,
+        deficitDecision:(S.deficitDecisions||{})[ck]||null,
+        detalle:{appliedItems,selectedItems,diariosList,metaMovs,assetMovs}
+      });
+    });
+    const txt=JSON.stringify(report,null,2);
+    const blob=new Blob([txt],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='padre-rico-auditoria-'+_todayYMD()+'.json';a.click();
+    try{_copyText(txt);}catch(e){}
+    toast('🩺 Auditoría exportada y copiada');
+  }catch(e){toast('Error en auditoría: '+(e&&e.message||e));}
 }
 
 // Copia texto al portapapeles con fallback para WebViews/navegadores viejos.

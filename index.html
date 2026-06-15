@@ -2669,11 +2669,16 @@ function calcCycleBalance(ck){
         ingreso+=(+x.amt||0);
       }
     });
-    // Horas extra del ciclo anterior — si están marcadas como pagadas, ya
-    // entraron como ingreso en ESTE ciclo (payroll).
+    // Horas extra del ciclo anterior (payroll del siguiente ciclo).
+    // OJO con el DOBLE CONTEO: cuando las OT se marcan PAGADAS, el sistema
+    // auto-crea un ingreso "extra" ("Horas extra (ck)") que ya se sumó arriba en
+    // el bloque de extras. Por eso aquí SOLO sumamos las OT aceptadas que aún NO
+    // se han pagado (proyección de payroll) — idéntico al Estado de Cuenta del
+    // Plan (_otEarned usa accepted && !paid). Antes se sumaba con `paid`, lo que
+    // contaba las horas extra DOS veces como ingreso en cada quincena.
     const _otSrcCk=prevCycleKeyOf(ck);
     const _otSrc=_otSrcCk?(S.overtimeLog||{})[_otSrcCk]:null;
-    if(_otSrc&&_otSrc.accepted&&_otSrc.paid){
+    if(_otSrc&&_otSrc.accepted&&!_otSrc.paid){
       ingreso+=(_otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+_otSrc.rate||0)),0);
     }
 
@@ -2690,9 +2695,13 @@ function calcCycleBalance(ck){
       // "💳 Pago TDC" (item 'tdcpay_', que sí tiene paidWith='debito' y se
       // cuenta abajo). Excluir los TDC evita el doble conteo.
       if(typeof v==='object'&&v.paidWith==='tdc')continue;
-      let amt=typeof v==='object'?(+v.amt||+v.realAmt||0):0;
+      // Prefiere realAmt (el monto REALMENTE pagado, p.ej. reconciliado del CSV
+      // o editado) sobre amt (lo guardado al aplicar). El Estado de Cuenta del
+      // Plan usa getRealAmt() primero; sin esto, cuando amt≠realAmt los dos
+      // motores daban totales distintos (p.ej. deuda con amt 178 / realAmt 1).
+      let amt=typeof v==='object'?(v.realAmt!=null?+v.realAmt:(+v.amt||0)):0;
       if(!amt){
-        // Fallback para items legacy sin amt registrado
+        // Fallback para items legacy sin amt ni realAmt registrado
         const parts=k.split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
         if(t==='exp'||t==='expw2'||t==='expw3'){
           const e=S.exp.find(x=>x.id===idn);if(e)amt=+e.amt||0;
@@ -2733,6 +2742,25 @@ function calcCycleBalance(ck){
         else if(amt<0&&(d.kind||'')==='ajuste')gastos+=amt; // regresa a tu cuenta
       });
     });
+    // 5) Movimientos DIRECTOS a activos dentro del ciclo (botones ➕/➖ de
+    //    Finanzas → Activos). El Estado de Cuenta del Plan ya los resta; antes
+    //    calcCycleBalance los ignoraba y por eso el banner de Inicio nunca
+    //    cuadraba con el Plan. Mismo filtro que el EC: excluye saldos iniciales,
+    //    ajustes, Págate Primero, retos/hábitos, emergencias y los movimientos
+    //    ligados a metas (esos ya viven en savGoals.deposits, bloque 4).
+    try{
+      const _metaEvIds=new Set();
+      (S.savGoals||[]).forEach(g=>(g.deposits||[]).forEach(d=>{if(d&&d.evId)_metaEvIds.add(d.evId);}));
+      const _sysC=(c)=>{c=String(c||'');return c==='Saldo inicial registrado'||c==='Saldo inicial (desde meta)'||c==='Ajuste de saldo'||c==='Ahorro de reto'||c.startsWith('Págate Primero')||c.startsWith('Hábito completado')||c.startsWith('🚨')||c.startsWith('💔');};
+      (S.assets||[]).forEach(a=>(a.events||[]).forEach(ev=>{
+        if(!ev||ev.type==='init')return;
+        if(!ev.date||ev.date<startYMD||ev.date>endYMD)return;
+        if(_metaEvIds.has(ev.id))return;
+        if(_sysC(ev.concept))return;
+        if(ev.type==='in')gastos+=(+ev.amount||0);      // depósito a activo = sale de tu cuenta
+        else if(ev.type==='out')gastos-=(+ev.amount||0); // retiro de activo = regresa a tu cuenta
+      }));
+    }catch(e){}
 
     return Math.round(ingreso-gastos);
   }catch(e){return null;}
@@ -9643,6 +9671,12 @@ try{
 
   // ── CHECKED & APPLIED TRACKING ──
   let checkedAmt=0,appliedAmt2=0;
+  // UNIFICACIÓN motor Inicio ↔ Plan: pagos APLICADOS que viven en paidItems
+  // pero que el calendario (buildCyclePayments) NO agenda en esta ventana —
+  // típicamente gastos con payDay fuera del ciclo que reconciliaste desde el
+  // CSV (renta, gas bimestral). El banner de Inicio (calcCycleBalance) sí los
+  // cuenta; sin esto el Estado de Cuenta los ignoraba y los dos nunca cuadraban.
+  let _reconciledApplied=[],_reconciledTotal=0;
   // Tracking aparte para metas de ahorro: el usuario quiere ver "🎯 Apartado
   // a metas" como línea propia en Estado de cuenta (similar a "🪙 Ahorro
   // apartado → Nu express"), no mezclado con Pagos aplicados.
@@ -9701,6 +9735,35 @@ try{
     // efectivo al pagar la tarjeta. Suma al monto de aplicados.
     const _itemsTdcPay=(S.paidItems||{})[planCk()]||{};
     Object.keys(_itemsTdcPay).forEach(k=>{if(!k.startsWith('tdcpay_'))return;const v=_itemsTdcPay[k];if(v&&typeof v==='object'&&v.applied)appliedAmt2+=(+v.amt||0);});
+    // UNIFICACIÓN: barrer paidItems en busca de pagos aplicados (exp/deuda/meta)
+    // que NO estén ya representados por el calendario de este ciclo. Esos son
+    // los pagos reconciliados desde CSV con payDay fuera de la ventana. Se suman
+    // a "Pagos aplicados" para que el balance del Plan == balance de Inicio.
+    (()=>{
+      const _items=(S.paidItems||{})[planCk()]||{};
+      const _inPlan=new Set();
+      expDetail.forEach(e=>_inPlan.add((e.paidType||'exp')+'_'+e.id));
+      debtDetail.forEach(e=>_inPlan.add('debt_'+e.id));
+      expSavePlan.forEach(e=>_inPlan.add('apt_'+e.id));
+      S.savGoals.forEach(g=>_inPlan.add('sav_'+g.id));
+      Object.keys(_items).forEach(k=>{
+        if(k.startsWith('_')||k.startsWith('tdcpay_'))return;
+        if(_inPlan.has(k))return;
+        const v=_items[k];
+        const applied=typeof v==='object'?v.applied:(v==='applied');
+        if(!applied)return;
+        if((typeof v==='object'&&v.paidWith)==='tdc')return; // sale vía Pago TDC
+        const parts=k.split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
+        let amt=typeof v==='object'?(v.realAmt!=null?+v.realAmt:(+v.amt||0)):0;
+        let nm=(typeof v==='object'&&v.name)||'';
+        if(t==='exp'||t==='expw2'||t==='expw3'){const e=S.exp.find(x=>x.id===idn);if(e){if(!amt)amt=+e.amt||0;if(!nm)nm=e.name;}}
+        else if(t==='debt'){const d=S.debts.find(x=>x.id===idn);if(d){if(!amt)amt=+d.pay||0;if(!nm)nm=d.name;}}
+        else if(t==='sav'){const g=S.savGoals.find(x=>x.id===idn);if(g){if(!amt)amt=savGoalPerQ(g);if(!nm)nm=g.name;}}
+        if(!amt)return;
+        appliedAmt2+=amt;_reconciledTotal+=amt;
+        _reconciledApplied.push({key:k,name:nm||'Pago reconciliado',amt:Math.round(amt)});
+      });
+    })();
   }
   const impPendingTotal=impulseItems.filter(p=>!isPaid('imp',p.id)&&!isApplied('imp',p.id)).reduce((a,p)=>a+p.amt,0);
   const impAllTotal=impulseItems.reduce((a,p)=>a+p.amt,0);
@@ -9914,15 +9977,23 @@ try{
         }));
       }catch(e){_assetMovs=[];}}
       const _assetNet=_assetMovs.reduce((s,m)=>s+(m.t==='in'?m.amt:-m.amt),0); // + = salió de tu cuenta hacia activos
-      const _totalOut=appliedAmt2+checkedAmt+impPendingTotal+_diarioAmt+_ahorroApartado+_metaOut+_metaRetOut+_assetNet;
+      // Quincena CERRADA (pasada): un pago "seleccionado pero no aplicado" ya no
+      // es proyección — o se pagó (aplícalo) o no pasó. No debe restar del saldo
+      // final, para que el Estado de Cuenta cuadre con el banner de Inicio
+      // (calcCycleBalance solo cuenta lo APLICADO). En el ciclo actual sí cuenta
+      // como proyección (etiquetado abajo como "Proyección en cuenta").
+      const _checkedBal=_isPast?0:checkedAmt;
+      const _totalOut=appliedAmt2+_checkedBal+impPendingTotal+_diarioAmt+_ahorroApartado+_metaOut+_metaRetOut+_assetNet;
       const _balance=incQ+_otEarned-_totalOut;
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
       <div style="font-size:13px;line-height:2.2">
         ${_incParts.length>1?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">💵 Ingreso <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_incParts.map(p=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.ic} ${_escH(p.n)}</span><span style="color:var(--sage);white-space:nowrap">+${fx(Math.round(p.a))}</span></div>`).join('')}</div></details>`:`<div class="row-b"><span style="color:var(--sage)">Ingreso</span><strong style="color:var(--sage)">${fx(Math.round(incQ))}</strong></div>`}
         ${_otEarned>0?`<div class="row-b"><span style="color:var(--sky)">⏰ Horas extra ${showNext?'(este ciclo → próx. payroll)':'(ciclo anterior · por cobrar)'}</span><strong style="color:var(--sky)">+${fx(_otEarned)}</strong></div>`:''}
-        ${appliedAmt2>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2))}</strong></div>`:''}
-        ${checkedAmt>0?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
+        ${(appliedAmt2-_reconciledTotal)>0?`<div class="row-b"><span style="color:var(--sage)">✅ Pagos aplicados (${allApplied.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--sage)">−${fx(Math.round(appliedAmt2-_reconciledTotal))}</strong></div>`:''}
+        ${_reconciledTotal>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🧾 Pagos reconciliados (${_reconciledApplied.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_reconciledTotal))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_reconciledApplied.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escH(m.name)}</span><span style="color:var(--sage);white-space:nowrap">−${fx(m.amt)}</span></div>`).join('')}<div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.5">Pagos que registraste/reconciliaste y cuyo gasto fijo tiene su fecha de pago en otra quincena. Si el monto no es correcto, edítalo en Plan → Pagos (botón ↩ para reaplicar).</div></div></details>`:''}
+        ${checkedAmt>0&&!_isPast?`<div class="row-b" style="font-style:italic;opacity:.7"><span style="color:var(--amber)">☑ Seleccionados (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length})</span><strong style="color:var(--amber)">−${fx(Math.round(checkedAmt))}</strong></div>`:''}
+        ${checkedAmt>0&&_isPast?`<div class="row-b" style="font-style:italic;opacity:.6"><span style="color:var(--muted)">☑ Seleccionados sin aplicar (${allSelected.filter(p=>p.ptype!=='sav'&&getPaidMethod(p.ptype,p.id)!=='tdc').length}) · no contados</span><strong style="color:var(--muted)">(${fx(Math.round(checkedAmt))})</strong></div>`:''}
         ${impPendingTotal>0?`<div class="row-b"><span style="color:var(--terra)">🚫 Impulsos pendientes</span><strong style="color:var(--terra)">−${fx(Math.round(impPendingTotal))}</strong></div>`:''}
         ${_diarioAmt>0?`<div class="row-b"><span style="color:var(--terra)">🛒 Gastos diarios (${diariosCashCount(planCk())})</span><strong style="color:var(--terra)">−${fx(Math.round(_diarioAmt))}</strong></div>`:''}
         ${_metaOut>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">🎯 Apartado a metas (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">−${fx(Math.round(_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${_metaBreakdown.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.icon||'🎯'} ${_escH(m.name)}${m.real?'':' <span style="font-size:8px;color:var(--amber);text-transform:uppercase;letter-spacing:.3px">plan</span>'}</span><span style="color:${m.amt>=0?'var(--sage)':'var(--terra)'};white-space:nowrap">${m.amt>=0?'+':'−'}${fx(Math.round(Math.abs(m.amt)))}</span></div>`).join('')}<button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:_metaOut<0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sage)">↩ Retirado de metas a tu cuenta (${_metaCount}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:var(--sage)">+${fx(Math.round(-_metaOut))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(78,124,106,.2);margin:2px 0 4px 4px">${(()=>{
@@ -9960,10 +10031,11 @@ try{
         })():''}
         ${_assetMovs.length>0?`<details style="margin:0"><summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent"><span style="color:var(--sky)">🏦 Movimientos a activos (${_assetMovs.length}) <span style="font-size:9px;color:var(--muted)">▾</span></span><strong style="color:${_assetNet>=0?'var(--sky)':'var(--sage)'}">${_assetNet>=0?'−':'+'}${fx(Math.round(Math.abs(_assetNet)))}</strong></summary><div style="padding:2px 0 4px 8px;border-left:2px solid rgba(74,110,140,.25);margin:2px 0 4px 4px">${_assetMovs.map(m=>`<div class="row-b" style="font-size:11px;padding:1px 0;line-height:1.7"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.t==='in'?'➕':'➖'} ${_escH(m.asset)}${m.concept?' · '+_escH(m.concept):''}</span><span style="color:${m.t==='in'?'var(--sky)':'var(--sage)'};white-space:nowrap">${m.t==='in'?'−':'+'}${fx(Math.round(m.amt))}</span></div>`).join('')}<div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.5">Depósitos directos a tus activos salen de esta cuenta; retiros regresan a ella. Si un movimiento fue externo (no tocó tu quincena), edítalo desde Finanzas → Activos.</div><button class="btn btn-ghost btn-sm" style="font-size:10px;margin-top:5px;padding:3px 9px" onclick="flujoView='activos';go('flujo')">Ver movimientos →</button></div></details>`:''}
         <div style="border-top:1px solid var(--border);margin:4px 0;padding-top:4px" class="row-b">
-          <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0?'Proyección en cuenta':'En tu cuenta'}</span>
+          <span style="font-weight:bold;color:var(--txt)">💵 ${checkedAmt>0&&!_isPast?'Proyección en cuenta':'En tu cuenta'}</span>
           <strong style="color:${_balance>=0?'var(--sage)':'var(--terra)'}">${fx(Math.round(_balance))}</strong>
         </div>
-        ${checkedAmt>0?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
+        ${checkedAmt>0&&!_isPast?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
+        ${checkedAmt>0&&_isPast?`<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:4px">Esta quincena ya cerró: los seleccionados sin aplicar no cuentan en el saldo. Aplícalos (✓) o destíldalos en la lista de Pagos para limpiar.</div>`:''}
       </div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="openLedgerAudit()">🩺 Validar movimientos (caza fantasmas)</button>
     </div>`;

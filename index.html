@@ -976,17 +976,24 @@ const INFO={
 const ib=(key,label)=>'<button class="info-btn" onclick="event.stopPropagation();showInfo(\''+(label||key)+'\',INFO.'+key+')">?</button>';
 
 // ══ PAID ITEMS TRACKING ══════════════════════════════
-function cycleKey(){
-  const today=new Date();today.setHours(0,0,0,0);
-  const d=today.getDate(),m=today.getMonth(),y=today.getFullYear();
+// Mapea (año, mes 0-indexed, día) → cycleKey canónico. ÚNICA fuente de verdad
+// para "esta fecha, ¿a qué quincena pertenece?". Cualquier módulo/widget que
+// necesite agrupar por quincena debe usar esto en vez de reimplementar la
+// lógica inline (así no se desincroniza — p.ej. el caso de enero, donde la 1ra
+// quincena pertenece a diciembre del año anterior).
+function ckForYMD(y,m,d){
   if(d>=15&&d<=29)return y+'-'+(m+1)+'-2da';
   if(d>=30)return y+'-'+(m+1)+'-1ra';
   // d in [1..14]: el ciclo empezó ~día 30 del mes ANTERIOR (label = mes previo).
-  // En enero el mes previo es diciembre del año pasado — antes esto devolvía
-  // 'y-0-1ra' (mes 0 inexistente), distinta de la '(y-1)-12-1ra' que generaba
-  // prevCycleKeyOf para la MISMA quincena, y los datos se partían en dos claves.
+  // En enero el mes previo es diciembre del año pasado — sin este caso se
+  // devolvía 'y-0-1ra' (mes 0 inexistente), distinto de la '(y-1)-12-1ra' que
+  // genera prevCycleKeyOf para la MISMA quincena, partiendo los datos en dos.
   if(m===0)return (y-1)+'-12-1ra';
   return y+'-'+m+'-1ra';
+}
+function cycleKey(){
+  const today=new Date();today.setHours(0,0,0,0);
+  return ckForYMD(today.getFullYear(),today.getMonth(),today.getDate());
 }
 // Returns the cycleKey immediately before the current one.
 // Delegamos en prevCycleKeyOf: la versión manual anterior devolvía '1ra X'
@@ -12468,10 +12475,7 @@ function rHistoria(){
         if(g.pending||isEsencial(g)||!g.date)return;
         const parts=g.date.split('-');if(parts.length!==3)return;
         const y=+parts[0],m=+parts[1]-1,d=+parts[2];
-        let ck;
-        if(d>=15&&d<=29)ck=y+'-'+(m+1)+'-2da';
-        else if(d>=30)ck=y+'-'+(m+1)+'-1ra';
-        else ck=y+'-'+m+'-1ra';
+        const ck=ckForYMD(y,m,d); // helper único (antes faltaba el caso de enero)
         byCk[ck]=(byCk[ck]||0)+(+g.amt||0);
       });
       const totals=Object.values(byCk);

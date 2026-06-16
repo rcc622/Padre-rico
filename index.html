@@ -6736,10 +6736,10 @@ function rFlujo(){try{
     ${(()=>{const ed=editDebtId?S.debts.find(d=>d.id===editDebtId):null;const df=ed?.freq||'mensual';return`
     <div id="debtRowNomSaldo" style="display:grid;grid-template-columns:${(editDebtId?S.debts.find(d=>d.id===editDebtId)?.freq:'mensual')==='unico'?'1fr':'2fr 1fr'};gap:10px;margin-bottom:10px">
       <div><label>Nombre</label><input type="text" id="dn" placeholder="Tarjeta Nu, Nómina, Auto..." value="${ed?ed.name:''}"></div>
-      <div id="debtSaldoWrap" style="${df==='unico'?'display:none':''}"><label>Saldo total ($)</label><input type="number" id="db" placeholder="0" value="${ed?ed.bal:''}"></div>
+      <div id="debtSaldoWrap" style="${df==='unico'?'display:none':''}"><label>Saldo restante ($)</label><input type="number" id="db" placeholder="0" value="${ed?ed.bal:''}" oninput="_syncDebtSaldo()"><div id="debtSaldoHint" style="font-size:10px;color:var(--sage);margin-top:3px;line-height:1.4"></div></div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      <div><label>Pago fijo ($)</label><input type="number" id="dm" placeholder="0" value="${ed?ed.pay:''}" oninput="prevDebtMo()"></div>
+      <div><label>Pago fijo ($)</label><input type="number" id="dm" placeholder="0" value="${ed?ed.pay:''}" oninput="prevDebtMo();_syncDebtSaldo()"></div>
       <div><label>Periodicidad</label><select id="dpf" onchange="prevDebtMo();updDebtUnico()"><option value="unico"${df==='unico'?' selected':''}>Único (1 exhibición)</option><option value="semanal"${df==='semanal'?' selected':''}>Semanal</option><option value="quincenal"${df==='quincenal'?' selected':''}>Quincenal</option><option value="mensual"${df==='mensual'?' selected':''}>Mensual</option><option value="bimestral"${df==='bimestral'?' selected':''}>Bimestral</option></select></div>
     </div>
     <div id="debtMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;margin-bottom:10px">${ed?freqLabel(ed.pay,df):''}</div>
@@ -6753,9 +6753,9 @@ function rFlujo(){try{
       <div id="debtGrpWrap"><label>Grupo</label><input type="text" id="dgrp" list="grpList" placeholder="Amazon, ML, Nu..." value="${ed&&ed.group?ed.group:''}"><datalist id="grpList">${[...new Set(S.debts.map(x=>x.group).filter(Boolean))].map(g=>'<option value="'+g+'">').join('')}</datalist></div>
     </div>
     <div id="debtRowMsi" style="display:${df==='unico'?'none':'grid'};grid-template-columns:1fr 1fr 2fr;gap:10px;margin-bottom:12px">
-      <div><label>Mensualidad #</label><input type="number" id="dcur" placeholder="5" min="1" value="${ed&&ed.curPay?ed.curPay:''}"></div>
-      <div><label>Total meses</label><input type="number" id="dtot" placeholder="12" min="1" value="${ed&&ed.totalPays?ed.totalPays:''}"></div>
-      <div style="display:flex;align-items:flex-end"><div style="font-size:11px;color:var(--muted);padding-bottom:11px">Ej: <strong>5 de 12</strong></div></div>
+      <div><label>Cuotas pagadas</label><input type="number" id="dcur" placeholder="0" min="0" value="${ed&&ed.curPay?Math.max(0,ed.curPay-1):''}" oninput="_syncDebtSaldo()"></div>
+      <div><label>Total de cuotas</label><input type="number" id="dtot" placeholder="12" min="1" value="${ed&&ed.totalPays?ed.totalPays:''}" oninput="_syncDebtSaldo()"></div>
+      <div style="display:flex;align-items:flex-end"><div style="font-size:11px;color:var(--muted);padding-bottom:11px;line-height:1.4">Si llenas cuotas, el saldo se calcula solo</div></div>
     </div>
     <!-- Switch para deuda con/sin interés. Si la prende, expone monto del
          préstamo y total a pagar para que la calculadora derive interés. -->
@@ -6906,7 +6906,7 @@ function rFlujo(){try{
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
           '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+_escH(d.name)+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+_escH(d.note)+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+_escH(d.group)+'</span>':'')+(d.firstPay&&d.firstPay>_todayYMD()?'<span class="badge bdg-amber">🗓️ inicia '+fmtDate(d.firstPay)+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
-          '<div class="row debt-card-actions" style="gap:4px">'+((+d.bal||0)>0?'<button class="btn btn-sm" onclick="limpiarSaldoDeuda('+d.id+')" style="padding:4px 8px;background:var(--amberdim);color:var(--amber);border:1px solid rgba(160,112,48,.35)" title="Marcar 100% pagada (pone el saldo en 0 sin registrar un pago)">🧹</button>':'')+'<button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
+          '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
@@ -7113,6 +7113,30 @@ function rFlujo(){try{
 function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
 function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
+// Opción A: si la deuda es a CUOTAS (hay "Total de cuotas"), el saldo restante
+// se DERIVA = cuota × (total − cuotas pagadas) y el campo se bloquea (no se
+// teclea). Si pagadas == total → saldo 0 → la deuda quedará liquidada. Si no
+// hay cuotas (deuda revolvente), el saldo es manual como siempre.
+function _syncDebtSaldo(){
+  try{
+    const pay=+(document.getElementById('dm')?.value)||0;
+    const tot=+(document.getElementById('dtot')?.value)||0;
+    const pag=+(document.getElementById('dcur')?.value)||0;
+    const db=document.getElementById('db');
+    const hint=document.getElementById('debtSaldoHint');
+    if(tot>0){
+      const rest=Math.max(0,tot-pag);
+      const bal=Math.max(0,Math.round(pay*rest));
+      if(db){db.value=bal;db.readOnly=true;db.style.background='var(--bg2)';db.style.opacity='.7';}
+      if(hint)hint.innerHTML=rest<=0
+        ? '✅ <strong>Liquidada</strong> · pagaste '+Math.min(pag,tot)+' de '+tot+' cuotas'
+        : '= '+rest+' cuota'+(rest!==1?'s':'')+' × '+fx(pay)+' (de '+pag+'/'+tot+' pagadas)';
+    }else{
+      if(db){db.readOnly=false;db.style.background='';db.style.opacity='';}
+      if(hint)hint.innerHTML='';
+    }
+  }catch(e){}
+}
 function calcNextPayISO(dayNum){if(!dayNum)return'';const t=new Date();t.setHours(0,0,0,0);const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();const np=dayNum>=d?new Date(y,m,dayNum):new Date(y,m+1,dayNum);return _ymdLocal(np);}
 // Devuelve la próxima fecha de pago efectiva para una deuda. Si nextPay está
 // en el pasado y la deuda NO es única, rueda hacia adelante según la
@@ -8315,14 +8339,13 @@ function _applyLoanCalcToDebt(){
 function addDebt(){
   const n=document.getElementById('dn')?.value.trim();
   const f=document.getElementById('dpf')?.value||'mensual';
-  const pago=+(document.getElementById('dm')?.value)||0;
-  let b=+(document.getElementById('db')?.value)||0;
-  if(f==='unico')b=pago;
   if(!n){toast('⚠ Falta el nombre de la deuda');document.getElementById('dn')?.focus();return;}
-  if(!isFinite(b)||b<=0){toast('⚠ Saldo inválido (debe ser mayor a 0)');document.getElementById(f==='unico'?'dm':'db')?.focus();return;}
+  const _d=_debtBalFromForm(f); // {bal, curPay, totalPays, pay} (o {error})
+  if(_d.error){toast(_d.error);return;}
   const npDate=document.getElementById('dpd')?.value||'';
   const pd=npDate?new Date(npDate+'T12:00').getDate():0;
-  const liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');
+  let liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');
+  if(_d.bal<=0&&_d.totalPays>0&&!liq)liq=_todayYMD();
   // Campos de interés (solo aplican si freq != 'unico' y el switch está prendido)
   const hasInt=f!=='unico'&&!!document.getElementById('dHasInt')?.checked;
   const principal=hasInt?(+(document.getElementById('dPrinc')?.value)||0):0;
@@ -8331,10 +8354,10 @@ function addDebt(){
   const interestPct=hasInt&&principal>0?+(interestAmt/principal*100).toFixed(2):0;
   const firstPay=f==='unico'?'':(_toValidYMD(document.getElementById('dfp')?.value||'')||'');
   pt({debts:[...S.debts,{
-    id:Date.now(),name:n,bal:b,pay:pago,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,firstPay:firstPay,
+    id:Date.now(),name:n,bal:_d.bal,pay:_d.pay,freq:f,rate:0,payDay:pd,nextPay:npDate,liqDate:liq,firstPay:firstPay,
     note:document.getElementById('dnote')?.value.trim()||'',
-    curPay:f==='unico'?0:(+(document.getElementById('dcur')?.value)||0),
-    totalPays:f==='unico'?0:(+(document.getElementById('dtot')?.value)||0),
+    curPay:_d.curPay,
+    totalPays:_d.totalPays,
     group:document.getElementById('dgrp')?.value.trim()||'',
     hasInterest:hasInt,principal,totalToPay,interestAmt,interestPct
   }]});
@@ -9414,7 +9437,7 @@ function rmDebt(id){
     ()=>{pt({debts:S.debts.filter(x=>x.id!==id)});editDebtId=null;toast('Deuda eliminada');rFlujo();}
   );
 }
-function editDebt(id){editDebtId=id;flujoView='deudas';rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
+function editDebt(id){editDebtId=id;flujoView='deudas';rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});try{_syncDebtSaldo();}catch(e){}},100);}
 function cancelEdit(){editDebtId=null;rFlujo();}
 function setDebtGroup(id,val){
   if(val==='__new'){const g=prompt('Nombre del nuevo grupo (ej: Tarjetas, MSI, Préstamos):');if(!g||!g.trim())return rFlujo();pt({debts:S.debts.map(d=>d.id===id?{...d,group:g.trim()}:d)});}
@@ -9423,7 +9446,10 @@ function setDebtGroup(id,val){
 }
 function toggleDebtGroup(g){if(!S.debtGroupCollapsed)S.debtGroupCollapsed={};S.debtGroupCollapsed[g]=!S.debtGroupCollapsed[g];sv();rFlujo();}
 function saveDebt(){
-  const n=document.getElementById('dn')?.value.trim();const b=+(document.getElementById('db')?.value);const f=document.getElementById('dpf')?.value||'mensual';if(!n||!b)return;
+  const n=document.getElementById('dn')?.value.trim();const f=document.getElementById('dpf')?.value||'mensual';
+  if(!n){toast('⚠ Falta el nombre');return;}
+  const _d=_debtBalFromForm(f); // {bal, curPay, totalPays, pay}
+  if(_d.error){toast(_d.error);return;}
   const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;
   const hasInt=f!=='unico'&&!!document.getElementById('dHasInt')?.checked;
   const principal=hasInt?(+(document.getElementById('dPrinc')?.value)||0):0;
@@ -9431,8 +9457,29 @@ function saveDebt(){
   const interestAmt=hasInt&&totalToPay>principal?totalToPay-principal:0;
   const interestPct=hasInt&&principal>0?+(interestAmt/principal*100).toFixed(2):0;
   const firstPay=f==='unico'?'':(_toValidYMD(document.getElementById('dfp')?.value||'')||'');
-  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:b,pay:+(document.getElementById('dm')?.value)||0,freq:f,payDay:pd,nextPay:npDate,liqDate:document.getElementById('dliq')?.value||'',firstPay:firstPay,note:document.getElementById('dnote')?.value.trim()||'',curPay:+(document.getElementById('dcur')?.value)||0,totalPays:+(document.getElementById('dtot')?.value)||0,group:document.getElementById('dgrp')?.value.trim()||'',hasInterest:hasInt,principal,totalToPay,interestAmt,interestPct}:d)});
-  editDebtId=null;toast('✓ Deuda actualizada');rFlujo();
+  let liq=document.getElementById('dliq')?.value||'';
+  if(_d.bal<=0&&!liq)liq=_todayYMD(); // quedó liquidada (saldo 0) → fija fecha
+  pt({debts:S.debts.map(d=>d.id===editDebtId?{...d,name:n,bal:_d.bal,pay:_d.pay,freq:f,payDay:pd,nextPay:npDate,liqDate:liq,firstPay:firstPay,note:document.getElementById('dnote')?.value.trim()||'',curPay:_d.curPay,totalPays:_d.totalPays,group:document.getElementById('dgrp')?.value.trim()||'',hasInterest:hasInt,principal,totalToPay,interestAmt,interestPct}:d)});
+  editDebtId=null;toast(_d.bal<=0&&_d.totalPays>0?'🏁 Deuda liquidada':'✓ Deuda actualizada');rFlujo();
+}
+// Deriva {bal, curPay, totalPays, pay} desde el form de deuda, según el modelo:
+//  · único      → bal = pago
+//  · a cuotas   → bal = cuota × (total − pagadas); curPay = pagadas+1 (interno)
+//  · revolvente → bal = saldo tecleado (manual)
+function _debtBalFromForm(f){
+  const pay=+(document.getElementById('dm')?.value)||0;
+  const totCuotas=f==='unico'?0:(+(document.getElementById('dtot')?.value)||0);
+  const pagadas=f==='unico'?0:Math.max(0,+(document.getElementById('dcur')?.value)||0);
+  if(f==='unico')return {bal:pay,curPay:0,totalPays:0,pay};
+  if(totCuotas>0){
+    if(pay<=0)return {error:'⚠ Pon el monto por cuota'};
+    const bal=Math.max(0,Math.round(pay*Math.max(0,totCuotas-pagadas)));
+    return {bal,curPay:Math.min(pagadas,totCuotas)+1,totalPays:totCuotas,pay};
+  }
+  // revolvente (sin cuotas): saldo manual
+  const b=+(document.getElementById('db')?.value)||0;
+  if(!(b>0))return {error:'⚠ Pon el saldo restante (o llena las cuotas)'};
+  return {bal:b,curPay:0,totalPays:0,pay};
 }
 
 // ══ PLAN DE ACCIÓN ═════════════════════════════════
@@ -13382,7 +13429,6 @@ function rHistoria(){
           </div>
         </div>
         <div class="row" style="justify-content:flex-end;gap:6px;margin-top:6px">
-          ${(+d.bal||0)>0?`<button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:var(--amberdim);color:var(--amber);border:1px solid rgba(160,112,48,.35)" onclick="limpiarSaldoDeuda(${d.id})">🧹 Limpiar saldo</button>`:''}
           <button class="btn btn-sm" style="padding:3px 10px;font-size:11px;background:rgba(78,124,106,.12);color:var(--sage);border:1px solid rgba(78,124,106,.35)" onclick="reactivarDeuda(${d.id})">↩️ Reactivar</button>
         </div>
       </div>`;}).join('')}

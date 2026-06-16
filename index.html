@@ -14207,6 +14207,31 @@ function buildAIReport(){
   const _tdcDev=tdcDevengado(); // M1 · TDC devengada (informativa, no se resta de nw)
   const rk=getRank(sc);
   const drA=deuda/Math.max(inc*12,1);
+  // ── Pagos ÚNICOS próximos (bills finitos) ─────────────────────────────
+  // dPay/fl son mensuales y EXCLUYEN las deudas 'unico' (no son recurrentes),
+  // así que lumps grandes (ej. inscripciones/útiles escolares) no pesan en
+  // ningún número mensual del reporte. Aquí los prorrateamos CADA UNO entre
+  // los meses de hoy hasta su vencimiento (saldo ÷ meses) para estimar la
+  // "reserva mensual" que el flujo libre debería apartar, y un flujo ajustado.
+  // Esto NO toca el score ni el flujo libre headline; es transparencia extra.
+  const _unicoBills=(()=>{
+    const _t=new Date();_t.setHours(0,0,0,0);const _ny=_t.getFullYear(),_nm=_t.getMonth();
+    const out=[];
+    (S.debts||[]).forEach(d=>{
+      if((d.freq||'mensual')!=='unico')return;
+      if(isDebtLiquidated(d))return;
+      const bal=+d.bal||0;if(bal<=0)return;
+      const dueStr=d.nextPay||d.liqDate||d.firstPay||'';
+      let N=1;
+      if(dueStr){const dd=new Date(dueStr+'T12:00');if(!isNaN(dd.getTime())){const diff=(dd.getFullYear()-_ny)*12+(dd.getMonth()-_nm);N=Math.max(1,diff+1);}}
+      out.push({name:d.name||'?',bal:Math.round(bal),due:dueStr||null,months:N,perMonth:Math.round(bal/N)});
+    });
+    out.sort((a,b)=>String(a.due||'9999-99-99').localeCompare(String(b.due||'9999-99-99')));
+    return out;
+  })();
+  const _unicoTotal=_unicoBills.reduce((a,b)=>a+b.bal,0);
+  const _unicoReserva=_unicoBills.reduce((a,b)=>a+b.perMonth,0);
+  const _flAjustado=Math.round(fl-_unicoReserva);
   L.push('## 1 · Foto financiera de hoy');
   L.push('');
   if(S.goal)L.push('- **Meta:** '+S.goal+(S.deadline?' · fecha límite '+fmtDate(S.deadline)+' ('+dLeft()+' días)':''));
@@ -14218,6 +14243,10 @@ function buildAIReport(){
   L.push('- **Pago de deudas mensual:** '+fxn(dPay));
   L.push('- **Ahorro programado:** '+fxn(sav)+' ('+(S.savPct||0)+'% del ingreso) · racha de ahorro: '+(S.savStreak||0)+' (récord '+(S.savStreakBest||0)+')');
   L.push('- **Flujo libre mensual:** '+fxn(fl)+(fl<0?'  ⚠️ DÉFICIT':''));
+  if(_unicoTotal>0){
+    L.push('- **Pagos únicos próximos (bills finitos):** '+fxn(_unicoTotal)+' en '+_unicoBills.length+' cargo'+(_unicoBills.length!==1?'s':'')+' — NO entran en el "Pago de deudas mensual" ni en el flujo libre de arriba (no son recurrentes). Reserva mensual sugerida, prorrateando cada uno hasta su vencimiento: **'+fxn(_unicoReserva)+'/mes**.');
+    L.push('- **Flujo libre AJUSTADO (descontando esa reserva):** '+fxn(_flAjustado)+(_flAjustado<0?'  🔴 DÉFICIT al considerar los pagos únicos':(_flAjustado<fl*0.4?'  ⚠️ los pagos únicos se comen la mayor parte del flujo':'')));
+  }
   L.push('- **Activos totales:** '+fxn(act)+' · **Deuda total:** '+fxn(deuda));
   L.push('- **Patrimonio neto:** '+fxn(patr)+(patr<0?'  (negativo — debes más de lo que tienes)':''));
   if(_tdcDev>0)L.push('  - ⚠️ **TDC devengada (sin pagar): '+fxn(_tdcDev)+'**. Gasto a crédito ya hecho que no cuenta en la deuda formal (se paga en el corte). El patrimonio de arriba NO la resta —porque el usuario paga su TDC completa cada ciclo y el efectivo con que la paga tampoco se rastrea como activo, así que restarla lo haría rebotar—; pero hoy mismo el **patrimonio real ≈ '+fxn(patr-_tdcDev)+'**. Tenla en cuenta como float pendiente del ciclo.');
@@ -14249,6 +14278,14 @@ function buildAIReport(){
   L.push('- '+(Math.round(act-deuda)===Math.round(patr)?'✅':'⚠️')+' **Patrimonio neto:** activos '+fxn(act)+' − deuda '+fxn(deuda)+' = '+fxn(act-deuda)+(Math.round(act-deuda)===Math.round(patr)?' (cuadra con lo reportado).':' ≠ '+fxn(patr)+' reportado.'));
   L.push('- **Flujo libre '+fxn(fl)+':** ingreso '+fxn(inc)+(ext>0?' + extra prom. '+fxn(ext):'')+' − fijos '+fxn(exp)+' − pago deuda '+fxn(dPay)+' − ahorro '+fxn(sav)+'.'+(ext>0?' ⚠️ Incluye '+fxn(ext)+' de ingresos extra promedio (no garantizados); sin ellos el flujo sería '+fxn(fl-ext)+'.':''));
   if((+sav>0)&&((S.savStreak||0)===0))L.push('- ⚠️ **Ahorro programado vs real:** '+fxn(sav)+'/mes programado ('+(S.savPct||0)+'%) pero racha de ahorro 0 — es una meta, no dinero que ya estés apartando. No lo tomes como seguro en el plan hasta ejecutarlo.');
+  if(_unicoTotal>0){
+    L.push('- 🔴 **Pagos únicos no prorrateados:** el "Pago de deudas mensual" ('+fxn(dPay)+') y el flujo libre ('+fxn(fl)+') SOLO cuentan deudas recurrentes (mensual/quincenal). Hay '+fxn(_unicoTotal)+' en pagos únicos pendientes que no pesan en ningún número mensual de arriba. Prorrateados hasta su vencimiento son ≈ '+fxn(_unicoReserva)+'/mes, dejando el flujo libre REAL en '+fxn(_flAjustado)+'. Trátalos como una salida programada, no como dinero disponible.');
+    L.push('');
+    L.push('  | Pago único | Saldo | Vence | Meses | Prorrateo/mes |');
+    L.push('  |---|--:|---|--:|--:|');
+    _unicoBills.forEach(b=>{L.push('  | '+b.name+' | '+fxn(b.bal)+' | '+(b.due?fmtDate(b.due):'sin fecha')+' | '+b.months+' | '+fxn(b.perMonth)+' |');});
+    L.push('  | **Total** | **'+fxn(_unicoTotal)+'** |  |  | **'+fxn(_unicoReserva)+'** |');
+  }
   L.push('');
   // ── 1c. Vista quincenal del ciclo actual (mensual vs quincenal) ──
   // La foto (sección 1) está en mensual, pero el Plan de Acción (sección 5) y el
@@ -14468,8 +14505,10 @@ function buildAIReport(){
       periodo:{inicio:_pIni||null,fin:_pFin||null,dias:_periodDias,quincenas:_periodQnas},
       foto:{ingresoMensual:Math.round(inc),extraMensualProm:Math.round(ext),gastosFijosMensual:Math.round(exp),
         pagoDeudaMensual:Math.round(dPay),ahorroMensual:Math.round(sav),flujoMensual:Math.round(fl),
+        pagosUnicosProximosTotal:Math.round(_unicoTotal),reservaPagosUnicosMensual:Math.round(_unicoReserva),flujoMensualAjustado:_flAjustado,
         deudaTotal:Math.round(deuda),activos:Math.round(act),patrimonio:Math.round(patr),
         tdcDevengada:_tdcDev,patrimonioReal:Math.round(patr)-_tdcDev,score:sc},
+      pagosUnicosProximos:_unicoBills.map(b=>({nombre:b.name,saldo:b.bal,vence:b.due,meses:b.months,prorrateoMensual:b.perMonth})),
       capacidadQuincenal:{ciclo:_qsnap.type,inicio:_qsnap.start,fin:_qsnap.end,semanas:_qsnap.weeks,
         ingreso:_qsnap.incQ,ingresoSinExtra:_qsnap.incQ-_qsnap.extQ,extra:_qsnap.extQ,
         gastosFijos:_qsnap.expQ,deudaMinima:_qsnap.dbtQ,ahorro:_qsnap.savQ,
@@ -14477,7 +14516,7 @@ function buildAIReport(){
       deudas:_nd};
     L.push('## 7 · analisisInput (bloque consolidado para máquina)');
     L.push('');
-    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra). `deudas` van normalizadas: `pagoMensual`/`pagoQuincenal` equivalentes, `tasaPct`, `vencimiento`, `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve).');
+    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra). `deudas` van normalizadas: `pagoMensual`/`pagoQuincenal` equivalentes, `tasaPct`, `vencimiento`, `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve).');
     L.push('');
     L.push('```json');
     L.push(JSON.stringify(_ai));

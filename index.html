@@ -13892,7 +13892,13 @@ function exportAudit(){
       Object.keys(paid).forEach(k=>{
         if(k.startsWith('_')||k.startsWith('tdcpay_')||_inPlanK.has(k))return;
         const st=stOf(k);if(!st||!st.applied||st.method==='tdc')return;
-        const amt=st.realAmt!=null?st.realAmt:(st.amt||0);
+        let amt=st.realAmt!=null?st.realAmt:(st.amt||0);
+        if(!amt){ // fallback al catálogo vivo (igual que el EC en vivo) para items 'fromLive' sin monto guardado
+          const p=k.split('_');const t=p[0];const id=+(p.slice(1).join('_'));
+          if(t==='exp'||t==='expw2'||t==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
+          else if(t==='debt'){const d=S.debts.find(x=>x.id===id);if(d)amt=+d.pay||0;}
+          else if(t==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)amt=savGoalPerQ(g);}
+        }
         if(amt){planApplied+=amt;reconAudit+=amt;}
       });
       // ── Diarios ──

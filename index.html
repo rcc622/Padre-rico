@@ -3294,6 +3294,30 @@ function showBonoPlays(){
 // para siempre (project() ya lo trataba bien; ahora ambos coinciden).
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)||(d.freq||'mensual')==='unico'?0:toMonthly(+d.pay||0,d.freq||'mensual')),0);
 const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
+// Pagos ÚNICOS próximos (bills finitos: inscripciones, útiles, etc.). No son
+// recurrentes, así que tDebtPay()/flow() los excluyen — pero son salidas reales.
+// Cada uno se prorratea entre los meses de hoy hasta su vencimiento (saldo ÷
+// meses) para estimar la "reserva mensual" que el flujo libre debería apartar.
+// Fuente ÚNICA usada por el score (scoreBreakdown) y por el reporte IA.
+function unicoBillsUpcoming(){
+  const _t=new Date();_t.setHours(0,0,0,0);const ny=_t.getFullYear(),nm=_t.getMonth();
+  const bills=[];
+  (S.debts||[]).forEach(d=>{
+    if((d.freq||'mensual')!=='unico')return;
+    if(isDebtLiquidated(d))return;
+    const bal=+d.bal||0;if(bal<=0)return;
+    const dueStr=d.nextPay||d.liqDate||d.firstPay||'';
+    let N=1;
+    if(dueStr){const dd=new Date(dueStr+'T12:00');if(!isNaN(dd.getTime())){const diff=(dd.getFullYear()-ny)*12+(dd.getMonth()-nm);N=Math.max(1,diff+1);}}
+    bills.push({name:d.name||'?',bal:Math.round(bal),due:dueStr||null,months:N,perMonth:Math.round(bal/N)});
+  });
+  bills.sort((a,b)=>String(a.due||'9999-99-99').localeCompare(String(b.due||'9999-99-99')));
+  return {total:bills.reduce((a,b)=>a+b.bal,0),reserva:bills.reduce((a,b)=>a+b.perMonth,0),bills};
+}
+const unicoReserveMonthly=()=>unicoBillsUpcoming().reserva;
+// Deuda REVOLVENTE (recurrente) = deuda total activa − bills únicos pendientes.
+const tDebtRevolving=()=>S.debts.reduce((a,d)=>a+((isDebtLiquidated(d)||(d.freq||'mensual')==='unico')?0:(+d.bal||0)),0);
+const tDebtUnico=()=>S.debts.reduce((a,d)=>a+((!isDebtLiquidated(d)&&(d.freq||'mensual')==='unico')?(+d.bal||0):0),0);
 const tDebt=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)?0:(+d.bal||0)),0);
 const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
 const nw=()=>tAss()-tDebt();
@@ -3465,20 +3489,42 @@ function scoreBreakdown(){
   const fl=flow();
   const parts=[];
   // 1. Flujo libre (0-30): lo más importante
-  let p1=0; if(fl>0)p1=Math.min(30,Math.round(fl/inc/0.15*30));
+  // Se mide sobre el flujo RECURRENTE (fl), pero se descuenta la parte que
+  // consumen los pagos ÚNICOS próximos (reserva prorrateada): premiar un "sobra"
+  // que en realidad está comprometido a inscripciones/útiles es falso confort.
+  // Tope de descuento 70% para no borrar todo el componente por un gasto
+  // temporal de temporada (los bills se pagan y el puntaje se recupera).
+  const _reservaU=unicoReserveMonthly();
+  const _flAdj=fl-_reservaU; // flujo libre real tras apartar la reserva
+  let p1=0;
+  if(fl>0){
+    const _base=Math.min(30,fl/inc/0.15*30);
+    const _consumed=_reservaU>0?Math.min(1,_reservaU/fl):0; // 0..1 del flujo comprometido
+    p1=Math.max(0,Math.round(_base*(1-0.7*_consumed)));
+  }
   parts.push({k:'flujo',label:'Flujo libre',pts:p1,max:30,col:'var(--sage)',
-    hint:fl>0?('Te sobran '+fx(Math.round(fl))+'/mes ('+Math.round(fl/inc*100)+'% del ingreso). Con 15% llegas a 30.'):'No te sobra dinero al mes. Baja gastos o pagos de deuda para ganar hasta 30 pts.'});
-  // Penalización por déficit (hasta -15)
+    hint:fl>0?(_reservaU>0?('Flujo recurrente '+fx(Math.round(fl))+'/mes, pero '+fx(Math.round(_reservaU))+'/mes está comprometido a pagos únicos próximos → flujo real '+fx(Math.round(_flAdj))+'. Liquida esos bills o recórtalos para recuperar puntos.'):('Te sobran '+fx(Math.round(fl))+'/mes ('+Math.round(fl/inc*100)+'% del ingreso). Con 15% llegas a 30.')):'No te sobra dinero al mes. Baja gastos o pagos de deuda para ganar hasta 30 pts.'});
+  // Penalización por déficit (hasta -15) — sobre el flujo RECURRENTE (fl), no el
+  // ajustado: un aprieto temporal por bills únicos ya bajó p1 arriba; no lo
+  // penalizamos otra vez aquí (evita doble castigo por un gasto de temporada).
   let pen=0; if(fl<0)pen=Math.min(15,Math.round(Math.abs(fl)/inc*30));
   // 2. Deuda vs ingreso anual (0-20)
   const dr=tDebt()/Math.max(inc*12,1); let p2=0;
   if(dr===0)p2=20; else if(dr<=0.2)p2=18; else if(dr<=0.5)p2=Math.round(10+(0.5-dr)/0.3*8); else if(dr<=1.0)p2=Math.round(3+(1.0-dr)/0.5*7);
   parts.push({k:'deuda',label:'Deuda vs ingreso',pts:p2,max:20,col:'var(--sky)',
     hint:tDebt()===0?'Sin deudas: máximo.':('Debes '+fx(Math.round(tDebt()))+' ('+Math.round(dr*100)+'% de tu ingreso anual). Bajar la deuda sube este puntaje.')});
-  // 3. Ahorro (0-15): % programado + compromiso del ciclo
-  const savP=Math.min(S.savPct||0,20); let p3=Math.round(savP/20*10); if(curSavCommit())p3+=5;
+  // 3. Ahorro (0-15): % programado · ESCALADO por ejecución real + compromiso del ciclo
+  // Antes daba hasta 10 pts por el savPct PROGRAMADO aunque no se apartara nada
+  // (racha 0). Ahora la base se escala por lo que REALMENTE haces: pleno si
+  // apartaste este ciclo, mitad si traes racha pero no este ciclo, 0 si no hay
+  // ni racha ni compromiso. (La racha también suma aparte en Constancia, por eso
+  // aquí el factor por-racha es parcial, no doble premio.) El +5 sigue por
+  // apartar este ciclo.
+  const savP=Math.min(S.savPct||0,20);
+  const _execF=curSavCommit()?1:((S.savStreak||0)>0?0.5:0);
+  let p3=Math.round(savP/20*10*_execF); if(curSavCommit())p3+=5;
   parts.push({k:'ahorro',label:'Ahorro (Págate primero)',pts:p3,max:15,col:'var(--sage)',
-    hint:('Apartas '+(S.savPct||0)+'% de tu ingreso')+(curSavCommit()?' y ya apartaste este ciclo (+5).':'. Toca "Ya aparté mi ahorro" cada ciclo para +5.')});
+    hint:curSavCommit()?('Apartas '+(S.savPct||0)+'% y ya apartaste este ciclo (+5).'):((S.savStreak||0)>0?('Tu meta es '+(S.savPct||0)+'% pero no has apartado ESTE ciclo — puntaje a la mitad. Toca "Ya aparté mi ahorro" para el resto +5.'):('Tu meta es '+(S.savPct||0)+'% pero no estás apartando (racha 0): es una meta, no dinero guardado. Aparta este ciclo para ganar puntos.'))});
   // 4. Patrimonio neto (0-15)
   const netW=nwBuild(); let p4=0; if(netW>0)p4=Math.min(15,Math.round(netW/(inc||1)/6*15));
   parts.push({k:'patrimonio',label:'Patrimonio neto',pts:p4,max:15,col:'var(--sage)',
@@ -6735,6 +6781,7 @@ function rFlujo(){try{
        en el simulador. -->
   <div style="margin-bottom:13px">
     ${kpi('⛓️ Deuda total',fx(tDebt()),tDebt()>0?'var(--terra)':'var(--sage)',tDebt()>0?activeDebts.length+' activas':'¡Sin deudas!')}
+    ${tDebtUnico()>0?`<div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-top:8px;padding:8px 10px;background:rgba(74,110,140,.06);border-radius:8px">Esa "Deuda total" mezcla dos cosas distintas:<br>• <strong style="color:var(--terra)">Revolvente ${fx(tDebtRevolving())}</strong> — préstamos/MSI recurrentes (tu deuda estructural).<br>• <strong style="color:var(--sky)">Bills únicos ${fx(tDebtUnico())}</strong> — pagos de una sola vez (escuela, útiles, inscripciones). No es deuda revolvente; es un muro de gasto puntual. Apártalo con la reserva mensual (ver reporte IA).</div>`:''}
     ${tdcDevengado()>0?`<div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-top:8px;padding:8px 10px;background:var(--amberdim);border-radius:8px">💳 <strong>TDC devengada: ${fx(tdcDevengado())}</strong> — gastos a crédito ya hechos pero sin pagar. No cuenta en la "Deuda total" de arriba (es float del ciclo, lo pagas en el corte), pero sí baja tu <strong>patrimonio real de hoy</strong> a ${fx(nwBuild()-tdcDevengado())}.</div>`:''}
   </div>
 
@@ -14214,23 +14261,10 @@ function buildAIReport(){
   // los meses de hoy hasta su vencimiento (saldo ÷ meses) para estimar la
   // "reserva mensual" que el flujo libre debería apartar, y un flujo ajustado.
   // Esto NO toca el score ni el flujo libre headline; es transparencia extra.
-  const _unicoBills=(()=>{
-    const _t=new Date();_t.setHours(0,0,0,0);const _ny=_t.getFullYear(),_nm=_t.getMonth();
-    const out=[];
-    (S.debts||[]).forEach(d=>{
-      if((d.freq||'mensual')!=='unico')return;
-      if(isDebtLiquidated(d))return;
-      const bal=+d.bal||0;if(bal<=0)return;
-      const dueStr=d.nextPay||d.liqDate||d.firstPay||'';
-      let N=1;
-      if(dueStr){const dd=new Date(dueStr+'T12:00');if(!isNaN(dd.getTime())){const diff=(dd.getFullYear()-_ny)*12+(dd.getMonth()-_nm);N=Math.max(1,diff+1);}}
-      out.push({name:d.name||'?',bal:Math.round(bal),due:dueStr||null,months:N,perMonth:Math.round(bal/N)});
-    });
-    out.sort((a,b)=>String(a.due||'9999-99-99').localeCompare(String(b.due||'9999-99-99')));
-    return out;
-  })();
-  const _unicoTotal=_unicoBills.reduce((a,b)=>a+b.bal,0);
-  const _unicoReserva=_unicoBills.reduce((a,b)=>a+b.perMonth,0);
+  const _ub=unicoBillsUpcoming();          // fuente compartida con el score
+  const _unicoBills=_ub.bills;
+  const _unicoTotal=_ub.total;
+  const _unicoReserva=_ub.reserva;
   const _flAjustado=Math.round(fl-_unicoReserva);
   L.push('## 1 · Foto financiera de hoy');
   L.push('');

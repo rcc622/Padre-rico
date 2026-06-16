@@ -919,7 +919,7 @@ function navPlanCycle(dir){
 function fmtCycleRange(ck){
   try{
     const w=cycleWindowFromKey(ck);
-    const fmt=d=>d.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+    const fmt=d=>d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
     return fmt(w.start)+' al '+fmt(w.end);
   }catch(e){return ck;}
 }
@@ -3753,7 +3753,7 @@ function hdrUp(){
   el.style.color=scCol(s);
   const today=new Date();
   const dtEl=document.getElementById('hdr-date');
-  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+cyc;dtEl.title='v'+(window.APP_BUILD||'?');}
+  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'2-digit',year:'2-digit'})+' · '+cyc;dtEl.title='v'+(window.APP_BUILD||'?');}
 }
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';go(_restoreNavTab());}
 
@@ -3765,7 +3765,7 @@ const fmtDate=(s)=>{if(!s)return'';try{
   // vez de ver una fecha silenciosamente corrida por new Date.
   const d=_toValidYMD(s);
   if(!d)return s;
-  return new Date(d+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'});
+  return new Date(d+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'});
 }catch(e){_logErr('fmtDate',e);return s;}};
 const PRINCIPS=[
   '"Una parte de todo lo que ganas debe ser tuya para siempre." — Arkad',
@@ -4116,7 +4116,7 @@ function rDash(){
     }
   }catch(e){}
   const _sb=scoreBreakdown(),s=_sb.total,sc=scCol(s),dl=dLeft(),pctT=goalElapsedPct();
-  const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'}):'—';
+  const dlFmt=S.deadline?new Date(S.deadline+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
   const urgentLiqs=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=15);
   const r=getRank(s);
   const _nextRank=RANKS.find(rk=>rk.min>s);
@@ -6342,7 +6342,7 @@ function _realIncSummary(){
       else if(extraUnicoEnVentana(x,nStart,nEnd))nExtUniQ+=(+x.amt||0);
     });
     const totalNext=nSalQ+nBonoQ+nExtRecQ+nExtUniQ;
-    const fmtD=dt=>dt.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+    const fmtD=dt=>dt.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
     const thisLabel=fmtD(cw.start)+' – '+fmtD(cw.end);
     const nextLabel=fmtD(nStart)+' – '+fmtD(nEnd);
     // Build rows helper
@@ -6587,7 +6587,7 @@ function rFlujo(){try{
     `;})()}
   </div>
 
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${_escH(e.name)}</span><span class="badge bdg-sage">${_escH(e.cat)}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}${e.startDate&&e.startDate>_todayYMD()?`<span class="badge bdg-amber">🗓️ inicia ${fmtDate(e.startDate)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${_escH(e.name)}</span><span class="badge bdg-sage">${_escH(e.cat)}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}${e.startDate&&e.startDate>_todayYMD()?`<span class="badge bdg-amber">🗓️ inicia ${fmtDate(e.startDate)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}</div>`:''}
 
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
   `:''}
@@ -6657,7 +6657,7 @@ function rFlujo(){try{
       if(daysToDue<0)dueText='⚠️ Vencido hace '+Math.abs(daysToDue)+'d';
       else if(daysToDue===0)dueText='Vence hoy';
       else if(daysToDue===1)dueText='Vence mañana';
-      else dueText='Vence en '+daysToDue+'d ('+dueDate.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+')';
+      else dueText='Vence en '+daysToDue+'d ('+dueDate.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+')';
     }
     return `<div class="card" style="background:linear-gradient(135deg,rgba(74,110,140,.05),rgba(78,124,106,.02));border-left:3px solid ${barColor}">
       <div class="row-b" style="margin-bottom:10px">
@@ -6699,7 +6699,7 @@ function rFlujo(){try{
 
       ${b.billed.length>0?`<details style="margin-top:10px"><summary style="font-size:11px;color:var(--terra);cursor:pointer;padding:6px 0;font-weight:bold">Ver ${b.billed.reduce((s,c)=>s+c.charges.length,0)} mov. por pagar</summary><div style="max-height:160px;overflow-y:auto;margin-top:6px">${b.billed.flatMap(c=>c.charges).map(d=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2);max-width:70%;overflow:hidden;text-overflow:ellipsis">'+_escH(d.name)+'</span><strong style="color:var(--terra)">'+fx(d.amt)+'</strong></div>').join('')}</div></details>`:''}
       ${b.current.charges.length>0?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--sky);cursor:pointer;padding:6px 0">Ver ${b.current.charges.length} mov. ciclo actual</summary><div style="max-height:160px;overflow-y:auto;margin-top:6px">${b.current.charges.map(d=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2);max-width:70%;overflow:hidden;text-overflow:ellipsis">'+_escH(d.name)+'</span><strong style="color:var(--sky)">'+fx(d.amt)+'</strong></div>').join('')}</div></details>`:''}
-      ${S.tdcPayments&&S.tdcPayments.length>0?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer;padding:6px 0">Historial de pagos (${S.tdcPayments.length})</summary><div style="margin-top:6px">${[...S.tdcPayments].reverse().slice(0,10).map(p=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2)">'+new Date(p.at).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'2-digit'})+'</span><strong style="color:var(--sage)">'+fx(p.amount)+'</strong></div>').join('')}</div></details>`:''}
+      ${S.tdcPayments&&S.tdcPayments.length>0?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer;padding:6px 0">Historial de pagos (${S.tdcPayments.length})</summary><div style="margin-top:6px">${[...S.tdcPayments].reverse().slice(0,10).map(p=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2)">'+new Date(p.at).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'})+'</span><strong style="color:var(--sage)">'+fx(p.amount)+'</strong></div>').join('')}</div></details>`:''}
     </div>`;
   })()}
 
@@ -6841,14 +6841,14 @@ function rFlujo(){try{
         const np=_effectiveNextPay(d)||new Date(d.nextPay+'T12:00');
         np.setHours(0,0,0,0);
         const today2=new Date();today2.setHours(0,0,0,0);
-        nextPay2=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+        nextPay2=np.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
         // Math.round + ambos a midnight: evita el off-by-one (12hrs / 86400s
         // = 0.5 → ceil daba 1 → mostraba "Mañana" cuando era HOY).
         nextDays2=Math.round((np-today2)/864e5);
       }else if(pd>0){
         const today2=new Date();today2.setHours(0,0,0,0);const td=today2.getDate(),tm=today2.getMonth(),ty=today2.getFullYear();
         const np=pd>=td?new Date(ty,tm,pd):new Date(ty,tm+1,pd);
-        nextPay2=np.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+        nextPay2=np.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
         nextDays2=Math.round((np-today2)/864e5);
       }
       const urgent=nextDays2<=3;
@@ -8982,7 +8982,7 @@ function openLedgerAudit(){
           const _ic=f.t==='debt'?'⛓️':f.t==='sav'?'🎯':f.t==='imp'?'🚫':'🛒';
           const _tipoN=f.t==='debt'?'Deuda borrada':f.t==='sav'?'Meta borrada':f.t==='imp'?'Impulso borrado':'Gasto borrado';
           const _ref4='#'+String(f.id).slice(-4);
-          const _fApp=f.at?(()=>{try{return new Date(f.at).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'});}catch(e){return '';}})():'';
+          const _fApp=f.at?(()=>{try{return new Date(f.at).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'});}catch(e){return '';}})():'';
           // Pistas para identificarlo (el nombre no se guardó al borrar la entidad):
           const _clues=[];
           if(_fApp)_clues.push('lo registraste el <strong>'+_fApp+'</strong>');
@@ -9802,7 +9802,7 @@ try{
   const cStart=showNext?nextStart:(_isPast?_viewWindow.start:cycleStart);
   const cEnd=showNext?nextEnd:(_isPast?_viewWindow.end:cycleEnd);
   const cPayday=showNext?nextPayday:(_isPast?(_viewCk.endsWith('-1ra')?30:15):cyclePayday);
-  const fmtD=d2=>d2.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+  const fmtD=d2=>d2.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
   const qLabel=`${ct} quincena · ${fmtD(cStart)} → ${fmtD(cEnd)}`;
   // Reusa el helper central (corregido para ciclos que cruzan el año)
   function dayInCycle(pd){return dayInWindow(pd,{start:cStart,end:cEnd});}
@@ -10046,7 +10046,7 @@ try{
       const cycles=tdcChargesByBillingCycle();
       const bucket=cycles[corteKey];
       if(!bucket||bucket.total<=0)return;
-      mandatory.push({day:cfg.dueDay,name:'💳 Pago TDC (corte '+corteDate.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+')',amt:Math.round(bucket.total),type:'deuda',id:1,ptype:'tdcpend',paid:false,tdcPending:true});
+      mandatory.push({day:cfg.dueDay,name:'💳 Pago TDC (corte '+corteDate.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+')',amt:Math.round(bucket.total),type:'deuda',id:1,ptype:'tdcpend',paid:false,tdcPending:true});
     })();
 
     mandatory.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
@@ -11254,7 +11254,7 @@ function rHabitos(){
     const otroCount=budgetList.filter(g=>(g.cat||'otro')==='otro').length;
     const otroPct=totalQ>0?Math.round(otroAmt/totalQ*100):0;
     const otroAlert=otroCount>0&&(otroCount>=5||otroPct>=30);
-    const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===_ymdLocal(y))return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'});};
+    const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===_ymdLocal(y))return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'2-digit',month:'2-digit'});};
     const longAuto=isLongCycleAuto();
     const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
     const isLong=longAuto||longManual;
@@ -11269,7 +11269,7 @@ function rHabitos(){
       // recientes que no aparecen, es problema de filtro de fecha (no de save).
       const _totalSaved=(S.gastosDiarios||[]).length;
       if(_totalSaved===cycleList.length)return '';
-      return '<div style="font-size:10px;color:var(--muted);margin-bottom:10px;padding:6px 10px;background:rgba(74,110,140,.06);border-radius:4px;border-left:2px solid var(--sky)">ℹ️ Tienes <strong>'+_totalSaved+'</strong> gastos guardados en total · <strong>'+cycleList.length+'</strong> caen en esta quincena ('+w.start.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+' al '+w.end.toLocaleDateString('es-MX',{day:'numeric',month:'short'})+'). Los demás están en otros ciclos.</div>';
+      return '<div style="font-size:10px;color:var(--muted);margin-bottom:10px;padding:6px 10px;background:rgba(74,110,140,.06);border-radius:4px;border-left:2px solid var(--sky)">ℹ️ Tienes <strong>'+_totalSaved+'</strong> gastos guardados en total · <strong>'+cycleList.length+'</strong> caen en esta quincena ('+w.start.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+' al '+w.end.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+'). Los demás están en otros ciclos.</div>';
     })()}
     <div class="card card-grn" style="margin-bottom:12px">
       <div style="margin-bottom:${budget>0?'10px':'0'}">
@@ -12178,7 +12178,7 @@ function checkCustomHabit(id,date){
   }
   // Ask if completed
   const dt=new Date(d+'T12:00');
-  const fmt=dt.toLocaleDateString('es-MX',{day:'numeric',month:'short'});
+  const fmt=dt.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
   showConfirm('¿Cumpliste el '+fmt+'?','<strong>'+h.name+'</strong><br><br>¿Lograste evitarlo este día?',null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button>'
@@ -12701,7 +12701,7 @@ function getNextCycleDate(){
       if(t>nextEnd)nextEnd=new Date(y,m+2,0);
     }
     const days=Math.ceil((nextEnd-t)/864e5);
-    return{date:nextEnd,days,formatted:nextEnd.toLocaleDateString('es-MX',{day:'2-digit',month:'long'})};
+    return{date:nextEnd,days,formatted:nextEnd.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})};
   }catch(e){return null;}
 }
 
@@ -13295,7 +13295,7 @@ function rHistoria(){
         habitosIds.forEach(hId=>{
           const info=getInfo(hId);
           const hData=S.habitoFormado[hId];
-          const decDate=hData.declaredAt?new Date(hData.declaredAt+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}):'—';
+          const decDate=hData.declaredAt?new Date(hData.declaredAt+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
           const totalComp=_countRetoCompletions(hId);
           ct+='<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
             +'<div class="row-b" style="margin-bottom:6px">'
@@ -13311,7 +13311,7 @@ function rHistoria(){
         ct+='<div class="card" style="margin-bottom:10px"><div class="ct">📜 Retos completados por ciclo</div><div style="font-size:11px;color:var(--muted);line-height:1.6">Historial de cada vez que completaste un reto.</div></div>';
         ct+=allCompleted.map(r=>{
           const info=getInfo(r.id);
-          const dt=r.completedAt?new Date(r.completedAt).toLocaleDateString('es-MX',{day:'2-digit',month:'short',year:'numeric'}):'—';
+          const dt=r.completedAt?new Date(r.completedAt).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
           const realAmt=(+r.realSave)||0;
           const cycleLbl=r.cycle||'—';
           const isHabit=_isHabitoFormado(r.id);
@@ -14529,14 +14529,14 @@ function aiPlanQWindow(n){
 }
 function aiPlanFmtWin(w){
   try{
-    const f=d=>d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    const f=d=>d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
     return f(w.start)+' – '+f(w.end);
   }catch(e){return '';}
 }
 // Formatea un rango de fechas YMD (las que la IA da en el JSON).
 function aiPlanFmtRange(a,b){
   try{
-    const f=ymd=>new Date(ymd+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'short'});
+    const f=ymd=>new Date(ymd+'T12:00').toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
     return f(a)+' – '+f(b);
   }catch(e){return '';}
 }

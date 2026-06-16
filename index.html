@@ -869,6 +869,20 @@ let dStrat='snowball',planQ='actual',planView='pagos',debtSort='prox';
 // null = ciclo actual. Se cambia con las flechas ← →.
 let _planViewCk=null;
 function planCk(){return _planViewCk||cycleKey();}
+// Navegación de quincenas en Gastos diarios (espejo de planCk/navPlanCycle).
+// Permite revisar lo registrado en quincenas pasadas sin afectar el registro
+// de hoy (la quincena actual sigue siendo cycleKey()).
+let _diarioViewCk=null;
+function diarioCk(){return _diarioViewCk||cycleKey();}
+function navDiarioCycle(dir){
+  const keys=allCycleKeys();
+  const cur=diarioCk();
+  const idx=keys.indexOf(cur);
+  const ni=idx+dir;
+  if(ni<0||ni>=keys.length)return;
+  _diarioViewCk=keys[ni]===cycleKey()?null:keys[ni];
+  rHabitos();
+}
 // Derive cycle window from a cycleKey string (e.g. "2026-3-1ra" → {start, end, type})
 // Frontera de quincenas: la 2da termina en min(29, último día del mes) y la
 // 1ra empieza EXACTAMENTE el día siguiente. En febrero new Date(y,1,29) rodaba
@@ -11228,8 +11242,14 @@ function rHabitos(){
   `:''}
 
   ${habitView==='diarios'?(()=>{
-    const w=getCycleWindow();
-    const cycleList=diariosThisCycle().slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
+    const _dck=diarioCk();
+    const _isCurrentDc=_dck===cycleKey();
+    const _dcKeys=allCycleKeys();
+    const _dcIdx=_dcKeys.indexOf(_dck);
+    const _dcFirst=_dcIdx<=0,_dcLast=_dcIdx>=_dcKeys.length-1;
+    const _dcLabel=_isCurrentDc?'ESTA QUINCENA':(_dcIdx<_dcKeys.indexOf(cycleKey())?'QUINCENA PASADA':'PRÓXIMA QUINCENA');
+    const w=cycleWindowFromKey(_dck);
+    const cycleList=diariosThisCycle(_dck).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
     // Pendientes pre-registrados desde retos — no cuentan en totales hasta confirmar
     const pendingList=cycleList.filter(g=>g.pending);
     const confirmedList=cycleList.filter(g=>!g.pending);
@@ -11240,7 +11260,7 @@ function rHabitos(){
     const totalAll=totalQ+totalEsen;
     const totalPending=pendingList.reduce((a,g)=>a+(+g.amt||0),0);
     const todayISO=_todayYMD();
-    const budget=getDiarioBudgetForCycle(cycleKey());
+    const budget=getDiarioBudgetForCycle(_dck);
     const pctB=budget>0?Math.min(100,Math.round(totalQ/budget*100)):0;
     const bColor=pctB<60?'var(--sage)':pctB<90?'var(--amber)':'var(--terra)';
     const byDay={};
@@ -11255,13 +11275,21 @@ function rHabitos(){
     const otroPct=totalQ>0?Math.round(otroAmt/totalQ*100):0;
     const otroAlert=otroCount>0&&(otroCount>=5||otroPct>=30);
     const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===_ymdLocal(y))return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'2-digit',month:'2-digit'});};
-    const longAuto=isLongCycleAuto();
-    const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
+    const longAuto=(()=>{let s=0;const d=new Date(w.start);while(d<=w.end){if(d.getDay()===6)s++;d.setDate(d.getDate()+1);}return s>=3;})();
+    const longManual=!!(S.longCycleOverrides||{})[_dck];
     const isLong=longAuto||longManual;
     return `
   <!-- ═══ GASTOS DIARIOS ═══ -->
   <div class="card">
-    <div class="row-b" style="margin-bottom:13px"><div class="ct" style="margin-bottom:0">🛒 Gastos diarios · ${w.type==='1ra'?'1ra':'2da'} quincena</div><button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11px" onclick="exportDiariosStatement()">📤 Exportar</button></div>
+    <div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">🛒 Gastos diarios</div><button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:11px" onclick="exportDiariosStatement()">📤 Exportar</button></div>
+    <div class="row-b" style="align-items:center;margin-bottom:13px;padding:7px 10px;background:var(--bg2);border-radius:8px">
+      <button class="btn btn-ghost btn-sm" style="font-size:18px;padding:4px 12px;${_dcFirst?'opacity:.3;pointer-events:none':''}" onclick="navDiarioCycle(-1)">←</button>
+      <div style="flex:1;text-align:center">
+        <div style="font-size:9px;color:${_isCurrentDc?'var(--sage)':(_dcLabel==='QUINCENA PASADA'?'var(--amber)':'var(--sky)')};text-transform:uppercase;letter-spacing:1.5px;font-weight:bold;margin-bottom:1px">${_dcLabel}</div>
+        <div style="font-size:13px;font-weight:bold;color:var(--txt)">${fmtCycleRange(_dck)}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="font-size:18px;padding:4px 12px;${_dcLast?'opacity:.3;pointer-events:none':''}" onclick="navDiarioCycle(1)">→</button>
+    </div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Compras del día a día que pagas a débito: OXXO, delivery, transporte, snacks. No son recurrentes ni se pagan después — salen ahora.</div>
     ${(()=>{
       // Diagnóstico: muestra el total guardado en S.gastosDiarios vs el que
@@ -11324,7 +11352,8 @@ function rHabitos(){
       </div>
       <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
     </details>
-    <div style="border-top:1px solid var(--border);padding-top:12px">
+    ${_isCurrentDc?'':'<div style="border-top:1px solid var(--border);padding-top:12px;font-size:11px;color:var(--muted);text-align:center;line-height:1.6">👀 Viendo una quincena pasada (solo lectura). Puedes editar/borrar gastos de la lista; para <strong>agregar</strong> vuelve a <strong>Esta quincena</strong> con →.</div>'}
+    <div style="border-top:1px solid var(--border);padding-top:12px;${_isCurrentDc?'':'display:none'}">
       <div style="font-size:11px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:8px">+ Registrar gasto</div>
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
         <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..."></div>
@@ -11380,7 +11409,7 @@ function rHabitos(){
         }).join('')}
       </div>`;
     }).join('')}
-  </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤</div>`}
+  </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">${_isCurrentDc?'Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤':'No hay gastos registrados en esta quincena.'}</div>`}
 
   ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
 
@@ -11390,7 +11419,7 @@ function rHabitos(){
     <div style="font-size:11px;color:var(--muted);line-height:1.6">Edita esos gastos (✏️ en la lista de arriba) y dales una categoría real para ver de verdad en qué se te va el dinero. Si te falta una, créala desde el selector de categoría.</div>
   </div>`:''}
 
-  ${cycleList.length>0?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
+  ${cycleList.length>0&&_isCurrentDc?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
     <div class="ct">📖 Cerrar quincena manualmente</div>
     <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">¿Prefieres no subir el CSV? Puedes cerrar la quincena solo con tu bitácora de Diarios y crear el capítulo en Mi Historia. Opcional — también puedes seguir subiendo el CSV desde Plan de Acción → Cerrar quincena si quieres auditar tus registros.</div>
     <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${cycleList.length} registros · ${fx(Math.round(totalAll))})</button>

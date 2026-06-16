@@ -9750,12 +9750,18 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
   // ── EXPENSES ──
   let expQ=0;const expDetail=[];
   const _cEndYMD=_ymdLocal(cEnd);
+  // Sábados dentro de la ventana: ancla de fecha para los gastos SEMANALES.
+  // El conteo de semanas (getWeeksInCycle) usa sábados, así que cada "Sem N"
+  // cae en el N-ésimo sábado del ciclo. Lo exponemos como `day` para que el
+  // Plan muestre la fecha igual que las deudas (antes salía "—"). Solo afecta
+  // el display y el orden de la lista; NO toca montos ni el balance.
+  const _cycleSats=[];{const _sd=new Date(cStart);while(_sd<=cEnd){if(_sd.getDay()===6)_cycleSats.push(_sd.getDate());_sd.setDate(_sd.getDate()+1);}}
   S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
     // Comienzo a futuro: el gasto no aplica en ciclos que terminan antes de
     // su fecha de inicio (ej. semanal que empieza el 8 ago no aparece hasta
     // la quincena que contiene/sigue a esa fecha).
     if(e.startDate&&_cEndYMD<e.startDate)return;
-    if(f==='semanal'){const w=+e.amt||0;const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;expQ+=w*weeks;for(let wi=0;wi<weeks;wi++){const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:0,freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
+    if(f==='semanal'){const w=+e.amt||0;const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;expQ+=w*weeks;for(let wi=0;wi<weeks;wi++){const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:_cycleSats[wi]||0,freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
     else if(f==='quincenal'){expQ+=(+e.amt||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
     else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
     else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}

@@ -9773,8 +9773,15 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       return;
     }
     if(db.nextPay){
-      const npd=_effectiveNextPay(db)||new Date(db.nextPay+'T12:00');
-      if(npd>=cStart&&npd<=cEnd){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npd.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});return;}
+      const npRaw=new Date(db.nextPay+'T12:00');if(!isNaN(npRaw))npRaw.setHours(0,0,0,0);
+      const npd=_effectiveNextPay(db)||npRaw;
+      // El pago de ESTE ciclo es el nextPay CRUDO si cae en la ventana — aunque
+      // ya haya "vencido" respecto a hoy, sigue siendo un pago de esta quincena.
+      // Solo si el crudo quedó en un ciclo ANTERIOR usamos el efectivo (rodado al
+      // próximo periodo). Antes se usaba siempre el efectivo: una deuda con
+      // nextPay el 15, vista el 16, rodaba al 30 y desaparecía del Plan actual.
+      const npWin=(!isNaN(npRaw)&&npRaw>=cStart&&npRaw<=cEnd)?npRaw:((npd>=cStart&&npd<=cEnd)?npd:null);
+      if(npWin){debtPayQ+=(+db.pay||0);debtDetail.push({id:db.id,name:db.name,amt:+db.pay||0,day:npWin.getDate(),curPay:db.curPay,totalPays:db.totalPays,isLast});return;}
       if(npd>cEnd)return;
     }
     const pdEff=pd||(db.nextPay?new Date(db.nextPay+'T12:00').getDate():0);

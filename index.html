@@ -6047,7 +6047,12 @@ function rQuincena(){
     const ck=cycleKey();
     const alreadyPaid=S.paidItems[ck]||{};
     const unpaidMatches=matches.filter(m=>!alreadyPaid['exp_'+m.exp.id]);
-    const reconcileBtn=unpaidMatches.length>0?'<div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:14px"><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:8px">🔍 Detecté <strong>'+unpaidMatches.length+' gasto'+(unpaidMatches.length!==1?'s':'')+' fijo'+(unpaidMatches.length!==1?'s':'')+'</strong> en el CSV que puedes marcar como pagados de un jalón.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="showReconcileModal(detectFixedMatches(filterByQna([...nuDebit,...nuCredit],qnaFilter)))">🔍 Reconciliar '+unpaidMatches.length+' gasto'+(unpaidMatches.length!==1?'s':'')+' con Plan de Acción</button></div>':'';
+    // Reconcile CSV → paidItems DESACTIVADO: colocaba los pagos en la quincena
+    // ACTIVA al reconciliar (no por día de pago), descuadrando el EC y metiendo
+    // cargos en quincenas equivocadas. El CSV se SIGUE usando para el Histórico y
+    // los gastos hormiga (saveSnapshot/detectH). Los pagos fijos/deudas ahora se
+    // aplican a mano en el Plan, donde el usuario elige la quincena correcta.
+    const reconcileBtn='';
     return`<div class="card" style="border-left:3px solid var(--terra)">
       <div class="ct">🩸 Top 5 Comercios Sangradores</div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Los 5 comercios donde más dinero se fue en este período, agrupados por monto total (no solo frecuencia).</div>

@@ -13983,7 +13983,15 @@ function exportAudit(){
       // cuentan (igual que el EC vivo); en la actual/futura sí (proyección).
       const _isPastCk=ckToOrder(ck)<ckToOrder(cycleKey());
       const ecTotalOut=planApplied+(_isPastCk?0:storedSelected)+diariosCash+ahorroApartado+metaOut+metaRetGastado+assetNet;
-      const ecBalance=_r2(incQ-ecTotalOut); // EC pone OT=0 en pasados
+      // Horas extra del ciclo anterior aún por cobrar (accepted && !paid). El EC
+      // vivo (línea _balance=incQ+_otEarned-_totalOut) y calcCycleBalance las
+      // suman como ingreso proyectado en la quincena ACTUAL/futura; sólo aplican
+      // a no-pasados (igual que _otSrcCk=_isPast?null:... en rPlan). Sin esto el
+      // audit subreportaba el balancePlan_ec y aparecía un delta fantasma = OT
+      // (p.ej. 6-2da: Inicio y EC vivo cuadran en 9863, pero el audit daba 5545).
+      const otEarned=(!_isPastCk&&otSrc&&otSrc.accepted&&!otSrc.paid)
+        ?(otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+otSrc.rate||0)),0):0;
+      const ecBalance=_r2(incQ+otEarned-ecTotalOut); // EC pone OT=0 en pasados
       report.ciclos.push({
         ck,rango:fmtCycleRange(ck),esActual:ck===cycleKey(),
         balanceInicio_home:homeBalance,
@@ -13991,7 +13999,7 @@ function exportAudit(){
         reconciliados:_r2(reconAudit),
         delta_home_menos_ec:_r2((homeBalance||0)-ecBalance),
         appliedStored_vs_plan:{stored:_r2(storedApplied),plan:_r2(planApplied-tdcpay),diferencia:_r2(storedApplied-(planApplied-tdcpay))},
-        ingreso:{salQ:_r2(salQ),bfQ:_r2(bfQ),extrasQ:_r2(extrasQ),incQ,otPrevPaid},
+        ingreso:{salQ:_r2(salQ),bfQ:_r2(bfQ),extrasQ:_r2(extrasQ),incQ,otEarned:_r2(otEarned),otPrevPaid},
         salidas:{storedApplied:_r2(storedApplied),storedAppliedTdc:_r2(storedAppliedTdc),tdcpay:_r2(tdcpay),storedSelected:_r2(storedSelected),diariosCash:_r2(diariosCash),diariosTdc:_r2(diariosTdc),diariosPending:_r2(diariosPending),savCommit:savCommitAmt,metaAbono:_r2(metaAbono),metaAjuste:_r2(metaAjuste),metaRetGastado:_r2(metaRetGastado),patrNet:_r2(patrNet),assetNet:_r2(assetNet)},
         huerfanos,
         deficitDecision:(S.deficitDecisions||{})[ck]||null,

@@ -8886,6 +8886,7 @@ function openLedgerAudit(){
       if(t==='imp')return (S.waitList||[]).some(x=>x.id===id);
       return true; // tdcpay/apt y otros no se evalúan como huérfanos
     };
+    const _ghosts=[];
     Object.keys(S.paidItems||{}).forEach(ck=>{
       const items=S.paidItems[ck];if(!items||typeof items!=='object')return;
       Object.keys(items).forEach(key=>{
@@ -8900,9 +8901,14 @@ function openLedgerAudit(){
         const amt=v.realAmt!=null?+v.realAmt:(+v.amt||0);
         if(Math.abs(amt)<1)return; // montos en 0 no afectan el saldo (ruido)
         const tl=t==='debt'?'la deuda':t==='sav'?'la meta':t==='imp'?'el impulso':'el gasto';
-        finds.push({type:'paid',ck,key,amt:Math.round(amt),vname:v.name||'',tl});
+        _ghosts.push({type:'paid',ck,key,t,id,amt:Math.round(amt),vname:v.name||'',tl,
+          at:v.at||null,budgeted:v.budgeted!=null?+v.budgeted:null,source:v.source||''});
       });
     });
+    // Cuenta cuántas veces aparece la MISMA entidad borrada (mismo key) en
+    // distintas quincenas, para anotarlo y que el usuario lo reconozca como uno solo.
+    const _ghostGroup={};_ghosts.forEach(g=>{_ghostGroup[g.key]=(_ghostGroup[g.key]||0)+1;});
+    _ghosts.forEach(g=>{g.groupN=_ghostGroup[g.key];finds.push(g);});
     // CONTADOR DE PAGOS INCONSISTENTE: deuda con curPay > totalPays pero saldo > 0.
     // El contador dice "ya la terminaste" pero el saldo dice que aún debes. Como la
     // liquidación se rige por el SALDO, la deuda está (correctamente) activa, pero el
@@ -8950,10 +8956,22 @@ function openLedgerAudit(){
             +'</div>';
         }else if(f.type==='paid'){
           const refPi=_xref({ck:f.ck,key:f.key});
+          const _ic=f.t==='debt'?'⛓️':f.t==='sav'?'🎯':f.t==='imp'?'🚫':'🛒';
+          const _tipoN=f.t==='debt'?'Deuda borrada':f.t==='sav'?'Meta borrada':f.t==='imp'?'Impulso borrado':'Gasto borrado';
+          const _ref4='#'+String(f.id).slice(-4);
+          const _fApp=f.at?(()=>{try{return new Date(f.at).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'});}catch(e){return '';}})():'';
+          // Pistas para identificarlo (el nombre no se guardó al borrar la entidad):
+          const _clues=[];
+          if(_fApp)_clues.push('lo registraste el <strong>'+_fApp+'</strong>');
+          if(f.budgeted!=null&&Math.abs(f.budgeted-f.amt)>1)_clues.push('plan era '+fx(f.budgeted));
+          if(f.source==='csv-reconcile')_clues.push('vino del <strong>CSV</strong>');
+          const _grp=f.groupN>1?'<div style="font-size:10px;color:var(--amber);margin:2px 0 0;line-height:1.5">↪ La <strong>misma '+(f.t==='debt'?'deuda':f.t==='sav'?'meta':'cosa')+' borrada</strong> ('+_ref4+') aparece en '+f.groupN+' quincenas — decídela igual en todas.</div>':'';
           body+='<div style="padding:10px 12px;border:1px solid rgba(184,92,74,.35);border-radius:8px;margin-bottom:10px;background:rgba(184,92,74,.05)">'
-            +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">👻 '+_escH(f.vname||'(borrado)')+' · '+fx(f.amt)+' <span style="font-size:9px;color:var(--terra);font-weight:normal">pago fantasma</span></div>'
-            +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">Ciclo '+_escH(String(f.ck))+' — '+f.tl+' ya no existe pero este pago de '+fx(f.amt)+' sigue restando del saldo.</div>'
-            +'<div style="display:flex;gap:6px"><button class="btn btn-red btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixPaidItem(x,\'del\')})(_xget('+refPi+'))">🗑 Eliminar (no fue real)</button><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixPaidItem(x,\'keep\')})(_xget('+refPi+'))">✓ Sí lo pagué, conservar</button></div>'
+            +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">'+_ic+' '+_tipoN+' · '+fx(f.amt)+' <span style="font-size:9px;color:var(--muted);font-weight:normal">'+_ref4+'</span></div>'
+            +'<div style="font-size:10px;color:var(--muted);margin:3px 0 2px;line-height:1.55">Quincena <strong>'+_escH(String(f.ck))+'</strong>'+(_clues.length?' · '+_clues.join(' · '):'')+'.</div>'
+            +_grp
+            +'<div style="font-size:10px;color:var(--muted);margin:4px 0 8px;line-height:1.5">'+f.tl+' ya no existe pero este pago de '+fx(f.amt)+' sigue restando del saldo de esa quincena <em>(ya cerrada — no afecta tu saldo de hoy)</em>. Si no lo reconoces, lo seguro es <strong>conservar</strong> y revisarlo con calma.</div>'
+            +'<div style="display:flex;gap:6px"><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px;border-color:rgba(184,92,74,.4);color:var(--terra)" onclick="(function(x){_auditFixPaidItem(x,\'del\')})(_xget('+refPi+'))">🗑 No fue real · eliminar</button><button class="btn btn-sage btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixPaidItem(x,\'keep\')})(_xget('+refPi+'))">✓ Sí lo pagué · conservar</button></div>'
             +'</div>';
         }else{
           const ckRef=_xref(f.ck);

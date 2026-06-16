@@ -2667,10 +2667,14 @@ const freqName=(f)=>f==='semanal'?'Semanal':f==='quincenal'?'Quincenal':f==='bim
 // (NO normalizado a mensual): "$250 / Qna", "$1,000 / Sem", etc.
 const freqCap=(f)=>f==='semanal'?'Sem':f==='quincenal'?'Qna':f==='bimestral'?'Bim':f==='unico'?'Único':'Mes';
 const payPeriodLabel=(f)=>f==='semanal'?'Pago semanal':f==='quincenal'?'Pago quincenal':f==='bimestral'?'Pago bimestral':f==='unico'?'Pago único':'Pago mensual';
-// Única fuente de verdad para "deuda liquidada" (saldo en 0 o MSI completo).
-// Distinta de "abono/cuota de este ciclo pagada": esa NO liquida la deuda,
-// sólo cubre el periodo actual y la deuda sigue viva con saldo pendiente.
-const isDebtLiquidated=(d)=>(+d.bal||0)<=0||!!(d.curPay&&d.totalPays&&d.curPay>d.totalPays);
+// Única fuente de verdad para "deuda liquidada": el SALDO. Si bal > 0 todavía
+// debes, sin importar el contador de pagos. Antes también se marcaba liquidada
+// cuando curPay > totalPays, pero ese contador puede quedar mal (p.ej. totalPays
+// capturado de menos): una deuda con curPay 7/6 y saldo $6,400 se ocultaba del
+// plan y del total de deuda aunque siguieras debiendo. El flujo de pago ya
+// decrementa bal a 0 al terminar (y "🧹 Limpiar saldo" pone bal=0), así que el
+// saldo es suficiente y correcto como señal de liquidación.
+const isDebtLiquidated=(d)=>(+d.bal||0)<=0;
 // Excluye freq 'unico': un pago de una sola vez no es un gasto mensual
 // recurrente (igual que hace project() en el simulador — antes el score y el
 // simulador se contradecían porque flow() lo restaba todos los meses).
@@ -8783,6 +8787,25 @@ function _auditFixPaidItem(o,action){
     try{if(cur==='dash')rDash();}catch(e){}
   }catch(e){toast('Error al corregir');}
 }
+// Resuelve una deuda con contador inconsistente (curPay>totalPays pero bal>0).
+// 'paid' = ya la pagaste → saldo a 0 (se liquida). 'owe' = aún la debes →
+// se deja activa (ya lo está por el saldo) y se marca _counterOk para no avisar.
+function _auditFixDebtCount(id,action){
+  try{
+    const d=(S.debts||[]).find(x=>x.id===id);
+    if(!d){toast('Deuda no encontrada');openLedgerAudit();return;}
+    const next=(S.debts||[]).map(x=>{
+      if(x.id!==id)return x;
+      if(action==='paid')return {...x,bal:0,liqDate:x.liqDate||_todayYMD()};
+      return {...x,_counterOk:true};
+    });
+    pt({debts:next});
+    toast(action==='paid'?'🧹 '+d.name+' liquidada (saldo $0)':'✓ '+d.name+' queda activa');
+    openLedgerAudit();
+    try{if(cur==='flujo')rFlujo();}catch(e){}
+    try{if(cur==='plan')rPlan();}catch(e){}
+  }catch(e){toast('Error al corregir');}
+}
 // Eliminar un movimiento de meta directo desde el desglose del Estado de
 // cuenta (Plan). Localiza el depósito por id/evId/fecha+monto, revierte su
 // efecto en el activo ligado si lo hay, y ajusta lo ahorrado de la meta.
@@ -8880,6 +8903,17 @@ function openLedgerAudit(){
         finds.push({type:'paid',ck,key,amt:Math.round(amt),vname:v.name||'',tl});
       });
     });
+    // CONTADOR DE PAGOS INCONSISTENTE: deuda con curPay > totalPays pero saldo > 0.
+    // El contador dice "ya la terminaste" pero el saldo dice que aún debes. Como la
+    // liquidación se rige por el SALDO, la deuda está (correctamente) activa, pero el
+    // "7/6" confunde. Se ofrece resolver: limpiar saldo (si ya pagaste) o dejarla
+    // activa (si aún debes) y de paso silenciar el aviso.
+    (S.debts||[]).forEach(d=>{
+      if(!d||d._counterOk)return;
+      if((+d.bal||0)>0&&d.curPay&&d.totalPays&&d.curPay>d.totalPays){
+        finds.push({type:'debtcount',d,bal:Math.round(+d.bal||0)});
+      }
+    });
     let body;
     if(!finds.length){
       body='<div style="text-align:center;padding:14px"><div style="font-size:40px;margin-bottom:8px">✅</div><div style="font-size:13px;color:var(--sage);font-weight:bold">Todo cuadra</div><div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6">Cada movimiento de tus metas y tu Págate Primero tiene respaldo real en tus activos.</div></div>';
@@ -8906,6 +8940,13 @@ function openLedgerAudit(){
             +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">'+(f.g.icon||'🎯')+' '+_escH(f.g.name)+' · '+((+f.dep.amt||0)>=0?'+':'−')+fx(Math.abs(+f.dep.amt||0))+'</div>'
             +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">'+(f.dep.date||'')+(f.dep.note?' · '+_escH(f.dep.note):'')+' — '+f.why+'</div>'
             +'<div style="display:flex;gap:6px"><button class="btn btn-red btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDep(x.g,x.t,\'del\')})(_xget('+ref1+'))">🗑 Eliminar de la meta</button><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDep(x.g,x.t,\'unlink\')})(_xget('+ref1+'))">Sí existió · desligar</button></div>'
+            +'</div>';
+        }else if(f.type==='debtcount'){
+          const refDc=_xref(f.d.id);
+          body+='<div style="padding:10px 12px;border:1px solid rgba(160,112,48,.35);border-radius:8px;margin-bottom:10px;background:rgba(160,112,48,.05)">'
+            +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">⛓️ '+_escH(f.d.name||'Deuda')+' · contador '+f.d.curPay+'/'+f.d.totalPays+' <span style="font-size:9px;color:var(--amber);font-weight:normal">pero debes '+fx(f.bal)+'</span></div>'
+            +'<div style="font-size:10px;color:var(--muted);margin:3px 0 8px;line-height:1.5">El contador de pagos dice que ya la terminaste, pero su saldo es '+fx(f.bal)+'. Sigue activa (manda el saldo). Corrige el número de pagos en su ficha, o:</div>'
+            +'<div style="display:flex;gap:6px"><button class="btn btn-red btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDebtCount(x,\'paid\')})(_xget('+refDc+'))">🧹 Ya la pagué (saldo a $0)</button><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="(function(x){_auditFixDebtCount(x,\'owe\')})(_xget('+refDc+'))">✓ Aún la debo, dejar activa</button></div>'
             +'</div>';
         }else if(f.type==='paid'){
           const refPi=_xref({ck:f.ck,key:f.key});

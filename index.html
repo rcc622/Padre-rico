@@ -9861,7 +9861,7 @@ try{
     :0;
 
   // ── EXPENSES + DEBTS ── (motor compartido, misma fuente que Horas Extra)
-  const {expQ,debtPayQ,expDetail,debtDetail}=buildCyclePayments(_viewCk,cStart,cEnd,ct,showNext);
+  const {expQ,debtPayQ,expDetail,debtDetail}=buildCyclePayments(_viewCk,cStart,cEnd,ct,!_isCurrent);
 
   // ── SAVINGS & APARTADOS ──
   const savQ=savAmt()/2;
@@ -13919,7 +13919,7 @@ function exportAudit(){
       //   calendario no agenda en esta ventana) + tdcpay. Espejo del EC vivo.
       let planApplied=0,planSelected=0;const planMissing=[];const _inPlanK=new Set();
       try{
-        const bcp=buildCyclePayments(ck,w.start,w.end,w.type,false);
+        const bcp=buildCyclePayments(ck,w.start,w.end,w.type,ck!==cycleKey());
         const scan=(arr,defType)=>{(arr||[]).forEach(e=>{const key=(e.paidType||defType)+'_'+e.id;_inPlanK.add(key);const st=stOf(key);if(!st)return;if(st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.amt);if(st.applied)planApplied+=v;else planSelected+=v;});};
         scan(bcp.expDetail,'exp');scan(bcp.debtDetail,'debt');
         getExpSavePlan().forEach(e=>{_inPlanK.add('apt_'+e.id);const st=stOf('apt_'+e.id);if(!st||st.method==='tdc')return;const v=st.realAmt!=null?st.realAmt:(st.amt||e.half);if(st.applied)planApplied+=v;else planSelected+=v;});

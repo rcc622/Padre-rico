@@ -3338,7 +3338,7 @@ const nw=()=>tAss()-tDebt();
 function metaMoneyBreakdown(){
   let consumoAsset=0,consumoVirtual=0,buildAsset=0,buildVirtual=0;
   (S.savGoals||[]).forEach(g=>{
-    if(g.done)return;                       // ya cumplida/gastada: el dinero salió
+    if(g.done||g.closed)return;             // ya cumplida/gastada/archivada: el dinero salió
     const saved=+g.saved||0;if(saved<=0)return;
     let backed=0;(g.deposits||[]).forEach(d=>{if(d&&d.assetId!=null)backed+=(+d.amt||0);});
     backed=Math.max(0,Math.min(saved,backed));
@@ -3864,7 +3864,7 @@ function getDailyWisdom(){
     const curNw=nw(),expMo=tExp(),savPctReal=S.savPct||0;
     const impAvoided=S.waitList.filter(w=>w.resolved&&!w.bought).length;
     const impSaved=S.waitList.filter(w=>w.resolved&&!w.bought).reduce((a,w)=>a+(+w.price||0),0);
-    const totalCajitas=(S.savGoals||[]).reduce((a,g)=>a+(+g.saved||0),0);
+    const totalCajitas=(S.savGoals||[]).filter(g=>!g.closed).reduce((a,g)=>a+(+g.saved||0),0);
 
     // 1. Días de libertad (Buckminster Fuller · Padre Rico)
     if(curNw>0&&expMo>0){
@@ -4080,7 +4080,7 @@ function savSelfHtml(){try{
     const committedNow=c&&(c.status==='committed'||c.status==='intact'||c.status==='emergency-kept');
     // Metas activas: cuánto ha ahorrado el usuario en sus cajitas. Se suma
     // al acumulado total para que el card refleje TODO el ahorro real.
-    const activeMetas=(S.savGoals||[]).filter(g=>!g.done&&(+g.saved||0)>0);
+    const activeMetas=(S.savGoals||[]).filter(g=>!g.done&&!g.closed&&(+g.saved||0)>0);
     const metaSaved=activeMetas.reduce((a,g)=>a+(+g.saved||0),0);
     // accumKept de los commits válidos (clamp a saldo combinado de sus activos)
     let accumKeptRaw=validCommits.reduce((a,sc)=>{
@@ -8460,7 +8460,7 @@ function convertAssetToMeta(id){
   const val=+a.val||0;
   const defDl=(()=>{const d=new Date();d.setMonth(d.getMonth()+3);return _ymdLocal(d);})();
   const keepDefault=!!a.gen;
-  const activeMetas=(S.savGoals||[]).filter(g=>!g.done);
+  const activeMetas=(S.savGoals||[]).filter(g=>!g.done&&!g.closed);
   const metaOpts=activeMetas.map(g=>'<option value="'+g.id+'">'+(g.icon||'🎯')+' '+_escH(g.name)+' · '+fx(Math.round(+g.saved||0))+' / '+fx(g.target)+'</option>').join('');
   const iconOpts=['🎯','🚗','🎉','🏠','✈️','🎄','📱','🎓','💍','🛡️','🛒','🥳'].map(e=>'<option>'+e+'</option>').join('');
   const startNew=activeMetas.length===0; // si no hay metas, arranca en "crear nueva"
@@ -10090,7 +10090,7 @@ try{
     expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
     debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';mandatory.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
     // Optional: savings, apartados, impulses
-    S.savGoals.filter(g=>!g.done&&g.target-(+g.saved||0)>0).forEach(g=>{
+    S.savGoals.filter(g=>!g.done&&!g.closed&&g.target-(+g.saved||0)>0).forEach(g=>{
       // Si ya registraste un abono REAL este ciclo (sección Ahorro · "Registrar
       // movimiento"), la meta se marca SOLA como aplicada en el Plan: una sola
       // fuente de verdad (los abonos reales), sin tener que checarla a mano ni
@@ -10576,7 +10576,7 @@ try{
       const sc2=curSavCommit();
       const savSt=S.savStreak||0;
       const assTotal=tAss();
-      const savGoalsActive=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0));
+      const savGoalsActive=S.savGoals.filter(g=>!g.done&&!g.closed&&g.target>(+g.saved||0));
       let h='<div class="card" style="border-left:3px solid var(--sage);margin-bottom:0">';
       h+='<div class="ct" style="color:var(--sage)">🪙 Ahorro y Activos</div>';
       // Commitment status
@@ -12564,7 +12564,7 @@ function project(mo,ov={}){
   // subestimando el patrimonio final.
   const includeGoals=!!ov.includeSavGoals;
   const goalsList=includeGoals
-    ?(S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0)).map(g=>{
+    ?(S.savGoals||[]).filter(g=>!g.done&&!g.closed&&(+g.target||0)>(+g.saved||0)).map(g=>{
         const today=new Date();today.setHours(0,0,0,0);
         const dl=g.deadline?new Date(g.deadline+'T12:00'):null;
         const daysLeft=dl?Math.ceil((dl-today)/864e5):0;
@@ -12926,7 +12926,7 @@ function rHistoria(){
         // Suma savGoalPerQ × 2 de todas las metas activas y lo resta del flujo
         // mensual cuando está activa. Default desactivado para no asustar al
         // usuario con un déficit al abrir el simulador por primera vez.
-        const activeGoals=(S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0));
+        const activeGoals=(S.savGoals||[]).filter(g=>!g.done&&!g.closed&&(+g.target||0)>(+g.saved||0));
         if(!activeGoals.length)return'';
         const monthly=Math.round(activeGoals.reduce((a,g)=>a+savGoalPerQ(g),0)*2);
         const vSavGoals=V.savGoals?'checked':'';
@@ -13810,7 +13810,7 @@ let breakdown='<div style="padding:10px 12px;background:var(--bg2);border-radius
   +(customMonthly>0?breakdownRow('⚙️ Conceptos personalizados','−'+fx(Math.round(customMonthly)),'var(--terra)'):'')
   +(()=>{
     if(!incSavGoals)return'';
-    const activeG=(S.savGoals||[]).filter(g=>!g.done&&(+g.target||0)>(+g.saved||0));
+    const activeG=(S.savGoals||[]).filter(g=>!g.done&&!g.closed&&(+g.target||0)>(+g.saved||0));
     const gM=Math.round(activeG.reduce((a,g)=>a+savGoalPerQ(g),0)*2);
     if(gM<=0)return'';
     // Calcula hasta qué mes del horizonte contribuyen las metas (el máximo
@@ -13948,7 +13948,7 @@ function exportAudit(){
       catalogos:{
         exp:(S.exp||[]).map(e=>({id:e.id,name:e.name,amt:+e.amt||0,freq:e.freq||'mensual',cat:e.cat||''})),
         debts:(S.debts||[]).map(d=>({id:d.id,name:d.name,pay:+d.pay||0,bal:+d.bal||0,freq:d.freq||'mensual',curPay:d.curPay,totalPays:d.totalPays})),
-        savGoals:(S.savGoals||[]).map(g=>({id:g.id,name:g.name,tipo:g.tipo||'consumo',target:+g.target||0,saved:+g.saved||0,done:!!g.done})),
+        savGoals:(S.savGoals||[]).filter(g=>!g.closed).map(g=>({id:g.id,name:g.name,tipo:g.tipo||'consumo',target:+g.target||0,saved:+g.saved||0,done:!!g.done})),
         waitList:(S.waitList||[]).map(i=>({id:i.id,name:i.name,price:+i.price||0}))
       },
       ciclos:[]
@@ -14450,8 +14450,12 @@ function buildAIReport(){
     L.push('');
   }
   // ── 5. Metas de ahorro ────────────────────────────────
-  const goals=(S.savGoals||[]);
-  if(goals.length){
+  // Solo metas ACTIVAS: las cerradas/archivadas (g.closed) ya se consumieron y
+  // no deben analizarse como si siguieran vivas.
+  const _allGoals=(S.savGoals||[]);
+  const goals=_allGoals.filter(g=>!g.closed);
+  const _archivadas=_allGoals.length-goals.length;
+  if(goals.length||_archivadas){
     L.push('## 5 · Metas de ahorro');
     L.push('');
     const _todayG=_todayYMD();
@@ -14461,6 +14465,7 @@ function buildAIReport(){
       const venc=(g.deadline&&!g.done&&String(g.deadline)<_todayG)?' ⚠️ vencida sin completar':'';
       L.push('- **'+(g.name||'Meta')+'** — '+fxn(svd)+' / '+fxn(tgt)+' ('+pct+'%)'+(g.deadline?' · meta '+fmtDate(g.deadline):'')+venc);
     });
+    if(_archivadas>0)L.push('- _('+_archivadas+' meta'+(_archivadas!==1?'s':'')+' cerrada'+(_archivadas!==1?'s':'')+'/archivada'+(_archivadas!==1?'s':'')+' — ya consumida'+(_archivadas!==1?'s':'')+', no se listan ni cuentan)_');
     L.push('');
   }
   // ── 6. Gastos registrados día a día (la bitácora REAL del usuario) ────

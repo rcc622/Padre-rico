@@ -461,7 +461,7 @@ const _todayYMD=()=>_ymdLocal(new Date());
 let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
-  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
+  paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],savWdKinds:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],diarioCatLabels:{},expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
@@ -558,7 +558,7 @@ function _normalizeState(st){
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
   if(!isObj(st.simSliders))st.simSliders={};
-  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats','userCatsCustom'];
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','savWdKinds','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats','userCatsCustom'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
   // mensual (a.inc). Los convertimos a tasa anual (a.yldPct) para que la
@@ -2179,7 +2179,13 @@ const SAVGOAL_WD_KINDS={
   enganche:{e:'🧾',n:'Enganche / proveedor o servicio',c:'var(--amber)'},
   ajuste:{e:'✏️',n:'Otro ajuste',c:'var(--muted)'}
 };
-const savGoalWdKind=k=>SAVGOAL_WD_KINDS[k]||null;
+const savGoalWdKind=k=>SAVGOAL_WD_KINDS[k]||(S.savWdKinds||[]).find(x=>x.k===k)||null;
+// Tipos de salida PERSONALIZADOS: el usuario puede agregar los suyos además de
+// los fijos. Se resuelven igual via savGoalWdKind (así un movimiento con tipo
+// custom se pinta bien en movimientos, barras y reportes). wdKindOptions genera
+// los <option> combinando fijos + personalizados para los 3 selectores.
+function wdKindList(){return Object.keys(SAVGOAL_WD_KINDS).map(k=>({k,e:SAVGOAL_WD_KINDS[k].e,n:SAVGOAL_WD_KINDS[k].n})).concat((S.savWdKinds||[]).map(x=>({k:x.k,e:x.e||'🏷️',n:x.n||'?'})));}
+function wdKindOptions(sel){return wdKindList().map(o=>'<option value="'+o.k+'"'+(o.k===sel?' selected':'')+'>'+o.e+' '+_escH(o.n)+'</option>').join('');}
 // Registra un MOVIMIENTO en una meta: el usuario indica si es INGRESO (+) o
 // EGRESO (−) y teclea el MONTO del movimiento (no el saldo total, que era
 // confuso). En egresos se pide el tipo (emergencia/enganche/ajuste). El
@@ -2213,7 +2219,7 @@ function updSavGoalSaved(id){
     +'<div id="_quSavWdBox" style="display:none;margin-bottom:10px;padding:10px;background:rgba(184,92,74,.05);border:1px solid rgba(184,92,74,.2);border-radius:8px">'
     +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">📉 Es un retiro · ¿de qué tipo?</label>'
     +'<select id="_quSavKind" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
-    +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'">'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
+    +wdKindOptions('')
     +'</select></div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Abono nómina, enganche bodega, retiro…" style="width:100%;padding:8px;font-size:13px"></div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_quSavDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
@@ -2391,7 +2397,7 @@ function editSavGoalDep(goalId,idx){
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Monto ($)</label><input type="number" id="_esdAmt" value="'+Math.abs(+dep.amt||0)+'" style="width:100%;padding:9px;font-size:16px;text-align:center;font-weight:bold"></div>'
     +'<div id="_esdKindBox" style="display:'+(isOut?'block':'none')+';margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Tipo de retiro</label>'
     +'<select id="_esdKind" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
-    +Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'"'+(dep.kind===k?' selected':'')+'>'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')
+    +wdKindOptions(dep.kind)
     +'</select></div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto</label><input type="text" id="_esdConcept" value="'+_escA(dep.note||'')+'" style="width:100%;padding:9px"></div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha</label><input type="date" id="_esdDate" value="'+(dep.date||_todayYMD())+'"></div>'
@@ -8721,7 +8727,8 @@ function openAssetMovement(assetId,opts){
     body+='<div style="display:flex;gap:8px;margin-bottom:12px">'+seg('in','🟢','Entra','var(--sage)','var(--sagedim)')+seg('out','🔴','Sale','var(--terra)','var(--terradim)')+'</div>';
   }
   body+='<div style="margin-bottom:10px"><label>Monto ($)</label><input type="number" id="_amAmt" inputmode="decimal" value="'+(isEdit?Math.abs(+ev.amount||0):'')+'" placeholder="0" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>';
-  body+='<div id="_amKindWrap" style="display:'+(dir==='out'&&!special?'block':'none')+';margin-bottom:10px"><label>¿Qué tipo de salida?</label><select id="_amKind" style="width:100%;padding:9px;font-size:13px">'+Object.keys(SAVGOAL_WD_KINDS).map(k=>'<option value="'+k+'"'+((ev&&ev.kind)===k?' selected':'')+'>'+SAVGOAL_WD_KINDS[k].e+' '+SAVGOAL_WD_KINDS[k].n+'</option>').join('')+'</select></div>';
+  body+='<div id="_amKindWrap" style="display:'+(dir==='out'&&!special?'block':'none')+';margin-bottom:10px"><label>¿Qué tipo de salida?</label><select id="_amKind" style="width:100%;padding:9px;font-size:13px">'+wdKindOptions((ev&&ev.kind)||'')+'</select>'
+    +'<div class="row" style="gap:6px;margin-top:6px"><input type="text" id="_amNewKind" placeholder="➕ Nuevo tipo de salida…" style="flex:1;padding:7px;font-size:12px" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_amAddKind();}"><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:12px;padding:6px 12px" onclick="_amAddKind()">Agregar</button></div></div>';
   body+='<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_amDate" value="'+((ev&&ev.date)||_todayYMD())+'"></div>';
   body+='<div style="margin-bottom:4px"><label>Concepto (opcional)</label><input type="text" id="_amConcept" value="'+_escA((ev&&ev.concept)||'')+'" placeholder="Sueldo, transferencia, pago…" style="width:100%;padding:8px;font-size:13px"></div>';
   showConfirm((isEdit?'✏️ Editar':'💰 Registrar')+' movimiento',body,()=>_amSave());
@@ -8734,6 +8741,20 @@ function _amSetDir(d){
   if(bi){bi.style.border='2px solid '+(d==='in'?'var(--sage)':'var(--border)');bi.style.background=d==='in'?'var(--sagedim)':'var(--bg)';bi.style.color=d==='in'?'var(--sage)':'var(--muted)';}
   if(bo){bo.style.border='2px solid '+(d==='out'?'var(--terra)':'var(--border)');bo.style.background=d==='out'?'var(--terradim)':'var(--bg)';bo.style.color=d==='out'?'var(--terra)':'var(--muted)';}
   const kw=document.getElementById('_amKindWrap');if(kw)kw.style.display=d==='out'?'block':'none';
+}
+// Agrega un tipo de salida personalizado desde el modal de movimiento. Guarda
+// con sv() (no pt(), que cerraría el modal) y refresca el <select> dejando el
+// nuevo tipo seleccionado. Se resuelve igual que los fijos via savGoalWdKind.
+function _amAddKind(){
+  const inp=document.getElementById('_amNewKind');if(!inp)return;
+  const name=(inp.value||'').trim();
+  if(!name){toast('⚠ Escribe el nombre del tipo');return;}
+  if(name.length>40){toast('⚠ Nombre muy largo');return;}
+  const k='wd_'+Date.now();
+  S.savWdKinds=[...(S.savWdKinds||[]),{k,e:'🏷️',n:name,c:'var(--muted)'}];
+  sv();
+  const sel=document.getElementById('_amKind');if(sel)sel.innerHTML=wdKindOptions(k);
+  inp.value='';toast('✓ Tipo "'+name+'" agregado');
 }
 function _amSave(){
   const ctx=window._amCtx;if(!ctx)return;

@@ -3293,7 +3293,14 @@ function showBonoPlays(){
 // una sola vez aparecía como pago mensual perpetuo y deprimía flow()/score
 // para siempre (project() ya lo trataba bien; ahora ambos coinciden).
 const tDebtPay=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)||(d.freq||'mensual')==='unico'?0:toMonthly(+d.pay||0,d.freq||'mensual')),0);
-const flow=()=>mInc()+tExtras()-tExp()-savAmt()-tDebtPay();
+// Ahorro que cuenta como salida REAL en el flujo: solo si de verdad lo apartas
+// (comprometido este ciclo o con racha viva). Si la meta no se ejecuta (racha 0,
+// sin compromiso), ese dinero NO sale — es flujo libre real. Mismo criterio que
+// el score de ahorro y que el motor de cuadre (calcCycleBalance usa el savCommit
+// real, no la meta programada). Sin esto, flow()/score restaban un ahorro
+// fantasma (~savAmt/mes) que nunca ocurría, deprimiendo el flujo y el score.
+const savAmtActive=()=>(curSavCommit()||(S.savStreak||0)>0)?savAmt():0;
+const flow=()=>mInc()+tExtras()-tExp()-savAmtActive()-tDebtPay();
 // Pagos ÚNICOS próximos (bills finitos: inscripciones, útiles, etc.). No son
 // recurrentes, así que tDebtPay()/flow() los excluyen — pero son salidas reales.
 // Cada uno se prorratea entre los meses de hoy hasta su vencimiento (saldo ÷
@@ -14127,7 +14134,8 @@ function _quincenalSnapshot(){
   const incQ=salQ+bfQ+extQ;
   let expQ=0;(S.exp||[]).forEach(e=>{const f=e.freq||'mensual';if(f==='unico')return;const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
   let dbtQ=0;(S.debts||[]).forEach(db=>{if(isDebtLiquidated(db)||(db.freq||'mensual')==='unico')return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(+db.pay||0);else dbtQ+=mo/2;});
-  const savQ=savAmtQ();
+  // Igual que flow(): el ahorro solo resta si de verdad lo apartas (racha/compromiso).
+  const savQ=(curSavCommit()||(S.savStreak||0)>0)?savAmtQ():0;
   const freeQ=Math.round(incQ-expQ-dbtQ-savQ);
   const freeQNoExtra=Math.round(incQ-extQ-expQ-dbtQ-savQ); // #7 · flujo antes del extra
   return {type:w.type,weeks:weeksInC,bfHits,salQ:Math.round(salQ),bono:Math.round(bono),

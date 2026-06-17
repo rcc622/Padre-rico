@@ -14281,14 +14281,16 @@ function buildAIReport(){
   L.push('> importar tu plan a la app y darle seguimiento quincena a quincena:');
   L.push('> ```json');
   L.push('> {"padreRicoPlan":1,"severidad":"leve|moderado|critico",');
-  L.push('>  "horizonteQnas":6,"savPct":12,"estrategiaDeuda":"nieve|avalancha",');
+  L.push('>  "horizonteQnas":6,"savPct":12,"presupuestoInnecesarios":1200,"estrategiaDeuda":"nieve|avalancha",');
   L.push('>  "resumen":"una línea con la idea central del plan",');
   L.push('>  "quincenas":[{"n":1,"titulo":"Sellar fugas (tema, SIN fechas)",');
   L.push('>    "inicio":"2026-06-15","fin":"2026-06-29",');
   L.push('>    "acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}');
   L.push('> ```');
   L.push('> Reglas del bloque: montos en números simples (sin $ ni comas), máximo');
-  L.push('> 6 acciones por quincena, "horizonteQnas" = total de quincenas del plan');
+  L.push('> 6 acciones por quincena. "presupuestoInnecesarios" = tope de gasto');
+  L.push('> hormiga/no necesario por quincena que recomiendas (número, o null si no');
+  L.push('> quieres cambiar el mío). "horizonteQnas" = total de quincenas del plan');
   L.push('> del punto 5 y "quincenas" una entrada por cada una. FECHAS: pon "inicio"');
   L.push('> y "fin" de cada quincena en formato YYYY-MM-DD; mis quincenas van del');
   L.push('> día 30 al 14 (1ra) y del 15 al 29 (2da). HOY es '+_todayYMD()+', así que');
@@ -14659,7 +14661,7 @@ function buildAIReport(){
 // cambio numérico posible (% de ahorro) es un checkbox explícito.
 // Prompt suelto para pedirle a la IA SOLO el bloque JSON, por si la
 // conversación no arrancó con el reporte (que ya lo incluye) o la IA lo omitió.
-const _AI_JSON_PROMPT='Con base en el plan de acción que me diste, genera SOLO un bloque de código JSON válido (sin texto antes ni después) con este esquema exacto. Lo importaré a mi app para darle seguimiento por quincena:\n\n```json\n{"padreRicoPlan":1,"severidad":"leve|moderado|critico","horizonteQnas":6,"savPct":12,"estrategiaDeuda":"nieve|avalancha","resumen":"una línea con la idea central","quincenas":[{"n":1,"titulo":"Tema de la quincena (sin fechas)","inicio":"2026-06-15","fin":"2026-06-29","acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}\n```\n\nReglas: montos en números simples (sin $ ni comas; usa null si no aplica), máximo 6 acciones por quincena, y una entrada en "quincenas" por cada quincena de tu plan. FECHAS: incluye "inicio" y "fin" de cada quincena en formato YYYY-MM-DD (mis quincenas van del 30 al 14 y del 15 al 29). El "titulo" es solo el tema, sin fechas.';
+const _AI_JSON_PROMPT='Con base en el plan de acción que me diste, genera SOLO un bloque de código JSON válido (sin texto antes ni después) con este esquema exacto. Lo importaré a mi app para darle seguimiento por quincena:\n\n```json\n{"padreRicoPlan":1,"severidad":"leve|moderado|critico","horizonteQnas":6,"savPct":12,"presupuestoInnecesarios":1200,"estrategiaDeuda":"nieve|avalancha","resumen":"una línea con la idea central","quincenas":[{"n":1,"titulo":"Tema de la quincena (sin fechas)","inicio":"2026-06-15","fin":"2026-06-29","acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}\n```\n\nReglas: montos en números simples (sin $ ni comas; usa null si no aplica), máximo 6 acciones por quincena, y una entrada en "quincenas" por cada quincena de tu plan. "presupuestoInnecesarios" = el tope de gasto hormiga/no necesario por quincena que me recomiendas (número, o null si no quieres cambiar el mío). FECHAS: incluye "inicio" y "fin" de cada quincena en formato YYYY-MM-DD (mis quincenas van del 30 al 14 y del 15 al 29). El "titulo" es solo el tema, sin fechas.';
 function copyAIJSONPrompt(){
   const ok=_copyText(_AI_JSON_PROMPT);
   toast(ok?'📋 Prompt copiado · pégalo en tu IA':'No se pudo copiar');
@@ -14695,6 +14697,7 @@ function _parseAIPlan(text){
       severidad:sev,
       horizonteQnas:Math.min(26,Math.max(1,Math.round(+obj.horizonteQnas||qs.length))),
       savPct:obj.savPct!=null&&isFinite(+obj.savPct)?Math.min(50,Math.max(1,Math.round(+obj.savPct))):null,
+      presupuestoInnecesarios:obj.presupuestoInnecesarios!=null&&isFinite(+obj.presupuestoInnecesarios)?Math.max(0,Math.round(+obj.presupuestoInnecesarios)):null,
       estrategiaDeuda:/aval/i.test(String(obj.estrategiaDeuda||''))?'avalancha':(/niev|snow/i.test(String(obj.estrategiaDeuda||''))?'nieve':null),
       resumen:String(obj.resumen||'').slice(0,220),
       quincenas:qs.map((q,qi)=>({
@@ -14733,6 +14736,7 @@ function _aiPlanPreview(text){
   });
   body+='</div>';
   if(p.savPct&&p.savPct!==S.savPct)body+='<label class="row" style="gap:8px;font-size:11px;color:var(--txt2);margin-bottom:4px;cursor:pointer"><input type="checkbox" id="aiPlanApplySav" style="width:auto"> Adoptar también su <strong>'+p.savPct+'%</strong> de "págate primero" (hoy: '+S.savPct+'%)</label>';
+  if(p.presupuestoInnecesarios!=null&&p.presupuestoInnecesarios!==(+S.gastoDiarioBudget||0))body+='<label class="row" style="gap:8px;font-size:11px;color:var(--txt2);margin-bottom:4px;cursor:pointer"><input type="checkbox" id="aiPlanApplyBudget" style="width:auto"> Adoptar su tope de gasto hormiga de <strong>'+fx(p.presupuestoInnecesarios)+'</strong>/quincena (hoy: '+fx(+S.gastoDiarioBudget||0)+')</label>';
   showConfirm('🤖 Plan de la IA · vista previa',body,()=>{_aiPlanAdopt();});
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._aiPlanDraft=null">Cancelar</button><button class="btn btn-sage" style="flex:1" onclick="execConfirm()">✓ Adoptar plan</button>';
@@ -14741,6 +14745,7 @@ function _aiPlanAdopt(){
   const p=window._aiPlanDraft;if(!p)return;
   const patch={aiPlan:{...p,importedAt:_todayYMD(),checks:{}}};
   try{if(document.getElementById('aiPlanApplySav')?.checked&&p.savPct)patch.savPct=p.savPct;}catch(e){}
+  try{if(document.getElementById('aiPlanApplyBudget')?.checked&&p.presupuestoInnecesarios!=null)patch.gastoDiarioBudget=p.presupuestoInnecesarios;}catch(e){}
   if(p.estrategiaDeuda){try{dStrat=p.estrategiaDeuda==='nieve'?'snowball':'avalanche';}catch(e){}}
   pt(patch);
   window._aiPlanDraft=null;

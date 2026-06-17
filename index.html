@@ -1711,7 +1711,7 @@ function _offerSavingsDeposit(amt,retoName,retoId){
     quickCreateAsset(()=>{const c=window._offerSavCtx;if(c)_offerSavingsDeposit(c.amt,c.retoName,c.retoId);},{title:'🏦 Tu primera cuenta',intro:'Completaste un reto de ahorro de '+fx(amt)+'. Para sumarlo a tu patrimonio crea la cuenta donde lo guardas y lo registramos al instante.'});
     return;
   }
-  const assetOptions=S.assets.map(a=>'<label class="row" style="gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_retoSavAsset" value="'+a.id+'" style="margin:0"><div style="flex:1"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:10px;color:var(--muted)">Saldo actual: '+fx(a.val)+'</div></div></label>').join('');
+  const assetOptions=S.assets.filter(a=>!a.archived).map(a=>'<label class="row" style="gap:10px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;cursor:pointer"><input type="radio" name="_retoSavAsset" value="'+a.id+'" style="margin:0"><div style="flex:1"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:10px;color:var(--muted)">Saldo actual: '+fx(a.val)+'</div></div></label>').join('');
   const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.6">Completaste un reto de ahorro: <strong style="color:var(--sage)">'+_escH(retoName)+'</strong> · <strong>'+fx(amt)+'</strong>.<br><br>¿A cuál cuenta lo depositaste?</div>'
     +'<div style="max-height:240px;overflow-y:auto;margin-bottom:4px">'+assetOptions
     +'<button type="button" class="row" style="width:100%;gap:10px;padding:10px 12px;border:2px dashed rgba(78,124,106,.4);border-radius:8px;margin-bottom:6px;cursor:pointer;background:transparent;color:var(--sage);font-weight:bold;font-family:Georgia,serif;font-size:13px;justify-content:center" onclick="quickCreateAsset(()=>{const c=window._offerSavCtx;if(c)_offerSavingsDeposit(c.amt,c.retoName,c.retoId);})">+ Nueva cuenta</button>'
@@ -2150,7 +2150,7 @@ function depositSavGoal(id,prefix){
   const body='<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a abonar</div><div style="font-size:24px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+' → '+(g.icon||'🎯')+' '+g.name+'</div></div>'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A qué cuenta entra el dinero?</div>'
     +'<div style="max-height:240px;overflow-y:auto">'
-    +S.assets.map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===lastAssetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===lastAssetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_depAsset" value="'+a.id+'" '+(a.id===lastAssetId?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+'</div></div></label>').join('')
+    +S.assets.filter(a=>!a.archived).map(a=>'<label class="row" style="gap:10px;padding:12px;border:2px solid '+(a.id===lastAssetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===lastAssetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_depAsset" value="'+a.id+'" '+(a.id===lastAssetId?'checked':'')+' style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+'</div></div></label>').join('')
     +'<button type="button" class="row" style="width:100%;gap:10px;padding:12px;border:2px dashed rgba(78,124,106,.4);border-radius:8px;margin-bottom:6px;cursor:pointer;background:transparent;color:var(--sage);font-weight:bold;font-family:Georgia,serif;font-size:13px;justify-content:center" onclick="quickCreateAsset(()=>{depositSavGoal('+id+',\''+pfx+'\')})">+ Nueva cuenta</button>'
     +'</div>'
     +'<div style="margin-top:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_depDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
@@ -3326,7 +3326,7 @@ const unicoReserveMonthly=()=>unicoBillsUpcoming().reserva;
 const tDebtRevolving=()=>S.debts.reduce((a,d)=>a+((isDebtLiquidated(d)||(d.freq||'mensual')==='unico')?0:(+d.bal||0)),0);
 const tDebtUnico=()=>S.debts.reduce((a,d)=>a+((!isDebtLiquidated(d)&&(d.freq||'mensual')==='unico')?(+d.bal||0):0),0);
 const tDebt=()=>S.debts.reduce((a,d)=>a+(isDebtLiquidated(d)?0:(+d.bal||0)),0);
-const tAss=()=>S.assets.reduce((a,x)=>a+(+x.val||0),0);
+const tAss=()=>S.assets.reduce((a,x)=>a+(x.archived?0:(+x.val||0)),0);
 const nw=()=>tAss()-tDebt();
 // ── PATRIMONIO POR PROPÓSITO ────────────────────────────────────────────
 // Distingue el dinero que CONSTRUYE patrimonio (fondo de emergencia,
@@ -3362,7 +3362,7 @@ function nwTotalCash(){const b=metaMoneyBreakdown();return nw()+b.consumoVirtual
 // propósito (🏗️ patrimonio | 🛒 consumo) y, si es meta, su objetivo.
 function cajitas(){
   const out=[];
-  (S.assets||[]).forEach(a=>{if(!a)return;out.push({
+  (S.assets||[]).forEach(a=>{if(!a||a.archived)return;out.push({
     id:a.id,kind:'asset',name:a.name,icon:a.icon||(a.gen?'📈':'🏦'),
     saldo:+a.val||0,yldPct:+a.yldPct||0,gen:!!a.gen,
     purpose:a.purpose||'patrimonio',target:0,deadline:'',done:false,src:a});});
@@ -3427,7 +3427,7 @@ function _recalcAsset(a){
   if(!Array.isArray(a.events))return a;
   return {...a,val:Math.round(_assetBalance(a))};
 }
-const passInc=()=>S.assets.filter(a=>a.gen).reduce((a,x)=>a+_monthlyYield(x),0);
+const passInc=()=>S.assets.filter(a=>a.gen&&!a.archived).reduce((a,x)=>a+_monthlyYield(x),0);
 const tExtras=()=>{
   let total=0;
   const now=new Date();const cm=now.getMonth(),cy=now.getFullYear();
@@ -7067,7 +7067,7 @@ function rFlujo(){try{
   ${S.assets.length>0?`
   <!-- LISTA DE ACTIVOS -->
   <div class="card">
-    <div class="ct">💎 Mis cajitas · activos (${S.assets.length})</div>
+    <div class="ct">💎 Mis cajitas · activos (${S.assets.filter(a=>!a.archived).length})</div>
     <div class="card card-grn" style="margin-bottom:12px;padding:10px 14px;background:rgba(78,124,106,.08)">
       <div class="row-b">
         <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Total en activos</div><div class="stat" style="color:var(--sage)">${fx(tAss())}</div></div>
@@ -7075,7 +7075,7 @@ function rFlujo(){try{
       </div>
       ${tAss()>0?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;color:var(--terra);border:1px solid rgba(184,92,74,.3)" onclick="openRetiroPicker()">📤 Registrar retiro</button>`:''}
     </div>
-    ${S.assets.map(a=>{
+    ${S.assets.filter(a=>!a.archived).map(a=>{
       const my=_monthlyYield(a);
       const yldLine=a.gen&&my>0?'+'+fx(Math.round(my))+'/mes · '+(+a.yldPct||0)+'% anual':'Sin rendimiento registrado';
       // La proyección de rendimiento solo tiene sentido si el dinero va a estar
@@ -7149,6 +7149,7 @@ function rFlujo(){try{
           <div class="row" style="gap:4px">
             <button class="btn btn-ghost btn-sm" onclick="quickUpdAsset(${a.id})" title="Ajustar saldo">🔄</button>
             <button class="btn btn-ghost btn-sm" onclick="openAssetSettings(${a.id})" title="Ajustes del activo">⚙️</button>
+            ${Math.abs(Math.round(+a.val||0))<1?`<button class="btn btn-ghost btn-sm" onclick="toggleAssetArchived(${a.id})" title="Archivar (mandar a histórico, sin borrar movimientos)">📦</button>`:''}
             <button class="btn btn-ghost btn-sm" onclick="delAsset(${a.id})" title="Eliminar">🗑️</button>
           </div>
         </div>
@@ -7159,6 +7160,10 @@ function rFlujo(){try{
         ${movHtml}
       </div>
     `;}).join('')}
+    ${(()=>{const arch=S.assets.filter(a=>a.archived);if(!arch.length)return '';
+      return '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;padding:6px 0">📦 Cajitas archivadas · '+arch.length+'</summary><div style="margin-top:6px">'
+      +arch.map(a=>'<div class="row-b" style="padding:8px 2px;border-bottom:1px dashed var(--border)"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--muted)">📦 '+_escH(a.name)+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+fx(+a.val||0)+' · '+((a.events||[]).length)+' movimiento'+(((a.events||[]).length)!==1?'s':'')+' · en histórico</div></div><div class="row" style="gap:4px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="toggleAssetArchived('+a.id+')" title="Reactivar">↩</button><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="delAsset('+a.id+')" title="Eliminar definitivamente">🗑️</button></div></div>').join('')
+      +'</div></details>';})()}
     <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;padding-top:10px;border-top:1px dashed var(--border)">
       💡 Usa <strong>🔄</strong> para actualizar el saldo rápido cuando Mercado Pago o Cajita te paguen rendimiento. Tu patrimonio en Inicio se recalcula solo.
     </div>
@@ -8661,6 +8666,27 @@ function _syncLinkedMetaSaved(assetId){
   if(!linked.length)return;
   pt({savGoals:S.savGoals.map(g=>_metaPrimaryAssetId(g)===assetId?{...g,saved:Math.round(+a.val||0),done:Math.round(+a.val||0)>=(+g.target||0)}:g)});
 }
+// Archiva/reactiva una cajita-activo: la manda a histórico SIN borrarla ni perder
+// movimientos (distinto de eliminar). Solo se permite archivar cajitas ya
+// consumidas (~$0): así excluirla de tAss/passInc es un no-op numérico y no
+// puede "esconder" dinero del patrimonio. calcCycleBalance NO se toca (sigue
+// contando sus eventos por fecha) → el cuadre histórico queda intacto.
+function toggleAssetArchived(id){
+  const a=S.assets.find(x=>x.id===id);if(!a)return;
+  if(a.archived){
+    pt({assets:S.assets.map(x=>x.id===id?{...x,archived:false}:x)});
+    toast('↩ Cajita reactivada');rFlujo();hdrUp&&hdrUp();return;
+  }
+  const bal=Math.round(+a.val||0);
+  if(Math.abs(bal)>=1){
+    toast('Primero retira/mueve el saldo ('+fx(bal)+'); archivar es para cajitas ya consumidas');
+    return;
+  }
+  showConfirm('📦 Archivar cajita','¿Archivar <strong>'+_escH(a.name)+'</strong>? Se va a histórico: deja de contar en tu patrimonio y de aparecer en activos, pero conserva todos sus movimientos. La puedes reactivar cuando quieras.',()=>{
+    pt({assets:S.assets.map(x=>x.id===id?{...x,archived:true}:x)});
+    closeConfirm();toast('📦 Cajita archivada');rFlujo();hdrUp&&hdrUp();
+  });
+}
 function delAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
   showConfirm('¿Eliminar el activo "'+a.name+'"?','Esto no afecta tu dinero real, solo deja de contarlo en tu patrimonio.',()=>{
@@ -9306,7 +9332,7 @@ function _savWizStep2(){
     +'<div style="text-align:center;margin-bottom:14px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Vas a apartar</div><div style="font-size:28px;font-weight:bold;color:var(--sage);font-family:Georgia,serif">'+fx(amt)+'</div></div>'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:1px">🏦 ¿A cuál cuenta lo mandas?</div>'
     +'<div style="max-height:280px;overflow-y:auto;margin-bottom:4px">'
-    +S.assets.map(a=>'<label class="row _savAssetRow" data-aid="'+a.id+'" style="gap:10px;padding:12px;border:2px solid '+(a.id===_savWizData.assetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===_savWizData.assetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_savAsset" value="'+a.id+'" '+(a.id===_savWizData.assetId?'checked':'')+' onchange="_savWizPickAsset('+a.id+')" style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx(+a.val+amt)+'</strong></div></div></label>').join('')
+    +S.assets.filter(a=>!a.archived).map(a=>'<label class="row _savAssetRow" data-aid="'+a.id+'" style="gap:10px;padding:12px;border:2px solid '+(a.id===_savWizData.assetId?'var(--sage)':'var(--border)')+';border-radius:8px;margin-bottom:6px;cursor:pointer;background:'+(a.id===_savWizData.assetId?'rgba(78,124,106,.06)':'transparent')+'"><input type="radio" name="_savAsset" value="'+a.id+'" '+(a.id===_savWizData.assetId?'checked':'')+' onchange="_savWizPickAsset('+a.id+')" style="margin:0"><div style="flex:1"><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+(a.gen?'📈 ':'')+_escH(a.name)+'</div><div style="font-size:11px;color:var(--muted);margin-top:2px">Saldo actual: '+fx(a.val)+' → Después: <strong style="color:var(--sage)">'+fx(+a.val+amt)+'</strong></div></div></label>').join('')
     +'<button type="button" class="row" style="width:100%;gap:10px;padding:12px;border:2px dashed rgba(78,124,106,.4);border-radius:8px;margin-bottom:6px;cursor:pointer;background:transparent;color:var(--sage);font-weight:bold;font-family:Georgia,serif;font-size:13px;justify-content:center" onclick="quickCreateAsset(id=>{_savWizData.assetId=id;_savWizStep=2;_renderSavWiz();})">+ Nueva cuenta</button>'
     +'</div>';
   showConfirm('🪙 Paso 2 — Destino',body,null);
@@ -10588,9 +10614,9 @@ try{
         h+='<div style="padding:10px 12px;background:rgba(160,112,48,.06);border-radius:8px;margin-bottom:10px"><div class="row-b"><div style="font-size:12px;color:var(--amber);font-weight:bold">🪙 Sin apartar esta quincena</div><button class="btn btn-sage btn-sm" style="padding:8px 14px;font-size:11px" onclick="openSavCommitModal()">Apartar '+fx(sug)+'</button></div></div>';
       }
       // Activos
-      if(S.assets.length>0){
+      if(S.assets.filter(a=>!a.archived).length>0){
         h+='<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;font-weight:bold">Activos</div>';
-        S.assets.forEach(a=>{h+='<div class="row-b" style="padding:4px 0;font-size:12px"><span>'+(a.gen?'📈 ':'')+a.name+'</span><strong style="color:var(--sage)">'+fx(a.val)+'</strong></div>';});
+        S.assets.filter(a=>!a.archived).forEach(a=>{h+='<div class="row-b" style="padding:4px 0;font-size:12px"><span>'+(a.gen?'📈 ':'')+a.name+'</span><strong style="color:var(--sage)">'+fx(a.val)+'</strong></div>';});
         h+='<div class="row-b" style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><strong style="font-size:12px">Total activos</strong><strong style="font-size:14px;color:var(--sage)">'+fx(assTotal)+'</strong></div>';
       }
       // Savings goals

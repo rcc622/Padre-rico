@@ -14166,6 +14166,26 @@ function buildAIReport(){
   L.push('> reporte; en mi app solo alimentan proyecciones). Analiza la');
   L.push('> composición de mi gasto con base en lo que registro.');
   L.push('> ');
+  L.push('> ⚠️ **CÓMO LEER MIS DATOS (no inventes "errores críticos" — estos puntos');
+  L.push('> son POR DISEÑO, ya están verificados):**');
+  L.push('> 1. **Mis deudas NO tienen fecha de vencimiento.** Se rastrean por número');
+  L.push('>    de pagos (`pagosHechos`/`pagosTotales`) y el saldo (`bal`) es la única');
+  L.push('>    verdad de si siguen vivas. El campo `vencimiento` casi siempre es');
+  L.push('>    `null` — es normal. NO deduzcas "qué deuda vence esta quincena" ni');
+  L.push('>    marques error por no haber un calendario de fechas.');
+  L.push('> 2. **`capacidadQuincenal.deudaMinima` reparte el pago recurrente a la');
+  L.push('>    mitad (mensual÷2)** justamente porque no hay fechas. Es correcto y');
+  L.push('>    consistente con mi app; no es un cálculo equivocado.');
+  L.push('> 3. **Los cargos de una sola vez son reales e intencionales:** viáticos de');
+  L.push('>    un viaje, primer pago de seguro (siempre más alto), compras de');
+  L.push('>    impulso, etc. NO son anomalías, doble cobro, ni errores de captura.');
+  L.push('> 4. **El ahorro es una META.** El `flujoMensual` ya EXCLUYE el ahorro que');
+  L.push('>    no aparto (si `ahorroEjecutado` es false, ese dinero es flujo libre');
+  L.push('>    real). No lo restes otra vez ni lo cuentes como dinero ya guardado.');
+  L.push('> 5. **El cuadre ya está verificado:** el balance de Inicio y el Estado de');
+  L.push('>    Cuenta del Plan coinciden por quincena. NO gastes el análisis');
+  L.push('>    buscando descuadres contables; enfócate en estrategia.');
+  L.push('> ');
   L.push('> ## 1 · ANÁLISIS PROFUNDO DEL ESTADO ACTUAL (AS-IS)');
   L.push('> - Diagnóstico con mis números: flujo libre, deuda/ingreso, patrimonio,');
   L.push('>   ritmo de ahorro. Fortalezas y focos rojos, sin endulzar nada.');
@@ -14538,6 +14558,7 @@ function buildAIReport(){
     const _nd=actDebts.map(d=>({
       nombre:d.name||'?',grupo:d.group||null,saldo:Math.round(+d.bal||0),freq:d.freq||'mensual',
       pagoMensual:Math.round(_payM(d)),pagoQuincenal:Math.round(_payQ(d)),
+      pagosHechos:(+d.curPay||0),pagosTotales:(+d.totalPays||0),
       tasaPct:d.hasInterest?(+d.interestPct||0):0,interesMonto:d.hasInterest?Math.round(+d.interestAmt||0):0,
       vencimiento:d.liqDate||null,esPagoMinimo:_esMin(d)}));
     // prioridad (avalancha): mayor tasa primero; empate por interés en $ y saldo.
@@ -14546,7 +14567,7 @@ function buildAIReport(){
       analisisInput:1,moneda:'MXN',fechaExport:_todayYMD(),
       periodo:{inicio:_pIni||null,fin:_pFin||null,dias:_periodDias,quincenas:_periodQnas},
       foto:{ingresoMensual:Math.round(inc),extraMensualProm:Math.round(ext),gastosFijosMensual:Math.round(exp),
-        pagoDeudaMensual:Math.round(dPay),ahorroMensual:Math.round(sav),flujoMensual:Math.round(fl),
+        pagoDeudaMensual:Math.round(dPay),ahorroMensual:Math.round(sav),ahorroEjecutado:!!(curSavCommit()||(S.savStreak||0)>0),flujoMensual:Math.round(fl),
         pagosUnicosProximosTotal:Math.round(_unicoTotal),reservaPagosUnicosMensual:Math.round(_unicoReserva),flujoMensualAjustado:_flAjustado,
         deudaTotal:Math.round(deuda),activos:Math.round(act),patrimonio:Math.round(patr),
         tdcDevengada:_tdcDev,patrimonioReal:Math.round(patr)-_tdcDev,score:sc},
@@ -14558,7 +14579,7 @@ function buildAIReport(){
       deudas:_nd};
     L.push('## 7 · analisisInput (bloque consolidado para máquina)');
     L.push('');
-    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra). `deudas` van normalizadas: `pagoMensual`/`pagoQuincenal` equivalentes, `tasaPct`, `vencimiento`, `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve).');
+    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `ahorroMensual` es mi META programada; `ahorroEjecutado` (bool) dice si de verdad la aparto — si es false, `flujoMensual` YA la trata como flujo libre (no la restes otra vez). `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra); su `deudaMinima` reparte el pago recurrente a la mitad (mensual÷2) porque mis deudas NO tienen fechas de vencimiento — es correcto. `deudas` van normalizadas: `pagoMensual`/`pagoQuincenal` equivalentes, `pagosHechos`/`pagosTotales` (así se rastrea la liquidación — NO hay calendario de fechas), `saldo` (única verdad de si sigue viva), `tasaPct`, `vencimiento` (casi siempre null por lo anterior), `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve). NO infieras "qué vence esta quincena" desde estas deudas: no hay fechas.');
     L.push('');
     L.push('```json');
     L.push(JSON.stringify(_ai));

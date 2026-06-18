@@ -14173,21 +14173,30 @@ function _copyText(txt){
 function _quincenalSnapshot(){
   const w=getCycleWindow();const qS=w.start,qE=w.end;
   const weeksInC=getWeeksInCycle(w);
+  const ck=cycleKey();
   const salQ=Math.round(((+S.inc.sal)||0)/2);
   const bono=(+S.inc.bf||0);
   const bfHits=bonusInCycle(qS,qE,S.inc);
   const bfQ=bfHits?bono:0;
   let extQ=0;(S.extras||[]).forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,qS,qE))extQ+=(+x.amt||0);});
   const incQ=salQ+bfQ+extQ;
-  let expQ=0;(S.exp||[]).forEach(e=>{const f=e.freq||'mensual';if(f==='unico')return;const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
-  let dbtQ=0;(S.debts||[]).forEach(db=>{if(isDebtLiquidated(db)||(db.freq||'mensual')==='unico')return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(+db.pay||0);else dbtQ+=mo/2;});
-  // Igual que flow(): el ahorro solo resta si de verdad lo apartas (racha/compromiso).
-  const savQ=(curSavCommit()||(S.savStreak||0)>0)?savAmtQ():0;
-  const freeQ=Math.round(incQ-expQ-dbtQ-savQ);
-  const freeQNoExtra=Math.round(incQ-extQ-expQ-dbtQ-savQ); // #7 · flujo antes del extra
+  // FIJOS y DEUDA del ciclo: MISMO motor que la pantalla Pagos (buildCyclePayments,
+  // consciente de fechas — incluye únicos dateados y reparte semanales por sábado).
+  // Antes esto repartía el agregado mensual a mano (mo/2 + frontload) e inflaba la
+  // quincena hasta ~$6,800 frente al Estado de Cuenta real. Ahora consume la misma
+  // fuente, así capacidadQuincenal coincide con lo que el usuario ve en Pagos.
+  const _cp=buildCyclePayments(ck,qS,qE,w.type,false);
+  const expQ=Math.round(_cp.expQ),dbtQ=Math.round(_cp.debtPayQ);
+  // Gastos diarios REALES del ciclo (excluye esenciales) — el EC sí los descuenta.
+  const diaQ=Math.round(diariosCycleSpent(ck));
+  // Ahorro REALMENTE apartado este ciclo (no la meta programada).
+  const _savC=curSavCommit();
+  const savQ=(_savC&&['committed','intact','emergency-kept'].includes(_savC.status))?Math.round(+_savC.amount||0):0;
+  const freeQ=Math.round(incQ-expQ-dbtQ-diaQ-savQ);
+  const freeQNoExtra=Math.round(incQ-extQ-expQ-dbtQ-diaQ-savQ);
   return {type:w.type,weeks:weeksInC,bfHits,salQ:Math.round(salQ),bono:Math.round(bono),
-    bfQ:Math.round(bfQ),extQ:Math.round(extQ),incQ:Math.round(incQ),expQ:Math.round(expQ),
-    dbtQ:Math.round(dbtQ),savQ:Math.round(savQ),freeQ,freeQNoExtra,start:_ymdLocal(qS),end:_ymdLocal(qE)};
+    bfQ:Math.round(bfQ),extQ:Math.round(extQ),incQ:Math.round(incQ),expQ,dbtQ,diaQ,savQ,
+    freeQ,freeQNoExtra,start:_ymdLocal(qS),end:_ymdLocal(qE)};
 }
 function buildAIReport(){
   const L=[];
@@ -14408,17 +14417,18 @@ function buildAIReport(){
    const _incM=inc+ext; // ingreso mensual total: salario + bono + extras
    L.push('## 1c · Capacidad real por quincena (ciclo actual)');
    L.push('');
-   L.push('> El Plan de Acción (sección 5) y el JSON son QUINCENALES; la foto de arriba es mensual. Esta es la capacidad quincenal REAL del ciclo en curso, calculada como lo hace la app — **NO es mensual÷2**. Usa estos montos para el plan por quincena.');
+   L.push('> El Plan de Acción (sección 5) y el JSON son QUINCENALES; la foto de arriba es mensual. Esta es la capacidad quincenal REAL del ciclo en curso, tomada de los **mismos line items con fecha que la pantalla Pagos** (NO un mensual÷2). La columna "Mensual÷2" es solo ilustrativa. Usa la columna "Esta quincena" para el plan.');
    L.push('');
    L.push('**Ciclo actual:** '+(_q.type==='1ra'?'1ra quincena':'2da quincena')+' · '+fmtDate(_q.start)+' → '+fmtDate(_q.end)+' · '+_q.weeks+' semana'+(_q.weeks!==1?'s':'')+(_q.weeks===3?' (quincena larga)':''));
    L.push('');
-   L.push('| Concepto | Esta quincena | Mensual÷2 (ingenuo) |');
+   L.push('| Concepto | Esta quincena | Mensual÷2 (ilustrativo) |');
    L.push('|---|--:|--:|');
    L.push('| Ingreso (con extra) | '+fxn(_q.incQ)+' | '+fxn(Math.round(_incM/2))+' |');
    if(_q.extQ>0)L.push('| — de eso, ingreso extra | '+fxn(_q.extQ)+' | '+fxn(Math.round(ext/2))+' |');
-   L.push('| Gastos fijos | −'+fxn(_q.expQ)+' | −'+fxn(Math.round(exp/2))+' |');
-   L.push('| Pago deuda (mínimo) | −'+fxn(_q.dbtQ)+' | −'+fxn(Math.round(dPay/2))+' |');
-   L.push('| Ahorro programado | −'+fxn(_q.savQ)+' | −'+fxn(Math.round(sav/2))+' |');
+   L.push('| Gastos fijos del ciclo | −'+fxn(_q.expQ)+' | −'+fxn(Math.round(exp/2))+' |');
+   L.push('| Pago deuda del ciclo | −'+fxn(_q.dbtQ)+' | −'+fxn(Math.round(dPay/2))+' |');
+   L.push('| Gastos diarios (bitácora) | −'+fxn(_q.diaQ)+' | — |');
+   L.push('| Ahorro apartado | −'+fxn(_q.savQ)+' | −'+fxn(Math.round(sav/2))+' |');
    L.push('| **Flujo libre (con extra)** | **'+fxn(_q.freeQ)+'** | **'+fxn(Math.round(fl/2))+'** |');
    if(_q.extQ>0)L.push('| **Flujo libre (sin extra)** | **'+fxn(_q.freeQNoExtra)+'** | **'+fxn(Math.round((fl-ext)/2))+'** |');
    L.push('');
@@ -14428,7 +14438,7 @@ function buildAIReport(){
    if(_q.weeks!==2)_notes.push('**Ciclo de '+_q.weeks+' semanas:** los gastos de frecuencia semanal se cuentan '+_q.weeks+' veces (no 2), por eso los fijos de esta quincena suben respecto a un mes÷2.');
    _notes.forEach(n=>L.push('- '+n));
    if(_notes.length)L.push('');
-   L.push('> Por eso quincenal ≠ mensual÷2. Para el plan por quincena parte del **flujo libre sin extra de '+fxn(_q.freeQNoExtra)+'** de este ciclo, y ajústalo en las quincenas donde el bono caiga (o no) y en las de 3 semanas. La suma de las 2 quincenas de un mes reconcilia con las cifras mensuales de la sección 1.');
+   L.push('> El **"Flujo libre (con extra)" de esta columna ('+fxn(_q.freeQ)+') es el MISMO cierre que muestra mi pantalla de Pagos** (Estado de Cuenta del ciclo) — sale de los pagos con fecha dentro del ciclo + mis gastos diarios reales + lo apartado de verdad, no de un promedio. Para el plan por quincena parte del **flujo libre sin extra de '+fxn(_q.freeQNoExtra)+'** (más confiable), y ajústalo en las quincenas donde el bono caiga (o no) y en las de 3 semanas.');
    L.push('');}
   // ── 2. Gastos fijos por categoría ─────────────────────
   const expByCat={};
@@ -14633,13 +14643,13 @@ function buildAIReport(){
       pagosUnicosProximos:_unicoBills.map(b=>({nombre:b.name,saldo:b.bal,vence:b.due,meses:b.months,prorrateoMensual:b.perMonth})),
       capacidadQuincenal:{ciclo:_qsnap.type,inicio:_qsnap.start,fin:_qsnap.end,semanas:_qsnap.weeks,
         ingreso:_qsnap.incQ,ingresoSinExtra:_qsnap.incQ-_qsnap.extQ,extra:_qsnap.extQ,
-        gastosFijos:_qsnap.expQ,deudaMinima:_qsnap.dbtQ,ahorro:_qsnap.savQ,
+        gastosFijos:_qsnap.expQ,deudaMinima:_qsnap.dbtQ,gastosDiarios:_qsnap.diaQ,ahorro:_qsnap.savQ,
         presupuestoInnecesarios:Math.round(getDiarioBudgetForCycle(cycleKey())),innecesariosGastado:Math.round(diariosCycleSpent(cycleKey())),
         flujoLibreAntesExtra:_qsnap.freeQNoExtra,flujoLibreDespuesExtra:_qsnap.freeQ},
       deudas:_nd};
     L.push('## 7 · analisisInput (bloque consolidado para máquina)');
     L.push('');
-    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `ahorroMensual` es mi META programada; `ahorroEjecutado` (bool) dice si de verdad la aparto — si es false, `flujoMensual` YA la trata como flujo libre (no la restes otra vez). `capacidadQuincenal` es la del ciclo actual (flujo libre antes/después del ingreso extra); su `deudaMinima` reparte el pago recurrente a la mitad (mensual÷2) porque mis deudas NO tienen fechas de vencimiento — es correcto. `presupuestoInnecesarios` es el TOPE de gasto hormiga/no necesario que YO defino para esta quincena (mi límite auto-impuesto; los esenciales NO cuentan ahí) y `innecesariosGastado` es lo que llevo gastado de ese tope — respeta ese presupuesto como mi meta y dime si voy por encima. `deudas` van normalizadas: `grupoKey` (llave para agrupar la MISMA deuda escrita distinto; agrupa por este campo, no por `nombre` crudo), `pagoMensual`/`pagoQuincenal` equivalentes, `pagosHechos`/`pagosTotales` (así se rastrea la liquidación — NO hay calendario de fechas), `saldo` (única verdad de si sigue viva), `tasaPct`, `vencimiento` (casi siempre null por lo anterior), `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve). NO infieras "qué vence esta quincena" desde estas deudas: no hay fechas.');
+    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `ahorroMensual` es mi META programada; `ahorroEjecutado` (bool) dice si de verdad la aparto — si es false, `flujoMensual` YA la trata como flujo libre (no la restes otra vez). `capacidadQuincenal` es la del ciclo actual y sale de los MISMOS line items con fecha que mi pantalla de Pagos (Estado de Cuenta): `gastosFijos` y `deudaMinima` son los pagos que de verdad caen dentro del ciclo (no un mensual÷2), `gastosDiarios` es mi bitácora real del ciclo, `ahorro` es lo realmente apartado, y `flujoLibreDespuesExtra` es el cierre del ciclo — debe coincidir con el saldo que veo en Pagos. NO lo recalcules por promedio. `presupuestoInnecesarios` es el TOPE de gasto hormiga/no necesario que YO defino para esta quincena (mi límite auto-impuesto; los esenciales NO cuentan ahí) y `innecesariosGastado` es lo que llevo gastado de ese tope — respeta ese presupuesto como mi meta y dime si voy por encima. `deudas` van normalizadas: `grupoKey` (llave para agrupar la MISMA deuda escrita distinto; agrupa por este campo, no por `nombre` crudo), `pagoMensual`/`pagoQuincenal` equivalentes, `pagosHechos`/`pagosTotales` (así se rastrea la liquidación — NO hay calendario de fechas), `saldo` (única verdad de si sigue viva), `tasaPct`, `vencimiento` (casi siempre null por lo anterior), `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve). NO infieras "qué vence esta quincena" desde estas deudas: no hay fechas.');
     L.push('');
     L.push('```json');
     L.push(JSON.stringify(_ai));

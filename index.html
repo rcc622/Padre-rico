@@ -14187,8 +14187,13 @@ function _quincenalSnapshot(){
   // fuente, así capacidadQuincenal coincide con lo que el usuario ve en Pagos.
   const _cp=buildCyclePayments(ck,qS,qE,w.type,false);
   const expQ=Math.round(_cp.expQ),dbtQ=Math.round(_cp.debtPayQ);
-  // Gastos diarios REALES del ciclo (excluye esenciales) — el EC sí los descuenta.
-  const diaQ=Math.round(diariosCycleSpent(ck));
+  // Gastos diarios del ciclo: MISMO criterio que el EC/calcCycleBalance — todo lo
+  // no-pendiente en EFECTIVO (débito) dentro de la ventana, TODAS las categorías
+  // (incl. esenciales). Los pagados con TDC NO van aquí (salen vía "Pago TDC").
+  // (Antes usaba diariosCycleSpent, que excluye esenciales e incluye TDC → no
+  // cuadraba con el cierre de Pagos.)
+  const _sY=_ymdLocal(qS),_eY=_ymdLocal(qE);
+  const diaQ=Math.round((S.gastosDiarios||[]).reduce((a,g)=>(!g||g.pending||!g.date||g.date<_sY||g.date>_eY||g.paidWith==='tdc')?a:a+(+g.amt||0),0));
   // Ahorro REALMENTE apartado este ciclo (no la meta programada).
   const _savC=curSavCommit();
   const savQ=(_savC&&['committed','intact','emergency-kept'].includes(_savC.status))?Math.round(+_savC.amount||0):0;

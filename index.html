@@ -10570,6 +10570,18 @@ try{
       <div class="row-b" style="padding-top:8px;margin-top:6px;border-top:2px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total ahorro/qna:</span><span style="font-size:14px;color:var(--sage);font-weight:bold">${fx(Math.round(oTotalT))}</span></div>
     </div>`:''}
 
+    <!-- AHORROS SUGERIDOS POR LA IA (solo guía · NO afectan números/cuadre) -->
+    ${(()=>{const _ais=(S.aiPlan&&Array.isArray(S.aiPlan.ahorrosSugeridos))?S.aiPlan.ahorrosSugeridos:[];if(!_ais.length)return '';const _ch=(S.aiPlan&&S.aiPlan.ahorroChecks)||{};
+      return '<div class="card" style="border-left:3px solid var(--amber)">'
+        +'<div class="ct" style="color:var(--amber)">💡 Ahorros sugeridos por tu plan IA</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Solo guía según tu estrategia — <strong>NO mueven tu dinero ni cuentan en tus números</strong>. Palomea lo que ya apartaste, o crea una cajita si quieres seguirlo de verdad.</div>'
+        +_ais.map((s,i)=>{const on=!!_ch[i];return '<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px">'
+          +'<label class="row" style="gap:8px;flex:1;min-width:0;cursor:pointer"><input type="checkbox" '+(on?'checked':'')+' onclick="toggleAiSavCheck('+i+')" style="width:auto;flex-shrink:0"><span style="font-size:12px;color:var(--txt)'+(on?';text-decoration:line-through;opacity:.55':'')+'">💰 '+_escH(s.nombre)+(s.monto?' · <strong style=\"color:var(--sage)\">'+fx(s.monto)+'</strong>':'')+'</span></label>'
+          +'<button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:3px 8px" onclick="crearCajitaIA('+i+')" title="Crear una cajita con este nombre">+ Cajita</button>'
+        +'</div>';}).join('')
+        +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="flujoView=\'activos\';go(\'flujo\')">💎 Crear / gestionar mis cajitas en Finanzas →</button>'
+        +'</div>';})()}
+
     <!-- APPLY BUTTON -->
     ${!showNext&&pendingCount()>0?`
     <div class="card card-grn" style="padding:12px 18px">
@@ -14315,6 +14327,7 @@ function buildAIReport(){
   L.push('> ```json');
   L.push('> {"padreRicoPlan":1,"severidad":"leve|moderado|critico",');
   L.push('>  "horizonteQnas":6,"savPct":12,"presupuestoInnecesarios":1200,"estrategiaDeuda":"nieve|avalancha",');
+  L.push('>  "ahorrosSugeridos":[{"nombre":"Fondo de emergencia","monto":500}],');
   L.push('>  "resumen":"una línea con la idea central del plan",');
   L.push('>  "quincenas":[{"n":1,"titulo":"Sellar fugas (tema, SIN fechas)",');
   L.push('>    "inicio":"2026-06-15","fin":"2026-06-29",');
@@ -14323,7 +14336,10 @@ function buildAIReport(){
   L.push('> Reglas del bloque: montos en números simples (sin $ ni comas), máximo');
   L.push('> 6 acciones por quincena. "presupuestoInnecesarios" = tope de gasto');
   L.push('> hormiga/no necesario por quincena que recomiendas (número, o null si no');
-  L.push('> quieres cambiar el mío). "horizonteQnas" = total de quincenas del plan');
+  L.push('> quieres cambiar el mío). "ahorrosSugeridos" = lista corta (máx 8) de');
+  L.push('> ahorros/cajitas recurrentes que me recomiendas según tu estrategia');
+  L.push('> ({nombre, monto por quincena}); son SOLO sugerencias para mi widget, la');
+  L.push('> app NO mueve dinero con ellas. "horizonteQnas" = total de quincenas del plan');
   L.push('> del punto 5 y "quincenas" una entrada por cada una. FECHAS: pon "inicio"');
   L.push('> y "fin" de cada quincena en formato YYYY-MM-DD; mis quincenas van del');
   L.push('> día 30 al 14 (1ra) y del 15 al 29 (2da). HOY es '+_todayYMD()+', así que');
@@ -14695,7 +14711,7 @@ function buildAIReport(){
 // cambio numérico posible (% de ahorro) es un checkbox explícito.
 // Prompt suelto para pedirle a la IA SOLO el bloque JSON, por si la
 // conversación no arrancó con el reporte (que ya lo incluye) o la IA lo omitió.
-const _AI_JSON_PROMPT='Con base en el plan de acción que me diste, genera SOLO un bloque de código JSON válido (sin texto antes ni después) con este esquema exacto. Lo importaré a mi app para darle seguimiento por quincena:\n\n```json\n{"padreRicoPlan":1,"severidad":"leve|moderado|critico","horizonteQnas":6,"savPct":12,"presupuestoInnecesarios":1200,"estrategiaDeuda":"nieve|avalancha","resumen":"una línea con la idea central","quincenas":[{"n":1,"titulo":"Tema de la quincena (sin fechas)","inicio":"2026-06-15","fin":"2026-06-29","acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}\n```\n\nReglas: montos en números simples (sin $ ni comas; usa null si no aplica), máximo 6 acciones por quincena, y una entrada en "quincenas" por cada quincena de tu plan. "presupuestoInnecesarios" = el tope de gasto hormiga/no necesario por quincena que me recomiendas (número, o null si no quieres cambiar el mío). FECHAS: incluye "inicio" y "fin" de cada quincena en formato YYYY-MM-DD (mis quincenas van del 30 al 14 y del 15 al 29). El "titulo" es solo el tema, sin fechas.';
+const _AI_JSON_PROMPT='Con base en el plan de acción que me diste, genera SOLO un bloque de código JSON válido (sin texto antes ni después) con este esquema exacto. Lo importaré a mi app para darle seguimiento por quincena:\n\n```json\n{"padreRicoPlan":1,"severidad":"leve|moderado|critico","horizonteQnas":6,"savPct":12,"presupuestoInnecesarios":1200,"estrategiaDeuda":"nieve|avalancha","ahorrosSugeridos":[{"nombre":"Fondo de emergencia","monto":500}],"resumen":"una línea con la idea central","quincenas":[{"n":1,"titulo":"Tema de la quincena (sin fechas)","inicio":"2026-06-15","fin":"2026-06-29","acciones":[{"t":"Acción concreta y medible","monto":1200}]}]}\n```\n\nReglas: montos en números simples (sin $ ni comas; usa null si no aplica), máximo 6 acciones por quincena, y una entrada en "quincenas" por cada quincena de tu plan. "presupuestoInnecesarios" = el tope de gasto hormiga/no necesario por quincena que me recomiendas (número, o null si no quieres cambiar el mío). "ahorrosSugeridos" = lista corta (máx 8) de ahorros/cajitas recurrentes que recomiendas según tu estrategia ({nombre, monto por quincena}); son SOLO sugerencias informativas para mi widget, la app no mueve dinero con ellas. FECHAS: incluye "inicio" y "fin" de cada quincena en formato YYYY-MM-DD (mis quincenas van del 30 al 14 y del 15 al 29). El "titulo" es solo el tema, sin fechas.';
 function copyAIJSONPrompt(){
   const ok=_copyText(_AI_JSON_PROMPT);
   toast(ok?'📋 Prompt copiado · pégalo en tu IA':'No se pudo copiar');
@@ -14732,6 +14748,10 @@ function _parseAIPlan(text){
       horizonteQnas:Math.min(26,Math.max(1,Math.round(+obj.horizonteQnas||qs.length))),
       savPct:obj.savPct!=null&&isFinite(+obj.savPct)?Math.min(50,Math.max(1,Math.round(+obj.savPct))):null,
       presupuestoInnecesarios:obj.presupuestoInnecesarios!=null&&isFinite(+obj.presupuestoInnecesarios)?Math.max(0,Math.round(+obj.presupuestoInnecesarios)):null,
+      ahorrosSugeridos:(Array.isArray(obj.ahorrosSugeridos)?obj.ahorrosSugeridos.slice(0,8):[]).map(a=>({
+        nombre:String((a&&(a.nombre||a.t))||'').slice(0,60),
+        monto:a&&a.monto!=null&&isFinite(+a.monto)?Math.max(0,Math.round(+a.monto)):null
+      })).filter(a=>a.nombre),
       estrategiaDeuda:/aval/i.test(String(obj.estrategiaDeuda||''))?'avalancha':(/niev|snow/i.test(String(obj.estrategiaDeuda||''))?'nieve':null),
       resumen:String(obj.resumen||'').slice(0,220),
       quincenas:qs.map((q,qi)=>({
@@ -14761,6 +14781,7 @@ function _aiPlanPreview(text){
     +'<span class="badge bdg-amber">'+(sevL[p.severidad]||p.severidad)+'</span>'
     +'<span class="badge bdg-sage">'+p.quincenas.length+' quincena'+(p.quincenas.length!==1?'s':'')+'</span>'
     +(p.estrategiaDeuda?'<span class="badge bdg-sky">Deuda: '+(p.estrategiaDeuda==='nieve'?'Bola de Nieve':'Avalancha')+'</span>':'')
+    +((p.ahorrosSugeridos&&p.ahorrosSugeridos.length)?'<span class="badge bdg-amber">'+p.ahorrosSugeridos.length+' ahorro'+(p.ahorrosSugeridos.length!==1?'s':'')+' sugerido'+(p.ahorrosSugeridos.length!==1?'s':'')+'</span>':'')
     +'</div>';
   if(p.resumen)body+='<div style="font-size:12px;font-style:italic;color:var(--txt2);margin-bottom:10px;line-height:1.5">“'+_escH(p.resumen)+'”</div>';
   body+='<div style="max-height:230px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:6px 12px;margin-bottom:10px">';
@@ -14775,9 +14796,27 @@ function _aiPlanPreview(text){
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._aiPlanDraft=null">Cancelar</button><button class="btn btn-sage" style="flex:1" onclick="execConfirm()">✓ Adoptar plan</button>';
 }
+// Palomea/despalomea un ahorro sugerido por la IA. PURAMENTE informativo: solo
+// guarda el estado visual, NO toca activos, cajitas, disponible ni cuadre.
+function toggleAiSavCheck(i){
+  if(!S.aiPlan)return;
+  if(!S.aiPlan.ahorroChecks)S.aiPlan.ahorroChecks={};
+  S.aiPlan.ahorroChecks[i]=!S.aiPlan.ahorroChecks[i];
+  sv();rPlan();
+}
+// "Crear cajita" desde una sugerencia: NO crea nada por su cuenta — lleva a
+// Finanzas → Activos y pre-llena el nombre para que el usuario decida y ponga el
+// saldo. Así el JSON nunca mueve activos/cajitas; la creación es acción manual.
+function crearCajitaIA(i){
+  const s=(S.aiPlan&&S.aiPlan.ahorrosSugeridos||[])[i];if(!s)return;
+  try{flujoView='activos';}catch(_){}
+  go('flujo');
+  toast('💎 Crea tu cajita "'+s.nombre+'" aquí (pon el saldo inicial)');
+  setTimeout(()=>{try{const el=document.getElementById('an');if(el){el.value=s.nombre;el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}}catch(_){}},160);
+}
 function _aiPlanAdopt(){
   const p=window._aiPlanDraft;if(!p)return;
-  const patch={aiPlan:{...p,importedAt:_todayYMD(),checks:{}}};
+  const patch={aiPlan:{...p,importedAt:_todayYMD(),checks:{},ahorroChecks:{}}};
   try{if(document.getElementById('aiPlanApplySav')?.checked&&p.savPct)patch.savPct=p.savPct;}catch(e){}
   try{if(document.getElementById('aiPlanApplyBudget')?.checked&&p.presupuestoInnecesarios!=null)patch.gastoDiarioBudget=p.presupuestoInnecesarios;}catch(e){}
   if(p.estrategiaDeuda){try{dStrat=p.estrategiaDeuda==='nieve'?'snowball':'avalanche';}catch(e){}}

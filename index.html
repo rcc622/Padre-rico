@@ -4398,6 +4398,20 @@ function rDash(){
         <button class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold" onclick="openQuickDiario()">＋ Gasto</button>
       </div>
     </div>
+    ${(()=>{
+      // Top categorías de la quincena — dónde más se va el dinero (solo
+      // presupuesto: excluye esenciales y pendientes, igual que el medidor).
+      try{
+        const bc=diariosCycleByCat(_ck);
+        const ents=Object.entries(bc).sort((a,b)=>b[1]-a[1]).slice(0,3);
+        if(!ents.length)return '';
+        const mx=Math.max(...ents.map(e=>e[1]),1);
+        return '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">'
+          +'<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Top categorías · dónde se va</div>'
+          +ents.map(([k,t])=>{const c=diarioCat(k);return '<div style="margin-bottom:9px"><div class="row-b" style="margin-bottom:3px"><span style="font-size:12px;color:var(--txt)">'+c.e+' '+_escH(c.n)+'</span><span style="font-size:12px;color:var(--terra);font-weight:bold">'+fx(Math.round(t))+'</span></div><div class="pw"><div class="pb" style="width:'+(t/mx*100).toFixed(0)+'%;background:rgba(184,92,74,.45)"></div></div></div>';}).join('')
+          +'</div>';
+      }catch(e){return '';}
+    })()}
   </div>
 
   <!-- 6 · RETOS como carrusel: emoji + nombre + puntos de progreso -->
@@ -11486,9 +11500,13 @@ function rHabitos(){
       </div>
       <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
     </details>
-    ${_isCurrentDc?'':'<div style="border-top:1px solid var(--border);padding-top:12px;font-size:11px;color:var(--muted);text-align:center;line-height:1.6">👀 Viendo una quincena pasada (solo lectura). Puedes editar/borrar gastos de la lista; para <strong>agregar</strong> vuelve a <strong>Esta quincena</strong> con →.</div>'}
-    <div style="border-top:1px solid var(--border);padding-top:12px;${_isCurrentDc?'':'display:none'}">
-      <div style="font-size:11px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:8px">+ Registrar gasto</div>
+  </div>
+
+  <!-- ═══ REGISTRAR GASTO · tarjeta colapsable propia ═══ -->
+  <div class="card">
+    <div class="ct">➕ Registrar gasto</div>
+    ${_isCurrentDc?'':'<div style="font-size:11px;color:var(--muted);text-align:center;line-height:1.6">👀 Viendo una quincena pasada (solo lectura). Puedes editar/borrar gastos de la lista; para <strong>agregar</strong> vuelve a <strong>Esta quincena</strong> con →.</div>'}
+    <div style="${_isCurrentDc?'':'display:none'}">
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
         <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..."></div>
         <div><label>Monto $</label><input type="number" id="gda" placeholder="0" inputmode="decimal"></div>

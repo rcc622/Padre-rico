@@ -10163,7 +10163,9 @@ try{
       const paid=_auto||(!showNext&&isPaid('sav',g.id));
       optional.push({day:0,name:'🎯 '+(g.icon||'')+' '+g.name+' ('+fx(Math.round(+g.saved||0))+'/'+fx(g.target)+')',amt:perQ,type:'ahorro',id:g.id,ptype:'sav',paid,autoApplied:_auto});
     });
-    expSavePlan.forEach(e=>{const paid=!showNext&&isPaid('apt',e.id);const label=e.type==='other'?'💰 Apartar '+e.name+' (día '+e.day+' · '+fx(e.amt)+')':'💰 Apartar p/próx '+e.name+' ('+fx(e.amt)+'/mes)';optional.push({day:0,name:label,amt:e.half,type:'ahorro',id:e.id,ptype:'apt',paid});});
+    // Los apartados de fijos YA NO se aplican como "pago" aquí (sería mentira: no
+    // se está pagando nada, son sugerencias de ahorro). Ahora viven como IDEAS DE
+    // CAJITA en su propio card (ver abajo): tocarlas crea una cajita de consumo.
     // FASE 8: TDC payment synthetic entries (paidItems keys starting with 'tdcpay_')
     if(!showNext){
       const ckView=planCk();const itemsView=(S.paidItems||{})[ckView]||{};
@@ -10563,7 +10565,7 @@ try{
     <!-- AHORROS OPCIONAL -->
     ${optional.length>0?`<div class="card" style="border-left:3px solid var(--sage)">
       <div class="ct">💰 Ahorros (opcional)</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Metas de ahorro, apartados y presupuesto de impulsos. No son obligatorios pero te ayudan a crecer.</div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Tus cajitas de ahorro y presupuesto de impulsos del ciclo. No son obligatorios pero te ayudan a crecer.</div>
       ${oUnpaid.length>0?`${oUnpaid.map(p=>ri(p,'pending')).join('')}`:''}
       ${oSelected.length>0?`<div style="font-size:10px;color:var(--amber);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:10px 0 6px">☑ Seleccionados</div>${oSelected.map(p=>ri(p,'selected')).join('')}`:''}
       ${oApplied.length>0?`<div style="font-size:10px;color:var(--sage);letter-spacing:1px;text-transform:uppercase;font-weight:bold;margin:10px 0 6px">✅ Aplicados</div>${oApplied.map(p=>ri(p,'applied')).join('')}`:''}
@@ -10571,16 +10573,16 @@ try{
     </div>`:''}
 
     <!-- AHORROS SUGERIDOS POR LA IA (solo guía · NO afectan números/cuadre) -->
-    ${(()=>{const _ais=(S.aiPlan&&Array.isArray(S.aiPlan.ahorrosSugeridos))?S.aiPlan.ahorrosSugeridos:[];if(!_ais.length)return '';const _ch=(S.aiPlan&&S.aiPlan.ahorroChecks)||{};
-      return '<div class="card" style="border-left:3px solid var(--amber)">'
-        +'<div class="ct" style="color:var(--amber)">💡 Ideas de cajita · de tu plan IA</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Ideas de ahorro según tu estrategia. <strong>Toca una para crear y configurar una cajita de consumo.</strong> No mueven tu dinero ni cuentan en tus números hasta que TÚ la fondees.</div>'
-        +_ais.map((s,i)=>{const on=!!_ch[i];return '<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px">'
-          +'<label class="row" style="gap:8px;flex:1;min-width:0;cursor:pointer"><input type="checkbox" '+(on?'checked':'')+' onclick="openCajitaIdeaModal('+i+');return false;" style="width:auto;flex-shrink:0"><span style="font-size:12px;color:var(--txt)'+(on?';opacity:.55':'')+'">💰 '+_escH(s.nombre)+(s.monto?' · <strong style=\"color:var(--sage)\">'+fx(s.monto)+'</strong>':'')+(on?' · <span style=\"color:var(--sage);font-size:10px\">✓ cajita creada</span>':'')+'</span></label>'
-          +'<button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:3px 8px" onclick="openCajitaIdeaModal('+i+')" title="Crear cajita de consumo">+ Cajita</button>'
-        +'</div>';}).join('')
-        +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="flujoView=\'activos\';go(\'flujo\')">💎 Ver / gestionar mis cajitas en Finanzas →</button>'
-        +'</div>';})()}
+    ${(()=>{const _ais=(S.aiPlan&&Array.isArray(S.aiPlan.ahorrosSugeridos))?S.aiPlan.ahorrosSugeridos:[];const _apts=expSavePlan||[];if(!_ais.length&&!_apts.length)return '';const _ch=(S.aiPlan&&S.aiPlan.ahorroChecks)||{};
+      let h='<div class="card" style="border-left:3px solid var(--amber)">'
+        +'<div class="ct" style="color:var(--amber)">💡 Ideas de cajita</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Ideas para apartar dinero. <strong>Toca una para crear y configurar una cajita de consumo.</strong> NO son pagos ni mueven tu dinero — solo se mueve cuando TÚ fondeas la cajita.</div>';
+      _apts.forEach(e=>{const made=(S.savGoals||[]).some(g=>!g.closed&&_norm(g.name)===_norm('Apartar '+(e.name||'')));
+        h+='<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px"><div style="flex:1;min-width:0;font-size:12px;color:var(--txt)">💰 Apartar '+_escH(e.name||'')+' · <strong style="color:var(--sage)">'+fx(e.half)+'</strong>/qna'+(made?' · <span style="color:var(--sage);font-size:10px">✓ cajita</span>':'')+'</div><button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:3px 8px" onclick="openCajitaFromApt('+e.id+')" title="Crear cajita de consumo">+ Cajita</button></div>';});
+      _ais.forEach((s,i)=>{const on=!!_ch[i];
+        h+='<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px"><label class="row" style="gap:8px;flex:1;min-width:0;cursor:pointer"><input type="checkbox" '+(on?'checked':'')+' onclick="openCajitaIdeaModal('+i+');return false;" style="width:auto;flex-shrink:0"><span style="font-size:12px;color:var(--txt)'+(on?';opacity:.55':'')+'">💡 '+_escH(s.nombre)+(s.monto?' · <strong style="color:var(--sage)">'+fx(s.monto)+'</strong>':'')+(on?' · <span style="color:var(--sage);font-size:10px">✓ cajita creada</span>':'')+'</span></label><button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:3px 8px" onclick="openCajitaIdeaModal('+i+')" title="Crear cajita de consumo">+ Cajita</button></div>';});
+      h+='<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="flujoView=\'activos\';go(\'flujo\')">💎 Ver / gestionar mis cajitas en Finanzas →</button></div>';
+      return h;})()}
 
     <!-- APPLY BUTTON -->
     ${!showNext&&pendingCount()>0?`
@@ -14796,29 +14798,39 @@ function _aiPlanPreview(text){
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._aiPlanDraft=null">Cancelar</button><button class="btn btn-sage" style="flex:1" onclick="execConfirm()">✓ Adoptar plan</button>';
 }
-// Abre un modal para CREAR una cajita de consumo desde una idea de ahorro del
-// plan IA. El usuario configura (nombre, meta, fecha) y confirma — el JSON nunca
-// crea nada solo. Crear la cajita en $0 no toca cuadre (no hay depósitos aún).
-function openCajitaIdeaModal(i){
-  const s=(S.aiPlan&&S.aiPlan.ahorrosSugeridos||[])[i];if(!s)return;
-  window._cajitaIdeaIdx=i;
-  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.55">Crea una <strong>cajita de consumo</strong> para este ahorro. Aquí apartas el dinero hasta usarlo; tú lo mueves a mano cuando quieras. No afecta tus números hasta que la fondees.</div>'
-    +'<div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="_ciName" value="'+_escA(s.nombre||'')+'" style="width:100%;padding:8px;font-size:13px"></div>'
-    +'<div style="margin-bottom:10px"><label>Meta a juntar ($)</label><input type="number" id="_ciTarget" inputmode="decimal" value="'+(s.monto||'')+'" placeholder="0" style="width:100%;padding:8px;font-size:13px" onclick="this.select()"></div>'
+// Abre un modal para CREAR una cajita de consumo (desde una idea: apartado de
+// fijo o sugerencia IA). El usuario configura y confirma — nada se crea solo.
+// Crear la cajita en $0 no toca cuadre (no hay depósitos aún).
+function _openCajitaModal(name,monto,markIdx){
+  window._cajitaMonto=(monto!=null?monto:'');
+  window._cajitaMarkIdx=(markIdx==null?null:markIdx);
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.55">Crea una <strong>cajita de consumo</strong> para apartar este dinero hasta usarlo. Tú lo mueves a mano; no afecta tus números hasta que la fondees.</div>'
+    +'<div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="_ciName" value="'+_escA(name||'')+'" style="width:100%;padding:8px;font-size:13px"></div>'
+    +'<div style="margin-bottom:10px"><label>Meta a juntar ($)</label><input type="number" id="_ciTarget" inputmode="decimal" value="'+(monto||'')+'" placeholder="0" style="width:100%;padding:8px;font-size:13px" onclick="this.select()"></div>'
     +'<div style="margin-bottom:4px"><label>Fecha límite (opcional)</label><input type="date" id="_ciDeadline" style="width:100%;padding:8px;font-size:13px"></div>';
-  showConfirm('💎 Crear cajita de consumo',body,()=>_createCajitaConsumoFromIdea());
+  showConfirm('💎 Crear cajita de consumo',body,()=>_createCajitaConsumo());
 }
-function _createCajitaConsumoFromIdea(){
+function _createCajitaConsumo(){
   const name=(document.getElementById('_ciName')?.value||'').trim();
   const target=Math.round(+(document.getElementById('_ciTarget')?.value)||0);
   const deadline=document.getElementById('_ciDeadline')?.value||'';
   if(!name){toast('⚠ Ponle un nombre');return;}
   const now=Date.now();
   const goal={id:now,name:name,target:target,deadline:deadline,saved:0,deposits:[],icon:'💰',tipo:'consumo',done:false,saveFreq:'quincenal'};
-  const i=window._cajitaIdeaIdx;
-  const aiPatch=(S.aiPlan&&i!=null)?{aiPlan:{...S.aiPlan,ahorroChecks:{...(S.aiPlan.ahorroChecks||{}),[i]:true}}}:{};
+  const idx=window._cajitaMarkIdx;
+  const aiPatch=(idx!=null&&S.aiPlan)?{aiPlan:{...S.aiPlan,ahorroChecks:{...(S.aiPlan.ahorroChecks||{}),[idx]:true}}}:{};
   pt({savGoals:[...(S.savGoals||[]),goal],...aiPatch});
   closeConfirm();toast('💎 Cajita "'+name+'" creada · fondéala en Finanzas');
+}
+// Idea de cajita desde una sugerencia del plan IA (marca ✓ al crearla).
+function openCajitaIdeaModal(i){
+  const s=(S.aiPlan&&S.aiPlan.ahorrosSugeridos||[])[i];if(!s)return;
+  _openCajitaModal(s.nombre,s.monto,i);
+}
+// Idea de cajita desde un apartado de gasto fijo (Renta, Colegio…).
+function openCajitaFromApt(id){
+  const e=(S.exp||[]).find(x=>x.id===id);if(!e)return;
+  _openCajitaModal('Apartar '+(e.name||'gasto'),Math.round((+e.amt||0)/2),null);
 }
 function _aiPlanAdopt(){
   const p=window._aiPlanDraft;if(!p)return;

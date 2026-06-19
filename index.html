@@ -10573,13 +10573,13 @@ try{
     <!-- AHORROS SUGERIDOS POR LA IA (solo guía · NO afectan números/cuadre) -->
     ${(()=>{const _ais=(S.aiPlan&&Array.isArray(S.aiPlan.ahorrosSugeridos))?S.aiPlan.ahorrosSugeridos:[];if(!_ais.length)return '';const _ch=(S.aiPlan&&S.aiPlan.ahorroChecks)||{};
       return '<div class="card" style="border-left:3px solid var(--amber)">'
-        +'<div class="ct" style="color:var(--amber)">💡 Ahorros sugeridos por tu plan IA</div>'
-        +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Solo guía según tu estrategia — <strong>NO mueven tu dinero ni cuentan en tus números</strong>. Palomea lo que ya apartaste, o crea una cajita si quieres seguirlo de verdad.</div>'
+        +'<div class="ct" style="color:var(--amber)">💡 Ideas de cajita · de tu plan IA</div>'
+        +'<div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.5">Ideas de ahorro según tu estrategia. <strong>Toca una para crear y configurar una cajita de consumo.</strong> No mueven tu dinero ni cuentan en tus números hasta que TÚ la fondees.</div>'
         +_ais.map((s,i)=>{const on=!!_ch[i];return '<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px">'
-          +'<label class="row" style="gap:8px;flex:1;min-width:0;cursor:pointer"><input type="checkbox" '+(on?'checked':'')+' onclick="toggleAiSavCheck('+i+')" style="width:auto;flex-shrink:0"><span style="font-size:12px;color:var(--txt)'+(on?';text-decoration:line-through;opacity:.55':'')+'">💰 '+_escH(s.nombre)+(s.monto?' · <strong style=\"color:var(--sage)\">'+fx(s.monto)+'</strong>':'')+'</span></label>'
-          +'<button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:3px 8px" onclick="crearCajitaIA('+i+')" title="Crear una cajita con este nombre">+ Cajita</button>'
+          +'<label class="row" style="gap:8px;flex:1;min-width:0;cursor:pointer"><input type="checkbox" '+(on?'checked':'')+' onclick="openCajitaIdeaModal('+i+');return false;" style="width:auto;flex-shrink:0"><span style="font-size:12px;color:var(--txt)'+(on?';opacity:.55':'')+'">💰 '+_escH(s.nombre)+(s.monto?' · <strong style=\"color:var(--sage)\">'+fx(s.monto)+'</strong>':'')+(on?' · <span style=\"color:var(--sage);font-size:10px\">✓ cajita creada</span>':'')+'</span></label>'
+          +'<button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:3px 8px" onclick="openCajitaIdeaModal('+i+')" title="Crear cajita de consumo">+ Cajita</button>'
         +'</div>';}).join('')
-        +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="flujoView=\'activos\';go(\'flujo\')">💎 Crear / gestionar mis cajitas en Finanzas →</button>'
+        +'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="flujoView=\'activos\';go(\'flujo\')">💎 Ver / gestionar mis cajitas en Finanzas →</button>'
         +'</div>';})()}
 
     <!-- APPLY BUTTON -->
@@ -14796,23 +14796,29 @@ function _aiPlanPreview(text){
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._aiPlanDraft=null">Cancelar</button><button class="btn btn-sage" style="flex:1" onclick="execConfirm()">✓ Adoptar plan</button>';
 }
-// Palomea/despalomea un ahorro sugerido por la IA. PURAMENTE informativo: solo
-// guarda el estado visual, NO toca activos, cajitas, disponible ni cuadre.
-function toggleAiSavCheck(i){
-  if(!S.aiPlan)return;
-  if(!S.aiPlan.ahorroChecks)S.aiPlan.ahorroChecks={};
-  S.aiPlan.ahorroChecks[i]=!S.aiPlan.ahorroChecks[i];
-  sv();rPlan();
-}
-// "Crear cajita" desde una sugerencia: NO crea nada por su cuenta — lleva a
-// Finanzas → Activos y pre-llena el nombre para que el usuario decida y ponga el
-// saldo. Así el JSON nunca mueve activos/cajitas; la creación es acción manual.
-function crearCajitaIA(i){
+// Abre un modal para CREAR una cajita de consumo desde una idea de ahorro del
+// plan IA. El usuario configura (nombre, meta, fecha) y confirma — el JSON nunca
+// crea nada solo. Crear la cajita en $0 no toca cuadre (no hay depósitos aún).
+function openCajitaIdeaModal(i){
   const s=(S.aiPlan&&S.aiPlan.ahorrosSugeridos||[])[i];if(!s)return;
-  try{flujoView='activos';}catch(_){}
-  go('flujo');
-  toast('💎 Crea tu cajita "'+s.nombre+'" aquí (pon el saldo inicial)');
-  setTimeout(()=>{try{const el=document.getElementById('an');if(el){el.value=s.nombre;el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}}catch(_){}},160);
+  window._cajitaIdeaIdx=i;
+  const body='<div style="font-size:12px;color:var(--txt2);margin-bottom:12px;line-height:1.55">Crea una <strong>cajita de consumo</strong> para este ahorro. Aquí apartas el dinero hasta usarlo; tú lo mueves a mano cuando quieras. No afecta tus números hasta que la fondees.</div>'
+    +'<div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="_ciName" value="'+_escA(s.nombre||'')+'" style="width:100%;padding:8px;font-size:13px"></div>'
+    +'<div style="margin-bottom:10px"><label>Meta a juntar ($)</label><input type="number" id="_ciTarget" inputmode="decimal" value="'+(s.monto||'')+'" placeholder="0" style="width:100%;padding:8px;font-size:13px" onclick="this.select()"></div>'
+    +'<div style="margin-bottom:4px"><label>Fecha límite (opcional)</label><input type="date" id="_ciDeadline" style="width:100%;padding:8px;font-size:13px"></div>';
+  showConfirm('💎 Crear cajita de consumo',body,()=>_createCajitaConsumoFromIdea());
+}
+function _createCajitaConsumoFromIdea(){
+  const name=(document.getElementById('_ciName')?.value||'').trim();
+  const target=Math.round(+(document.getElementById('_ciTarget')?.value)||0);
+  const deadline=document.getElementById('_ciDeadline')?.value||'';
+  if(!name){toast('⚠ Ponle un nombre');return;}
+  const now=Date.now();
+  const goal={id:now,name:name,target:target,deadline:deadline,saved:0,deposits:[],icon:'💰',tipo:'consumo',done:false,saveFreq:'quincenal'};
+  const i=window._cajitaIdeaIdx;
+  const aiPatch=(S.aiPlan&&i!=null)?{aiPlan:{...S.aiPlan,ahorroChecks:{...(S.aiPlan.ahorroChecks||{}),[i]:true}}}:{};
+  pt({savGoals:[...(S.savGoals||[]),goal],...aiPatch});
+  closeConfirm();toast('💎 Cajita "'+name+'" creada · fondéala en Finanzas');
 }
 function _aiPlanAdopt(){
   const p=window._aiPlanDraft;if(!p)return;

@@ -7595,6 +7595,22 @@ function addCobranza(src){
   pt({cobranzas:[...(S.cobranzas||[]),...nuevas]});
   toast(count>1?'✓ '+count+' cobranzas registradas · '+fx(amount)+' c/u':'✓ Cobranza registrada · '+fx(amount)+' por cobrar');
   _refreshCobranza();
+  _offerCobranzaGasto(concept,debtor,amount,nuevas.map(x=>x.dateLent));
+}
+// Al prestar, ese dinero SALIÓ de tu cuenta → ofrece registrarlo también como
+// gasto diario NO esencial (cat 'otro', uno por cada fecha de préstamo). Cuando
+// te paguen, marcar la cobranza como cobrada registra el ingreso (neto = 0).
+function _offerCobranzaGasto(concept,debtor,amount,dates){
+  const conc=(concept&&concept.trim())||('Préstamo a '+(debtor||'alguien'));
+  const ds=(dates&&dates.length?dates:[_todayYMD()]).map(d=>d||_todayYMD());
+  const n=ds.length;
+  showConfirm('💸 ¿Registrar también como gasto?','Prestaste <strong>'+fx(amount)+'</strong>'+(n>1?' × '+n:'')+' — ese dinero <strong>salió de tu cuenta</strong>. ¿Lo registro también como <strong>gasto (no esencial)</strong>'+(n>1?', uno por cada fecha':'')+'?<br><span style="font-size:11px;color:var(--muted);line-height:1.5">Cuando te paguen, marca la cobranza como cobrada (eso registra el ingreso de vuelta).</span>',()=>{
+    const base=Date.now();
+    const nd=ds.map((d,k)=>({id:base+k,name:conc,amt:amount,cat:'otro',date:d,paidWith:'debito'}));
+    pt({gastosDiarios:[...(S.gastosDiarios||[]),...nd]});
+    closeConfirm();
+    toast('✓ '+(nd.length>1?nd.length+' gastos registrados':'Gasto registrado')+' (no esencial)');
+  });
 }
 function rmCobranza(id){
   const c=(S.cobranzas||[]).find(x=>String(x.id)===String(id));
@@ -7904,6 +7920,7 @@ function _qCobranzaSave(){
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
   try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
   try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  _offerCobranzaGasto(concept,debtor,amount,[dateLent]);
 }
 // ══ Activo rápido desde el FAB ══════════════════════════════════════════
 // Permite registrar un nuevo activo (Nu, Mercado Pago, efectivo, Cetes…)

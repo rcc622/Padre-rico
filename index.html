@@ -7583,17 +7583,25 @@ function addCobranza(src){
   // las fechas tal cual. Un repeatId común las vincula como serie.
   const repeatId=repeat==='none'?null:_uid();
   const nuevas=[];
+  const _gastos=[];
+  const _gBase=Date.now();
+  const _concept=(concept&&concept.trim())||('Préstamo a '+debtor);
   for(let i=0;i<count;i++){
+    const _dl=_cobAdvanceDate(dateLent,repeat,i)||dateLent;
+    const _gid=_gBase+i;
     nuevas.push({
       id:_uid(),debtor,concept,amount,
-      dateLent:_cobAdvanceDate(dateLent,repeat,i)||dateLent,
+      dateLent:_dl,
       dateExpected:_cobAdvanceDate(dateExpected,repeat,i),
-      paid:false,
+      paid:false,gastoId:_gid,
       ...(repeatId?{repeatId,repeatFreq:repeat,repeatIdx:i+1,repeatTotal:count}:{})
     });
+    // El préstamo SALE de tu cuenta → gasto vinculado (no esencial). Al cobrar
+    // entra un ingreso que lo neutraliza. cobLink: se borra junto con la cobranza.
+    _gastos.push({id:_gid,name:_concept,amt:amount,cat:'otro',date:_dl,paidWith:'debito',cobLink:true});
   }
-  pt({cobranzas:[...(S.cobranzas||[]),...nuevas]});
-  toast(count>1?'✓ '+count+' cobranzas registradas · '+fx(amount)+' c/u':'✓ Cobranza registrada · '+fx(amount)+' por cobrar');
+  pt({cobranzas:[...(S.cobranzas||[]),...nuevas],gastosDiarios:[...(S.gastosDiarios||[]),..._gastos]});
+  toast(count>1?'✓ '+count+' cobranzas + gastos registrados':'✓ Cobranza + gasto registrado · '+fx(amount));
   _refreshCobranza();
 }
 function rmCobranza(id){
@@ -7605,7 +7613,10 @@ function rmCobranza(id){
   showConfirm('🗑 ¿Eliminar cobranza?',msg,()=>{
     const newCob=(S.cobranzas||[]).filter(x=>String(x.id)!==String(id));
     const newExt=c.extraId?(S.extras||[]).filter(x=>String(x.id)!==String(c.extraId)):S.extras;
-    pt({cobranzas:newCob,extras:newExt});
+    // Borra el gasto auto-creado al registrar la cobranza (cobLink). Los gastos
+    // convertidos (que ya existían antes) NO se tocan.
+    const newGd=c.gastoId?(S.gastosDiarios||[]).filter(x=>!(x.id===c.gastoId&&x.cobLink)):S.gastosDiarios;
+    pt({cobranzas:newCob,extras:newExt,gastosDiarios:newGd});
     closeConfirm();toast('Cobranza eliminada');_refreshCobranza();
   });
 }
@@ -7629,7 +7640,10 @@ function editCobranza(id){
     if(!debtor){toast('¿Quién te debe?');return;}
     if(amount<=0){toast('Monto inválido');return;}
     const patch={...c,debtor,concept,amount,dateLent,dateExpected};
-    pt({cobranzas:(S.cobranzas||[]).map(x=>String(x.id)===String(id)?patch:x)});
+    // Sincroniza el gasto auto-creado vinculado (cobLink) con el nuevo monto/concepto/fecha.
+    const _gc=(concept&&concept.trim())||('Préstamo a '+debtor);
+    const newGd=c.gastoId?(S.gastosDiarios||[]).map(x=>(x.id===c.gastoId&&x.cobLink)?{...x,name:_gc,amt:amount,date:dateLent}:x):S.gastosDiarios;
+    pt({cobranzas:(S.cobranzas||[]).map(x=>String(x.id)===String(id)?patch:x),gastosDiarios:newGd});
     closeConfirm();toast('✓ Cobranza actualizada');_refreshCobranza();
   });
 }
@@ -7897,10 +7911,12 @@ function _qCobranzaSave(){
   const dateExpected=document.getElementById('qcbDateExp')?.value||'';
   if(!debtor){toast('¿Quién te debe?');return;}
   if(amount<=0){toast('Monto debe ser mayor a 0');return;}
-  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false};
-  pt({cobranzas:[...(S.cobranzas||[]),c]});
+  const _gid=Date.now();
+  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false,gastoId:_gid};
+  const _g={id:_gid,name:(concept&&concept.trim())||('Préstamo a '+debtor),amt:amount,cat:'otro',date:dateLent||_todayYMD(),paidWith:'debito',cobLink:true};
+  pt({cobranzas:[...(S.cobranzas||[]),c],gastosDiarios:[...(S.gastosDiarios||[]),_g]});
   closeConfirm();
-  toast('🤝 Cobranza registrada · '+fx(amount)+' por cobrar');
+  toast('🤝 Cobranza + gasto registrado · '+fx(amount));
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
   try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
   try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
@@ -8235,16 +8251,18 @@ function convertDiarioToCobranza(id){
   if(!g){toast('Gasto no encontrado');return;}
   // Prefill del deudor: quita prefijos tipo "Préstamo/Le presté a" del concepto.
   const guess=(g.name||'').replace(/^\s*(pr[eé]stamo|le prest[eé]( a)?|presto a|pago a|fiado a)\s*/i,'').trim();
-  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Esto se moverá de tus gastos a <strong>💵 Cobranza</strong> (cuenta por cobrar): deja de contar como gasto consumido y suma a lo que te deben. Cuando te paguen, lo marcas como cobrado y entra como ingreso.</div>'
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Este gasto es un <strong>préstamo</strong>: el dinero salió de tu cuenta, así que <strong>sigue contando como gasto</strong>. Además se agrega a <strong>💵 Cobranza</strong> (lo que te deben). Cuando te paguen, entra como ingreso y se neutraliza.</div>'
     +'<label style="font-size:11px;color:var(--muted)">¿Quién te debe?</label>'
     +'<input type="text" id="cvDebtor" value="'+_escA(guess||g.name||'')+'" placeholder="Nombre de quien te debe" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
     +'<div style="font-size:11px;color:var(--muted);line-height:1.6">Monto: <strong style="color:var(--sky)">'+fx(+g.amt||0)+'</strong> · Concepto: <strong>'+_escH(g.name||'—')+'</strong>'+(g.date?' · '+g.date:'')+'</div>';
-  showConfirm('🤝 Convertir en préstamo',body,()=>{
+  showConfirm('🤝 Marcar como préstamo',body,()=>{
     const debtor=(document.getElementById('cvDebtor')?.value||'').trim();
     if(!debtor){toast('¿Quién te debe?');return;}
-    const c={id:_uid(),debtor,concept:g.name||'',amount:+g.amt||0,dateLent:g.date||_todayYMD(),dateExpected:'',paid:false};
-    pt({cobranzas:[...(S.cobranzas||[]),c],gastosDiarios:(S.gastosDiarios||[]).filter(x=>x.id!==id)});
-    closeConfirm();toast('🤝 Movido a Cobranza · '+fx(+g.amt||0)+' por cobrar');
+    // El gasto SE MANTIENE (es la salida real); solo se agrega la cobranza
+    // vinculada a ese gasto. NO lleva cobLink → borrar la cobranza no borra el gasto.
+    const c={id:_uid(),debtor,concept:g.name||'',amount:+g.amt||0,dateLent:g.date||_todayYMD(),dateExpected:'',paid:false,gastoId:id};
+    pt({cobranzas:[...(S.cobranzas||[]),c]});
+    closeConfirm();toast('🤝 Agregado a Cobranza · sigue como gasto');
     try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
     try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
     try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}

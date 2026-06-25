@@ -460,7 +460,7 @@ const _ymdLocal=(d)=>{
 const _todayYMD=()=>_ymdLocal(new Date());
 let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   cobranzas:[],
-  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',
+  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',aiPlanHistory:[],
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],savWdKinds:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],diarioCatLabels:{},expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
@@ -558,7 +558,7 @@ function _normalizeState(st){
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
   if(!isObj(st.simSliders))st.simSliders={};
-  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','savWdKinds','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats','userCatsCustom'];
+  const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','savWdKinds','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats','userCatsCustom','aiPlanHistory'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
   // mensual (a.inc). Los convertimos a tasa anual (a.yldPct) para que la
@@ -13714,7 +13714,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para
@@ -14829,7 +14829,8 @@ function _parseAIPlan(text){
         fin:_toValidYMD((q&&q.fin)||'')||null,
         acciones:(Array.isArray(q&&q.acciones)?q.acciones.slice(0,8):[]).map(a=>({
           t:String((a&&a.t)||(typeof a==='string'?a:'')).slice(0,160),
-          monto:a&&a.monto!=null&&isFinite(+a.monto)?Math.round(+a.monto):null
+          monto:a&&a.monto!=null&&isFinite(+a.monto)?Math.round(+a.monto):null,
+          done:!!(a&&a.done)
         })).filter(a=>a.t)
       })).filter(q=>q.acciones.length)
     };
@@ -14900,13 +14901,22 @@ function openCajitaFromApt(id){
 }
 function _aiPlanAdopt(){
   const p=window._aiPlanDraft;if(!p)return;
-  const patch={aiPlan:{...p,importedAt:_todayYMD(),checks:{},ahorroChecks:{}}};
+  // TRAZABILIDAD: el avance se reconstruye desde los `done` que trae el plan
+  // (en una ACTUALIZACIÓN, la IA marca lo ya cumplido; en un plan nuevo vienen
+  // en false → checks vacíos). Así re-importar NO reinicia tu progreso.
+  const checks={};
+  (p.quincenas||[]).forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{if(a&&a.done)checks['q'+(i+1)+'_'+j]=true;}));
+  // Archiva el plan anterior (con su record) para no perder la historia.
+  const _hist=Array.isArray(S.aiPlanHistory)?S.aiPlanHistory:[];
+  const aiPlanHistory=S.aiPlan?[{...S.aiPlan,archivedAt:_todayYMD()},..._hist].slice(0,12):_hist;
+  const patch={aiPlan:{...p,importedAt:_todayYMD(),checks,ahorroChecks:{}},aiPlanHistory};
   try{if(document.getElementById('aiPlanApplySav')?.checked&&p.savPct)patch.savPct=p.savPct;}catch(e){}
   try{if(document.getElementById('aiPlanApplyBudget')?.checked&&p.presupuestoInnecesarios!=null)patch.gastoDiarioBudget=p.presupuestoInnecesarios;}catch(e){}
   if(p.estrategiaDeuda){try{dStrat=p.estrategiaDeuda==='nieve'?'snowball':'avalanche';}catch(e){}}
   pt(patch);
   window._aiPlanDraft=null;
-  toast('🤖 Plan adoptado · síguelo en Plan → Estrategia');
+  const _done=Object.keys(checks).length;
+  toast(_done>0?'🤖 Plan actualizado · '+_done+' acciones ya cumplidas conservadas':'🤖 Plan adoptado · síguelo en Plan → Estrategia');
   try{planView='estrategia';}catch(e){}
   try{go('plan');}catch(e){}
 }
@@ -14969,6 +14979,48 @@ function aiPlanShowFull(){
     (q.acciones||[]).forEach((a,j)=>{const k='q'+(i+1)+'_'+j;body+='<div style="font-size:11px;color:var(--txt2);padding:2px 0;line-height:1.5">'+(checks[k]?'✅':'⬜')+' '+_escH(a.t)+(a.monto?' <strong>('+fx(a.monto)+')</strong>':'')+'</div>';});
   });
   showInfo('🤖 Plan completo de la IA',body);
+}
+// COMBO para ACTUALIZAR el plan sin perder trazabilidad: junta mi plan actual
+// con su avance (✅/⬜) + mi contexto de hoy + instrucciones para que la IA
+// devuelva un plan actualizado con `done` por acción (preserva mi progreso).
+function exportPlanUpdate(){
+  const p=S.aiPlan;
+  if(!p||!Array.isArray(p.quincenas)||!p.quincenas.length){toast('Primero importa un plan de la IA');return;}
+  const checks=p.checks||{};
+  const L=[];
+  L.push('# 🔄 ACTUALIZACIÓN DE MI PLAN DE ACCIÓN');
+  L.push('');
+  L.push('> Ya vengo siguiendo el plan de abajo y llevo un avance real. Dame un plan');
+  L.push('> ACTUALIZADO con base en ese avance y mi contexto de hoy (más abajo). REGLAS:');
+  L.push('> 1. Devuélvelo en EXACTAMENTE el mismo bloque JSON `padreRicoPlan` que pide');
+  L.push('>    el reporte al final (mismo esquema), para que mi app lo importe SIN');
+  L.push('>    romper mi seguimiento.');
+  L.push('> 2. En cada acción agrega `"done": true` si YA la cumplí (te marco cuáles');
+  L.push('>    con ✅ abajo) o `"done": false` si sigue pendiente. NO reinicies mi');
+  L.push('>    progreso ni me repitas como nuevo lo ya hecho.');
+  L.push('> 3. Continúa desde donde voy: ajusta/añade quincenas hacia adelante según mi');
+  L.push('>    contexto actual, conservando lo cumplido.');
+  L.push('');
+  L.push('## 📋 MI PLAN ACTUAL Y MI AVANCE');
+  if(p.resumen)L.push('- **Idea central:** '+p.resumen);
+  L.push('- **Severidad:** '+(p.severidad||'—')+' · **Ahorro %:** '+(p.savPct||'—')+' · **Estrategia deuda:** '+(p.estrategiaDeuda||'—'));
+  let totalA=0,doneA=0;
+  p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{totalA++;if(checks['q'+(i+1)+'_'+j])doneA++;}));
+  L.push('- **Avance:** '+doneA+'/'+totalA+' acciones cumplidas');
+  L.push('');
+  p.quincenas.forEach((q,i)=>{
+    L.push('### Quincena '+(i+1)+(q.titulo?' — '+q.titulo:'')+((q.inicio&&q.fin)?' ('+q.inicio+' → '+q.fin+')':''));
+    (q.acciones||[]).forEach((a,j)=>{const on=!!checks['q'+(i+1)+'_'+j];L.push('- '+(on?'✅ CUMPLIDA':'⬜ pendiente')+' · '+(a.t||'')+(a.monto?' ('+fx(a.monto)+')':''));});
+    L.push('');
+  });
+  L.push('---');L.push('');
+  L.push('## 📊 MI CONTEXTO ACTUAL (datos de hoy)');L.push('');
+  let ctx='';try{ctx=buildAIReport();}catch(e){ctx='(no se pudo generar el contexto)';}
+  L.push(ctx);
+  const txt=L.join('\n');
+  try{const blob=new Blob([txt],{type:'text/markdown;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='padre-rico-actualizar-plan-'+_todayYMD()+'.md';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(e){_logErr('exportPlanUpdate.dl',e);}
+  const copied=_copyText(txt);
+  showInfo('🔄 Combo para actualizar tu plan','<div style="font-size:12px;color:var(--txt2);line-height:1.7">'+(copied?'Copiado al portapapeles y descargado como .md. ':'Descargado como .md. ')+'Pégalo en tu IA; te devolverá el plan actualizado. Al importarlo, tu avance ('+doneA+'/'+totalA+') se conserva.</div>');
 }
 function exportForAI(){
   let txt='';

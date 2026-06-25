@@ -8307,9 +8307,58 @@ function setDiarioBudget(){
 function cerrarQnaDiarios(){
   const list=diariosThisCycle();
   if(!list.length){toast('No hay registros en esta quincena');return;}
+  // CANDADO DE FIABILIDAD: revisa capturas dudosas antes de fotografiar la
+  // quincena. Si hay banderas, el usuario corrige/confirma y recién cierra.
+  if(_cierreReviewFlags(list).length){_openCierreReview();return;}
+  _cierreSaveCapitulo(list);
+}
+// Detecta registros dudosos de la quincena: préstamos mal puestos, default
+// "snack" con monto alto, montos altos en gasto no esencial, y duplicados.
+function _cierreReviewFlags(list){
+  const flags=[];const seen={};
+  const linked=new Set((S.cobranzas||[]).map(c=>c.gastoId).filter(x=>x!=null));
+  (list||[]).forEach(g=>{
+    const reasons=[];const nm=(g.name||'').toLowerCase();const amt=+g.amt||0;const esen=isEsencial(g);
+    if(/\b(prest|preste|prest[eé]|fiad|le di|le pres|adelant)/i.test(nm)&&!g.cobLink&&!linked.has(g.id))reasons.push('🤝 ¿Es un préstamo? El dinero prestado se cobra, no se consume — conviene mandarlo a Cobranza.');
+    if(g.cat==='snack'&&amt>120)reasons.push('🏷️ Quedó en "Snack" (la categoría por defecto) con monto alto — ¿es correcto?');
+    else if(!esen&&amt>=300)reasons.push('💰 Monto alto ('+fx(amt)+') para gasto no esencial — ¿bien categorizado?');
+    const dk=(g.date||'')+'|'+amt;
+    if(seen[dk])reasons.push('👯 Posible duplicado: otro gasto con el mismo monto y fecha.');
+    seen[dk]=(seen[dk]||0)+1;
+    if(reasons.length)flags.push({g,reasons});
+  });
+  return flags;
+}
+function _openCierreReview(){
+  const list=diariosThisCycle();
+  const flags=_cierreReviewFlags(list);
+  if(!flags.length){_cierreSaveCapitulo(list);return;}
+  const cats=_allDiarioCats();
+  let body='<div style="font-size:12px;color:var(--txt2);line-height:1.5;margin-bottom:12px">Antes de cerrar, revisa estos <strong>'+flags.length+'</strong> registro'+(flags.length!==1?'s':'')+' dudoso'+(flags.length!==1?'s':'')+'. Corrige la categoría, márcalo préstamo, o déjalo si está bien.</div>'
+    +'<div style="max-height:46vh;overflow-y:auto;margin:0 -2px;padding:0 2px">';
+  flags.forEach(f=>{const g=f.g;
+    body+='<div style="border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-bottom:8px">'
+      +'<div style="font-size:12px;font-weight:bold;color:var(--txt)">'+_escH(g.name||'—')+'</div>'
+      +'<div style="font-size:10px;color:var(--muted);margin-top:1px">'+fx(+g.amt||0)+' · '+(g.date||'')+' · '+diarioCat(g.cat).e+' '+_escH(diarioCat(g.cat).n)+'</div>'
+      +f.reasons.map(r=>'<div style="font-size:10px;color:var(--amber);margin-top:4px;line-height:1.4">'+r+'</div>').join('')
+      +'<div class="row" style="gap:6px;margin-top:7px;align-items:center"><select onchange="_reviewSetCat('+g.id+',this.value)" style="flex:1;padding:6px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
+      +cats.map(c=>'<option value="'+c.k+'"'+(g.cat===c.k?' selected':'')+'>'+c.e+' '+_escH(c.n)+'</option>').join('')
+      +'</select><button class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:10px;padding:5px 8px" onclick="closeConfirm();convertDiarioToCobranza('+g.id+')">🤝 Préstamo</button></div>'
+    +'</div>';
+  });
+  body+='</div>';
+  showConfirm('🔍 Revisa antes de cerrar',body,()=>{_cierreSaveCapitulo(diariosThisCycle());});
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="execConfirm()">✓ Revisé · cerrar</button>';
+}
+function _reviewSetCat(id,cat){
+  pt({gastosDiarios:(S.gastosDiarios||[]).map(g=>g.id===id?{...g,cat}:g)});
+  _openCierreReview();
+}
+function _cierreSaveCapitulo(list){
+  if(!list||!list.length){toast('No hay registros');return;}
   const w=getCycleWindow();
   const totalG=list.reduce((a,g)=>a+(+g.amt||0),0);
-  // Map diario categories to buckets
   const diarioToBucket={snack:'hormiga',bebida:'hormiga',minisuper:'hormiga',delivery:'hormiga',impulso:'impulso',transporte:'transporte',otro:'otro'};
   const buckets={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
   const catBreakdown={};
@@ -8321,7 +8370,6 @@ function cerrarQnaDiarios(){
     catBreakdown[lbl].total+=(+g.amt||0);
     catBreakdown[lbl].count++;
   });
-  const totalH=buckets.hormiga;
   showConfirm('📖 Crear capítulo con Diarios',
     '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de esta quincena por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
     ()=>{

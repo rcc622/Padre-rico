@@ -460,7 +460,7 @@ const _ymdLocal=(d)=>{
 const _todayYMD=()=>_ymdLocal(new Date());
 let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   cobranzas:[],
-  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',aiPlanHistory:[],
+  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',aiPlanHistory:[],reconAdjust:{},
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],savWdKinds:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],diarioCatLabels:{},expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
@@ -2708,6 +2708,79 @@ const savAmt=()=>mInc()*S.savPct/100;
 const savAmtQ=()=>Math.round(savAmt()/2);
 // Get commit for current cycle, returns null if none
 function curSavCommit(){return (S.savCommits||{})[cycleKey()]||null;}
+// AJUSTE DE CONCILIACIÓN (banco↔app): monto firmado que cuadra el CIERRE del
+// ciclo contra el saldo real del banco. Fuente única, sumada idéntico en los 3
+// puntos que calculan el cierre (calcCycleBalance, EC de Pagos, audit) → delta
+// se mantiene en 0. Devuelve 0 si el ciclo no está conciliado (retrocompat).
+// NO es un gasto: vive fuera de la bitácora, así no toca hormiga/score/plan.
+function reconAdjustMonto(ck){
+  const r=(S.reconAdjust||{})[ck];
+  return (r&&r.estado==='conciliado'&&typeof r.monto==='number'&&isFinite(r.monto))?r.monto:0;
+}
+// Alerta por MAGNITUD de un ajuste puntual (§4).
+function _reconAlertForMonto(monto){
+  const a=Math.abs(monto||0);
+  if(a<=50)return null;
+  if(a<=300)return {level:'yellow',msg:'Ajuste moderado. Revisa si hay una comisión o un domiciliado.'};
+  return {level:'red',msg:'Ajuste grande. Concílialo con tu estado de cuenta antes de taparlo.'};
+}
+// Alertas de TENDENCIA sobre los ciclos conciliados (§4): racha de signo y suma.
+function _reconTrendAlerts(){
+  const m=S.reconAdjust||{};
+  const keys=Object.keys(m).filter(k=>m[k]&&m[k].estado==='conciliado');
+  keys.sort((a,b)=>{try{return ckToOrder(a)-ckToOrder(b);}catch(e){return 0;}});
+  const out=[];
+  let streak=0,sign=null;
+  for(let i=keys.length-1;i>=0;i--){const s=m[keys[i]].signo;if(s==='cero')break;if(sign==null){sign=s;streak=1;}else if(s===sign)streak++;else break;}
+  if(sign&&streak>=3)out.push({level:'red',msg:streak+' ciclos seguidos con '+(sign==='negativo'?'faltante':'sobrante')+': hay una fuga fija sin registrar, no es cuadre.'});
+  const sum6=keys.slice(-6).reduce((a,k)=>a+(+m[k].monto||0),0);
+  if(Math.abs(sum6)>800)out.push({level:'red',msg:'Tus ajustes de 6 ciclos acumulan '+fx(sum6)+'. El ajuste está escondiendo algo real.'});
+  return out;
+}
+// Modal de conciliación: captura el saldo real del banco para el ciclo `ck`.
+function openReconcileModal(ck){
+  ck=ck||cycleKey();
+  const raw=calcCycleBalance(ck);
+  if(raw==null){toast('Este ciclo aún no tiene cierre (no se puede conciliar el futuro)');return;}
+  const base=Math.round(raw-reconAdjustMonto(ck)); // cierre SIN ajuste previo
+  const cur=(S.reconAdjust||{})[ck];
+  window._rcCk=ck;window._rcBase=base;
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Cuadra el cierre de tu quincena contra tu banco. La app calcula el ajuste sola (tú no eliges el número).</div>'
+    +'<div style="padding:10px 12px;background:var(--bg);border-radius:8px;margin-bottom:10px"><div class="row-b"><span style="font-size:11px;color:var(--muted)">Cierre según la app</span><strong style="font-size:14px;color:var(--txt)">'+fx(base)+'</strong></div></div>'
+    +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">¿Cuánto tienes REALMENTE en el banco hoy? ($)</label>'
+    +'<input type="number" id="_rcBank" inputmode="decimal" value="'+(cur&&cur.saldoRealBanco!=null?cur.saldoRealBanco:'')+'" placeholder="0" style="width:100%;padding:10px;font-size:18px;text-align:center;font-weight:bold;color:var(--sage);border:1px solid var(--border);border-radius:8px;margin-bottom:8px" onclick="this.select()">'
+    +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Nota (opcional)</label>'
+    +'<input type="text" id="_rcNote" value="'+_escA((cur&&cur.nota)||'')+'" placeholder="comisión, domiciliado, efectivo..." style="width:100%;padding:8px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif">';
+  showConfirm('🔧 Conciliar con banco',body,()=>_saveReconcile());
+}
+function _saveReconcile(){
+  const ck=window._rcCk,base=window._rcBase;
+  const raw=document.getElementById('_rcBank')?.value;
+  if(raw==null||String(raw).trim()===''||!isFinite(+raw)){toast('⚠ Captura el saldo real del banco');return;}
+  const bank=Math.round(+raw);
+  const nota=(document.getElementById('_rcNote')?.value||'').trim();
+  const monto=bank-base;
+  const signo=monto>0?'positivo':monto<0?'negativo':'cero';
+  const r={saldoRealBanco:bank,saldoCierreApp:base,monto,signo,nota,conciliadoEl:new Date().toISOString(),estado:'conciliado'};
+  pt({reconAdjust:{...(S.reconAdjust||{}),[ck]:r}});
+  closeConfirm();
+  const mag=_reconAlertForMonto(monto),tr=_reconTrendAlerts();
+  let html='<div style="font-size:13px;line-height:1.7;color:var(--txt2)">';
+  if(monto===0)html+='✅ <strong>Cuadra exacto.</strong> Tu banco coincide con la app.';
+  else if(Math.abs(monto)<=50)html+='✅ <strong>Cuadra</strong> (diferencia '+fx(monto)+', ruido normal de timing).';
+  else html+='Ajuste registrado: <strong style="color:'+(monto<0?'var(--terra)':'var(--sage)')+'">'+(monto>0?'+':'')+fx(monto)+'</strong> ('+(signo==='negativo'?'te faltó':'te sobró')+').';
+  html+='</div>';
+  [mag,...tr].filter(Boolean).forEach(a=>{html+='<div style="font-size:11px;line-height:1.5;margin-top:8px;padding:8px 10px;border-radius:8px;background:'+(a.level==='red'?'rgba(184,92,74,.08)':'var(--amberdim)')+';color:'+(a.level==='red'?'var(--terra)':'var(--amber)')+'">'+(a.level==='red'?'🔴 ':'⚠️ ')+a.msg+'</div>';});
+  showInfo('🔧 Conciliado',html);
+}
+function undoReconcile(ck){
+  ck=ck||cycleKey();
+  if(!(S.reconAdjust||{})[ck]){toast('Este ciclo no está conciliado');return;}
+  showConfirm('↩ ¿Deshacer conciliación?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se borra el ajuste y el saldo del ciclo vuelve al cierre de la app.</div>',()=>{
+    const m={...(S.reconAdjust||{})};delete m[ck];
+    pt({reconAdjust:m});closeConfirm();toast('↩ Conciliación deshecha');
+  });
+}
 // FASE 5 · Detección de déficit pendiente de resolver
 // Calcula el saldo de un ciclo basado en items applied de paidItems vs ingreso esperado
 function calcCycleBalance(ck){
@@ -2821,7 +2894,7 @@ function calcCycleBalance(ck){
       }));
     }catch(e){}
 
-    return Math.round(ingreso-gastos);
+    return Math.round(ingreso-gastos)+reconAdjustMonto(ck);
   }catch(e){return null;}
 }
 // Returns the previous cycleKey if it cerró con déficit y aún no se ha decidido qué hacer
@@ -10454,7 +10527,7 @@ try{
       // como proyección (etiquetado abajo como "Proyección en cuenta").
       const _checkedBal=_isPast?0:checkedAmt;
       const _totalOut=appliedAmt2+_checkedBal+impPendingTotal+_diarioAmt+_ahorroApartado+_metaOut+_metaRetOut+_assetNet;
-      const _balance=incQ+_otEarned-_totalOut;
+      const _balance=incQ+_otEarned-_totalOut+reconAdjustMonto(_viewCk); // + ajuste de conciliación (cuadra el cierre con el banco)
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
       <div style="font-size:13px;line-height:2.2">
@@ -10506,6 +10579,12 @@ try{
         </div>
         ${checkedAmt>0&&!_isPast?`<div style="font-size:10px;color:var(--amber);font-style:italic;margin-top:4px">⚠ Los seleccionados son proyección. Presiona "Aplicar" para confirmar.</div>`:''}
         ${checkedAmt>0&&_isPast?`<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:4px">Esta quincena ya cerró: los seleccionados sin aplicar no cuentan en el saldo. Aplícalos (✓) o destíldalos en la lista de Pagos para limpiar.</div>`:''}
+        ${(()=>{const _ra=(S.reconAdjust||{})[_viewCk];const _ram=reconAdjustMonto(_viewCk);
+          if(_ra&&_ra.estado==='conciliado'){
+            return '<div style="border-top:1px dashed var(--border);margin-top:6px;padding-top:6px"><div class="row-b" style="font-size:11px;color:var(--muted)"><span>🔧 Ajuste de conciliación'+(_ra.nota?' · '+_escH(_ra.nota):'')+'</span><span style="color:'+(_ram<0?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(_ram>0?'+':'')+fx(_ram)+'</span></div><div class="row" style="gap:6px;margin-top:6px"><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="openReconcileModal(\''+_viewCk+'\')">🔧 Re-conciliar</button><button class="btn btn-ghost btn-sm" style="flex:1;font-size:10px" onclick="undoReconcile(\''+_viewCk+'\')">↩ Deshacer</button></div></div>';
+          }
+          return '<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px;color:var(--sky);border:1px solid rgba(74,110,140,.3)" onclick="openReconcileModal(\''+_viewCk+'\')">🔧 Conciliar con banco</button>';
+        })()}
       </div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;font-size:11px" onclick="openLedgerAudit()">🩺 Validar movimientos (caza fantasmas)</button>
     </div>`;
@@ -14258,7 +14337,7 @@ function exportAudit(){
       // (p.ej. 6-2da: Inicio y EC vivo cuadran en 9863, pero el audit daba 5545).
       const otEarned=(!_isPastCk&&otSrc&&otSrc.accepted&&!otSrc.paid)
         ?(otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+otSrc.rate||0)),0):0;
-      const ecBalance=_r2(incQ+otEarned-ecTotalOut); // EC pone OT=0 en pasados
+      const ecBalance=_r2(incQ+otEarned-ecTotalOut+reconAdjustMonto(ck)); // + ajuste de conciliación (mismo que calcCycleBalance → delta sigue 0)
       report.ciclos.push({
         ck,rango:fmtCycleRange(ck),esActual:ck===cycleKey(),
         balanceInicio_home:homeBalance,

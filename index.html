@@ -7686,10 +7686,42 @@ function unapplyCobranza(id){
 function toggleCobHistory(){S._cobHistColl=!S._cobHistColl;sv();_refreshCobranza();}
 
 let _diarioCat='snack';
+let _diarioCatManual=false;
 function selDiarioCat(k){
   _diarioCat=k;
+  _diarioCatManual=true; // el usuario eligió a mano → deja de auto-sugerir
   const sel=document.getElementById('gdCatSel');
   if(sel&&sel.value!==k)sel.value=k;
+}
+// Sugiere categoría según palabras clave del concepto (default ya no es siempre
+// 'snack'). Devuelve una categoría de fábrica o null si no hay match claro.
+function _guessDiarioCat(name){
+  const n=(name||'').toLowerCase();if(n.length<2)return null;
+  const R=[
+    ['transporte',/uber|didi|taxi|gasolin|\bgas\b|caseta|estacion|parqu[ií]|pasaje|cami[oó]n|\bmetro\b|combustible|verifica/],
+    ['delivery',/pizza|sushi|hamburg|kfc|mcdonald|carl'?s|burger|rappi|uber\s*eats|didi\s*food|domino|wings|alitas|tacos|torta\b|restaurant|comida\s*fuera/],
+    ['bebida',/caf[eé]|kenet|starbucks|\bt[eé]\b|chai|matcha|refresco|coca|pepsi|\bagua\b|jugo|malteada|frapp|cerveza|chela|michela|red\s*bull|monster|smoothie|bebida/],
+    ['minisuper',/super|despensa|mandado|\bheb\b|soriana|walmart|smart\b|bodega|chedraui|costco|fruta|verdura|carne|pollo|tortill|abarrot|mini\s*super/],
+    ['snack',/oxxo|seven|7\s*eleven|dulce|chicle|galleta|sabritas|botana|papitas|chocolate|gomita|nieve|helado|dona\b|pan\b/],
+    ['impulso',/amazon|mercado\s*libre|\bml\b|ropa|tenis|zapat|jugu|regalo|perfume|maquilla|skincare|videojuego|\bjuego\b|gadget|capricho|antojo|funko|figura/],
+  ];
+  for(const r of R){if(r[1].test(n))return r[0];}
+  return null;
+}
+function _suggestCatLive(name){
+  if(_diarioCatManual)return;
+  const g=_guessDiarioCat(name);
+  if(g&&g!==_diarioCat){_diarioCat=g;const sel=document.getElementById('gdCatSel');if(sel)sel.value=g;}
+}
+// Duplicado reciente: mismo monto + mismo concepto exacto dentro de ~3 días.
+function _findRecentDup(name,amt,date){
+  const nm=(name||'').toLowerCase().trim();const a=+amt||0;if(!nm||a<=0)return null;
+  const dref=date||_todayYMD();
+  return (S.gastosDiarios||[]).find(g=>{
+    if((+g.amt||0)!==a)return false;
+    if((g.name||'').toLowerCase().trim()!==nm)return false;
+    try{return Math.abs((new Date(dref+'T12:00')-new Date((g.date||dref)+'T12:00'))/864e5)<=3;}catch(e){return (g.date||'')===dref;}
+  });
 }
 // ══ Categorías personalizadas de gastos diarios ══════════════════════
 // El usuario puede agregar sus propias categorías (Skincare, Cigarros, lo
@@ -7796,8 +7828,15 @@ function addDiarioDirect(method){
   // no sabía cuál de los dos faltaba.
   if(!n){toast('⚠ Falta el concepto');nEl?.focus();return;}
   if(!isFinite(a)||a<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');aEl?.focus();return;}
+  // Aviso de duplicado (mismo monto + concepto en los últimos días).
+  if(!window._dupOk){
+    const dup=_findRecentDup(n,a,d);
+    if(dup){showConfirm('👯 ¿Posible duplicado?','Ya registraste <strong>'+_escH(dup.name)+'</strong> por <strong>'+fx(+dup.amt||0)+'</strong> el '+(dup.date||'')+'. ¿Registrar este también?',()=>{window._dupOk=true;closeConfirm();addDiarioDirect(method);});return;}
+  }
+  window._dupOk=false;
   const newDiario={id:Date.now(),name:n,amt:a,cat:_diarioCat,date:d,paidWith:method||'debito'};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
+  _diarioCatManual=false; // próximo gasto vuelve a auto-sugerir según su concepto
   // La categoría se queda seleccionada: registrar 3 ubers seguidos no debe
   // obligar a re-elegir "Transporte" cada vez (antes se reseteaba a 'snack').
   // Limpia el form
@@ -7841,7 +7880,7 @@ function _confirmDiario(method){
   const {name,amt,cat,date}=_pendingDiario;
   const newDiario={id:Date.now(),name,amt,cat,date,paidWith:method};
   pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario]});
-  _diarioCat='snack';
+  _diarioCat='snack';_diarioCatManual=false;
   _pendingDiario=null;
   // Clear form
   const nEl=document.getElementById('gdn');if(nEl)nEl.value='';
@@ -11588,7 +11627,7 @@ function rHabitos(){
     ${_isCurrentDc?'':'<div style="font-size:11px;color:var(--muted);text-align:center;line-height:1.6">👀 Viendo una quincena pasada (solo lectura). Puedes editar/borrar gastos de la lista; para <strong>agregar</strong> vuelve a <strong>Esta quincena</strong> con →.</div>'}
     <div style="${_isCurrentDc?'':'display:none'}">
       <div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">
-        <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..."></div>
+        <div><label>Concepto</label><input type="text" id="gdn" placeholder="Coca OXXO, Uber, chicle..." oninput="_suggestCatLive(this.value)"></div>
         <div><label>Monto $</label><input type="number" id="gda" placeholder="0" inputmode="decimal"></div>
       </div>
       <div style="margin-bottom:8px"><label>Categoría</label>

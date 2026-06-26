@@ -8400,15 +8400,16 @@ function _cierreSaveCapitulo(list){
   const totalG=list.reduce((a,g)=>a+(+g.amt||0),0);
   const diarioToBucket={snack:'hormiga',bebida:'hormiga',minisuper:'hormiga',delivery:'hormiga',impulso:'impulso',transporte:'transporte',otro:'otro'};
   const buckets={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
-  // `hormigaBreakdown` = SOLO categorías del bucket hormiga (snack/bebida/
-  // minisuper/delivery), por etiqueta — consistente con el cierre por CSV. Antes
-  // se guardaban TODAS las categorías como "hormiga", inflando la tarjeta de
-  // Inicio (que suma este desglose). Impulso/transporte/esenciales/otro NO entran.
+  // `hormigaBreakdown` = TODO lo NO esencial (regla del usuario, igual que el
+  // reporte: "gasto hormiga = no esencial"). Solo las categorías marcadas
+  // 🧾 Esencial (fuera de presupuesto) quedan fuera; snack/bebida/impulso/
+  // transporte/otro SÍ cuentan como hormiga. Antes se sumaban TODAS las
+  // categorías (incluidos esenciales), inflando la tarjeta Hormiga de Inicio.
   const hormigaBreakdown={};
   list.forEach(g=>{
     const b=diarioToBucket[g.cat]||'otro';
     buckets[b]+=(+g.amt||0);
-    if(b==='hormiga'){
+    if(!isEsencial(g)){
       const lbl=diarioCat(g.cat).n;
       if(!hormigaBreakdown[lbl])hormigaBreakdown[lbl]={total:0,count:0};
       hormigaBreakdown[lbl].total+=(+g.amt||0);

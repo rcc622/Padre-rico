@@ -8400,15 +8400,22 @@ function _cierreSaveCapitulo(list){
   const totalG=list.reduce((a,g)=>a+(+g.amt||0),0);
   const diarioToBucket={snack:'hormiga',bebida:'hormiga',minisuper:'hormiga',delivery:'hormiga',impulso:'impulso',transporte:'transporte',otro:'otro'};
   const buckets={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
-  const catBreakdown={};
+  // `hormigaBreakdown` = SOLO categorías del bucket hormiga (snack/bebida/
+  // minisuper/delivery), por etiqueta — consistente con el cierre por CSV. Antes
+  // se guardaban TODAS las categorías como "hormiga", inflando la tarjeta de
+  // Inicio (que suma este desglose). Impulso/transporte/esenciales/otro NO entran.
+  const hormigaBreakdown={};
   list.forEach(g=>{
     const b=diarioToBucket[g.cat]||'otro';
     buckets[b]+=(+g.amt||0);
-    const lbl=diarioCat(g.cat).n;
-    if(!catBreakdown[lbl])catBreakdown[lbl]={total:0,count:0};
-    catBreakdown[lbl].total+=(+g.amt||0);
-    catBreakdown[lbl].count++;
+    if(b==='hormiga'){
+      const lbl=diarioCat(g.cat).n;
+      if(!hormigaBreakdown[lbl])hormigaBreakdown[lbl]={total:0,count:0};
+      hormigaBreakdown[lbl].total+=(+g.amt||0);
+      hormigaBreakdown[lbl].count++;
+    }
   });
+  const catBreakdown=hormigaBreakdown;
   showConfirm('📖 Crear capítulo con Diarios',
     '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de esta quincena por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
     ()=>{

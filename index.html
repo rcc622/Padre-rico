@@ -3346,29 +3346,54 @@ function isBonoQna(){
     return false;
   }catch(e){return false;}
 }
+// Reparte un monto entre deudas por prioridad, TOPANDO cada abono al saldo y
+// bajando el sobrante a la siguiente (cascada/waterfall). mesesAdelantados se
+// topa al plazo restante (totalPays-curPay). Arregla el "8,050 a una deuda de 84".
+function _cascadeDebtPay(amount,debts){
+  let rem=Math.round(+amount||0);const allocs=[];
+  for(const d of debts){
+    if(rem<=0)break;
+    const saldo=Math.round(+d.bal||0);if(saldo<=0)continue;
+    const abono=Math.min(rem,saldo);
+    const pago=+d.pay||0;
+    const restPagos=(+d.totalPays>0)?Math.max(0,(+d.totalPays||0)-(+d.curPay||0)):null;
+    let meses=pago>0?Math.floor(abono/pago):0;
+    if(restPagos!=null)meses=Math.min(meses,restPagos);
+    allocs.push({name:d.name||'?',saldo,abono,newBal:saldo-abono,liquida:abono>=saldo,meses});
+    rem-=abono;
+  }
+  return {allocs,sobrante:Math.max(0,rem),totalAbono:Math.round(+amount||0)-Math.max(0,rem)};
+}
+function _renderCascade(c){
+  if(!c||!c.allocs||!c.allocs.length)return '<div style="font-size:11px;color:var(--muted)">Sin deuda recurrente que atacar — el bono iría a ahorro.</div>';
+  let h=c.allocs.map(a=>'<div class="row-b" style="font-size:11px;padding:3px 0;gap:8px"><span style="color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(a.liquida?'✅ ':'• ')+_escH(a.name)+'</span><span style="white-space:nowrap;color:var(--sky)">'+fx(a.abono)+(a.liquida?' · <strong style="color:var(--sage)">LIQUIDADA</strong>':(a.meses>0?' · ~'+a.meses+'m':''))+'</span></div>').join('');
+  if(c.sobrante>0)h+='<div class="row-b" style="font-size:11px;padding:3px 0;border-top:1px dashed var(--border);margin-top:2px"><span style="color:var(--sage)">🪙 Sobrante → ahorro</span><span style="color:var(--sage);white-space:nowrap">'+fx(c.sobrante)+'</span></div>';
+  return h;
+}
 // Calculates the three strategic plays for the bono quincena
 function calcBonoPlays(){
   const bf=+S.inc.bf||0;
   const savBase=savAmtQ();
   const activeDebts=S.debts.filter(d=>(+d.bal||0)>0&&(d.freq||'mensual')!=='unico');
-  // Pick top debt by current strategy
-  const sorted=[...activeDebts].sort((a,b)=>dStrat==='snowball'?(+a.bal||0)-(+b.bal||0):(+b.rate||0)-(+a.rate||0));
+  // Orden por estrategia: snowball = menor saldo; avalancha = mayor TASA real
+  // (hasInterest/interestPct; antes usaba d.rate, que no existe → orden roto).
+  const _rate=d=>d.hasInterest?(+d.interestPct||0):0;
+  const sorted=[...activeDebts].sort((a,b)=>dStrat==='snowball'?(+a.bal||0)-(+b.bal||0):(_rate(b)-_rate(a))||((+a.bal||0)-(+b.bal||0)));
   const topDebt=sorted[0]||null;
   // Play A — Súper Ahorro: 50% of bono goes to savings
   const playABoost=Math.round(bf*0.5);
   const playATotal=savBase+playABoost;
-  // Play B — Asalto a la Deuda: 70% of bono attacks top debt
+  // Play B — Asalto a la Deuda: 70% en CASCADA (topado a saldo, sobrante baja).
   const playBExtra=Math.round(bf*0.7);
-  const playBNewBal=topDebt?Math.max(0,(+topDebt.bal||0)-playBExtra):0;
-  const playBMonthsSaved=topDebt&&topDebt.pay>0?Math.floor(playBExtra/(+topDebt.pay||1)):0;
-  // Play C — Balanceada: 35% savings + 35% debt
+  const playBCascade=_cascadeDebtPay(playBExtra,sorted);
+  // Play C — Balanceada: 35% ahorro + 35% deuda (en cascada).
   const playCSavBoost=Math.round(bf*0.35);
   const playCDebtExtra=Math.round(bf*0.35);
-  const playCMonthsSaved=topDebt&&topDebt.pay>0?Math.floor(playCDebtExtra/(+topDebt.pay||1)):0;
+  const playCCascade=_cascadeDebtPay(playCDebtExtra,sorted);
   return {bf,savBase,topDebt,
     A:{boost:playABoost,total:playATotal},
-    B:{extra:playBExtra,newBal:playBNewBal,monthsSaved:playBMonthsSaved},
-    C:{savBoost:playCSavBoost,debtExtra:playCDebtExtra,monthsSaved:playCMonthsSaved}
+    B:{extra:playBExtra,cascade:playBCascade,newBal:playBCascade.allocs[0]?playBCascade.allocs[0].newBal:0,monthsSaved:playBCascade.allocs[0]?playBCascade.allocs[0].meses:0},
+    C:{savBoost:playCSavBoost,debtExtra:playCDebtExtra,cascade:playCCascade,monthsSaved:playCCascade.allocs[0]?playCCascade.allocs[0].meses:0}
   };
 }
 function showBonoPlays(){
@@ -3379,8 +3404,8 @@ function showBonoPlays(){
     let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Bono mensual: <strong>'+fx(p.bf)+'</strong>. Tú decides — la app no aplica nada automático.</div>';
     body+='<div style="padding:12px;border:1px solid rgba(78,124,106,.3);border-radius:8px;background:rgba(78,124,106,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sage)">🪙 A · Súper Ahorro</strong><span style="font-size:10px;color:var(--muted)">50%</span></div><div style="font-size:11px">+'+fx(p.A.boost)+' extra → Total activos: <strong style="color:var(--sage)">'+fx(p.A.total)+'</strong></div></div>';
     if(p.topDebt){
-      body+='<div style="padding:12px;border:1px solid rgba(74,110,140,.3);border-radius:8px;background:rgba(74,110,140,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sky)">⚔️ B · Asalto Deuda</strong><span style="font-size:10px;color:var(--muted)">70%</span></div><div style="font-size:11px">'+fx(p.B.extra)+' a <strong>'+topName+'</strong> ('+stratLabel+') → Saldo: '+fx(p.B.newBal)+(p.B.monthsSaved>0?' · ~'+p.B.monthsSaved+' meses adelantados':'')+'</div></div>';
-      body+='<div style="padding:12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;background:rgba(160,112,48,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--amber)">⚖️ C · Balanceada</strong><span style="font-size:10px;color:var(--muted)">35%+35%</span></div><div style="font-size:11px">Ahorro +'+fx(p.C.savBoost)+' · Deuda −'+fx(p.C.debtExtra)+(p.C.monthsSaved>0?' · ~'+p.C.monthsSaved+' meses':'')+'</div></div>';
+      body+='<div style="padding:12px;border:1px solid rgba(74,110,140,.3);border-radius:8px;background:rgba(74,110,140,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sky)">⚔️ B · Asalto Deuda</strong><span style="font-size:10px;color:var(--muted)">70% · '+fx(p.B.extra)+' ('+stratLabel+')</span></div>'+_renderCascade(p.B.cascade)+'</div>';
+      body+='<div style="padding:12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;background:rgba(160,112,48,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--amber)">⚖️ C · Balanceada</strong><span style="font-size:10px;color:var(--muted)">35%+35%</span></div><div style="font-size:11px;margin-bottom:4px">🪙 Ahorro +'+fx(p.C.savBoost)+' · ⚔️ Deuda '+fx(p.C.debtExtra)+'</div>'+_renderCascade(p.C.cascade)+'</div>';
     }
     showInfo('💎 Jugada Estratégica',body);
   }catch(e){toast('Error al calcular jugadas');}
@@ -4350,8 +4375,8 @@ function rDash(){
       ? 'Tu bono está por caer. Tienes <strong>tres jugadas</strong> preparadas — decide ahora para ejecutar el día que llegue.'
       : 'Tu bono está aquí. Tienes <strong>tres jugadas</strong> para empujar tu deadline. Tú decides — la app no aplica nada automático.';
     const playA='<div style="padding:14px;border:1px solid rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sage)">🪙 A · Súper Ahorro</div><div style="font-size:10px;color:var(--muted)">50% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Aparta <strong>'+fx(p.A.boost)+'</strong> extra al ahorro esta quincena además de tu base.</div><div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(78,124,106,.2)"><span style="font-size:10px;color:var(--muted)">Total a activos</span><strong style="color:var(--sage);font-size:15px">'+fx(p.A.total)+'</strong></div><div style="font-size:10px;color:var(--muted);margin-top:4px">Patrimonio sube '+fx(p.A.total)+' esta quincena</div></div>';
-    const playB=p.topDebt?'<div style="padding:14px;border:1px solid rgba(74,110,140,.3);border-radius:10px;background:rgba(74,110,140,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sky)">⚔️ B · Asalto a la Deuda</div><div style="font-size:10px;color:var(--muted)">70% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Pago extra de <strong>'+fx(p.B.extra)+'</strong> a <strong>'+topName+'</strong> (tu #1 según '+strategyLabel+').</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo actual</span><span>'+fx(p.topDebt.bal)+'</span></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">Saldo tras golpe</span><strong style="color:var(--sky)">'+fx(p.B.newBal)+'</strong></div>'+(p.B.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(74,110,140,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--sky);font-size:15px">'+p.B.monthsSaved+'</strong></div>':'<div style="font-size:10px;color:var(--muted);margin-top:6px">Impacto visible en el saldo, deadline sin cambio claro</div>')+'</div>':'';
-    const playC=p.topDebt?'<div style="padding:14px;border:1px solid rgba(160,112,48,.3);border-radius:10px;background:rgba(160,112,48,.05);margin-bottom:0"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--amber)">⚖️ C · Balanceada</div><div style="font-size:10px;color:var(--muted)">35% + 35%</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Mitad al ahorro, mitad a deuda. No es el extremo de ninguna pero avanzas en ambos frentes.</div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">🪙 Extra a ahorro</span><strong style="color:var(--sage)">'+fx(p.C.savBoost)+'</strong></div><div class="row-b" style="padding:6px 0;font-size:11px"><span style="color:var(--muted)">⚔️ Extra a '+topName+'</span><strong style="color:var(--sky)">'+fx(p.C.debtExtra)+'</strong></div>'+(p.C.monthsSaved>0?'<div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(160,112,48,.2)"><span style="font-size:10px;color:var(--muted)">Meses adelantados (aprox)</span><strong style="color:var(--amber);font-size:15px">'+p.C.monthsSaved+'</strong></div>':'')+'</div>':'';
+    const playB=p.topDebt?'<div style="padding:14px;border:1px solid rgba(74,110,140,.3);border-radius:10px;background:rgba(74,110,140,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sky)">⚔️ B · Asalto a la Deuda</div><div style="font-size:10px;color:var(--muted)">70% · '+fx(p.B.extra)+'</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Reparte el extra entre tus deudas (orden '+strategyLabel+'), topando cada abono a su saldo:</div>'+_renderCascade(p.B.cascade)+'</div>':'';
+    const playC=p.topDebt?'<div style="padding:14px;border:1px solid rgba(160,112,48,.3);border-radius:10px;background:rgba(160,112,48,.05);margin-bottom:0"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--amber)">⚖️ C · Balanceada</div><div style="font-size:10px;color:var(--muted)">35% + 35%</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Mitad al ahorro (+'+fx(p.C.savBoost)+'), mitad a deuda en cascada:</div>'+_renderCascade(p.C.cascade)+'</div>':'';
     const noDebts='<div style="padding:14px;border:1px dashed rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.03);font-size:12px;color:var(--txt2);line-height:1.6">Sin deudas activas — las jugadas B y C no aplican. Considera destinar <strong style="color:var(--sage)">todo</strong> el bono al ahorro esta quincena (patrimonio +<strong>'+fx(p.bf)+'</strong>). <br><br>⚠️ <em>Cuidado con la zona de tentación:</em> sin deudas, el mayor riesgo son los gastos hormiga. Revisa tus retos en Hábitos.</div>';
     return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">'+headerLabel+'</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+headerSub+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">'+introCopy+'</div>'+playA+(p.topDebt?playB+playC:noDebts)+'<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div></div>';
   }catch(e){return'';}})()}

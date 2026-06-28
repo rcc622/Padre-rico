@@ -10170,7 +10170,7 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
   // cae en el N-ésimo sábado del ciclo. Lo exponemos como `day` para que el
   // Plan muestre la fecha igual que las deudas (antes salía "—"). Solo afecta
   // el display y el orden de la lista; NO toca montos ni el balance.
-  const _cycleSats=[];{const _sd=new Date(cStart);while(_sd<=cEnd){if(_sd.getDay()===6)_cycleSats.push(_sd.getDate());_sd.setDate(_sd.getDate()+1);}}
+  const _cycleSats=[];const _cycleSatYMD=[];{const _sd=new Date(cStart);while(_sd<=cEnd){if(_sd.getDay()===6){_cycleSats.push(_sd.getDate());_cycleSatYMD.push(_ymdLocal(_sd));}_sd.setDate(_sd.getDate()+1);}}
   S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
     // Comienzo a futuro: el gasto no aplica en ciclos que terminan antes de
     // su fecha de inicio (ej. semanal que empieza el 8 ago no aparece hasta
@@ -10180,7 +10180,19 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
     // quincenas que EMPIEZAN después de su fecha de fin; sigue cobrándose en la
     // quincena que contiene esa fecha. Campo opcional nuevo: sin él, nada cambia.
     if(e.endDate&&_cStartYMD>e.endDate)return;
-    if(f==='semanal'){const w=+e.amt||0;const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;expQ+=w*weeks;for(let wi=0;wi<weeks;wi++){const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:_cycleSats[wi]||0,freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
+    if(f==='semanal'){const w=+e.amt||0;const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;for(let wi=0;wi<weeks;wi++){
+      // Vigencia POR OCURRENCIA: un gasto semanal con comienzo/conclusión solo
+      // aplica en las semanas (sábados ancla) que caen dentro de [startDate,endDate].
+      // El gate grueso de arriba ya descarta el ciclo entero cuando NO se traslapa;
+      // esto recorta las semanas sueltas que quedan fuera dentro de un ciclo que SÍ
+      // se traslapa (p.ej. una conclusión a media quincena → el pago de la semana
+      // siguiente ya no debe aparecer). Sin start/end NO cambia nada: mismas `weeks`
+      // ocurrencias y mismo expQ (w*weeks) que antes. Los pagos YA aplicados que
+      // queden fuera los recoge el barrido de "reconciliados" del Plan, así que el
+      // cuadre Inicio↔Plan no se rompe.
+      const _satY=_cycleSatYMD[wi];
+      if(_satY&&((e.startDate&&_satY<e.startDate)||(e.endDate&&_satY>e.endDate)))continue;
+      expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:_cycleSats[wi]||0,freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
     else if(f==='quincenal'){expQ+=(+e.amt||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:0,freq:f});}
     else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
     else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}

@@ -6773,6 +6773,7 @@ function rFlujo(){try{
         <div id="cbRepeatCountWrap" style="display:none"><label>¿Cuántas veces? <span style="color:var(--muted);font-weight:normal;text-transform:none">(finita)</span></label><input type="number" id="cbRepeatCount" value="3" min="2" max="52" inputmode="numeric" oninput="_cobRepeatHint('cb')"></div>
       </div>
       <div id="cbRepeatHint" style="display:none;font-size:10px;color:var(--sky);margin-bottom:10px;line-height:1.5"></div>
+      ${_cobGastoSelector('cb')}
       <button class="btn" style="width:100%;background:var(--sky);color:#fff;padding:11px;font-size:13px;font-weight:bold;border:none;border-radius:8px;font-family:Georgia,serif;cursor:pointer" onclick="addCobranza()">+ Registrar cobranza</button>
 
       ${pend.length>0?(()=>{
@@ -6792,7 +6793,7 @@ function rFlujo(){try{
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:bold;color:var(--txt)">${_escH(c.debtor)}${c.repeatId?`<span style="font-size:9px;margin-left:6px;padding:1px 5px;border-radius:4px;background:rgba(74,110,140,.12);color:var(--sky);font-weight:bold;letter-spacing:.3px">🔁 ${c.repeatIdx||''}/${c.repeatTotal||''}</span>`:''}</div>
                 ${c.concept?`<div style="font-size:11px;color:var(--muted);margin-top:2px">${_escH(c.concept)}</div>`:''}
-                <div style="font-size:10px;color:${tagColor};margin-top:4px">${tagText}${c.dateLent?` · prestado ${fmtDate(c.dateLent)}`:''}</div>
+                <div style="font-size:10px;color:${tagColor};margin-top:4px">${tagText}${c.dateLent?` · prestado ${fmtDate(c.dateLent)}`:''}${c.gastoId?'':' · <span style="color:var(--muted)">🤝 solo cobro</span>'}</div>
               </div>
               <div style="text-align:right;flex-shrink:0">
                 <div style="font-size:15px;font-weight:bold;color:var(--sky);font-family:Georgia,serif">+${fx(+c.amount||0)}</div>
@@ -7742,6 +7743,31 @@ function _cobRepeatHint(p){
   hint.style.display='block';
   hint.textContent='🔁 Se crearán '+count+' cobranzas ('+lbl+'). '+(last?'La última caería ~'+fmtDate(last)+'.':'');
 }
+// ── Selector "¿este dinero salió de tu cuenta?" ────────────────────────
+// Un cobro normal es un préstamo: el dinero SALE de tu cuenta → se crea un
+// gasto vinculado (cobLink) que el ingreso del cobro luego neutraliza. Pero
+// hay cobros que NO te costaron de tu bolsa esta vez (cobras algo que ya
+// estaba contado, o que no fue gasto tuyo). Para esos, "solo cobro": no crea
+// gasto. Al cobrarse SÍ genera el ingreso extra (es ganancia neta). Default
+// = sí salió (preserva el comportamiento previo). prefix: 'cb' | 'qcb'.
+function _cobGZon(){return 'flex:1;padding:9px 6px;font-size:12px;font-weight:bold;border:1.5px solid var(--sky);border-radius:7px;font-family:Georgia,serif;cursor:pointer;background:var(--sky);color:#fff;line-height:1.3;text-align:center';}
+function _cobGZoff(){return 'flex:1;padding:9px 6px;font-size:12px;font-weight:bold;border:1.5px solid var(--border);border-radius:7px;font-family:Georgia,serif;cursor:pointer;background:transparent;color:var(--txt2);line-height:1.3;text-align:center';}
+function _cobGastoSelector(prefix){
+  return '<div style="margin-bottom:12px">'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">¿Este dinero salió de tu cuenta?</div>'
+    +'<div style="display:flex;gap:6px">'
+      +'<button type="button" id="'+prefix+'GZy" onclick="_setCobGasto(\''+prefix+'\',1)" style="'+_cobGZon()+'">💸 Sí · salió<br><span style="font-weight:normal;font-size:10px;opacity:.85">crea gasto vinculado</span></button>'
+      +'<button type="button" id="'+prefix+'GZn" onclick="_setCobGasto(\''+prefix+'\',0)" style="'+_cobGZoff()+'">🤝 No · solo cobro<br><span style="font-weight:normal;font-size:10px;opacity:.85">sin gasto</span></button>'
+    +'</div>'
+    +'<input type="hidden" id="'+prefix+'IsGasto" value="1">'
+    +'</div>';
+}
+function _setCobGasto(prefix,v){
+  const inp=document.getElementById(prefix+'IsGasto');if(inp)inp.value=v?'1':'0';
+  const y=document.getElementById(prefix+'GZy'),n=document.getElementById(prefix+'GZn');
+  if(y)y.style.cssText=v?_cobGZon():_cobGZoff();
+  if(n)n.style.cssText=v?_cobGZoff():_cobGZon();
+}
 function addCobranza(src){
   // src='gd' → widget de Día a día (ids con prefijo cbg); default → Ingresos (cb)
   const p=src==='gd'?'cbg':'cb';
@@ -7754,6 +7780,9 @@ function addCobranza(src){
   let count=repeat==='none'?1:Math.max(1,Math.min(52,Math.round(+(document.getElementById(p+'RepeatCount')?.value)||1)));
   if(!debtor){toast('¿Quién te debe?');return;}
   if(amount<=0){toast('Monto inválido');return;}
+  // ¿Salió de tu cuenta como gasto? (selector del form, default sí). Si NO,
+  // es "solo cobro": no se crea gasto vinculado ni gastoId.
+  const _isGasto=(document.getElementById(p+'IsGasto')?.value!=='0');
   // Genera N ocurrencias con la misma config; cada una avanza fecha de
   // préstamo y de pago esperado según el periodo. La primera (steps=0) usa
   // las fechas tal cual. Un repeatId común las vincula como serie.
@@ -7769,15 +7798,21 @@ function addCobranza(src){
       id:_uid(),debtor,concept,amount,
       dateLent:_dl,
       dateExpected:_cobAdvanceDate(dateExpected,repeat,i),
-      paid:false,gastoId:_gid,
+      paid:false,
+      ...(_isGasto?{gastoId:_gid}:{}),
       ...(repeatId?{repeatId,repeatFreq:repeat,repeatIdx:i+1,repeatTotal:count}:{})
     });
     // El préstamo SALE de tu cuenta → gasto vinculado (no esencial). Al cobrar
     // entra un ingreso que lo neutraliza. cobLink: se borra junto con la cobranza.
-    _gastos.push({id:_gid,name:_concept,amt:amount,cat:'otro',date:_dl,paidWith:'debito',cobLink:true});
+    // En "solo cobro" no se crea gasto (no salió de tu bolsa esta vez).
+    if(_isGasto)_gastos.push({id:_gid,name:_concept,amt:amount,cat:'otro',date:_dl,paidWith:'debito',cobLink:true});
   }
-  pt({cobranzas:[...(S.cobranzas||[]),...nuevas],gastosDiarios:[...(S.gastosDiarios||[]),..._gastos]});
-  toast(count>1?'✓ '+count+' cobranzas + gastos registrados':'✓ Cobranza + gasto registrado · '+fx(amount));
+  pt(_isGasto
+    ?{cobranzas:[...(S.cobranzas||[]),...nuevas],gastosDiarios:[...(S.gastosDiarios||[]),..._gastos]}
+    :{cobranzas:[...(S.cobranzas||[]),...nuevas]});
+  toast(count>1
+    ?('✓ '+count+' cobranzas'+(_isGasto?' + gastos registrados':' registradas (solo cobro)'))
+    :('✓ '+(_isGasto?'Cobranza + gasto registrado · ':'Cobranza registrada (solo cobro) · ')+fx(amount)));
   _refreshCobranza();
 }
 function rmCobranza(id){
@@ -8113,7 +8148,8 @@ function openQuickCobranza(){
     +'<input type="number" id="qcbAmount" placeholder="Monto a cobrar $" inputmode="decimal" style="width:100%;padding:11px;font-size:20px;text-align:center;font-weight:bold;color:var(--sky);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:10px">'
     +'<input type="text" id="qcbConcept" placeholder="Concepto (opcional)" style="width:100%;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;margin-bottom:10px;font-family:Georgia,serif">'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha del préstamo</label><input type="date" id="qcbDateLent" value="'+today+'" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div>'
-    +'<div><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha esperada de pago</label><input type="date" id="qcbDateExp" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div></div>';
+    +'<div><label style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;display:block;margin-bottom:4px">Fecha esperada de pago</label><input type="date" id="qcbDateExp" style="width:100%;padding:9px;font-size:12px;border:1px solid var(--border);border-radius:6px;font-family:Georgia,serif"></div></div>'
+    +'<div style="margin-top:10px">'+_cobGastoSelector('qcb')+'</div>';
   showConfirm('🤝 Registrar cobranza',body,null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sky" onclick="_qCobranzaSave()">+ Registrar</button>';
@@ -8126,12 +8162,18 @@ function _qCobranzaSave(){
   const dateExpected=document.getElementById('qcbDateExp')?.value||'';
   if(!debtor){toast('¿Quién te debe?');return;}
   if(amount<=0){toast('Monto debe ser mayor a 0');return;}
+  // ¿Salió de tu cuenta como gasto? (default sí). "Solo cobro" → sin gasto.
+  const _isGasto=(document.getElementById('qcbIsGasto')?.value!=='0');
   const _gid=Date.now();
-  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false,gastoId:_gid};
-  const _g={id:_gid,name:(concept&&concept.trim())||('Préstamo a '+debtor),amt:amount,cat:'otro',date:dateLent||_todayYMD(),paidWith:'debito',cobLink:true};
-  pt({cobranzas:[...(S.cobranzas||[]),c],gastosDiarios:[...(S.gastosDiarios||[]),_g]});
+  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false,...(_isGasto?{gastoId:_gid}:{})};
+  if(_isGasto){
+    const _g={id:_gid,name:(concept&&concept.trim())||('Préstamo a '+debtor),amt:amount,cat:'otro',date:dateLent||_todayYMD(),paidWith:'debito',cobLink:true};
+    pt({cobranzas:[...(S.cobranzas||[]),c],gastosDiarios:[...(S.gastosDiarios||[]),_g]});
+  }else{
+    pt({cobranzas:[...(S.cobranzas||[]),c]});
+  }
   closeConfirm();
-  toast('🤝 Cobranza + gasto registrado · '+fx(amount));
+  toast(_isGasto?('🤝 Cobranza + gasto registrado · '+fx(amount)):('🤝 Cobranza registrada (solo cobro) · '+fx(amount)));
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
   try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
   try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}

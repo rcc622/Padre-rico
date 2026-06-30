@@ -8629,8 +8629,10 @@ function _cierreReviewFlags(list){
     if(g.cat==='snack'&&amt>120)reasons.push('🏷️ Quedó en "Snack" (la categoría por defecto) con monto alto — ¿es correcto?');
     else if(!esen&&amt>=300)reasons.push('💰 Monto alto ('+fx(amt)+') para gasto no esencial — ¿bien categorizado?');
     const dk=(g.date||'')+'|'+amt;
-    if(seen[dk])reasons.push('👯 Posible duplicado: otro gasto con el mismo monto y fecha.');
-    seen[dk]=(seen[dk]||0)+1;
+    // Nombra el gasto con el que choca (mismo monto y fecha) para que el usuario
+    // pueda compararlos; guarda el nombre del PRIMERO en seen[dk].
+    if(seen[dk])reasons.push('👯 Posible duplicado de «'+_escH(seen[dk])+'» (mismo monto y fecha). Si lo registraste dos veces, borra uno en Día a día → Diarios.');
+    else seen[dk]=(g.name||'(sin nombre)');
     if(reasons.length)flags.push({g,reasons});
   });
   return flags;
@@ -8654,7 +8656,11 @@ function _openCierreReview(ck){
     +'</div>';
   });
   body+='</div>';
-  showConfirm('🔍 Revisa antes de cerrar',body,()=>{_cierreSaveCapitulo(diariosThisCycle(ck).filter(g=>!g.pending),ck);});
+  // BUG FIX: execConfirm() corre el callback y LUEGO closeConfirm(). Si el
+  // callback abriera el modal de resumen de inmediato, closeConfirm lo cerraría
+  // al instante ("no hace nada"). Por eso diferimos _cierreSaveCapitulo con un
+  // setTimeout: se abre DESPUÉS de que closeConfirm cerró el modal de revisión.
+  showConfirm('🔍 Revisa antes de cerrar',body,()=>{const _l=diariosThisCycle(ck).filter(g=>!g.pending);setTimeout(()=>_cierreSaveCapitulo(_l,ck),60);});
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="execConfirm()">✓ Revisé · cerrar</button>';
 }

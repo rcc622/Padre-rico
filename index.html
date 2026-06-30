@@ -8592,12 +8592,18 @@ function setDiarioBudget(){
   try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
 }
 function cerrarQnaDiarios(){
-  const list=diariosThisCycle();
+  // Cierra el ciclo que el usuario está VIENDO en Diarios (no siempre el
+  // actual). Antes usaba getCycleWindow() fijo, así que al pasar de quincena
+  // (p.ej. el día 30, ya en la siguiente) no se podía cerrar la que acababa de
+  // terminar: el ciclo actual salía vacío → "No hay registros". Excluye los
+  // pre-registros pendientes (no cuentan hasta confirmarse).
+  const ck=diarioCk();
+  const list=diariosThisCycle(ck).filter(g=>!g.pending);
   if(!list.length){toast('No hay registros en esta quincena');return;}
   // CANDADO DE FIABILIDAD: revisa capturas dudosas antes de fotografiar la
   // quincena. Si hay banderas, el usuario corrige/confirma y recién cierra.
-  if(_cierreReviewFlags(list).length){_openCierreReview();return;}
-  _cierreSaveCapitulo(list);
+  if(_cierreReviewFlags(list).length){_openCierreReview(ck);return;}
+  _cierreSaveCapitulo(list,ck);
 }
 // Detecta registros dudosos de la quincena: préstamos mal puestos, default
 // "snack" con monto alto, montos altos en gasto no esencial, y duplicados.
@@ -8616,10 +8622,11 @@ function _cierreReviewFlags(list){
   });
   return flags;
 }
-function _openCierreReview(){
-  const list=diariosThisCycle();
+function _openCierreReview(ck){
+  ck=ck||diarioCk();
+  const list=diariosThisCycle(ck).filter(g=>!g.pending);
   const flags=_cierreReviewFlags(list);
-  if(!flags.length){_cierreSaveCapitulo(list);return;}
+  if(!flags.length){_cierreSaveCapitulo(list,ck);return;}
   const cats=_allDiarioCats();
   let body='<div style="font-size:12px;color:var(--txt2);line-height:1.5;margin-bottom:12px">Antes de cerrar, revisa estos <strong>'+flags.length+'</strong> registro'+(flags.length!==1?'s':'')+' dudoso'+(flags.length!==1?'s':'')+'. Corrige la categoría, márcalo préstamo, o déjalo si está bien.</div>'
     +'<div style="max-height:46vh;overflow-y:auto;margin:0 -2px;padding:0 2px">';
@@ -8634,7 +8641,7 @@ function _openCierreReview(){
     +'</div>';
   });
   body+='</div>';
-  showConfirm('🔍 Revisa antes de cerrar',body,()=>{_cierreSaveCapitulo(diariosThisCycle());});
+  showConfirm('🔍 Revisa antes de cerrar',body,()=>{_cierreSaveCapitulo(diariosThisCycle(ck).filter(g=>!g.pending),ck);});
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="execConfirm()">✓ Revisé · cerrar</button>';
 }
@@ -8642,9 +8649,14 @@ function _reviewSetCat(id,cat){
   pt({gastosDiarios:(S.gastosDiarios||[]).map(g=>g.id===id?{...g,cat}:g)});
   _openCierreReview();
 }
-function _cierreSaveCapitulo(list){
+function _cierreSaveCapitulo(list,ck){
   if(!list||!list.length){toast('No hay registros');return;}
-  const w=getCycleWindow();
+  ck=ck||diarioCk();
+  const w=cycleWindowFromKey(ck);
+  // Anti-duplicado: si ya existe un capítulo de Diarios para esta misma
+  // ventana, avisar (cerrar la misma quincena dos veces crearía dos capítulos).
+  const _ps=_ymdLocal(w.start),_pe=_ymdLocal(w.end);
+  const _dup=(S.snapshots||[]).some(s=>s&&s.source==='diarios'&&s.periodStart===_ps&&s.periodEnd===_pe);
   const totalG=list.reduce((a,g)=>a+(+g.amt||0),0);
   const diarioToBucket={snack:'hormiga',bebida:'hormiga',minisuper:'hormiga',delivery:'hormiga',impulso:'impulso',transporte:'transporte',otro:'otro'};
   const buckets={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
@@ -8666,7 +8678,8 @@ function _cierreSaveCapitulo(list){
   });
   const catBreakdown=hormigaBreakdown;
   showConfirm('📖 Crear capítulo con Diarios',
-    '<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de esta quincena por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
+    (_dup?'<div style="font-size:11px;color:var(--amber);line-height:1.5;margin-bottom:10px;padding:8px 10px;background:rgba(160,112,48,.08);border-radius:8px">⚠ Ya tienes un capítulo de esta quincena ('+fmtDate(_ps)+' → '+fmtDate(_pe)+'). Crear otro lo duplica — cancela si no era tu intención.</div>':'')
+    +'<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de la quincena <strong>'+fmtDate(_ps)+' → '+fmtDate(_pe)+'</strong> por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
     ()=>{
       const snap={
         id:_uid(),
@@ -11788,6 +11801,7 @@ function rHabitos(){
     const _dcKeys=allCycleKeys();
     const _dcIdx=_dcKeys.indexOf(_dck);
     const _dcFirst=_dcIdx<=0,_dcLast=_dcIdx>=_dcKeys.length-1;
+    const _isFutureDc=_dcIdx>_dcKeys.indexOf(cycleKey());
     const _dcLabel=_isCurrentDc?'ESTA QUINCENA':(_dcIdx<_dcKeys.indexOf(cycleKey())?'QUINCENA PASADA':'PRÓXIMA QUINCENA');
     const w=cycleWindowFromKey(_dck);
     const cycleList=diariosThisCycle(_dck).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')||b.id-a.id);
@@ -11964,10 +11978,10 @@ function rHabitos(){
     <div style="font-size:11px;color:var(--muted);line-height:1.6">Edita esos gastos (✏️ en la lista de arriba) y dales una categoría real para ver de verdad en qué se te va el dinero. Si te falta una, créala desde el selector de categoría.</div>
   </div>`:''}
 
-  ${cycleList.length>0&&_isCurrentDc?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
-    <div class="ct">📖 Cerrar quincena manualmente</div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">¿Prefieres no subir el CSV? Puedes cerrar la quincena solo con tu bitácora de Diarios y crear el capítulo en Mi Historia. Opcional — también puedes seguir subiendo el CSV desde Plan de Acción → Cerrar quincena si quieres auditar tus registros.</div>
-    <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${cycleList.length} registros · ${fx(Math.round(totalAll))})</button>
+  ${confirmedList.length>0&&!_isFutureDc?`<div class="card" style="border:1px dashed var(--sage);background:rgba(78,124,106,.03)">
+    <div class="ct">📖 ${_isCurrentDc?'Cerrar quincena manualmente':'Cerrar esta quincena pasada'}</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.7">${_isCurrentDc?'¿Prefieres no subir el CSV? Puedes cerrar la quincena solo con tu bitácora de Diarios y crear el capítulo en Mi Historia. Opcional — también puedes seguir subiendo el CSV desde Plan de Acción → Cerrar quincena si quieres auditar tus registros.':'Esta quincena ya terminó pero aún no la cerraste. Crea su capítulo en Mi Historia con tu bitácora de Diarios.'}</div>
+    <button class="btn btn-sage btn-sm" onclick="cerrarQnaDiarios()">Crear capítulo con Diarios (${confirmedList.length} registros · ${fx(Math.round(totalAll))})</button>
   </div>`:''}
   `;})():''}
 

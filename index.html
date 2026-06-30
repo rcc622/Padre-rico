@@ -8726,6 +8726,50 @@ function _cierreSaveCapitulo(list,ck){
       try{if(hasSavCommittedThisCycle())setTimeout(()=>openSavCloseCheck(),700);}catch(e){}
     });
 }
+// ── Edición de categorías de un capítulo de DIARIOS (post-cierre) ──────────
+// El editor de Categorías de Historia es del sistema de comercios del CSV; los
+// capítulos de Diarios usan la taxonomía de Diarios. Estas funciones permiten
+// corregir la categoría de cada movimiento del capítulo SIN salir de Historia:
+// editan el gasto REAL en S.gastosDiarios y recalculan la foto del capítulo
+// (hormiga/buckets/total). La categoría NO afecta el cuadre (calcCycleBalance
+// suma diarios por monto, sin importar la categoría) — solo hormiga/score.
+function _recomputeDiariosSnap(cap,gd){
+  const src=gd||S.gastosDiarios||[];
+  const list=src.filter(g=>g&&!g.pending&&g.date&&g.date>=cap.periodStart&&g.date<=cap.periodEnd);
+  const diarioToBucket={snack:'hormiga',bebida:'hormiga',minisuper:'hormiga',delivery:'hormiga',impulso:'impulso',transporte:'transporte',otro:'otro'};
+  const buckets={hormiga:0,impulso:0,servicio:0,transporte:0,otro:0};
+  const hormigaBreakdown={};let totalG=0;
+  list.forEach(g=>{const amt=+g.amt||0;totalG+=amt;const b=diarioToBucket[g.cat]||'otro';buckets[b]+=amt;
+    if(!isEsencial(g)){const lbl=diarioCat(g.cat).n;if(!hormigaBreakdown[lbl])hormigaBreakdown[lbl]={total:0,count:0};hormigaBreakdown[lbl].total+=amt;hormigaBreakdown[lbl].count++;}});
+  return {...cap,totalGasto:totalG,totalTxns:list.length,hormiga:hormigaBreakdown,hormigaDebit:hormigaBreakdown,
+    debitTotal:totalG,debitTxns:list.length,buckets,
+    topByAmt:list.slice().sort((a,b)=>(+b.amt||0)-(+a.amt||0)).slice(0,10).map(g=>({desc:(g.name||'').slice(0,30),amt:+g.amt||0}))};
+}
+function _editSnapDiarioCat(gid,cat,capId){
+  const gd=(S.gastosDiarios||[]).map(g=>g.id===gid?{...g,cat}:g);
+  const snaps=(S.snapshots||[]).map(s=>(s.id===capId&&s.source==='diarios')?_recomputeDiariosSnap(s,gd):s);
+  pt({gastosDiarios:gd,snapshots:snaps});
+  try{rHistoria();}catch(e){}
+}
+function _renderDiariosCatEditor(cap){
+  const list=(S.gastosDiarios||[]).filter(g=>g&&!g.pending&&g.date&&g.date>=cap.periodStart&&g.date<=cap.periodEnd)
+    .sort((a,b)=>(+b.amt||0)-(+a.amt||0)||(b.date||'').localeCompare(a.date||''));
+  if(!list.length)return '<div class="card" style="text-align:center;padding:24px;color:var(--muted);font-size:12px">Este capítulo de Diarios ya no tiene movimientos guardados (quizá los borraste de tu bitácora).</div>';
+  const cats=_allDiarioCats();
+  let h='<div class="card" style="padding:12px 14px"><div style="font-size:11px;color:var(--txt2);line-height:1.6">📓 Movimientos de Diarios de este capítulo (<strong>'+list.length+'</strong>). Cambia la categoría de cada uno — se corrige en tu bitácora y el capítulo se <strong>recalcula al instante</strong>.</div></div>';
+  h+='<div class="card" style="padding:0;overflow:hidden">';
+  list.forEach((g,i)=>{
+    const esen=isEsencial(g);const bb=i<list.length-1?'border-bottom:1px solid var(--border);':'';
+    h+='<div style="padding:11px 14px;'+bb+(esen?'background:rgba(120,120,120,.04)':'')+'">';
+    h+='<div class="row-b" style="margin-bottom:6px;gap:8px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(g.name||'—')+'</span><span style="font-size:12px;color:'+(esen?'var(--muted)':'var(--terra)')+';font-weight:bold;flex-shrink:0">'+fx(+g.amt||0)+'</span></div>';
+    h+='<div class="row" style="gap:8px;align-items:center"><select onchange="_editSnapDiarioCat('+g.id+',this.value,\''+cap.id+'\')" style="flex:1;padding:7px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">';
+    h+=cats.map(cc=>'<option value="'+cc.k+'"'+(g.cat===cc.k?' selected':'')+'>'+cc.e+' '+_escH(cc.n)+(cc.custom&&cc.esencial?' 🧾':'')+'</option>').join('');
+    h+='</select><span style="font-size:10px;color:var(--muted);flex-shrink:0;white-space:nowrap">'+_escH(g.date||'')+'</span></div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  return h;
+}
 function updDebtUnico(){
   const sel=document.getElementById('dpf');if(!sel)return;
   const isU=sel.value==='unico';
@@ -13637,7 +13681,8 @@ function rHistoria(){
       const cap=snaps[chIdx];
       const txns=cap.allTxns||[];
       // Header card with cap selector
-      let html='<div class="card card-sage"><div class="ct">🏷️ Categorías</div><div style="font-size:12px;color:var(--txt2);margin-bottom:10px;line-height:1.6">Revisa cómo está categorizado cada comercio. Toca para corregir. Las reglas se aplican a todos los capítulos cuando le des <strong>"Guardar y aplicar"</strong>.</div>';
+      const _isDiariosCap=cap.source==='diarios';
+      let html='<div class="card card-sage"><div class="ct">🏷️ Categorías</div><div style="font-size:12px;color:var(--txt2);margin-bottom:10px;line-height:1.6">'+(_isDiariosCap?'Revisa y corrige la categoría de cada <strong>movimiento de Diarios</strong> de este capítulo. Se guarda en tu bitácora y el capítulo se recalcula al instante.':'Revisa cómo está categorizado cada comercio. Toca para corregir. Las reglas se aplican a todos los capítulos cuando le des <strong>"Guardar y aplicar"</strong>.')+'</div>';
       html+='<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Capítulo</div>';
       html+='<div class="chips">';
       snaps.forEach((s,i)=>{
@@ -13647,7 +13692,11 @@ function rHistoria(){
       });
       html+='</div></div>';
 
-      if(!txns.length){
+      if(cap.source==='diarios'){
+        // Capítulo de Diarios: editor con la taxonomía de Diarios (no la de
+        // comercios del CSV). Edita el gasto real y recalcula la foto.
+        html+=_renderDiariosCatEditor(cap);
+      } else if(!txns.length){
         html+='<div class="card" style="text-align:center;padding:24px"><div style="font-size:22px;margin-bottom:8px">📦</div><div style="color:var(--muted);font-size:12px;line-height:1.6">Este capítulo no tiene transacciones detalladas.<br><span style="font-size:10px">Puede haber sido comprimido al cambiar de año.</span></div></div>';
       } else {
         // Group by merchant key (same normalization the rule system uses)

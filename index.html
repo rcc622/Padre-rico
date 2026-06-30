@@ -6212,6 +6212,19 @@ function rQuincena(){
   };
 
   document.getElementById('tab-quincena').innerHTML=`
+  <div class="card" style="border:1px solid var(--sage);background:rgba(78,124,106,.04)">
+    <div class="ct">🧭 Ritual de cierre de quincena</div>
+    <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:12px">Al terminar la quincena, sigue estos pasos <strong>en orden</strong>. Concilia <strong>antes</strong> de cerrar para que el capítulo retrate una quincena ya cuadrada.</div>
+    <div onclick="openLedgerAudit()" style="cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;background:#fff">
+      <span style="font-size:18px">🩺</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--txt)">1 · Validar movimientos</div><div style="font-size:10px;color:var(--muted)">Caza fantasmas y corrige capturas dudosas</div></div><span style="color:var(--muted)">›</span>
+    </div>
+    <div onclick="openReconcileModal()" style="cursor:pointer;border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:10px;background:#fff">
+      <span style="font-size:18px">🔧</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--txt)">2 · Conciliar con banco</div><div style="font-size:10px;color:var(--muted)">Compara el cierre de la app vs tu saldo real</div></div><span style="color:var(--muted)">›</span>
+    </div>
+    <div onclick="cerrarQnaDiarios()" style="cursor:pointer;border:1.5px solid var(--sage);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px;background:rgba(78,124,106,.06)">
+      <span style="font-size:18px">📖</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--sage)">3 · Cerrar / crear capítulo</div><div style="font-size:10px;color:var(--muted)">Con tu bitácora de Diarios — o sube el CSV abajo</div></div><span style="color:var(--sage)">›</span>
+    </div>
+  </div>
   <div class="card card-sage">
     <div class="ct">📊 Análisis de Estado de Cuenta</div>
     <div style="font-size:12px;color:var(--txt2);line-height:1.7">Sube tu CSV de Nu (cuenta de débito) para analizar tus gastos, detectar hormiga y comparar quincenas.</div>

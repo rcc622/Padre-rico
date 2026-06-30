@@ -377,6 +377,7 @@ button:active{transform:scale(.97)}
     <div class="fab-item"><span class="fab-label">⏱️ Horas extra</span><button class="fab-mini" onclick="fabAction('hrsxtra')" style="color:var(--sky)">⏱️</button></div>
     <div class="fab-item"><span class="fab-label">🤝 Cobranza</span><button class="fab-mini" onclick="fabAction('cobranza')" style="color:var(--sky)">🤝</button></div>
     <div class="fab-item"><span class="fab-label">🏦 Activo</span><button class="fab-mini" onclick="fabAction('activo')" style="color:var(--amber)">🏦</button></div>
+    <div class="fab-item"><span class="fab-label">🤖 Plan IA</span><button class="fab-mini" onclick="fabAction('plania')" style="color:var(--sage)">🤖</button></div>
   </div>
   <button id="fabMain" class="fab-main" onclick="_fabToggle()" aria-label="Acciones rápidas">+</button>
 </div>
@@ -8136,7 +8137,36 @@ function fabAction(type){
     else if(type==='activo'){
       if(typeof openQuickAsset==='function')openQuickAsset();
     }
+    else if(type==='plania'){
+      if(typeof openQuickAIPlan==='function')openQuickAIPlan();
+    }
   },180);
+}
+// ══ Plan IA rápido desde el FAB ═════════════════════════════════════════
+// Acceso directo al loop del Plan IA (export ↔ import del JSON) desde
+// cualquier pantalla, sin navegar a Historia. Solo orquesta funciones
+// existentes (openAIPlanImport / exportPlanUpdate / exportForAI); NO toca
+// números ni el motor de cuadre — el plan IA es una capa de seguimiento.
+function openQuickAIPlan(){
+  const p=S.aiPlan;
+  const has=!!(p&&Array.isArray(p.quincenas)&&p.quincenas.length);
+  let head;
+  if(has){
+    const checks=p.checks||{};let t=0,d=0;
+    p.quincenas.forEach((q,i)=>(q.acciones||[]).forEach((a,j)=>{t++;if(checks['q'+(i+1)+'_'+j])d++;}));
+    head='<div style="font-size:11px;color:var(--sage);text-align:center;margin-bottom:14px">✓ Plan activo · '+p.quincenas.length+' quincena'+(p.quincenas.length!==1?'s':'')+' · avance '+d+'/'+t+'</div>';
+  }else{
+    head='<div style="font-size:11px;color:var(--muted);text-align:center;line-height:1.6;margin-bottom:14px">Aún no tienes un plan importado. Exporta tu reporte, pídele a la IA el bloque JSON y pégalo aquí.</div>';
+  }
+  const body=head
+    +'<button class="btn btn-sage" style="width:100%;margin-bottom:8px" onclick="openAIPlanImport()">📥 '+(has?'Actualizar plan (pegar JSON)':'Importar plan (pegar JSON)')+'</button>'
+    +(has
+      ?'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px" onclick="exportPlanUpdate()">🔄 Exportar combo para la IA<br><span style="font-size:10px;color:var(--muted);font-weight:normal">plan + avance + contexto (conserva palomitas)</span></button>'
+      :'<button class="btn btn-ghost btn-sm" style="width:100%;margin-bottom:8px" onclick="exportForAI()">📤 Exportar reporte para la IA</button>')
+    +(has?'<button class="btn btn-ghost btn-sm" style="width:100%;color:var(--sky)" onclick="closeConfirm();go(\'plan\')">📊 Ver mi plan en Plan → Estrategia</button>':'');
+  showConfirm('🤖 Plan IA',body,null);
+  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+  if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm()">Cerrar</button>';
 }
 // ══ Cobranza rápida desde el FAB ════════════════════════════════════════
 // Registra un préstamo o deuda absorbida sin salir de la pantalla actual.

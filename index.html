@@ -461,7 +461,7 @@ const _ymdLocal=(d)=>{
 const _todayYMD=()=>_ymdLocal(new Date());
 let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',done:false,inc:{sal:0,bf:0,bv:0,bfDate:''},savPct:10,exp:[],debts:[],assets:[],extras:[],
   cobranzas:[],
-  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',aiPlanHistory:[],reconAdjust:{},
+  snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',aiPlanHistory:[],reconAdjust:{},bonoPlaySel:{},
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],savWdKinds:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
   gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],diarioCatLabels:{},expUserCats:[],habitoFormado:{},longCycleOverrides:{},
   savStreak:0,savStreakBest:0,savCommits:{},
@@ -559,6 +559,7 @@ function _normalizeState(st){
   if(!isObj(st.tdcConfig))st.tdcConfig={limit:0,dueDay:null,corteDay:null,corteUltimoDelMes:false};
   if(!isObj(st.inc))st.inc={sal:0,bf:0,bv:0,bfDate:''};
   if(!isObj(st.simSliders))st.simSliders={};
+  if(!isObj(st.bonoPlaySel))st.bonoPlaySel={};
   const arrs=['exp','debts','assets','extras','snapshots','waitList','challenges','achievements','survivalRetos','savGoals','savWdKinds','gastosDiarios','customHabits','tdcPayments','simCustoms','cobranzas','diarioUserCats','expUserCats','userCatsCustom','aiPlanHistory'];
   arrs.forEach(k=>{if(!Array.isArray(st[k]))st[k]=[];});
   // Migración (one-shot): activos viejos guardan rendimiento como monto fijo
@@ -3360,7 +3361,7 @@ function _cascadeDebtPay(amount,debts){
     const restPagos=(+d.totalPays>0)?Math.max(0,(+d.totalPays||0)-(+d.curPay||0)):null;
     let meses=pago>0?Math.floor(abono/pago):0;
     if(restPagos!=null)meses=Math.min(meses,restPagos);
-    allocs.push({name:d.name||'?',saldo,abono,newBal:saldo-abono,liquida:abono>=saldo,meses});
+    allocs.push({id:d.id,name:d.name||'?',saldo,abono,newBal:saldo-abono,liquida:abono>=saldo,meses});
     rem-=abono;
   }
   return {allocs,sobrante:Math.max(0,rem),totalAbono:Math.round(+amount||0)-Math.max(0,rem)};
@@ -3374,7 +3375,9 @@ function _renderCascade(c){
 // ── Render de la jugada D · Búnker (#2/#3) ──────────────────────────────
 // Reserva líquida para obligaciones con fecha, luego micro-snowball, luego
 // ahorro. `big` ajusta paddings/tamaños para la tarjeta de Inicio vs el modal.
-function _renderPlayD(p,big){
+// `extraHtml` (opcional) se inyecta antes del cierre de la tarjeta — lo usa
+// _renderBonoPlaysBlock para el botón "Elegir esta jugada".
+function _renderPlayD(p,big,extraHtml){
   if(!p||!p.D)return '';
   const d=p.D;const pad=big?14:12;const rad=big?10:8;const fz=big?11:11;
   let h='<div style="padding:'+pad+'px;border:1px solid rgba(120,90,160,.35);border-radius:'+rad+'px;background:rgba(120,90,160,.06);margin-bottom:'+(big?10:8)+'px">';
@@ -3393,6 +3396,7 @@ function _renderPlayD(p,big){
   }
   // Ahorro final
   if(d.ahorro>0)h+='<div class="row-b" style="font-size:11px;padding:3px 0;border-top:1px dashed var(--border);margin-top:4px"><span style="color:var(--sage)">🪙 Resto → ahorro</span><span style="color:var(--sage);white-space:nowrap">'+fx(d.ahorro)+'</span></div>';
+  h+=(extraHtml||'');
   h+='</div>';
   return h;
 }
@@ -3404,6 +3408,24 @@ function _playFlags(p){
   if(p.oblTotal>0)f+='<div style="font-size:10px;color:var(--amber);margin-top:6px;line-height:1.4">⚠ Esta jugada deja sin fondear <strong>'+fx(p.oblTotal)+'</strong> en obligaciones que vencen pronto. Considera la jugada D.</div>';
   if(p.topDebt&&!p.hasInterestDebt)f+='<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.4">ℹ Tu deuda no genera interés: adelantarla libera flujo, pero no ahorra intereses.</div>';
   return f;
+}
+// Ensambla las tarjetas grandes A/B/C/D (mismo look que la tarjeta de Inicio).
+// Fuente ÚNICA compartida por Inicio y Plan → Estrategia — antes esta lógica
+// vivía duplicada inline en el render de Inicio. opts.withChoose agrega un
+// botón "Elegir esta jugada" a cada tarjeta (chooseBonoPlay usa función
+// declarada más abajo — hoisting la deja disponible aquí sin problema).
+function _renderBonoPlaysBlock(p,opts){
+  opts=opts||{};
+  const withChoose=!!opts.withChoose;
+  const strategyLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
+  const recBadge=v=>p.recommend===v?' <span style="font-size:9px;background:var(--sage);color:#fff;padding:1px 6px;border-radius:8px;vertical-align:middle">RECOMENDADA</span>':'';
+  const chooseBtn=k=>withChoose?'<button class="btn btn-sage btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="chooseBonoPlay(\''+k+'\')">Elegir esta jugada</button>':'';
+  const playA='<div style="padding:14px;border:1px solid rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sage)">🪙 A · Súper Ahorro'+recBadge('A')+'</div><div style="font-size:10px;color:var(--muted)">50% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Aparta <strong>'+fx(p.A.boost)+'</strong> extra al ahorro esta quincena además de tu base.</div><div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(78,124,106,.2)"><span style="font-size:10px;color:var(--muted)">Total a activos</span><strong style="color:var(--sage);font-size:15px">'+fx(p.A.total)+'</strong></div><div style="font-size:10px;color:var(--muted);margin-top:4px">Patrimonio sube '+fx(p.A.total)+' esta quincena</div>'+_playFlags(p)+chooseBtn('A')+'</div>';
+  const playB=p.topDebt?'<div style="padding:14px;border:1px solid rgba(74,110,140,.3);border-radius:10px;background:rgba(74,110,140,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sky)">⚔️ B · Asalto a la Deuda'+recBadge('B')+'</div><div style="font-size:10px;color:var(--muted)">70% · '+fx(p.B.extra)+'</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Reparte el extra entre tus deudas (orden '+strategyLabel+'), topando cada abono a su saldo:</div>'+_renderCascade(p.B.cascade)+_playFlags(p)+chooseBtn('B')+'</div>':'';
+  const playC=p.topDebt?'<div style="padding:14px;border:1px solid rgba(160,112,48,.3);border-radius:10px;background:rgba(160,112,48,.05);margin-bottom:0"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--amber)">⚖️ C · Balanceada'+recBadge('C')+'</div><div style="font-size:10px;color:var(--muted)">35% + 35%</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Mitad al ahorro (+'+fx(p.C.savBoost)+'), mitad a deuda en cascada:</div>'+_renderCascade(p.C.cascade)+_playFlags(p)+chooseBtn('C')+'</div>':'';
+  const playD=(p.D&&p.oblTotal>0)?_renderPlayD(p,true,chooseBtn('D')).replace('🛡️ D · Búnker</strong>','🛡️ D · Búnker</strong>'+recBadge('D')):'';
+  const noDebts='<div style="padding:14px;border:1px dashed rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.03);font-size:12px;color:var(--txt2);line-height:1.6">Sin deudas activas — las jugadas B y C no aplican. Considera destinar <strong style="color:var(--sage)">todo</strong> el bono al ahorro esta quincena (patrimonio +<strong>'+fx(p.bf)+'</strong>). <br><br>⚠️ <em>Cuidado con la zona de tentación:</em> sin deudas, el mayor riesgo son los gastos hormiga. Revisa tus retos en Hábitos.</div>';
+  return (p.recommend==='D'?playD:'')+playA+(p.topDebt?playB+playC:noDebts)+(p.recommend!=='D'?playD:'');
 }
 // Calculates the three strategic plays for the bono quincena
 function calcBonoPlays(){
@@ -3449,19 +3471,187 @@ function calcBonoPlays(){
     D:{reserva,obligaciones,oblTotal,tier2:dTier2.allocs,tier3:dTier3.allocs,ahorro:Math.max(0,_rem)}
   };
 }
+// ══ SELECCIÓN DE JUGADA ESTRATÉGICA ═══════════════════════════════════════
+// Elegir 1 de las 4 jugadas para el bono ACTUAL y trackear su avance. Cada
+// "episodio" de bono se identifica por el ciclo que CONTIENE la fecha real
+// del bono (_currentBonoCk), estable durante toda la ventana "viene"→"aquí"
+// aunque el ciclo de HOY (cycleKey()) cruce de quincena en medio. Al llegar
+// el SIGUIENTE bono, _currentBonoCk() cambia de ciclo automáticamente y no
+// hay selección guardada para ese ciclo nuevo → los 4 planes reaparecen
+// "sin elegir" solos, sin ninguna acción de archivado explícita. La
+// selección vieja queda en S.bonoPlaySel como historial (no se borra).
+function _currentBonoCk(){
+  try{
+    const bfDate=+S.inc.bfDate||0,bfLast=!!S.inc.bfLastDay;
+    const bf=+S.inc.bf||0;
+    if(!bf||(!bfLast&&!bfDate))return null;
+    const today=new Date();today.setHours(0,0,0,0);
+    const m=today.getMonth(),y=today.getFullYear();
+    const bonoDateFor=(yy,mm)=>{const last=new Date(yy,mm+1,0).getDate();const d=bfLast?last:Math.min(bfDate,last);const dt=new Date(yy,mm,d);dt.setHours(0,0,0,0);return dt;};
+    const cands=[bonoDateFor(y,m-1),bonoDateFor(y,m),bonoDateFor(y,m+1)];
+    // Misma prioridad que isBonoQna(): ventana activa (día del bono + 7 días
+    // después) gana sobre la ventana "viene" (1-3 días antes).
+    let best=null;
+    cands.forEach(dt=>{const diff=Math.round((dt-today)/864e5);if(diff<=0&&diff>=-7){if(!best||diff>best.diff)best={dt,diff};}});
+    if(!best)cands.forEach(dt=>{const diff=Math.round((dt-today)/864e5);if(diff>0&&diff<=3){if(!best||diff<best.diff)best={dt,diff};}});
+    if(!best)return null;
+    return ckForYMD(best.dt.getFullYear(),best.dt.getMonth(),best.dt.getDate());
+  }catch(e){return null;}
+}
+const _bonoPlayLabels={A:'🪙 A · Súper Ahorro',B:'⚔️ B · Asalto a la Deuda',C:'⚖️ C · Balanceada',D:'🛡️ D · Búnker'};
+// Jugadas válidas dado el estado actual (mismo criterio que qué cards se
+// renderizan): B/C solo si hay deuda activa; D solo si hay obligaciones con
+// fecha que fondear.
+function _bonoAvailableKeys(p){
+  const ks=['A'];
+  if(p.topDebt)ks.push('B','C');
+  if(p.oblTotal>0)ks.push('D');
+  return ks;
+}
+// Convierte calcBonoPlays()+la jugada elegida en pasos concretos. Deuda/
+// reserva se auto-marcan comparando el saldo REAL de la deuda (única fuente
+// de verdad, igual que isDebtLiquidated) contra el saldo objetivo capturado
+// al elegir — se palomean solos según vayas pagando, sin que la app mueva
+// dinero. El ahorro no tiene un contador que distinga "este extra" del
+// ahorro normal, así que esos pasos se marcan a mano, tocándolos.
+function _bonoPlaySteps(p,key){
+  const steps=[];
+  const mkDebt=(a)=>({id:_uid(),type:'debt',label:'Abonar a '+(a.name||'?'),amt:a.abono,debtId:a.id,targetBal:a.newBal,done:false});
+  const mkSav=(label,amt)=>({id:_uid(),type:'sav',label,amt,done:false});
+  const mkReserve=(o)=>({id:_uid(),type:'reserve',label:'Reservar para '+(o.nombre||'?'),amt:o.monto,debtId:o.id,targetBal:0,vence:o.vence,done:false});
+  if(key==='A'){
+    steps.push(mkSav('Apartar extra al ahorro',p.A.boost));
+  }else if(key==='B'){
+    (p.B.cascade.allocs||[]).forEach(a=>steps.push(mkDebt(a)));
+    if(p.B.cascade.sobrante>0)steps.push(mkSav('Sobrante → ahorro',p.B.cascade.sobrante));
+  }else if(key==='C'){
+    steps.push(mkSav('Apartar extra al ahorro',p.C.savBoost));
+    (p.C.cascade.allocs||[]).forEach(a=>steps.push(mkDebt(a)));
+    if(p.C.cascade.sobrante>0)steps.push(mkSav('Sobrante → ahorro',p.C.cascade.sobrante));
+  }else if(key==='D'){
+    (p.D.obligaciones||[]).forEach(o=>steps.push(mkReserve(o)));
+    (p.D.tier3||[]).forEach(a=>steps.push(mkDebt(a)));
+    if(p.D.ahorro>0)steps.push(mkSav('Resto → ahorro',p.D.ahorro));
+  }
+  return steps;
+}
+// Estado EN VIVO de un paso. Para deuda/reserva NO se persiste 'done' — se
+// recalcula del saldo real en cada render, así siempre refleja la verdad
+// (si borras la deuda, cae a manual con aviso en vez de romperse).
+function _bonoStepLive(step){
+  if(step.type==='sav')return {done:!!step.done,missing:false};
+  const d=(S.debts||[]).find(x=>x.id===step.debtId);
+  if(!d)return {done:!!step.done,missing:true};
+  return {done:(+d.bal||0)<=(+step.targetBal||0)+0.5,missing:false};
+}
+function _bonoSelProgress(sel){
+  const total=(sel.steps||[]).length;
+  const done=(sel.steps||[]).filter(s=>_bonoStepLive(s).done).length;
+  return {done,total};
+}
+function chooseBonoPlay(key){
+  try{
+    const ck=_currentBonoCk();
+    if(!ck){toast('Sin bono activo');return;}
+    const p=calcBonoPlays();
+    if(p.bf<=0){toast('Sin bono configurado');return;}
+    if(_bonoAvailableKeys(p).indexOf(key)===-1){toast('Esa jugada no aplica ahora');return;}
+    const doChoose=()=>{
+      const steps=_bonoPlaySteps(p,key);
+      const alternates=_bonoAvailableKeys(p).filter(k=>k!==key).map(k=>({key:k,label:_bonoPlayLabels[k]}));
+      pt({bonoPlaySel:{...(S.bonoPlaySel||{}),[ck]:{ck,chosenKey:key,chosenAt:new Date().toISOString(),bf:p.bf,steps,alternates}}});
+      toast('✓ Jugada '+key+' elegida — síguela en Plan → Estrategia');
+      try{closeConfirm();}catch(e){}
+      try{if(cur==='dash')rDash();}catch(e){}
+      try{if(cur==='plan')rPlan();}catch(e){}
+    };
+    const prev=(S.bonoPlaySel||{})[ck];
+    const prevManualDone=(prev&&prev.chosenKey!==key)?(prev.steps||[]).filter(s=>s.type==='sav'&&s.done).length:0;
+    if(prevManualDone>0){
+      showConfirm('¿Cambiar de jugada?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Ya tenías <strong>'+prevManualDone+' paso'+(prevManualDone!==1?'s':'')+'</strong> de ahorro marcado'+(prevManualDone!==1?'s':'')+' en la jugada '+prev.chosenKey+'. Cambiar de jugada reinicia ese marcado (los pasos de deuda no se pierden — se recalculan solos de tu saldo real).</div>',doChoose);
+    }else doChoose();
+  }catch(e){toast('Error al elegir la jugada');}
+}
+function toggleBonoStepDone(ck,stepId){
+  try{
+    const sel=(S.bonoPlaySel||{})[ck];if(!sel)return;
+    const steps=(sel.steps||[]).map(s=>s.id===stepId?{...s,done:!s.done}:s);
+    pt({bonoPlaySel:{...S.bonoPlaySel,[ck]:{...sel,steps}}});
+    try{if(cur==='dash')rDash();}catch(e){}
+    try{if(cur==='plan')rPlan();}catch(e){}
+  }catch(e){}
+}
+// Checklist de la jugada elegida. compact=true → versión chica (tarjeta de
+// Inicio): sin nota explicativa ni botones de cambiar jugada (eso vive en
+// Plan → Estrategia, la versión completa).
+function _renderBonoChecklist(sel,compact){
+  if(!sel||!sel.steps)return '';
+  const {done,total}=_bonoSelProgress(sel);
+  const pct=total>0?Math.round(done/total*100):100;
+  const label=_bonoPlayLabels[sel.chosenKey]||sel.chosenKey;
+  let h='<div class="card" style="border:1.5px solid var(--sage);background:rgba(78,124,106,.04);padding:'+(compact?'12px':'16px')+(compact?'':';margin-bottom:13px')+'">';
+  h+='<div class="row-b" style="margin-bottom:8px"><div><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold">✓ Jugada elegida</div><div style="font-size:'+(compact?'13':'15')+'px;font-weight:bold;color:var(--txt);margin-top:2px">'+label+'</div></div><div style="text-align:right"><div style="font-size:'+(compact?'16':'20')+'px;font-weight:bold;color:var(--sage)">'+done+'/'+total+'</div><div style="font-size:9px;color:var(--muted)">pasos</div></div></div>';
+  h+='<div class="pw" style="margin-bottom:10px"><div class="pb" style="width:'+pct+'%;background:var(--sage)"></div></div>';
+  h+=sel.steps.map(s=>{
+    const live=_bonoStepLive(s);
+    const manual=s.type==='sav';
+    const onAttr=manual?' onclick="toggleBonoStepDone(\''+sel.ck+'\',\''+s.id+'\')" style="cursor:pointer"':'';
+    return '<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);gap:8px"'+onAttr+'>'
+      +'<span style="font-size:12px;color:'+(live.done?'var(--sage)':'var(--txt2)')+(live.done?';text-decoration:line-through':'')+'">'+(live.done?'✅ ':(manual?'⬜ ':'⏳ '))+_escH(s.label)+(live.missing?' <span style="color:var(--muted);font-size:10px">(referencia eliminada)</span>':'')+'</span>'
+      +'<span style="font-size:12px;font-weight:bold;color:'+(live.done?'var(--sage)':'var(--txt)')+';white-space:nowrap">'+fx(s.amt)+'</span>'
+      +'</div>';
+  }).join('');
+  if(!compact){
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">✅ = se marcó solo (tu saldo real ya llegó a la meta). ⬜ = ahorro, tócalo cuando lo apartes.</div>';
+    if(sel.alternates&&sel.alternates.length){
+      h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);margin-bottom:6px">¿Cambiar de jugada?</div><div class="row" style="gap:6px;flex-wrap:wrap">'
+        +sel.alternates.map(a=>'<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 10px" onclick="chooseBonoPlay(\''+a.key+'\')">'+a.label+'</button>').join('')
+        +'</div></div>';
+    }
+  }
+  h+='</div>';
+  return h;
+}
+// Historial de episodios de bono pasados (jugadas ya cerradas). Colapsado
+// por default, patrón igual a toggleCobHistory (S._xHistColl + sv()).
+function _renderBonoHistory(){
+  const all=Object.values(S.bonoPlaySel||{}).sort((a,b)=>String(b.ck).localeCompare(String(a.ck)));
+  const curCk=_currentBonoCk();
+  const hist=all.filter(s=>s.ck!==curCk);
+  if(!hist.length)return '';
+  let h='<div class="card"><div class="ct" style="cursor:pointer" onclick="S._bonoHistColl=!S._bonoHistColl;sv();rPlan()">📜 Historial de jugadas ('+hist.length+') '+(S._bonoHistColl?'▶':'▼')+'</div>';
+  if(!S._bonoHistColl){
+    h+=hist.map(s=>{
+      const {done,total}=_bonoSelProgress(s);
+      let rango='';try{const w=cycleWindowFromKey(s.ck);rango=fmtDate(_ymdLocal(w.start))+' → '+fmtDate(_ymdLocal(w.end));}catch(e){}
+      const label=_bonoPlayLabels[s.chosenKey]||s.chosenKey;
+      return '<div class="row-b" style="padding:8px 0;border-bottom:1px solid var(--border);font-size:11px"><div><div style="color:var(--txt)">'+label+'</div><div style="color:var(--muted);font-size:10px">'+rango+' · bono '+fx(s.bf)+'</div></div><div style="color:var(--sage);font-weight:bold">'+done+'/'+total+'</div></div>';
+    }).join('');
+  }
+  h+='</div>';
+  return h;
+}
 function showBonoPlays(){
   try{
     const p=calcBonoPlays();if(p.bf<=0){toast('Sin bono configurado');return;}
-    const topName=p.topDebt?p.topDebt.name:'';
     const stratLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
-    let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Bono mensual: <strong>'+fx(p.bf)+'</strong>. Tú decides — la app no aplica nada automático.</div>';
+    const ck=_currentBonoCk();
+    const sel=ck?(S.bonoPlaySel||{})[ck]:null;
+    if(sel){
+      // Ya eligió: el modal muestra el checklist completo (con alternates
+      // para cambiar de jugada) en vez del picker.
+      showInfo('💎 Jugada Estratégica',_renderBonoChecklist(sel,false));
+      return;
+    }
+    let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Bono mensual: <strong>'+fx(p.bf)+'</strong>. Elige una jugada y la app la trackea sola.</div>';
     const recBadge=v=>p.recommend===v?' <span style="font-size:9px;background:var(--sage);color:#fff;padding:1px 6px;border-radius:8px;vertical-align:middle">RECOMENDADA</span>':'';
-    const playDhtml=_renderPlayD(p,false).replace('🛡️ D · Búnker</strong>','🛡️ D · Búnker</strong>'+recBadge('D'));
+    const chooseBtn=k=>'<button class="btn btn-sage btn-sm" style="width:100%;margin-top:8px;font-size:10px;padding:6px" onclick="chooseBonoPlay(\''+k+'\')">Elegir esta jugada</button>';
+    const playDhtml=_renderPlayD(p,false,chooseBtn('D')).replace('🛡️ D · Búnker</strong>','🛡️ D · Búnker</strong>'+recBadge('D'));
     if(p.recommend==='D')body+=playDhtml;
-    body+='<div style="padding:12px;border:1px solid rgba(78,124,106,.3);border-radius:8px;background:rgba(78,124,106,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sage)">🪙 A · Súper Ahorro'+recBadge('A')+'</strong><span style="font-size:10px;color:var(--muted)">50%</span></div><div style="font-size:11px">+'+fx(p.A.boost)+' extra → Total activos: <strong style="color:var(--sage)">'+fx(p.A.total)+'</strong></div>'+_playFlags(p)+'</div>';
+    body+='<div style="padding:12px;border:1px solid rgba(78,124,106,.3);border-radius:8px;background:rgba(78,124,106,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sage)">🪙 A · Súper Ahorro'+recBadge('A')+'</strong><span style="font-size:10px;color:var(--muted)">50%</span></div><div style="font-size:11px">+'+fx(p.A.boost)+' extra → Total activos: <strong style="color:var(--sage)">'+fx(p.A.total)+'</strong></div>'+_playFlags(p)+chooseBtn('A')+'</div>';
     if(p.topDebt){
-      body+='<div style="padding:12px;border:1px solid rgba(74,110,140,.3);border-radius:8px;background:rgba(74,110,140,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sky)">⚔️ B · Asalto Deuda'+recBadge('B')+'</strong><span style="font-size:10px;color:var(--muted)">70% · '+fx(p.B.extra)+' ('+stratLabel+')</span></div>'+_renderCascade(p.B.cascade)+_playFlags(p)+'</div>';
-      body+='<div style="padding:12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;background:rgba(160,112,48,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--amber)">⚖️ C · Balanceada'+recBadge('C')+'</strong><span style="font-size:10px;color:var(--muted)">35%+35%</span></div><div style="font-size:11px;margin-bottom:4px">🪙 Ahorro +'+fx(p.C.savBoost)+' · ⚔️ Deuda '+fx(p.C.debtExtra)+'</div>'+_renderCascade(p.C.cascade)+_playFlags(p)+'</div>';
+      body+='<div style="padding:12px;border:1px solid rgba(74,110,140,.3);border-radius:8px;background:rgba(74,110,140,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sky)">⚔️ B · Asalto Deuda'+recBadge('B')+'</strong><span style="font-size:10px;color:var(--muted)">70% · '+fx(p.B.extra)+' ('+stratLabel+')</span></div>'+_renderCascade(p.B.cascade)+_playFlags(p)+chooseBtn('B')+'</div>';
+      body+='<div style="padding:12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;background:rgba(160,112,48,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--amber)">⚖️ C · Balanceada'+recBadge('C')+'</strong><span style="font-size:10px;color:var(--muted)">35%+35%</span></div><div style="font-size:11px;margin-bottom:4px">🪙 Ahorro +'+fx(p.C.savBoost)+' · ⚔️ Deuda '+fx(p.C.debtExtra)+'</div>'+_renderCascade(p.C.cascade)+_playFlags(p)+chooseBtn('C')+'</div>';
     }
     if(p.recommend!=='D'&&p.oblTotal>0)body+=playDhtml;
     showInfo('💎 Jugada Estratégica',body);
@@ -3494,7 +3684,7 @@ function unicoBillsUpcoming(){
     const dueStr=d.nextPay||d.liqDate||d.firstPay||'';
     let N=1;
     if(dueStr){const dd=new Date(dueStr+'T12:00');if(!isNaN(dd.getTime())){const diff=(dd.getFullYear()-ny)*12+(dd.getMonth()-nm);N=Math.max(1,diff+1);}}
-    bills.push({name:d.name||'?',bal:Math.round(bal),due:dueStr||null,months:N,perMonth:Math.round(bal/N)});
+    bills.push({id:d.id,name:d.name||'?',bal:Math.round(bal),due:dueStr||null,months:N,perMonth:Math.round(bal/N)});
   });
   bills.sort((a,b)=>String(a.due||'9999-99-99').localeCompare(String(b.due||'9999-99-99')));
   return {total:bills.reduce((a,b)=>a+b.bal,0),reserva:bills.reduce((a,b)=>a+b.perMonth,0),bills};
@@ -4422,27 +4612,29 @@ function rDash(){
     if(!bq)return '';
     const p=calcBonoPlays();
     if(p.bf<=0)return '';
-    const topName=p.topDebt?p.topDebt.name:'';
-    const strategyLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
     // Header copy depends on window status
     const isUpcoming=bq.status==='upcoming';
     const headerLabel=isUpcoming?'💎 QUINCENA GRANDE · VIENE':'💎 QUINCENA GRANDE · AQUÍ';
     const headerSub=isUpcoming?('Llega en '+bq.daysUntil+' día'+(bq.daysUntil!==1?'s':'')):(bq.daysSince===0?'Tu bono llegó hoy':'Día '+(bq.daysSince+1)+' del bono');
-    const introCopy=isUpcoming
-      ? 'Tu bono está por caer. Tienes <strong>tres jugadas</strong> preparadas — decide ahora para ejecutar el día que llegue.'
-      : 'Tu bono está aquí. Tienes <strong>tres jugadas</strong> para empujar tu deadline. Tú decides — la app no aplica nada automático.';
-    const recBadge=v=>p.recommend===v?' <span style="font-size:9px;background:var(--sage);color:#fff;padding:1px 6px;border-radius:8px;vertical-align:middle">RECOMENDADA</span>':'';
-    const playA='<div style="padding:14px;border:1px solid rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sage)">🪙 A · Súper Ahorro'+recBadge('A')+'</div><div style="font-size:10px;color:var(--muted)">50% del bono</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Aparta <strong>'+fx(p.A.boost)+'</strong> extra al ahorro esta quincena además de tu base.</div><div class="row-b" style="padding-top:8px;border-top:1px dashed rgba(78,124,106,.2)"><span style="font-size:10px;color:var(--muted)">Total a activos</span><strong style="color:var(--sage);font-size:15px">'+fx(p.A.total)+'</strong></div><div style="font-size:10px;color:var(--muted);margin-top:4px">Patrimonio sube '+fx(p.A.total)+' esta quincena</div>'+_playFlags(p)+'</div>';
-    const playB=p.topDebt?'<div style="padding:14px;border:1px solid rgba(74,110,140,.3);border-radius:10px;background:rgba(74,110,140,.05);margin-bottom:10px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--sky)">⚔️ B · Asalto a la Deuda'+recBadge('B')+'</div><div style="font-size:10px;color:var(--muted)">70% · '+fx(p.B.extra)+'</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Reparte el extra entre tus deudas (orden '+strategyLabel+'), topando cada abono a su saldo:</div>'+_renderCascade(p.B.cascade)+_playFlags(p)+'</div>':'';
-    const playC=p.topDebt?'<div style="padding:14px;border:1px solid rgba(160,112,48,.3);border-radius:10px;background:rgba(160,112,48,.05);margin-bottom:0"><div class="row-b" style="margin-bottom:8px"><div style="font-size:13px;font-weight:bold;color:var(--amber)">⚖️ C · Balanceada'+recBadge('C')+'</div><div style="font-size:10px;color:var(--muted)">35% + 35%</div></div><div style="font-size:11px;color:var(--txt2);line-height:1.5;margin-bottom:8px">Mitad al ahorro (+'+fx(p.C.savBoost)+'), mitad a deuda en cascada:</div>'+_renderCascade(p.C.cascade)+_playFlags(p)+'</div>':'';
-    // Jugada D · Búnker — solo se muestra si hay obligaciones con fecha próximas.
-    // Si es la recomendada va al frente; si no, al final como alternativa.
-    const playD=(p.D&&p.oblTotal>0)?_renderPlayD(p,true).replace('🛡️ D · Búnker</strong>','🛡️ D · Búnker</strong>'+recBadge('D')):'';
-    const noDebts='<div style="padding:14px;border:1px dashed rgba(78,124,106,.3);border-radius:10px;background:rgba(78,124,106,.03);font-size:12px;color:var(--txt2);line-height:1.6">Sin deudas activas — las jugadas B y C no aplican. Considera destinar <strong style="color:var(--sage)">todo</strong> el bono al ahorro esta quincena (patrimonio +<strong>'+fx(p.bf)+'</strong>). <br><br>⚠️ <em>Cuidado con la zona de tentación:</em> sin deudas, el mayor riesgo son los gastos hormiga. Revisa tus retos en Hábitos.</div>';
-    const playsBody=(p.recommend==='D'?playD:'')+playA+(p.topDebt?playB+playC:noDebts)+(p.recommend!=='D'?playD:'');
-    return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">'+headerLabel+'</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+headerSub+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">'+introCopy+'</div>'+playsBody+'<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div></div>';
+    // ¿Ya eligió una jugada para ESTE bono? Si sí, mostramos el checklist en
+    // vez del picker de 4 jugadas (que se ve entero en Plan → Estrategia).
+    const _ck=_currentBonoCk();
+    const _sel=_ck?(S.bonoPlaySel||{})[_ck]:null;
+    let introCopy,playsBody,footNote;
+    if(_sel){
+      introCopy='Elegiste tu jugada — así vas:';
+      playsBody=_renderBonoChecklist(_sel,true)+'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="planView=\'estrategia\';go(\'plan\')">Ver detalle y cambiar jugada →</button>';
+      footNote='';
+    }else{
+      introCopy=isUpcoming
+        ? 'Tu bono está por caer. Tienes <strong>varias jugadas</strong> preparadas — elige una para ejecutar el día que llegue.'
+        : 'Tu bono está aquí. Tienes <strong>varias jugadas</strong> para empujar tu deadline. Elige una y la app la trackea sola.';
+      playsBody=_renderBonoPlaysBlock(p,{withChoose:true});
+      footNote='<div style="font-size:10px;color:var(--muted);margin-top:12px;padding-top:10px;border-top:1px dashed rgba(160,112,48,.2);line-height:1.5;text-align:center">💡 Las proyecciones de meses adelantados son aproximadas (extra ÷ pago mensual). No incluyen efecto de intereses.</div>';
+    }
+    return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">'+headerLabel+'</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+headerSub+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">'+introCopy+'</div>'+playsBody+footNote+'</div>';
   }catch(e){return'';}})()}
-  
+
   <!-- 1 · HERO: anillo de score + disponible + las 2 acciones del día -->
   <div class="card">
     <div class="dh-hero">
@@ -11108,6 +11300,26 @@ try{
 
     document.getElementById('tab-plan').innerHTML=`
     ${subNav}
+
+    <!-- JUGADA ESTRATÉGICA (bono) — mismo picker/checklist de Inicio, aquí completo -->
+    ${(()=>{try{
+      const ck=_currentBonoCk();
+      if(!ck)return _renderBonoHistory();
+      const p=calcBonoPlays();
+      if(p.bf<=0)return _renderBonoHistory();
+      const sel=(S.bonoPlaySel||{})[ck];
+      let h='<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px">';
+      h+='<div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💎 JUGADA ESTRATÉGICA</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">'+(sel?'Tu jugada de este bono':'Elige tu jugada')+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div>';
+      if(sel){
+        h+=_renderBonoChecklist(sel,false);
+      }else{
+        h+='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Tienes varias jugadas para este bono. Elige una — la app trackea sola los pasos de deuda (según tu saldo real) y tú marcas los de ahorro.</div>';
+        h+=_renderBonoPlaysBlock(p,{withChoose:true});
+      }
+      h+='</div>';
+      h+=_renderBonoHistory();
+      return h;
+    }catch(e){return'';}})()}
 
     <!-- PLAN DE IA (tracker completo, al inicio de Estrategia; CTA si no hay) -->
     ${renderAIPlanSection()}

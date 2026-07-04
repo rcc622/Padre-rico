@@ -7420,7 +7420,60 @@ function rFlujo(){try{
       '</div>';
       });
       const _debtsTotalBal=sorted2.reduce((a,d)=>a+(+d.bal||0),0);
+      // Mensualidad del MES ACTUAL: suma los pagos que caen dentro del mes
+      // calendario en curso. Usa la fecha efectiva de pago (_effectiveNextPay,
+      // que rueda nextPay vencidos hacia adelante) — así una deuda que inicia
+      // en el futuro (ej. próx. pago en enero) NO cuenta este mes, y los
+      // pagos únicos solo cuentan si vencen este mes. Semanal/quincenal
+      // cuentan sus ocurrencias restantes del mes; cada deuda se topa a su
+      // saldo (no puedes pagar más de lo que debes). Solo display.
+      const _mNow=new Date();_mNow.setHours(0,0,0,0);
+      const _mStart=new Date(_mNow.getFullYear(),_mNow.getMonth(),1);
+      const _mEnd=new Date(_mNow.getFullYear(),_mNow.getMonth()+1,0);_mEnd.setHours(23,59,59,999);
+      let _debtsMonthPay=0;
+      sorted2.forEach(d=>{
+        if((+d.bal||0)<=0)return;
+        const f=d.freq||'mensual';
+        if(d.firstPay){const fp=new Date(d.firstPay+'T12:00');if(!isNaN(fp.getTime())&&fp>_mEnd)return;}
+        if(f==='unico'){
+          const due=d.nextPay||d.liqDate||d.firstPay||'';
+          if(!due)return;
+          const dd=new Date(due+'T12:00');
+          if(!isNaN(dd.getTime())&&dd>=_mStart&&dd<=_mEnd)_debtsMonthPay+=(+d.bal||0);
+          return;
+        }
+        const pay=+d.pay||0;if(pay<=0)return;
+        let np=_effectiveNextPay(d);
+        if(!np){
+          const pdw=+(d.payDay)||0;
+          if(pdw>0){
+            const dim=_mEnd.getDate();
+            let cand=new Date(_mNow.getFullYear(),_mNow.getMonth(),Math.min(pdw,dim));
+            if(cand<_mNow){const dim2=new Date(_mNow.getFullYear(),_mNow.getMonth()+2,0).getDate();cand=new Date(_mNow.getFullYear(),_mNow.getMonth()+1,Math.min(pdw,dim2));}
+            np=cand;
+          }
+        }
+        let amt;
+        if(!np){
+          // Sin fecha conocida: asume su carga mensual estándar
+          amt=toMonthly(pay,f);
+        }else{
+          let cnt=0;
+          if(f==='semanal'||f==='quincenal'){
+            const step=f==='semanal'?7:15;
+            const it=new Date(np);
+            while(it<=_mEnd){if(it>=_mStart)cnt++;it.setDate(it.getDate()+step);}
+          }else{
+            cnt=(np>=_mStart&&np<=_mEnd)?1:0;
+          }
+          amt=pay*cnt;
+        }
+        _debtsMonthPay+=Math.min(amt,+d.bal||0);
+      });
+      const _mLabel=_mNow.toLocaleDateString('es-MX',{month:'long'});
       html+='<div class="row-b" style="padding-top:10px;margin-top:4px;border-top:1px solid var(--terra)"><span style="font-size:12px;color:var(--terra);font-weight:bold">Total · te falta</span><span style="font-size:15px;color:var(--terra);font-weight:bold">'+fx(Math.round(_debtsTotalBal))+'</span></div>';
+      html+='<div class="row-b" style="padding-top:8px"><span style="font-size:12px;color:var(--sky);font-weight:bold">Total · mensualidad de '+_mLabel+'</span><span style="font-size:15px;color:var(--sky);font-weight:bold">'+fx(Math.round(_debtsMonthPay))+'</span></div>';
+      html+='<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">La mensualidad cuenta solo los pagos con fecha dentro de '+_mLabel+' (una deuda que inicia después, o un pago único de otro mes, no suma aquí).</div>';
       return html;
     }catch(e){return'<div style="color:var(--terra)">Error: '+e.message+'</div>';}})()}
   </div>`:''}

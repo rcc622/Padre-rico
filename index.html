@@ -7243,14 +7243,17 @@ function rFlujo(){try{
       <div style="display:flex;align-items:flex-end"><div style="font-size:11px;color:var(--muted);padding-bottom:11px;line-height:1.4">Si llenas cuotas, el saldo se calcula solo</div></div>
     </div>
     <!-- Switch para deuda con/sin interés. Si la prende, expone monto del
-         préstamo y total a pagar para que la calculadora derive interés. -->
-    <div id="debtIntSwitch" style="display:${df==='unico'?'none':'block'};margin-bottom:10px">
+         préstamo y total a pagar para que la calculadora derive interés.
+         Aplica a TODAS las periodicidades, incluido pago único (ej. algo que
+         financiaste a una exhibición con recargo): el interés es informativo,
+         el saldo del único sigue siendo el pago. -->
+    <div id="debtIntSwitch" style="display:block;margin-bottom:10px">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;letter-spacing:normal;font-size:13px;color:var(--txt);font-weight:normal">
         <input type="checkbox" id="dHasInt" ${ed&&ed.hasInterest?'checked':''} onchange="updDebtInt()" style="width:auto;accent-color:var(--sage)">
         <span>¿Esta deuda tiene <strong>intereses</strong>?</span>
       </label>
     </div>
-    <div id="debtIntWrap" style="display:${(ed&&ed.hasInterest&&df!=='unico')?'block':'none'};background:var(--bg2);padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)">
+    <div id="debtIntWrap" style="display:${(ed&&ed.hasInterest)?'block':'none'};background:var(--bg2);padding:12px;border-radius:8px;margin-bottom:12px;border:1px solid var(--border)">
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px">Calculadora de interés total</div>
       <div class="g2" style="margin-bottom:10px;gap:10px">
         <div><label>Monto del préstamo ($)</label><input type="number" id="dPrinc" placeholder="50000" value="${ed&&ed.principal?ed.principal:''}" oninput="calcDebtInterest()"></div>
@@ -9046,8 +9049,7 @@ function updDebtUnico(){
   show('debtRowFirst',isU?'none':'');
   show('debtRowMsi',isU?'none':'grid');
   show('debtSaldoWrap',isU?'none':'');
-  show('debtIntSwitch',isU?'none':'block');
-  if(isU)show('debtIntWrap','none');
+  // El switch de intereses aplica también a pago único (informativo).
   const row=document.getElementById('debtRowNomSaldo');
   if(row)row.style.gridTemplateColumns=isU?'1fr':'2fr 1fr';
   const lbl=document.getElementById('dpdLbl');
@@ -9159,8 +9161,8 @@ function addDebt(){
   const pd=npDate?new Date(npDate+'T12:00').getDate():0;
   let liq=f==='unico'?npDate:(document.getElementById('dliq')?.value||'');
   if(_d.bal<=0&&_d.totalPays>0&&!liq)liq=_todayYMD();
-  // Campos de interés (solo aplican si freq != 'unico' y el switch está prendido)
-  const hasInt=f!=='unico'&&!!document.getElementById('dHasInt')?.checked;
+  // Campos de interés (todas las periodicidades, incluido 'unico'; informativos)
+  const hasInt=!!document.getElementById('dHasInt')?.checked; // aplica también a 'unico' (informativo)
   const principal=hasInt?(+(document.getElementById('dPrinc')?.value)||0):0;
   const totalToPay=hasInt?(+(document.getElementById('dTotal')?.value)||0):0;
   const interestAmt=hasInt&&totalToPay>principal?totalToPay-principal:0;
@@ -10300,7 +10302,7 @@ function saveDebt(){
   const _d=_debtBalFromForm(f); // {bal, curPay, totalPays, pay}
   if(_d.error){toast(_d.error);return;}
   const npDate=document.getElementById('dpd')?.value||'';const pd=npDate?new Date(npDate+'T12:00').getDate():0;
-  const hasInt=f!=='unico'&&!!document.getElementById('dHasInt')?.checked;
+  const hasInt=!!document.getElementById('dHasInt')?.checked; // aplica también a 'unico' (informativo)
   const principal=hasInt?(+(document.getElementById('dPrinc')?.value)||0):0;
   const totalToPay=hasInt?(+(document.getElementById('dTotal')?.value)||0):0;
   const interestAmt=hasInt&&totalToPay>principal?totalToPay-principal:0;

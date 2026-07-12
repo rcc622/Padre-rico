@@ -3660,7 +3660,7 @@ function _renderBonoChecklist(sel,compact){
   const pct=total>0?Math.round(done/total*100):100;
   const label=_bonoPlayLabels[sel.chosenKey]||sel.chosenKey;
   let h='<div class="card" style="border:1.5px solid var(--sage);background:rgba(78,124,106,.04);padding:'+(compact?'12px':'16px')+(compact?'':';margin-bottom:13px')+'">';
-  h+='<div class="row-b" style="margin-bottom:8px"><div><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold">✓ Jugada elegida</div><div style="font-size:'+(compact?'13':'15')+'px;font-weight:bold;color:var(--txt);margin-top:2px">'+label+'</div></div><div style="text-align:right"><div style="font-size:'+(compact?'16':'20')+'px;font-weight:bold;color:var(--sage)">'+done+'/'+total+'</div><div style="font-size:9px;color:var(--muted)">pasos</div></div></div>';
+  h+='<div class="row-b" style="margin-bottom:8px"><div><div style="font-size:10px;color:var(--sage);text-transform:uppercase;letter-spacing:1px;font-weight:bold">💡 Reparto sugerido del bono</div><div style="font-size:'+(compact?'13':'15')+'px;font-weight:bold;color:var(--txt);margin-top:2px">'+label+'</div></div><div style="text-align:right"><div style="font-size:'+(compact?'16':'20')+'px;font-weight:bold;color:var(--sage)">'+done+'/'+total+'</div><div style="font-size:9px;color:var(--muted)">opcional</div></div></div>';
   h+='<div class="pw" style="margin-bottom:10px"><div class="pb" style="width:'+pct+'%;background:var(--sage)"></div></div>';
   h+=sel.steps.map(s=>{
     const live=_bonoStepLive(s);
@@ -3676,7 +3676,8 @@ function _renderBonoChecklist(sel,compact){
       +'</div>';
   }).join('');
   if(!compact){
-    h+='<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">✅ = se marcó solo (tu saldo real ya llegó a la meta). ⬜ = tócalo a mano (ahorro y reservas, o una deuda que ya borraste).</div>';
+    h+='<div style="font-size:10px;color:var(--txt2);margin-top:10px;line-height:1.5;padding:8px 10px;background:var(--amberdim);border-radius:6px"><strong style="color:var(--amber)">💡 Es una sugerencia, no una obligación.</strong> Muestra un buen reparto para el <strong>día que cae tu bono</strong> — no descuenta lo que ya gastaste este ciclo. Para tu fondeo real y al día, manda tu <strong>Plan de IA</strong>. Palomear es opcional.</div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">✅ = se marcó solo (tu saldo real ya llegó a la meta). ⬜ = tócalo a mano si quieres (ahorro y reservas, o una deuda que ya borraste).</div>';
     if(sel.alternates&&sel.alternates.length){
       h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);margin-bottom:6px">¿Cambiar de jugada?</div><div class="row" style="gap:6px;flex-wrap:wrap">'
         +sel.alternates.map(a=>'<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 10px" onclick="chooseBonoPlay(\''+a.key+'\')">'+a.label+'</button>').join('')
@@ -3720,8 +3721,8 @@ function _renderBonoNoActive(){
     if(total>0&&done<total){
       let rango='';try{const w=cycleWindowFromKey(last.ck);rango=fmtDate(_ymdLocal(w.start))+' → '+fmtDate(_ymdLocal(w.end));}catch(e){}
       let h='<div class="card" style="border-left:3px solid var(--amber);padding:12px 16px;margin-bottom:8px">'
-        +'<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:4px">💎 Jugada pendiente por cerrar'+(rango?' · '+rango:'')+'</div>'
-        +'<div style="font-size:11px;color:var(--txt2);line-height:1.55">Tu bono ya pasó, pero esta jugada quedó con pasos sin marcar. Ciérrala tocando los que ya hiciste (los de deuda se marcan solos con tu saldo real).</div></div>';
+        +'<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:4px">💡 Sugerencia de tu último bono'+(rango?' · '+rango:'')+'</div>'
+        +'<div style="font-size:11px;color:var(--txt2);line-height:1.55">El reparto que elegiste para ese bono. Si quieres, palomea lo que sí hiciste — es <strong>opcional</strong>, no tienes que "cerrarla".</div></div>';
       h+=_renderBonoChecklist(last,true);
       return h+_renderBonoHistory(last.ck);
     }
@@ -4732,7 +4733,7 @@ function rDash(){
     const _sel=_ck?(S.bonoPlaySel||{})[_ck]:null;
     let introCopy,playsBody,footNote;
     if(_sel){
-      introCopy='Elegiste tu jugada — así vas:';
+      introCopy='💡 Reparto sugerido de tu bono (opcional):';
       playsBody=_renderBonoChecklist(_sel,true)+'<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="planView=\'estrategia\';go(\'plan\')">Ver detalle y cambiar jugada →</button>';
       footNote='';
     }else{
@@ -11504,11 +11505,11 @@ try{
       if(p.bf<=0)return _renderBonoNoActive();
       const sel=(S.bonoPlaySel||{})[ck];
       let h='<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px">';
-      h+='<div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💎 JUGADA ESTRATÉGICA</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">'+(sel?'Tu jugada de este bono':'Elige tu jugada')+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div>';
+      h+='<div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💎 JUGADA ESTRATÉGICA</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">'+(sel?'Reparto sugerido de tu bono':'Un reparto para tu bono')+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div>';
       if(sel){
         h+=_renderBonoChecklist(sel,false);
       }else{
-        h+='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Tienes varias jugadas para este bono. Elige una — la app trackea sola los pasos de deuda (según tu saldo real) y tú marcas los de ahorro.</div>';
+        h+='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Cuando caiga tu bono, estos son buenos <strong>repartos sugeridos</strong>. Elige uno como guía — es una sugerencia del día del bono, no descuenta lo ya gastado. Para tu fondeo real y al día, manda tu <strong>Plan de IA</strong>.</div>';
         h+=_renderBonoPlaysBlock(p,{withChoose:true});
       }
       h+='</div>';

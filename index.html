@@ -3604,7 +3604,12 @@ function _bonoPlaySteps(p,key){
 // recalcula del saldo real en cada render, así siempre refleja la verdad
 // (si borras la deuda, cae a manual con aviso en vez de romperse).
 function _bonoStepLive(step){
-  if(step.type==='sav')return {done:!!step.done,missing:false};
+  // Ahorro y RESERVA son manuales: no hay un contador que distinga "este extra"
+  // del dinero normal (la reserva no es una deuda con saldo que leer). Antes las
+  // reservas caían al lookup de deudas de abajo, no se encontraban (una reserva
+  // nunca fue deuda) y quedaban marcadas 'missing' con la nota errónea "ya no
+  // existe esa deuda" — sin auto-marcarse nunca. Ahora son casillas ⬜ limpias.
+  if(step.type==='sav'||step.type==='reserve')return {done:!!step.done,missing:false};
   const d=(S.debts||[]).find(x=>x.id===step.debtId);
   if(!d)return {done:!!step.done,missing:true};
   return {done:(+d.bal||0)<=(+step.targetBal||0)+0.5,missing:false};
@@ -3631,9 +3636,9 @@ function chooseBonoPlay(key){
       try{if(cur==='plan')rPlan();}catch(e){}
     };
     const prev=(S.bonoPlaySel||{})[ck];
-    const prevManualDone=(prev&&prev.chosenKey!==key)?(prev.steps||[]).filter(s=>s.type==='sav'&&s.done).length:0;
+    const prevManualDone=(prev&&prev.chosenKey!==key)?(prev.steps||[]).filter(s=>(s.type==='sav'||s.type==='reserve')&&s.done).length:0;
     if(prevManualDone>0){
-      showConfirm('¿Cambiar de jugada?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Ya tenías <strong>'+prevManualDone+' paso'+(prevManualDone!==1?'s':'')+'</strong> de ahorro marcado'+(prevManualDone!==1?'s':'')+' en la jugada '+prev.chosenKey+'. Cambiar de jugada reinicia ese marcado (los pasos de deuda no se pierden — se recalculan solos de tu saldo real).</div>',doChoose);
+      showConfirm('¿Cambiar de jugada?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Ya tenías <strong>'+prevManualDone+' paso'+(prevManualDone!==1?'s':'')+'</strong> manual'+(prevManualDone!==1?'es':'')+' marcado'+(prevManualDone!==1?'s':'')+' en la jugada '+prev.chosenKey+'. Cambiar de jugada reinicia ese marcado (los pasos de deuda no se pierden — se recalculan solos de tu saldo real).</div>',doChoose);
     }else doChoose();
   }catch(e){toast('Error al elegir la jugada');}
 }
@@ -3662,7 +3667,7 @@ function _renderBonoChecklist(sel,compact){
     // Tocable a mano si es de ahorro, O si su deuda de referencia ya no
     // existe (la borraste al liquidarla) — sin esto, un paso de deuda
     // "huérfano" se quedaba en ⏳ para siempre, sin forma de completarlo.
-    const manual=s.type==='sav'||live.missing;
+    const manual=s.type==='sav'||s.type==='reserve'||live.missing;
     const onAttr=manual?' onclick="toggleBonoStepDone(\''+sel.ck+'\',\''+s.id+'\')" style="cursor:pointer"':'';
     const missingNote=live.missing?' <span style="color:var(--muted);font-size:10px">(ya no existe esa deuda — '+(live.done?'marcada':'tócalo si ya la pagaste')+')</span>':'';
     return '<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);gap:8px"'+onAttr+'>'
@@ -3671,7 +3676,7 @@ function _renderBonoChecklist(sel,compact){
       +'</div>';
   }).join('');
   if(!compact){
-    h+='<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">✅ = se marcó solo (tu saldo real ya llegó a la meta). ⬜ = tócalo a mano (ahorro, o una deuda que ya borraste).</div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">✅ = se marcó solo (tu saldo real ya llegó a la meta). ⬜ = tócalo a mano (ahorro y reservas, o una deuda que ya borraste).</div>';
     if(sel.alternates&&sel.alternates.length){
       h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);margin-bottom:6px">¿Cambiar de jugada?</div><div class="row" style="gap:6px;flex-wrap:wrap">'
         +sel.alternates.map(a=>'<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 10px" onclick="chooseBonoPlay(\''+a.key+'\')">'+a.label+'</button>').join('')
@@ -3683,9 +3688,11 @@ function _renderBonoChecklist(sel,compact){
 }
 // Historial de episodios de bono pasados (jugadas ya cerradas). Colapsado
 // por default, patrón igual a toggleCobHistory (S._xHistColl + sv()).
-function _renderBonoHistory(){
+function _renderBonoHistory(excludeCk){
   const all=Object.values(S.bonoPlaySel||{}).sort((a,b)=>String(b.ck).localeCompare(String(a.ck)));
-  const curCk=_currentBonoCk();
+  // excludeCk: ck a NO listar en historial (p.ej. la jugada pendiente que ya se
+  // muestra interactiva arriba). Sin él, usa el bono actual (comportamiento previo).
+  const curCk=excludeCk!==undefined?excludeCk:_currentBonoCk();
   const hist=all.filter(s=>s.ck!==curCk);
   if(!hist.length)return '';
   let h='<div class="card"><div class="ct" style="cursor:pointer" onclick="S._bonoHistColl=!S._bonoHistColl;sv();rPlan()">📜 Historial de jugadas ('+hist.length+') '+(S._bonoHistColl?'▶':'▼')+'</div>';
@@ -3699,6 +3706,27 @@ function _renderBonoHistory(){
   }
   h+='</div>';
   return h;
+}
+// Sin bono activo: si la ÚLTIMA jugada quedó con pasos pendientes, la muestra
+// INTERACTIVA para poder cerrarla. Antes, al pasar la ventana del bono, la
+// jugada caía directo a "Historial" (solo lectura) y se quedaba atorada en
+// 0/N sin forma de marcar sus pasos manuales (reservas/ahorro). Si no hay
+// jugada pendiente, cae al historial normal.
+function _renderBonoNoActive(){
+  const all=Object.values(S.bonoPlaySel||{}).sort((a,b)=>String(b.ck).localeCompare(String(a.ck)));
+  const last=all[0];
+  if(last){
+    const {done,total}=_bonoSelProgress(last);
+    if(total>0&&done<total){
+      let rango='';try{const w=cycleWindowFromKey(last.ck);rango=fmtDate(_ymdLocal(w.start))+' → '+fmtDate(_ymdLocal(w.end));}catch(e){}
+      let h='<div class="card" style="border-left:3px solid var(--amber);padding:12px 16px;margin-bottom:8px">'
+        +'<div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:4px">💎 Jugada pendiente por cerrar'+(rango?' · '+rango:'')+'</div>'
+        +'<div style="font-size:11px;color:var(--txt2);line-height:1.55">Tu bono ya pasó, pero esta jugada quedó con pasos sin marcar. Ciérrala tocando los que ya hiciste (los de deuda se marcan solos con tu saldo real).</div></div>';
+      h+=_renderBonoChecklist(last,true);
+      return h+_renderBonoHistory(last.ck);
+    }
+  }
+  return _renderBonoHistory();
 }
 function showBonoPlays(){
   try{
@@ -11445,9 +11473,9 @@ try{
     <!-- JUGADA ESTRATÉGICA (bono) — mismo picker/checklist de Inicio, aquí completo -->
     ${(()=>{try{
       const ck=_currentBonoCk();
-      if(!ck)return _renderBonoHistory();
+      if(!ck)return _renderBonoNoActive();
       const p=calcBonoPlays();
-      if(p.bf<=0)return _renderBonoHistory();
+      if(p.bf<=0)return _renderBonoNoActive();
       const sel=(S.bonoPlaySel||{})[ck];
       let h='<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px">';
       h+='<div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">💎 JUGADA ESTRATÉGICA</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">'+(sel?'Tu jugada de este bono':'Elige tu jugada')+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div>';

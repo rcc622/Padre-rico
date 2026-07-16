@@ -9082,9 +9082,19 @@ function _cierreSaveCapitulo(list,ck){
   // transporte/otro SÍ cuentan como hormiga. Antes se sumaban TODAS las
   // categorías (incluidos esenciales), inflando la tarjeta Hormiga de Inicio.
   const hormigaBreakdown={};
+  // Desglose de la cubeta "Otro" (📦) por categoría real, para el modal:
+  // la cubeta agrupa 'otro' + 'esencial' + TODAS las categorías custom, así
+  // que aquí guardamos cuánto aporta cada una (clave = g.cat) solo para
+  // mostrarlo. NO afecta buckets/hormiga ni el cuadre — es informativo.
+  const otroDetail={};
   list.forEach(g=>{
     const b=diarioToBucket[g.cat]||'otro';
     buckets[b]+=(+g.amt||0);
+    if(b==='otro'){
+      const c=diarioCat(g.cat);
+      if(!otroDetail[g.cat])otroDetail[g.cat]={lbl:c.e+' '+c.n,total:0};
+      otroDetail[g.cat].total+=(+g.amt||0);
+    }
     if(!isEsencial(g)){
       const lbl=diarioCat(g.cat).n;
       if(!hormigaBreakdown[lbl])hormigaBreakdown[lbl]={total:0,count:0};
@@ -9093,9 +9103,17 @@ function _cierreSaveCapitulo(list,ck){
     }
   });
   const catBreakdown=hormigaBreakdown;
+  // Mini-desglose bajo "📦 Otro": solo si aporta info (más de una categoría,
+  // o una sola que NO sea la propia "Otro" de fábrica — p.ej. todo Esencial).
+  const _oKeys=Object.keys(otroDetail);
+  const _showOtroDet=_oKeys.length>1||(_oKeys.length===1&&_oKeys[0]!=='otro');
+  const _otroRows=_showOtroDet
+    ? Object.values(otroDetail).sort((a,b)=>b.total-a.total)
+        .map(o=>'<br><span style="color:var(--muted);font-size:11px">&nbsp;&nbsp;└ '+_escH(o.lbl)+': '+fx(Math.round(o.total))+'</span>').join('')
+    : '';
   showConfirm('📖 Crear capítulo con Diarios',
     (_dup?'<div style="font-size:11px;color:var(--amber);line-height:1.5;margin-bottom:10px;padding:8px 10px;background:rgba(160,112,48,.08);border-radius:8px">⚠ Ya tienes un capítulo de esta quincena ('+fmtDate(_ps)+' → '+fmtDate(_pe)+'). Crear otro lo duplica — cancela si no era tu intención.</div>':'')
-    +'<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de la quincena <strong>'+fmtDate(_ps)+' → '+fmtDate(_pe)+'</strong> por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
+    +'<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a guardar un capítulo en Mi Historia con <strong>'+list.length+' registros</strong> de la quincena <strong>'+fmtDate(_ps)+' → '+fmtDate(_pe)+'</strong> por un total de <strong>'+fx(Math.round(totalG))+'</strong>.<br><br>🐜 Hormiga: '+fx(Math.round(buckets.hormiga))+'<br>⚡ Impulso: '+fx(Math.round(buckets.impulso))+'<br>🚗 Transporte: '+fx(Math.round(buckets.transporte))+'<br>📦 Otro: '+fx(Math.round(buckets.otro))+_otroRows+'<br><br><em style="font-size:11px;color:var(--muted)">El capítulo no afecta tu Plan de Acción — es histórico.</em></div>',
     ()=>{
       const snap={
         id:_uid(),

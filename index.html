@@ -2702,6 +2702,8 @@ const expWeeklyAmt=e=>(+((e&&e.amt)||0))*expWeekDaysCount(e);
 // Presets quincenales (SOLO display): un gasto quincenal cae 1 vez por ciclo
 // (monto sin cambio); el preset solo define QUÉ DÍA se muestra en cada quincena.
 // '1-15'→ 1ra:1, 2da:15 · '5-20'→ 1ra:5, 2da:20 · '15-ult'→ 1ra:último del mes, 2da:15.
+// Nombre corto de día de la semana (1=Lun..7=Dom) para el desglose visual.
+const _wdName=d=>['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][+d]||'';
 function _qnaPresetDay(preset,ct,cStart){
   if(!preset)return 0;
   const is2=ct==='2da';
@@ -10801,7 +10803,7 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       // cuadre Inicio↔Plan no se rompe.
       const _satY=_cycleSatYMD[wi];
       if(_satY&&((e.startDate&&_satY<e.startDate)||(e.endDate&&_satY>e.endDate)))continue;
-      expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:(_wdayNums&&_wdayNums[wi]!=null?_wdayNums[wi]:(_cycleSats[wi]||0)),freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
+      expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:(_wdayNums&&_wdayNums[wi]!=null?_wdayNums[wi]:(_cycleSats[wi]||0)),freq:f,week:wi+1+wOff,wdays:(Array.isArray(e.weekDays)&&e.weekDays.length>1)?e.weekDays.slice():null,dayAmt:+e.amt||0};if(pt)entry.paidType=pt;expDetail.push(entry);}}
     else if(f==='quincenal'){expQ+=(+e.amt||0);const _qday=e.qnaPreset?_qnaPresetDay(e.qnaPreset,ct,cStart):(pd||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:_qday,freq:f});}
     else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
     else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
@@ -11058,7 +11060,7 @@ try{
   if(planView==='pagos'){
     // Build tracker — split mandatory vs optional
     const mandatory=[],optional=[];
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid,wdays:e.wdays||null,dayAmt:e.dayAmt});});
     debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';mandatory.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
     // Optional: savings, apartados, impulses
     S.savGoals.filter(g=>!g.done&&!g.closed&&g.target-(+g.saved||0)>0).forEach(g=>{
@@ -11170,7 +11172,7 @@ try{
         <div class="row" style="gap:8px">
           ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();flujoView='activos';go('flujo')" style="width:22px;height:22px;font-size:11px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:22px;height:22px;font-size:11px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:22px;height:22px;font-size:11px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
           <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
-          <span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>
+          <div style="min-width:0"><span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>${p.wdays&&p.wdays.length>1?`<div style="font-size:9px;color:var(--muted);line-height:1.35">🗓 ${p.wdays.map(_wdName).join(' · ')} · ${fx(Math.round(p.dayAmt||0))} c/u</div>`:''}</div>
         </div>
         <div style="text-align:right;display:flex;align-items:center;gap:6px">
           ${methodIcon}

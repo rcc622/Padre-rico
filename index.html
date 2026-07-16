@@ -1353,8 +1353,12 @@ function togglePaid(type,id){
 }
 // Confirma el pago con método y monto, maneja auto-check de retos semanales
 function _confirmPayment(type,id,method,budgeted){
-  const real=+(document.getElementById('realAmtInput')?.value)||0;
-  if(!real){toast('Ingresa un monto válido');return;}
+  const _raw=(document.getElementById('realAmtInput')?.value??'').trim();
+  const real=+_raw;
+  // Permitir 0 explícito (no gastaste nada / ahorraste todo el presupuesto);
+  // solo bloquear vacío, no-numérico o negativo. Todos los consumidores de
+  // realAmt tratan 0 como "gastó $0" (usan !=null, no ||), así que cuadra.
+  if(_raw===''||!isFinite(real)||real<0){toast('Ingresa un monto válido');return;}
   const ck=planCk();
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;

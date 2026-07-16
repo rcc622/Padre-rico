@@ -15154,6 +15154,67 @@ function _quincenalSnapshot(){
     bfQ:Math.round(bfQ),extQ:Math.round(extQ),incQ:Math.round(incQ),expQ,dbtQ,diaQ,savQ,
     freeQ,freeQNoExtra,carryQ,start:_ymdLocal(qS),end:_ymdLocal(qE)};
 }
+// ── Bloques de INGRESO ESTRUCTURADO para el analisisInput ────────────────
+// Feedback (fallo real 15-jul-2026): el export aplastaba salario + bono fijo +
+// extra en un solo `ingresoMensual`, y la IA modelaba las quincenas futuras como
+// iguales → subestimó la quincena del bono fijo ~48% y sugirió romper un ahorro
+// innecesariamente. Aquí exponemos, TODO read-only (reusa los motores de ingreso
+// por ciclo; NO toca balances): (1) `ingresoBase` con el bono fijo y el día en que
+// cae; (2) `proyeccionQuincenas[]` con el ingreso GARANTIZADO (salario + bono fijo)
+// de las próximas N quincenas —flaca vs grande—; (3) `horasExtra` separando
+// ganadas-sin-cobrar de cobradas (mismo criterio cash que saldoArrastrado: la OT
+// solo es dinero cuando se marca pagada).
+function _ingresoBlocksForReport(extMensualProm){
+  const inc0=S.inc||{};
+  const salM=+inc0.sal||0, bfM=+inc0.bf||0;
+  const bfDate=+inc0.bfDate||0, bfLast=!!inc0.bfLastDay;
+  // Regla igual que _qnaLabel/bonusInCycle: día ≥30 o ≤14 (o último-del-mes) → 1ra;
+  // día 15..29 → 2da.
+  const bonoCae=bfM<=0?null:(bfLast?'1ra':((bfDate>=15&&bfDate<=29)?'2da':'1ra'));
+  const ingresoBase={
+    salarioQuincenal:Math.round(salM/2),
+    bonoFijo:Math.round(bfM),
+    bonoFijoDia:bfLast?null:(bfDate||null),
+    bonoFijoUltimoDelMes:bfLast,
+    bonoFijoCaeEnCiclo:bonoCae,
+    bonoVariableEstimado:Math.round(+inc0.bv||0),
+    extraPromMensual:Math.round(+extMensualProm||0),
+    extraGarantizado:false
+  };
+  const ck=cycleKey();
+  const cw=cycleWindowFromKey(ck);
+  // OT ganada pero aún NO cobrada (aceptada && !pagada) del ciclo previo.
+  const otSrc=(S.overtimeLog||{})[prevCycleKeyOf(ck)];
+  const _otVal=src=>(src&&(src.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+src.rate||0)),0))||0;
+  const ganadasSinCobrar=(otSrc&&otSrc.accepted&&!otSrc.paid)?_otVal(otSrc):0;
+  // OT ya COBRADA con fecha de pago dentro del ciclo actual (vive en S.extras).
+  let cobradasEsteCiclo=0;
+  (S.extras||[]).forEach(x=>{if(/^Horas extra \(/.test(x.name||'')&&extraUnicoEnVentana(x,cw.start,cw.end))cobradasEsteCiclo+=(+x.amt||0);});
+  const horasExtra={
+    ganadasSinCobrar:Math.round(ganadasSinCobrar),
+    cobradasEsteCiclo:Math.round(cobradasEsteCiclo),
+    promedioMensual:Math.round(+extMensualProm||0),
+    nota:'ganadasSinCobrar NO es dinero disponible hasta marcarse pagada; planea sobre ingresoGarantizado, no sobre promedios de extra'
+  };
+  // Proyección de las próximas N quincenas. ingresoGarantizado = salario + bono
+  // fijo (lo único seguro). extraConfirmado solo suma OT YA cobrada del ciclo
+  // actual; los ciclos futuros NO llevan extra proyectado (un promedio no es dinero).
+  const N=6, proy=[]; let curCk=ck;
+  for(let i=0;i<N;i++){
+    const w=cycleWindowFromKey(curCk);
+    const incH=getIncForCycle(curCk);
+    const salQ=Math.round((+incH.sal||0)/2);
+    const bonoQ=bonusInCycle(w.start,w.end,incH)?Math.round(+incH.bf||0):0;
+    const extraConf=(i===0)?Math.round(cobradasEsteCiclo):0;
+    const garant=salQ+bonoQ;
+    proy.push({n:i+1,ciclo:w.type,inicio:_ymdLocal(w.start),fin:_ymdLocal(w.end),
+      salario:salQ,bonoFijo:bonoQ,extraConfirmado:extraConf,
+      ingresoGarantizado:garant,ingresoProyectado:garant+extraConf,
+      tipo:bonoQ>0?'grande':'flaca',semanas:getWeeksInCycle(w)});
+    curCk=nextCycleKeyOf(curCk);
+  }
+  return {ingresoBase,horasExtra,proyeccionQuincenas:proy};
+}
 function buildAIReport(){
   const L=[];
   const fxn=(n)=>fx(n||0);
@@ -15200,6 +15261,16 @@ function buildAIReport(){
   L.push('> 5. **El cuadre ya está verificado:** el balance de Inicio y el Estado de');
   L.push('>    Cuenta del Plan coinciden por quincena. NO gastes el análisis');
   L.push('>    buscando descuadres contables; enfócate en estrategia.');
+  L.push('> 6. **Las quincenas NO son iguales — usa `proyeccionQuincenas`.** Mi');
+  L.push('>    `bonoFijo` es ingreso GARANTIZADO y RECURRENTE, no un windfall: cae');
+  L.push('>    COMPLETO en una sola quincena del mes (mira `ingresoBase.bonoFijoCaeEnCiclo`).');
+  L.push('>    Planea cada quincena sobre su `ingresoGarantizado` real (flaca vs grande),');
+  L.push('>    NO sobre un ingreso mensual÷2. NO despliegues el bono fijo como golpe de');
+  L.push('>    suerte (eso aplica solo a bono variable / horas extra / saldo arrastrado).');
+  L.push('> 7. **Extra no cobrado NO es dinero.** Horas extra `ganadasSinCobrar` y los');
+  L.push('>    promedios de extra NO fondean obligaciones con fecha. Antes de sugerir');
+  L.push('>    romper un ahorro o pedir crédito, verifica el `ingresoGarantizado` de');
+  L.push('>    TODAS las quincenas del horizonte: un gap suele ser error de proyección.');
   L.push('> ');
   L.push('> ## 1 · ANÁLISIS PROFUNDO DEL ESTADO ACTUAL (AS-IS)');
   L.push('> - Diagnóstico con mis números: flujo libre, deuda/ingreso, patrimonio,');
@@ -15598,8 +15669,11 @@ function buildAIReport(){
       vencimiento:d.liqDate||null,esPagoMinimo:_esMin(d)}));
     // prioridad (avalancha): mayor tasa primero; empate por interés en $ y saldo.
     [..._nd].sort((a,b)=>(b.tasaPct-a.tasaPct)||(b.interesMonto-a.interesMonto)||(b.saldo-a.saldo)).forEach((d,i)=>{d.prioridad=i+1;});
+    const _ingBlocks=_ingresoBlocksForReport(ext);
     const _ai={
       analisisInput:1,moneda:'MXN',fechaExport:_todayYMD(),
+      ingresoBase:_ingBlocks.ingresoBase,
+      horasExtra:_ingBlocks.horasExtra,
       periodo:{inicio:_pIni||null,fin:_pFin||null,dias:_periodDias,quincenas:_periodQnas},
       foto:{ingresoMensual:Math.round(inc),extraMensualProm:Math.round(ext),gastosFijosMensual:Math.round(exp),
         pagoDeudaMensual:Math.round(dPay),ahorroMensual:Math.round(sav),ahorroEjecutado:!!(curSavCommit()||(S.savStreak||0)>0),flujoMensual:Math.round(fl),
@@ -15613,10 +15687,11 @@ function buildAIReport(){
         presupuestoInnecesarios:Math.round(getDiarioBudgetForCycle(cycleKey())),innecesariosGastado:Math.round(diariosCycleSpent(cycleKey())),
         flujoLibreAntesExtra:_qsnap.freeQNoExtra,flujoLibreDespuesExtra:_qsnap.freeQ,
         saldoArrastrado:_qsnap.carryQ,disponibleAlCierre:_qsnap.freeQ+_qsnap.carryQ},
+      proyeccionQuincenas:_ingBlocks.proyeccionQuincenas,
       deudas:_nd};
     L.push('## 7 · analisisInput (bloque consolidado para máquina)');
     L.push('');
-    L.push('> Todo lo anterior en un solo objeto parseable. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `ahorroMensual` es mi META programada; `ahorroEjecutado` (bool) dice si de verdad la aparto — si es false, `flujoMensual` YA la trata como flujo libre (no la restes otra vez). `capacidadQuincenal` es la del ciclo actual y sale de los MISMOS line items con fecha que mi pantalla de Pagos (Estado de Cuenta): `gastosFijos` y `deudaMinima` son los pagos que de verdad caen dentro del ciclo (no un mensual÷2), `gastosDiarios` es mi bitácora real del ciclo, `ahorro` es lo realmente apartado, y `flujoLibreDespuesExtra` es el flujo que GENERA este ciclo. NO lo recalcules por promedio. `saldoArrastrado` es el sobrante REAL con el que abrí el ciclo (dinero que YA tengo en la cuenta, calibrado manualmente al conciliar con el banco); NO es flujo generado por este ciclo y es de UNA SOLA VEZ, así que NO lo asumas recurrente en las próximas quincenas. `disponibleAlCierre` = `flujoLibreDespuesExtra` + `saldoArrastrado` es el dinero libre REAL de este ciclo (lo que puedo desplegar hoy). Nota: las horas extra aún "por cobrar" (aceptadas pero no pagadas) NO se cuentan como ingreso hasta que se marcan pagadas — por eso pueden no aparecer aunque las vea proyectadas en Pagos. `presupuestoInnecesarios` es el TOPE de gasto hormiga/no necesario que YO defino para esta quincena (mi límite auto-impuesto; los esenciales NO cuentan ahí) y `innecesariosGastado` es lo que llevo gastado de ese tope — respeta ese presupuesto como mi meta y dime si voy por encima. `deudas` van normalizadas: `grupoKey` (llave para agrupar la MISMA deuda escrita distinto; agrupa por este campo, no por `nombre` crudo), `pagoMensual`/`pagoQuincenal` equivalentes, `pagosHechos`/`pagosTotales` (avance de liquidación), `saldo` (única verdad de si sigue viva), `tasaPct`, `vencimiento` (fecha en que la deuda queda SALDADA — su última mensualidad o el pago del único; NO es la fecha del próximo pago), `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve). Para "qué cae esta quincena" usa `capacidadQuincenal` (sale del motor con fechas), no estas fechas de liquidación.');
+    L.push('> Todo lo anterior en un solo objeto parseable. **`ingresoBase`** desglosa mi ingreso fijo: `salarioQuincenal` (cae en TODAS las quincenas) y `bonoFijo` (ingreso GARANTIZADO y RECURRENTE que cae COMPLETO en UNA sola quincena del mes — la que indica `bonoFijoCaeEnCiclo`/`bonoFijoDia`; NO es un windfall, es presupuestable). **`proyeccionQuincenas`** es LO MÁS IMPORTANTE para el plan: trae el ingreso de las próximas quincenas, NO solo la actual — `ingresoGarantizado` (=salario+bono fijo, planea sobre ESTO) y `ingresoProyectado` (=garantizado + extra ya confirmado, NUNCA promedios). `tipo` marca `flaca` (sin bono) vs `grande` (con bono): las quincenas NO son iguales, esa asimetría ES la planeación. **`horasExtra`** separa `ganadasSinCobrar` (trabajadas pero NO pagadas aún — NO es dinero disponible) de `cobradasEsteCiclo`; nunca fondees obligaciones con fecha usando extra no cobrado. Antes de sugerir romper un ahorro o pedir crédito, verifica el `ingresoGarantizado` de TODAS las quincenas del horizonte: un gap suele ser error de proyección, no crisis real. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `ahorroMensual` es mi META programada; `ahorroEjecutado` (bool) dice si de verdad la aparto — si es false, `flujoMensual` YA la trata como flujo libre (no la restes otra vez). `capacidadQuincenal` es la del ciclo actual y sale de los MISMOS line items con fecha que mi pantalla de Pagos (Estado de Cuenta): `gastosFijos` y `deudaMinima` son los pagos que de verdad caen dentro del ciclo (no un mensual÷2), `gastosDiarios` es mi bitácora real del ciclo, `ahorro` es lo realmente apartado, y `flujoLibreDespuesExtra` es el flujo que GENERA este ciclo. NO lo recalcules por promedio. `saldoArrastrado` es el sobrante REAL con el que abrí el ciclo (dinero que YA tengo en la cuenta, calibrado manualmente al conciliar con el banco); NO es flujo generado por este ciclo y es de UNA SOLA VEZ, así que NO lo asumas recurrente en las próximas quincenas. `disponibleAlCierre` = `flujoLibreDespuesExtra` + `saldoArrastrado` es el dinero libre REAL de este ciclo (lo que puedo desplegar hoy). Nota: las horas extra aún "por cobrar" (aceptadas pero no pagadas) NO se cuentan como ingreso hasta que se marcan pagadas — por eso pueden no aparecer aunque las vea proyectadas en Pagos. `presupuestoInnecesarios` es el TOPE de gasto hormiga/no necesario que YO defino para esta quincena (mi límite auto-impuesto; los esenciales NO cuentan ahí) y `innecesariosGastado` es lo que llevo gastado de ese tope — respeta ese presupuesto como mi meta y dime si voy por encima. `deudas` van normalizadas: `grupoKey` (llave para agrupar la MISMA deuda escrita distinto; agrupa por este campo, no por `nombre` crudo), `pagoMensual`/`pagoQuincenal` equivalentes, `pagosHechos`/`pagosTotales` (avance de liquidación), `saldo` (única verdad de si sigue viva), `tasaPct`, `vencimiento` (fecha en que la deuda queda SALDADA — su última mensualidad o el pago del único; NO es la fecha del próximo pago), `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve). Para "qué cae esta quincena" usa `capacidadQuincenal` (sale del motor con fechas), no estas fechas de liquidación.');
     L.push('');
     L.push('```json');
     L.push(JSON.stringify(_ai));

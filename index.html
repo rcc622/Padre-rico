@@ -15120,6 +15120,15 @@ function _quincenalSnapshot(){
   const bfHits=bonusInCycle(qS,qE,S.inc);
   const bfQ=bfHits?bono:0;
   let extQ=0;(S.extras||[]).forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,qS,qE))extQ+=(+x.amt||0);});
+  // Horas extra del ciclo ANTERIOR aceptadas pero aún por cobrar (payroll de este
+  // ciclo): el Estado de Cuenta del Plan (rPlan) y calcCycleBalance YA las suman
+  // como ingreso EXTRA proyectado del ciclo. Sin esto, capacidadQuincenal reportaba
+  // extra:0 aunque la pantalla Pagos muestra "⏰ Horas extra (ciclo anterior · por
+  // cobrar)". Van del lado "con extra": el piso "sin extra" (freeQNoExtra) no cambia.
+  const _otSrc=(S.overtimeLog||{})[prevCycleKeyOf(ck)];
+  const otEarnedQ=(_otSrc&&_otSrc.accepted&&!_otSrc.paid)
+    ?(_otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+_otSrc.rate||0)),0):0;
+  extQ+=otEarnedQ;
   const incQ=salQ+bfQ+extQ;
   // FIJOS y DEUDA del ciclo: MISMO motor que la pantalla Pagos (buildCyclePayments,
   // consciente de fechas — incluye únicos dateados y reparte semanales por sábado).

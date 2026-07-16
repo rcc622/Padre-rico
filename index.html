@@ -1146,7 +1146,7 @@ function cycleExpenseTotal(w){
     // (mismo criterio que el Plan en buildCyclePayments). Aditivo: sin endDate no cambia.
     if(e.endDate&&_winStartYMD>e.endDate)return;
     const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
-    if(f==='semanal')total+=expWeeklyAmt(e)*(isCurrent?getWeeksInCycle():getWeeksInCycle(win));
+    if(f==='semanal')total+=(+e.amt||0)*(isCurrent?getWeeksInCycle():getWeeksInCycle(win));
     else if(f==='quincenal')total+=(+e.amt||0);
     else if(pd>0&&dayInWindow(pd,win))total+=mo;
     else if(!pd)total+=mo/2;
@@ -1550,7 +1550,7 @@ function genSurvivalRetos(deficit){
     const bfQ=bonusInCycle(qS,qE,S.inc)?(+S.inc.bf||0):0;
     let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,qS,qE))extQ+=(+x.amt||0);});
     const incQ=salarioQ+bfQ+extQ;
-    let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=expWeeklyAmt(e)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
+    let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
     let dbtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(db.pay||0);else dbtQ+=mo/2;});
     return incQ-expQ-dbtQ-(savAmt()/2);
   }catch(e){return 0;}})();
@@ -2690,20 +2690,9 @@ function bonusInCycle(cStart,cEnd,inc){
   return false;
 }
 const toMonthly=(amt,freq)=>{if(freq==='semanal')return amt*4.33;if(freq==='quincenal')return amt*2;if(freq==='bimestral')return amt/2;if(freq==='unico')return amt;return amt;};
-// Multi-día semanal: un gasto SEMANAL puede programarse en varios días
-// (weekDays: array de 1..7). Cada día elegido COBRA el monto → días/semana =
-// weekDays.length. SIN weekDays (todos los gastos previos) = 1 → monto y cuadre
-// IDÉNTICOS a antes (cambio aditivo: no altera ningún número ya construido).
-const expWeekDaysCount=e=>(e&&Array.isArray(e.weekDays)&&e.weekDays.length)?e.weekDays.length:1;
-// Monto semanal EFECTIVO por semana = monto × días/semana. Se usa en TODOS los
-// sitios que calculan gasto semanal (tExp, totales por ciclo, buildCyclePayments)
-// para que Inicio y Plan cuadren exacto.
-const expWeeklyAmt=e=>(+((e&&e.amt)||0))*expWeekDaysCount(e);
 // Presets quincenales (SOLO display): un gasto quincenal cae 1 vez por ciclo
 // (monto sin cambio); el preset solo define QUÉ DÍA se muestra en cada quincena.
 // '1-15'→ 1ra:1, 2da:15 · '5-20'→ 1ra:5, 2da:20 · '15-ult'→ 1ra:último del mes, 2da:15.
-// Nombre corto de día de la semana (1=Lun..7=Dom) para el desglose visual.
-const _wdName=d=>['','Lun','Mar','Mié','Jue','Vie','Sáb','Dom'][+d]||'';
 function _qnaPresetDay(preset,ct,cStart){
   if(!preset)return 0;
   const is2=ct==='2da';
@@ -2729,7 +2718,7 @@ const isDebtLiquidated=(d)=>(+d.bal||0)<=0;
 // Excluye freq 'unico': un pago de una sola vez no es un gasto mensual
 // recurrente (igual que hace project() en el simulador — antes el score y el
 // simulador se contradecían porque flow() lo restaba todos los meses).
-const tExp=()=>S.exp.reduce((a,e)=>{const f=e.freq||'mensual';if(f==='unico')return a;const base=f==='semanal'?expWeeklyAmt(e):(+e.amt||0);return a+toMonthly(base,f);},0);
+const tExp=()=>S.exp.reduce((a,e)=>a+((e.freq||'mensual')==='unico'?0:toMonthly(+e.amt||0,e.freq||'mensual')),0);
 const savAmt=()=>mInc()*S.savPct/100;
 // Quincenal savings amount (half of monthly plan)
 const savAmtQ=()=>Math.round(savAmt()/2);
@@ -7788,7 +7777,7 @@ function rFlujo(){try{
 }catch(e){document.getElementById('tab-flujo').innerHTML='<div class="card card-red"><div class="ct">Error en Ingresos y Gastos</div><div style="font-size:12px;color:var(--terra)">'+e.message+'</div></div>';console.error('rFlujo error:',e);}
 }
 function freqLabel(amt,freq){if(!amt)return'';const mo=toMonthly(amt,freq);if(freq==='mensual')return'';return'= '+fx(Math.round(mo))+'/mes';}
-function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(!el)return;let base=a;if(f==='semanal'){const n=document.querySelectorAll('#ewdWrap .ewd-day:checked').length;base=a*(n||1);}el.textContent=freqLabel(base,f);}
+function prevExpMo(){const a=+(document.getElementById('ea')?.value)||0;const f=document.getElementById('ef')?.value||'mensual';const el=document.getElementById('expMoPrev');if(el)el.textContent=freqLabel(a,f);}
 function prevDebtMo(){const a=+(document.getElementById('dm')?.value)||0;const f=document.getElementById('dpf')?.value||'mensual';const el=document.getElementById('debtMoPrev');if(el)el.textContent=freqLabel(a,f);}
 // Opción A: si la deuda es a CUOTAS (hay "Total de cuotas"), el saldo restante
 // se DERIVA = cuota × (total − cuotas pagadas) y el campo se bloquea (no se
@@ -7852,12 +7841,10 @@ function _expExtraFieldsHTML(f,ee){
   const wdVal=(ee&&ee.weekDay!=null&&ee.weekDay!=='')?String(ee.weekDay):'';
   let pdField;
   if(f==='semanal'){
-    const _wdays=[['1','L'],['2','M'],['3','Mi'],['4','J'],['5','V'],['6','S'],['7','D']];
-    // Días seleccionados: array weekDays (multi-día) o, compat, el weekDay único.
-    const _selD=(ee&&Array.isArray(ee.weekDays)&&ee.weekDays.length)?ee.weekDays.map(Number):((ee&&ee.weekDay)?[+ee.weekDay]:[]);
-    pdField='<div><label>Días de la semana</label><div id="ewdWrap" style="display:flex;gap:4px">'
-      +_wdays.map(([v,l])=>{const on=_selD.includes(+v);return '<label style="flex:1;text-align:center;padding:8px 0;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:12px;font-family:Georgia,serif;background:'+(on?'var(--sagedim)':'#fff')+';color:'+(on?'var(--sage)':'var(--muted)')+';font-weight:'+(on?'bold':'normal')+'"><input type="checkbox" class="ewd-day" value="'+v+'"'+(on?' checked':'')+' style="display:none" onchange="var l=this.parentElement;l.style.background=this.checked?\'var(--sagedim)\':\'#fff\';l.style.color=this.checked?\'var(--sage)\':\'var(--muted)\';l.style.fontWeight=this.checked?\'bold\':\'normal\';if(window.prevExpMo)prevExpMo()">'+l+'</label>';}).join('')
-      +'</div></div>';
+    const _wdays=[['1','Lunes'],['2','Martes'],['3','Miércoles'],['4','Jueves'],['5','Viernes'],['6','Sábado'],['7','Domingo']];
+    pdField='<div><label>Día de la semana</label><select id="ewd"><option value="">Automático</option>'
+      +_wdays.map(([v,l])=>'<option value="'+v+'"'+(wdVal===v?' selected':'')+'>'+l+'</option>').join('')
+      +'</select></div>';
   }else if(f==='quincenal'){
     const _qp=(ee&&ee.qnaPreset)||'';
     const _qopts=[['1-15','El 1 y el 15'],['5-20','El 5 y el 20'],['15-ult','El 15 y el último día']];
@@ -7876,7 +7863,7 @@ function _expExtraFieldsHTML(f,ee){
     second='<div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">'+((ee&&ee.amt!=null)?freqLabel(ee.amt,f):'')+'</div></div>';
   }
   let note='';
-  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Elige uno o varios días. <strong>Cada día elegido cobra el monto</strong> (ej. 2 días = doble por semana). Sin elegir ninguno = 1 cobro/semana (sábado).</div>';
+  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Recurre cada semana (≈4.33 pagos/mes). El día de la semana ubica el cobro en el Plan — no cambia el monto. "Automático" = sábado.</div>';
   else if(f==='quincenal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Aplica una vez en cada quincena del mes (el monto no cambia). Elige un preset (1&15, 5&20, 15&último) o deja un día manual — solo ubica en qué día se muestra el pago.</div>';
   return '<div class="g2" style="margin-bottom:'+(note?'4':'10')+'px">'+pdField+second+'</div>'+note;
 }
@@ -8091,20 +8078,16 @@ function addExp(){const n=document.getElementById('en')?.value.trim();const a=+d
   const pd=(+(document.getElementById('epd')?.value)||0);
   // Día de la semana (1=Lun..7=Dom) solo para gastos semanales; 0 = automático
   // (sábado). Para otras periodicidades no existe el campo → queda 0.
-  // Días de la semana (multi-día): lee los chips marcados. weekDays = array 1..7;
-  // weekDay = el primero (ancla de display, compat con el motor previo). Cada día
-  // elegido cobra el monto (ver expWeeklyAmt).
-  const _wdEls=(f==='semanal')?document.querySelectorAll('#ewdWrap .ewd-day:checked'):[];
-  const weekDaysArr=Array.from(_wdEls).map(el=>Math.min(7,Math.max(1,+el.value||0))).filter(v=>v>=1&&v<=7).sort((x,y)=>x-y);
-  const wd=(f==='semanal'&&weekDaysArr.length)?weekDaysArr[0]:0;
+  const wdRaw=document.getElementById('ewd')?.value||'';
+  const wd=(f==='semanal'&&wdRaw!=='')?(Math.min(7,Math.max(1,+wdRaw||0))):0;
   // Preset quincenal (solo display): '1-15' | '5-20' | '15-ult' | '' (día manual).
   const qp=(f==='quincenal')?(document.getElementById('eqp')?.value||''):'';
   const bm=f==='bimestral'?(document.getElementById('ebm')?.value||'par'):'';
   const sd=_toValidYMD(document.getElementById('esd')?.value||'')||''; // comienzo opcional
   const ed=_toValidYMD(document.getElementById('eed')?.value||'')||''; // conclusión opcional
   if(sd&&ed&&ed<sd){toast('⚠ La conclusión no puede ser antes del comienzo');document.getElementById('eed')?.focus();return;}
-  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd,weekDay:wd,weekDays:weekDaysArr,qnaPreset:qp,bimMeses:bm,startDate:sd,endDate:ed}:e)});editExpId=null;toast('✓ Gasto actualizado');}
-  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd,weekDay:wd,weekDays:weekDaysArr,qnaPreset:qp,bimMeses:bm,startDate:sd,endDate:ed}]});toast('✓ Gasto registrado');}
+  if(editExpId){pt({exp:S.exp.map(e=>e.id===editExpId?{...e,name:n,amt:a,cat:c,freq:f,payDay:pd,weekDay:wd,qnaPreset:qp,bimMeses:bm,startDate:sd,endDate:ed}:e)});editExpId=null;toast('✓ Gasto actualizado');}
+  else{pt({exp:[...S.exp,{id:Date.now(),name:n,amt:a,cat:c,freq:f,payDay:pd,weekDay:wd,qnaPreset:qp,bimMeses:bm,startDate:sd,endDate:ed}]});toast('✓ Gasto registrado');}
   rFlujo();}
 function rmExp(id){
   const e=S.exp.find(x=>x.id===id);
@@ -10784,12 +10767,12 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
     // quincenas que EMPIEZAN después de su fecha de fin; sigue cobrándose en la
     // quincena que contiene esa fecha. Campo opcional nuevo: sin él, nada cambia.
     if(e.endDate&&_cStartYMD>e.endDate)return;
-    if(f==='semanal'){const w=expWeeklyAmt(e);const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;
+    if(f==='semanal'){const w=+e.amt||0;const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;
       // Día de la semana elegido (SOLO display): mapea la ocurrencia wi al
       // wi-ésimo día de ese weekday dentro del ciclo. La vigencia y el conteo
       // de ocurrencias siguen ancladas al sábado (abajo) → expQ y el cuadre
       // NO cambian. Sin weekDay, cae a sábado (comportamiento previo).
-      let _wdayNums=null;const _wd=(Array.isArray(e.weekDays)&&e.weekDays.length)?+e.weekDays[0]:(+(e.weekDay)||0);
+      let _wdayNums=null;const _wd=+(e.weekDay)||0;
       if(_wd>=1&&_wd<=7){const _jsDay=_wd===7?0:_wd;_wdayNums=[];const _wsd=new Date(cStart);while(_wsd<=cEnd){if(_wsd.getDay()===_jsDay)_wdayNums.push(_wsd.getDate());_wsd.setDate(_wsd.getDate()+1);}}
       for(let wi=0;wi<weeks;wi++){
       // Vigencia POR OCURRENCIA: un gasto semanal con comienzo/conclusión solo
@@ -10803,7 +10786,7 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       // cuadre Inicio↔Plan no se rompe.
       const _satY=_cycleSatYMD[wi];
       if(_satY&&((e.startDate&&_satY<e.startDate)||(e.endDate&&_satY>e.endDate)))continue;
-      expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:(_wdayNums&&_wdayNums[wi]!=null?_wdayNums[wi]:(_cycleSats[wi]||0)),freq:f,week:wi+1+wOff,wdays:(Array.isArray(e.weekDays)&&e.weekDays.length>1)?e.weekDays.slice():null,dayAmt:+e.amt||0};if(pt)entry.paidType=pt;expDetail.push(entry);}}
+      expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:(_wdayNums&&_wdayNums[wi]!=null?_wdayNums[wi]:(_cycleSats[wi]||0)),freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
     else if(f==='quincenal'){expQ+=(+e.amt||0);const _qday=e.qnaPreset?_qnaPresetDay(e.qnaPreset,ct,cStart):(pd||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:_qday,freq:f});}
     else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
     else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
@@ -11060,7 +11043,7 @@ try{
   if(planView==='pagos'){
     // Build tracker — split mandatory vs optional
     const mandatory=[],optional=[];
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid,wdays:e.wdays||null,dayAmt:e.dayAmt});});
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
     debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';mandatory.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
     // Optional: savings, apartados, impulses
     S.savGoals.filter(g=>!g.done&&!g.closed&&g.target-(+g.saved||0)>0).forEach(g=>{
@@ -11172,7 +11155,7 @@ try{
         <div class="row" style="gap:8px">
           ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();flujoView='activos';go('flujo')" style="width:22px;height:22px;font-size:11px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:22px;height:22px;font-size:11px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:22px;height:22px;font-size:11px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:22px;height:22px;font-size:11px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
           <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
-          <div style="min-width:0"><span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>${p.wdays&&p.wdays.length>1?`<div style="font-size:9px;color:var(--muted);line-height:1.35">🗓 ${p.wdays.map(_wdName).join(' · ')} · ${fx(Math.round(p.dayAmt||0))} c/u</div>`:''}</div>
+          <span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>
         </div>
         <div style="text-align:right;display:flex;align-items:center;gap:6px">
           ${methodIcon}
@@ -11833,7 +11816,7 @@ function renderRetos(){
   const salQ=S.inc.sal/2;const bfQ=bonusInCycle(cStart,cEnd,S.inc)?(+S.inc.bf||0):0;
   let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,cStart,cEnd))extQ+=(+x.amt||0);});
   const incQ=salQ+bfQ+extQ;
-  let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=expWeeklyAmt(e)*getWeeksInCycle();else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
+  let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
   let debtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(db.nextPay){const np=new Date(db.nextPay+'T12:00');if(np>=cStart&&np<=cEnd)debtQ+=(+db.pay||0);}else if(f==='quincenal')debtQ+=(db.pay||0);else if(pd>0&&dayInC(pd))debtQ+=mo;else if(!pd)debtQ+=mo/2;});
   const savQ=savAmt()/2;
   const savGQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);

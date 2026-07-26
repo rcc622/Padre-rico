@@ -59,11 +59,11 @@ button:active{transform:scale(.97)}
 .card-sky{border-color:rgba(74,110,140,.28);background:var(--skydim)}
 .card-amber{border-color:rgba(160,112,48,.3);background:var(--amberdim)}
 .ct{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--sage);margin-bottom:13px}
-.card>.ct.card-toggler{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
-.card>.ct.card-toggler .collapse-arrow{font-size:12px;color:var(--muted);transition:transform .2s}
-.card.card-collapsed>.ct{margin-bottom:0}
-.card.card-collapsed>*:not(.ct){display:none !important}
-.card.card-collapsed>.ct .collapse-arrow{transform:rotate(-90deg)}
+.card>.ct.card-toggler,.card>.dh-ct.card-toggler{cursor:pointer;user-select:none;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:32px}
+.card>.ct.card-toggler .collapse-arrow,.card>.dh-ct.card-toggler .collapse-arrow{font-size:12px;color:var(--muted);transition:transform .2s}
+.card.card-collapsed>.ct,.card.card-collapsed>.dh-ct{margin-bottom:0}
+.card.card-collapsed>*:not(.ct):not(.dh-ct){display:none !important}
+.card.card-collapsed>.ct .collapse-arrow,.card.card-collapsed>.dh-ct .collapse-arrow{transform:rotate(-90deg)}
 .g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0}
@@ -342,7 +342,7 @@ button:active{transform:scale(.97)}
   <div style="background:var(--sage2);color:rgba(255,255,255,.85);text-align:center;font-size:10px;letter-spacing:1.5px;padding:6px 0;text-transform:uppercase" id="hdr-date"></div>
   <header class="hdr">
     <div class="logo"><svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="vertical-align:-.16em;margin-right:5px"><circle cx="8" cy="8" r="6" /><path d="M18.09 10.37A6 6 0 1 1 10.34 18" /><path d="M7 6h1v4" /><path d="m16.71 13.88.7.71-2.82 2.82" /></svg>PADRE RICO</div>
-    <div class="score-chip" id="hdr-score">—</div>
+    <button class="score-chip" id="hdr-score" onclick="if(typeof openScoreDetail==='function')openScoreDetail()" style="cursor:pointer;border:none" aria-label="Ver detalle de tu nivel">—</button>
   </header>
   <nav class="nav">
     <button class="nb act" onclick="go('dash')"><svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg><span>Inicio</span></button>
@@ -376,6 +376,8 @@ button:active{transform:scale(.97)}
 <div id="fabBackdrop" onclick="_fabToggle()"></div>
 <div id="fabContainer" style="display:none">
   <div id="fabMenu">
+    <div class="fab-item"><span class="fab-label">✓ Pagos de quincena</span><button class="fab-mini" onclick="fabAction('pagos')" style="color:var(--sage)">✓</button></div>
+    <div class="fab-item"><span class="fab-label">💾 Respaldo</span><button class="fab-mini" onclick="fabAction('respaldo')" style="color:var(--sky)">💾</button></div>
     <div class="fab-item"><span class="fab-label">🛒 Gasto diario</span><button class="fab-mini" onclick="fabAction('diario')" style="color:var(--terra)">🛒</button></div>
     <div class="fab-item"><span class="fab-label">💵 Ingreso extra</span><button class="fab-mini" onclick="fabAction('ingXtra')" style="color:var(--sage)">💵</button></div>
     <div class="fab-item"><span class="fab-label">⏱️ Horas extra</span><button class="fab-mini" onclick="fabAction('hrsxtra')" style="color:var(--sky)">⏱️</button></div>
@@ -4322,10 +4324,13 @@ function _enableCardCollapse(){
     const cards=tabEl.querySelectorAll('.card');
     cards.forEach((card,i)=>{
       if(card.dataset.collapseInit)return;
-      const ct=card.querySelector(':scope > .ct');
+      const ct=card.querySelector(':scope > .ct, :scope > .dh-ct');
       if(!ct)return;
       card.dataset.collapseInit='1';
-      const key=tabId+'_'+i;
+      // Key estable por TÍTULO (no por posición): las cards condicionales
+      // (alertas, carryover) desplazaban el colapso a la card equivocada.
+      const slug=(ct.textContent||'').replace(/[^\p{L}\p{N}]/gu,'').slice(0,24);
+      const key=tabId+'_'+(slug||i);
       card.dataset.collapseKey=key;
       if(!ct.classList.contains('card-toggler')){
         ct.classList.add('card-toggler');
@@ -4336,8 +4341,8 @@ function _enableCardCollapse(){
       }
       if(stored[key])card.classList.add('card-collapsed');
       ct.addEventListener('click',(e)=>{
-        // Ignora clicks en botones/inputs dentro del título
-        if(e.target.closest('button,input,select,a'))return;
+        // Ignora clicks en botones/inputs/links y spans con onclick ("editar ›")
+        if(e.target.closest('button,input,select,a,[onclick]'))return;
         const isColl=card.classList.toggle('card-collapsed');
         try{
           const m=JSON.parse(localStorage.getItem('prv5_collapsedCards')||'{}');
@@ -8650,6 +8655,8 @@ function fabAction(type){
     else if(type==='plania'){
       if(typeof openQuickAIPlan==='function')openQuickAIPlan();
     }
+    else if(type==='pagos'){planView='pagos';go('plan');}
+    else if(type==='respaldo'){if(typeof exportData==='function')exportData();}
   },180);
 }
 // ══ Plan IA rápido desde el FAB ═════════════════════════════════════════
@@ -11273,6 +11280,7 @@ try{
     <!-- DEFICIT ALERT -->
     ${mUnpaidT>0&&!showNext?`<div class="card card-red" style="padding:14px 18px">
       <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mUnpaidT))}</strong> (${mUnpaid.length} gasto${mUnpaid.length!==1?'s':''} y deudas). Selecciónalos y aplícalos conforme vayas pagando.</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">Palomear un pago solo lo <strong>selecciona</strong> (ámbar). Hasta que toques <strong>"Aplicar seleccionados"</strong> se descuenta de tu quincena (verde).</div>
     </div>`:''}
 
     <!-- ESTADO CUENTA -->
@@ -13957,7 +13965,7 @@ function rHistoria(){
     const mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
     const simLocked=!!S._simLocked; // candado persistente en el estado
     ct=`<div class="card card-sage"><div class="ct">🔮 ¿Qué Pasa Si...?</div><div style="font-size:12px;color:var(--txt2);line-height:1.7">Mueve los sliders y ve en tiempo real cómo tus decisiones impactan tu futuro a 12 meses.</div></div>
-    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Cierre Qna para calibrar los sliders con tus datos reales.</div></div>':''}
+    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Inicio → "Cerrar mes" para calibrar los sliders con tus datos reales.</div></div>':''}
     <div class="card" id="simSl"><div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">Ajusta tus hábitos ${ib("simulador","Simulador")}</div><button class="btn btn-sm ${simLocked?'btn-red':'btn-ghost'}" style="padding:5px 10px;font-size:11px" onclick="toggleSimLock()">${simLocked?'🔒 Bloqueado':'🔓 Libre'}</button></div>
       ${simLocked?'<div style="font-size:11px;color:var(--terra);background:rgba(184,92,74,.06);padding:8px 10px;border-radius:6px;margin-bottom:12px;line-height:1.5">🔒 Sliders bloqueados. Tap el botón para desbloquear y ajustar.</div>':''}
       ${(()=>{
@@ -14229,7 +14237,7 @@ function rHistoria(){
   if(histView==='cats'){
     const snaps=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
     if(!snaps.length){
-      ct='<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">No hay capítulos guardados todavía.<br>Sube tu primer CSV en Cierre Qna.</div></div>';
+      ct='<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">No hay capítulos guardados todavía.<br>Sube tu primer CSV en Inicio → "Cerrar mes".</div></div>';
     } else {
       // Default to most recent capítulo
       let chIdx=histCatsCh;

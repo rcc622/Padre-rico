@@ -817,7 +817,9 @@ function cleanupOvertimeExtras(){
 // con `catch{}`; ahora loguea y avisa al usuario si localStorage está lleno
 // (QuotaExceededError) para que pueda limpiar capítulos antes de perder datos.
 let _svQuotaWarned=false;
+let _mutSeq=0; // contador de mutaciones — invalida el "deshacer" si hubo otro cambio después
 const sv=()=>{
+  _mutSeq++;
   try{localStorage.setItem(SK,JSON.stringify(S));_svQuotaWarned=false;}
   catch(e){
     _logErr('sv',e);
@@ -853,6 +855,28 @@ function toastSwitchTDC(msg,ck,key){
   clearTimeout(toastTimer);
   toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';_toastTdcCtx=null;},4500);
 }
+// ══ UNDO DE BORRADOS ═════════════════════════════════
+// _undoToast(msg, snapJson): muestra toast con botón "Deshacer" (5s).
+// snapJson = JSON.stringify(S) tomado ANTES de la mutación. Si después del
+// borrado ocurre cualquier otro sv(), el undo se invalida (no revierte de más).
+let _undoCtx=null;
+function _undoToast(msg,snapJson){
+  _undoCtx={snap:snapJson,seq:_mutSeq};
+  const el=document.getElementById('toast');
+  el.innerHTML=msg+' <span style="display:inline-block;background:rgba(255,255,255,.18);border-radius:6px;padding:3px 8px;margin-left:8px;cursor:pointer;font-weight:bold" onclick="_undoLast()">↩ Deshacer</span>';
+  el.classList.add('show');el.style.pointerEvents='auto';
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';_undoCtx=null;},5000);
+}
+function _undoLast(){
+  if(!_undoCtx)return;
+  if(_mutSeq!==_undoCtx.seq){toast('Hubo otro cambio después — ya no se puede deshacer');_undoCtx=null;return;}
+  try{S=JSON.parse(_undoCtx.snap);}catch(e){_logErr('_undoLast',e);_undoCtx=null;return;}
+  _undoCtx=null;sv();toast('✓ Restaurado');
+  try{_refreshActive();hdrUp();}catch(e){_logErr('_undoLast.render',e);}
+}
+// Preserva el scroll de la página al re-renderizar tras una acción puntual
+function _keepScroll(fn){const y=window.scrollY;try{fn();}finally{requestAnimationFrame(()=>window.scrollTo(0,y));}}
 function _switchToTDC(){
   if(!_toastTdcCtx)return;
   const {ck,key}=_toastTdcCtx;
@@ -973,6 +997,25 @@ function showConfirm(title,body,onConfirm){
   m.style.display='flex';
 }
 function closeConfirm(){document.getElementById('confirmModal').style.display='none';_confirmCb=null;}
+// ══ COMA DECIMAL ═════════════════════════════════════
+// Teclado iOS/Android en español ofrece coma; type="number" la rechaza en
+// silencio (value queda ""). Intento 1: convertir la coma en punto al vuelo.
+// Fallback: si el campo queda en estado inválido, avisar en vez de callar.
+document.addEventListener('keydown',e=>{
+  const t=e.target;
+  if(e.key===','&&t instanceof HTMLInputElement&&t.type==='number'){
+    e.preventDefault();
+    try{document.execCommand('insertText',false,'.');}catch(_){}
+  }
+},true);
+let _badInputWarned=0;
+document.addEventListener('input',e=>{
+  const t=e.target;
+  if(t instanceof HTMLInputElement&&t.type==='number'&&t.validity&&t.validity.badInput){
+    const now=Date.now();
+    if(now-_badInputWarned>3000){_badInputWarned=now;toast('⚠ Usa punto (.) para decimales, no coma');}
+  }
+},true);
 // Escape cierra el modal de confirmación (accesibilidad de teclado)
 document.addEventListener('keydown',e=>{
   if(e.key!=='Escape')return;
@@ -1954,7 +1997,7 @@ function toggleRetoCheck(retoId,idx){
   
   const existing=checks.findIndex(c=>c.idx===idx);
   // If already checked, allow unchecking
-  if(existing>=0){checks.splice(existing,1);S.retoChecks[k]=checks;sv();rHabitos();return;}
+  if(existing>=0){checks.splice(existing,1);S.retoChecks[k]=checks;sv();_keepScroll(rHabitos);return;}
   
   // Show pass/fail modal for all behavior retos
   const allR=genSurvivalRetos(1000);
@@ -4212,6 +4255,11 @@ function _restoreNavTab(){
 function go(tab){
   // Backward compat: 'quincena' ya no es tab de nav, es modal
   if(tab==='quincena'){openCierreModal();return;}
+  // Guard: edición de Ingresos sin guardar — el re-render la destruiría en silencio
+  if(cur==='flujo'&&tab!=='flujo'&&typeof _incEdited!=='undefined'&&_incEdited){
+    showConfirm('⚠ Cambios sin guardar','Editaste Ingresos y no has guardado. ¿Descartar los cambios?',()=>{_incEdited=false;closeConfirm();go(tab);});
+    return;
+  }
   cur=tab;
   if(_NAV_TABS.includes(tab))_persistNavTab(tab);
   // Solo toca paneles que están en .content (no los del modal cierreQna)
@@ -6806,7 +6854,7 @@ function onFileType(f,type){if(!f)return;
     +'<button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Respaldar</button>'
     +'<button class="btn btn-sage btn-sm" onclick="execConfirm()">Continuar</button>';
 }
-function _doFileRead(f,type){const r=new FileReader();r.onload=e=>{const txns=parseNu(e.target.result);if(!txns.length){alert('No se pudieron leer transacciones.');return;}if(type==='debit'){nuDebit=txns;nuDebit._saved=false;}else{nuCredit=txns;nuCredit._saved=false;}nuTxns=[...nuDebit,...nuCredit];nuTxns._saved=false;
+function _doFileRead(f,type){const r=new FileReader();r.onload=e=>{const txns=parseNu(e.target.result);if(!txns.length){toast('⚠ No se pudieron leer transacciones del archivo');return;}if(type==='debit'){nuDebit=txns;nuDebit._saved=false;}else{nuCredit=txns;nuCredit._saved=false;}nuTxns=[...nuDebit,...nuCredit];nuTxns._saved=false;
   const pds=(s)=>{const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);return m?m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'):s;};
   const ds=txns.map(t=>pds(t.date)).filter(Boolean).sort();
   if(ds.length>=2){const diff=Math.ceil((new Date(ds[ds.length-1]+'T12:00')-new Date(ds[0]+'T12:00'))/864e5);if(diff>18)qnaFilter='all';else qnaFilter='all';}
@@ -7926,9 +7974,10 @@ function openExpCatModal(){
 }
 function toggleExpCatManage(){S._ecManageOpen=!S._ecManageOpen;sv();if(cur==='flujo')rFlujo();}
 function rmExpUserCat(name){
+  const _s=JSON.stringify(S);
   pt({expUserCats:(S.expUserCats||[]).filter(c=>c!==name)});
-  toast('Categoría eliminada');
-  if(cur==='flujo')rFlujo();
+  _undoToast('Categoría eliminada',_s);
+  if(cur==='flujo')_keepScroll(rFlujo);
 }
 // ══ INCOME HISTORY ══════════════════════════════════
 let _incEdited=false;
@@ -8099,8 +8148,8 @@ function addExp(){const n=document.getElementById('en')?.value.trim();const a=+d
   rFlujo();}
 function rmExp(id){
   const e=S.exp.find(x=>x.id===id);
-  showConfirm('🗑 ¿Eliminar gasto fijo?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(e?.name||'este gasto')+'</strong>'+(e?' ('+fx(+e.amt||0)+' / '+freqShort(e.freq||'mensual')+')':'')+'. Esta acción no se puede deshacer.</div>',()=>{
-    pt({exp:S.exp.filter(x=>x.id!==id)});editExpId=null;closeConfirm();toast('Gasto eliminado');rFlujo();
+  showConfirm('🗑 ¿Eliminar gasto fijo?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(e?.name||'este gasto')+'</strong>'+(e?' ('+fx(+e.amt||0)+' / '+freqShort(e.freq||'mensual')+')':'')+'. Podrás deshacerlo unos segundos.</div>',()=>{
+    const _s=JSON.stringify(S);pt({exp:S.exp.filter(x=>x.id!==id)});editExpId=null;closeConfirm();_undoToast('Gasto eliminado',_s);rFlujo();
   });
 }
 function editExp(id){editExpId=id;flujoView='gastos';rFlujo();setTimeout(()=>{document.getElementById('en')?.scrollIntoView({behavior:'smooth',block:'center'});},100);}
@@ -8113,8 +8162,8 @@ function addExtra(){const n=document.getElementById('xn')?.value.trim();const a=
   pt({extras:[...S.extras,extra]});toast('✓ Ingreso extra registrado');rFlujo();}
 function rmExtra(id){
   const x=S.extras.find(e=>String(e.id)===String(id));
-  showConfirm('🗑 ¿Eliminar ingreso extra?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(x?.name||'este ingreso')+'</strong>'+(x?' ('+fx(+x.amt||0)+')':'')+'. Esta acción no se puede deshacer.</div>',()=>{
-    pt({extras:S.extras.filter(e=>String(e.id)!==String(id))});closeConfirm();toast('Ingreso extra eliminado');rFlujo();
+  showConfirm('🗑 ¿Eliminar ingreso extra?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(x?.name||'este ingreso')+'</strong>'+(x?' ('+fx(+x.amt||0)+')':'')+'. Podrás deshacerlo unos segundos.</div>',()=>{
+    const _s=JSON.stringify(S);pt({extras:S.extras.filter(e=>String(e.id)!==String(id))});closeConfirm();_undoToast('Ingreso extra eliminado',_s);rFlujo();
   });
 }
 function editExtra(id){
@@ -8924,10 +8973,11 @@ function _switchDiarioToTDC(){
 }
 function rmDiario(id){
   const g=(S.gastosDiarios||[]).find(x=>x.id===id);
-  showConfirm('🗑 ¿Eliminar gasto?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(g?.name||'este gasto')+'</strong>'+(g?' ('+fx(+g.amt||0)+(g.date?' · '+g.date:'')+')':'')+'. Esta acción no se puede deshacer.</div>',()=>{
+  showConfirm('🗑 ¿Eliminar gasto?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Vas a borrar <strong>'+_escH(g?.name||'este gasto')+'</strong>'+(g?' ('+fx(+g.amt||0)+(g.date?' · '+g.date:'')+')':'')+'. Podrás deshacerlo unos segundos.</div>',()=>{
+    const _s=JSON.stringify(S);
     pt({gastosDiarios:(S.gastosDiarios||[]).filter(x=>x.id!==id)});
     closeConfirm();
-    toast('Gasto eliminado');
+    _undoToast('Gasto eliminado',_s);
     try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
     try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
     try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
@@ -9091,8 +9141,11 @@ function _openCierreReview(ck){
   if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm()">Cancelar</button><button class="btn btn-sage" onclick="execConfirm()">✓ Revisé · cerrar</button>';
 }
 function _reviewSetCat(id,cat){
+  // Conserva la posición de scroll del modal — antes cada cambio saltaba al tope
+  const _box=document.querySelector('#confirmModal .modal-box');const _y=_box?_box.scrollTop:0;
   pt({gastosDiarios:(S.gastosDiarios||[]).map(g=>g.id===id?{...g,cat}:g)});
   _openCierreReview();
+  const _box2=document.querySelector('#confirmModal .modal-box');if(_box2)_box2.scrollTop=_y;
 }
 function _cierreSaveCapitulo(list,ck){
   if(!list||!list.length){toast('No hay registros');return;}
@@ -9594,9 +9647,10 @@ function toggleAssetArchived(id){
 function delAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
   showConfirm('¿Eliminar el activo "'+a.name+'"?','Esto no afecta tu dinero real, solo deja de contarlo en tu patrimonio.',()=>{
+    const _s=JSON.stringify(S);
     pt({assets:S.assets.filter(x=>x.id!==id)});
     if(editAssetId===id)editAssetId=null;
-    toast('Activo eliminado');rFlujo();hdrUp&&hdrUp();
+    _undoToast('Activo eliminado',_s);rFlujo();hdrUp&&hdrUp();
   });
 }
 // Editar un movimiento del activo. Cambios en monto se aplican como delta
@@ -10461,8 +10515,8 @@ function rmDebt(id){
   const d=S.debts.find(x=>x.id===id);
   if(!d){pt({debts:S.debts.filter(x=>x.id!==id)});return;}
   showConfirm('¿Eliminar esta deuda?',
-    `<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.2);border-radius:8px;padding:14px;margin-bottom:8px"><div style="font-weight:bold;color:var(--terra);font-size:15px;margin-bottom:4px">${d.name}</div><div style="font-size:12px;color:var(--txt2)">Saldo: <strong>${fx(d.bal)}</strong>${d.pay?' · Pago: <strong>'+fx(d.pay)+'</strong>':''}${d.note?' · '+d.note:''}</div></div><div style="font-size:12px;color:var(--terra)">⚠️ Esta acción no se puede deshacer.</div>`,
-    ()=>{pt({debts:S.debts.filter(x=>x.id!==id)});editDebtId=null;toast('Deuda eliminada');rFlujo();}
+    `<div style="background:var(--terradim);border:1px solid rgba(184,92,74,.2);border-radius:8px;padding:14px;margin-bottom:8px"><div style="font-weight:bold;color:var(--terra);font-size:15px;margin-bottom:4px">${d.name}</div><div style="font-size:12px;color:var(--txt2)">Saldo: <strong>${fx(d.bal)}</strong>${d.pay?' · Pago: <strong>'+fx(d.pay)+'</strong>':''}${d.note?' · '+d.note:''}</div></div><div style="font-size:12px;color:var(--terra)">⚠️ Podrás deshacerlo unos segundos.</div>`,
+    ()=>{const _s=JSON.stringify(S);pt({debts:S.debts.filter(x=>x.id!==id)});editDebtId=null;_undoToast('Deuda eliminada',_s);rFlujo();}
   );
 }
 function editDebt(id){editDebtId=id;flujoView='deudas';rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});try{_syncDebtSaldo();}catch(e){}},100);}
@@ -13172,7 +13226,8 @@ function delOtEntry(idx,otCk){
   const ck=otCk||cycleKey();
   const ot=S.overtimeLog?.[ck];if(!ot)return;
   const e=ot.entries[idx];if(!e)return;
-  ot.entries.splice(idx,1);sv();toast('Registro eliminado');rPlan();
+  const _s=JSON.stringify(S);
+  ot.entries.splice(idx,1);sv();_undoToast('Registro eliminado',_s);_keepScroll(rPlan);
 }
 // Mark a cycle's overtime log as paid → moves it to history (collapsed)
 function markOtAsPaid(otCk){
@@ -14916,7 +14971,11 @@ document.getElementById('simImp').innerHTML=
 _schedulePersistSimVals();
 }
 
-function delSnap(id){if(!confirm('¿Eliminar este capítulo?'))return;pt({snapshots:S.snapshots.filter(s=>s.id!==id)});toast('Capítulo eliminado');rHistoria();}
+function delSnap(id){
+  showConfirm('🗑 ¿Eliminar este capítulo?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se borra de tu historia. Podrás deshacerlo unos segundos.</div>',()=>{
+    const _s=JSON.stringify(S);pt({snapshots:S.snapshots.filter(s=>s.id!==id)});closeConfirm();_undoToast('Capítulo eliminado',_s);rHistoria();
+  });
+}
 let expandedSnap=null;
 function toggleSnapDetail(id){expandedSnap=expandedSnap===id?null:id;rHistoria();}
 
@@ -15928,7 +15987,7 @@ function aiPlanToggle(key){
   const checks={...(S.aiPlan.checks||{})};
   checks[key]=!checks[key];
   pt({aiPlan:{...S.aiPlan,checks}});
-  try{if(cur==='habitos')rHabitos();else if(cur==='plan')rPlan();}catch(e){}
+  try{if(cur==='habitos')_keepScroll(rHabitos);else if(cur==='plan')_keepScroll(rPlan);}catch(e){}
 }
 function aiPlanRemove(){
   showConfirm('🗑 Quitar plan de IA','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se quita la capa de seguimiento. <strong>Tus números no cambian.</strong> Puedes importar otro plan cuando quieras.</div>',()=>{pt({aiPlan:null});toast('Plan de IA eliminado');try{if(cur==='habitos')rHabitos();}catch(e){}try{if(cur==='plan')rPlan();}catch(e){}});

@@ -307,6 +307,7 @@ button:active{transform:scale(.97)}
       <input type="date" id="ob-dl" style="margin-bottom:6px">
       <div style="font-size:11px;color:var(--muted);margin-bottom:22px;line-height:1.5">Sugerimos 6 meses, pero ajústala si tienes una fecha importante (antes o después).</div>
       <button class="btn btn-sage" style="width:100%" onclick="obNext()">Siguiente →</button>
+      <button class="btn btn-ghost" style="width:100%;margin-top:9px" onclick="obSkip()">Saltar por ahora — explorar la app</button>
     </div>
     <div class="onb-step" id="s2">
       <div style="font-size:44px;margin-bottom:14px">💰</div>
@@ -4204,6 +4205,9 @@ function obDone(){
   if((+S.goalDelta||0)>0)pt({goalBaseNW:nwBuild(),goalBaseDate:S.goalBaseDate||_ymdLocal(new Date())});
   pt({done:true});launchApp();
 }
+// Saltar el onboarding: entra con estado limpio; la tarjeta "Primeros pasos"
+// del Inicio guía la captura después. Solo marca done — no inventa datos.
+function obSkip(){pt({done:true});launchApp();toast('Puedes capturar tu meta e ingresos cuando quieras');}
 
 // ══ EDITAR META PRINCIPAL (texto + fecha + objetivo medible) ════════════
 // Permite redefinir la meta y, sobre todo, hacerla MEDIBLE fijando cuánto
@@ -4866,6 +4870,27 @@ function rDash(){
       <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cerrar mes</button>
     </div>
   </div>
+
+  ${(()=>{ // Primeros pasos: guía al usuario nuevo (o que saltó el onboarding)
+    try{
+      const steps=[
+        {ok:(+S.inc.sal||0)>0,label:'Captura tus ingresos',go:"flujoView='ingresos';go('flujo')"},
+        {ok:(S.exp||[]).length>0,label:'Agrega tus gastos fijos',go:"flujoView='gastos';go('flujo')"},
+        {ok:(S.gastosDiarios||[]).length>0,label:'Registra tu primer gasto diario',go:"openQuickDiario()"},
+        {ok:(+S.goalDelta||0)>0,label:'Define tu meta medible',go:"openMetaEdit()"}
+      ];
+      const missing=steps.filter(st=>!st.ok).length;
+      if(!missing||S.snapshots.length)return'';
+      return `<div class="card card-sage"><div class="ct">🌱 Primeros pasos · ${steps.length-missing}/${steps.length}</div>
+        ${steps.map(st=>`<div class="row" style="gap:10px;align-items:center;padding:7px 0;${st.ok?'opacity:.55':''}">
+          <span style="font-size:15px;flex-shrink:0">${st.ok?'✅':'○'}</span>
+          ${st.ok?`<span style="font-size:13px;text-decoration:line-through">${st.label}</span>`
+            :`<button class="btn btn-ghost btn-sm" style="font-size:12px;justify-content:flex-start;text-align:left" onclick="${st.go}">${st.label} →</button>`}
+        </div>`).join('')}
+        <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.6">Con esto la app ya puede calcular tu quincena. Esta tarjeta se quita sola al terminar.</div>
+      </div>`;
+    }catch(e){return'';}
+  })()}
 
   <!-- 2 · KPIs: 1 icono + 1 número + micro-tendencia por ficha -->
   <div class="dh-kpis">
@@ -13615,7 +13640,7 @@ function evaluateRetos(snap){
 
 // ══ MI HISTORIA (simulador + gráficas + logros + timeline) ══════
 // Sub-vista de Historia: persiste para que recargar no te regrese al Simulador
-let histView=(()=>{try{const v=localStorage.getItem('prv5_histView');return ['sim','evo','cats','logros','retos','timeline','impulsos','liq'].includes(v)?v:'sim';}catch(e){return 'sim';}})();
+let histView=(()=>{try{const v=localStorage.getItem('prv5_histView');return ['sim','evo','cats','logros','retos','timeline','impulsos','liq','ajustes'].includes(v)?v:'sim';}catch(e){return 'sim';}})();
 let histPeriod='raw'; // raw|mes|trim|sem|anual — Evolución aggregation (raw = 1 capítulo, mensual o quincenal según cycleMode)
 let histCatsCh=null; // index of selected snapshot in cats view (null = most recent)
 let histCatsFilter='all'; // all|cat|uncat
@@ -13821,7 +13846,7 @@ function showRecurringUnlockModal(r){
   if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm()">Continuar</button>';
 }
 
-function checkAch(){
+function checkAch(silent){
   let nw2=[];
   ACHS.forEach(a=>{
     if(S.achievements.find(x=>x.id===a.id))return;
@@ -13829,8 +13854,13 @@ function checkAch(){
   });
   if(nw2.length){
     sv();
-    nw2.forEach(a=>toast('🏆 '+a.n));
-    setTimeout(()=>{try{showAchUnlockedModal(nw2[0]);}catch(e){}},400);
+    // silent=true cuando lo dispara un RENDER (no una acción del usuario):
+    // solo toast — el modal interrumpía justo al entrar a la pestaña.
+    if(silent)nw2.forEach(a=>toast('🏆 Logro: '+a.n+' — ver en Historia → Logros'));
+    else{
+      nw2.forEach(a=>toast('🏆 '+a.n));
+      setTimeout(()=>{try{showAchUnlockedModal(nw2[0]);}catch(e){}},400);
+    }
   }
   // FRENTE 5: also check recurring achievements
   try{checkRecurringAch();}catch(e){}
@@ -13944,9 +13974,9 @@ function rHistoria(){
   try{localStorage.setItem('prv5_histView',histView);}catch(e){}
   const snaps=[...S.snapshots].sort((a,b)=>new Date(b.periodEnd||b.date)-new Date(a.periodEnd||a.date));
   const streak=qStreak();
-  checkAch();
+  checkAch(true); // silent: un render no debe interrumpir con modal
   // Sub-nav
-  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['cats','🏷️ Categorías'],['logros','🏆 Logros'],['retos','🎯 Retos'],['timeline','📖 Timeline'],['impulsos','⏳ Impulsos'],['liq','🏁 Liquidadas']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
+  const subN=`<div class="chips" style="margin-bottom:16px">${[['sim','🔮 Simulador'],['evo','📈 Evolución'],['cats','🏷️ Categorías'],['logros','🏆 Logros'],['retos','🎯 Retos'],['timeline','📖 Timeline'],['impulsos','⏳ Impulsos'],['liq','🏁 Liquidadas'],['ajustes','⚙️ Ajustes']].map(([id,l])=>`<button class="chip" style="${histView===id?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="histView='${id}';rHistoria()">${l}</button>`).join('')}</div>`;
   let ct='';
 
   // ═══ SIMULADOR ═══
@@ -14679,7 +14709,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div><button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}${histView!=='ajustes'?'':`<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div>`}<button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para

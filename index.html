@@ -1365,7 +1365,17 @@ function togglePaid(type,id){
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
   const cur=S.paidItems[ck][key];
-  if(cur==='applied'||typeof cur==='object'&&cur?.applied){toast('Este pago ya fue aplicado');return;}
+  if(cur==='applied'||typeof cur==='object'&&cur?.applied){
+    // 1 PASO: en vez de un toast seco, ofrecer revertir (undoApply revierte
+    // saldo/cuotas de deuda; el delete regresa el item a pendiente).
+    showConfirm('↩ ¿Revertir este pago?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se regresa a <strong>pendiente</strong> y deja de restar de tu quincena. Si era una deuda, su saldo y cuota también se restauran.</div>',()=>{
+      undoApply(type,id);
+      const it=S.paidItems[planCk()];
+      if(it&&it[key])delete it[key];
+      sv();closeConfirm();toast('↩ Pago revertido a pendiente');rPlan();
+    });
+    return;
+  }
   if(cur){delete S.paidItems[ck][key];toast('Marcado como pendiente');sv();rPlan();return;}
   
   // Get item info (name + budgeted amount per quincena)
@@ -1420,6 +1430,10 @@ function _confirmPayment(type,id,method,budgeted){
   // realAmt tratan 0 como "gastó $0" (usan !=null, no ||), así que cuadra.
   if(_raw===''||!isFinite(real)||real<0){toast('Ingresa un monto válido');return;}
   const ck=planCk();
+  // Snapshot ANTES de cualquier mutación: es lo que restaura el "Deshacer"
+  // y el respaldo pre-aplicación (mismo criterio que applyPayments).
+  const _snap=JSON.stringify(S);
+  try{localStorage.setItem('prv5_backup',_snap);localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('confirmPayment.backup',e);}
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
   const entry={at:Date.now(),paidWith:method};
@@ -1446,12 +1460,22 @@ function _confirmPayment(type,id,method,budgeted){
       }
     }
   }
-  sv();closeConfirm();rPlan();
+  // 1 PASO: aplicar de inmediato con el MISMO motor que "Aplicar
+  // seleccionados" (_applyOneItem, extraído de applyPayments) — antes el
+  // pago quedaba "seleccionado" y exigía un segundo paso que confundía.
+  const items=S.paidItems[ck];
+  const r=_applyOneItem(items,key,ck);
+  if(r)items._appliedTotal=((+items._appliedTotal)||0)+(+r.amt||0);
+  sv();closeConfirm();
+  try{checkAch();}catch(e){_logErr('confirmPayment.checkAch',e);}
+  rPlan();try{rFlujo();hdrUp();}catch(e){}
   const diff=budgeted-real;
   const methodTxt=method==='tdc'?'💳 TDC':'💵 Débito';
-  if(diff>0)toast('✓ Pagado · Ahorraste '+fx(Math.round(diff))+' · '+methodTxt);
-  else if(diff<0)toast('✓ Pagado '+fx(real)+' · '+methodTxt);
-  else toast('✓ Pagado · '+methodTxt);
+  let msg;
+  if(diff>0)msg='✓ Pagado y aplicado · Ahorraste '+fx(Math.round(diff))+' · '+methodTxt;
+  else if(diff<0)msg='✓ Pagado y aplicado '+fx(real)+' · '+methodTxt;
+  else msg='✓ Pagado y aplicado · '+methodTxt;
+  _undoToast(msg,_snap);
 }
 function confirmRealAmt(type,id,budgeted){
   const real=+(document.getElementById('realAmtInput')?.value)||0;
@@ -10625,6 +10649,85 @@ function _debtBalFromForm(f){
 }
 
 // ══ PLAN DE ACCIÓN ═════════════════════════════════
+// Aplica UN item seleccionado (cuerpo EXACTO del loop de applyPayments,
+// extraído para reusarlo en el flujo de 1 paso — mismo código, no copia).
+// Muta items[key] y (para deudas/cajitas) el objeto correspondiente de S.
+// Devuelve {amt, expInc, debtInc} o null si el item no era aplicable.
+function _applyOneItem(items,key,ck){
+  const v=items[key];
+  if(v==='applied'||(typeof v==='object'&&v?.applied)||key.startsWith('_'))return null;
+  const [type,idStr]=key.split('_');const id=+idStr;let amt=0;
+  let expInc=0,debtInc=0;
+  const realAmt=typeof v==='object'?v.realAmt:null;
+  if(type==='debt'){
+    const d2=S.debts.find(x=>x.id===id);
+    if(d2){
+      amt=+d2.pay||0;
+      if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);
+      d2.bal=Math.max(0,(+d2.bal||0)-amt);
+      // Si este abono dejó la deuda en saldo 0 (o completó el MSI), quedó
+      // LIQUIDADA: fija la fecha de liquidación a hoy si no tenía, para
+      // que salga de la lista activa y entre limpia al historial.
+      if(isDebtLiquidated(d2)&&!d2.liqDate)d2.liqDate=_todayYMD();
+      // Avanza nextPay al siguiente periodo según freq, así la deuda
+      // reaparece en el plan del próximo ciclo. Antes nextPay quedaba
+      // congelado y la deuda "desaparecía" después del primer pago.
+      const f2=d2.freq||'mensual';
+      if(f2!=='unico'&&d2.nextPay){
+        const np=new Date(d2.nextPay+'T12:00');
+        if(!isNaN(np)){
+          if(f2==='semanal')np.setDate(np.getDate()+7);
+          else if(f2==='quincenal')np.setDate(np.getDate()+15);
+          else if(f2==='bimestral')np.setMonth(np.getMonth()+2);
+          else np.setMonth(np.getMonth()+1); // mensual
+          d2.nextPay=_ymdLocal(np);
+        }
+      }
+      debtInc=1;
+    }
+  }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);expInc=1;}
+  else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);expInc=1;}
+  else if(type==='sav'){
+    const g=S.savGoals.find(x=>x.id===id);
+    if(g){
+      // Si el usuario ya hizo abonos en este ciclo, usar ese monto y NO
+      // crear otro deposit (evita doble-conteo: antes se sumaban tanto el
+      // abono manual como el auto-deposit del apply).
+      const depExisting=metaDepsInCycle(g,ck);
+      if(depExisting>0){
+        amt=depExisting;
+      }else{
+        const pq=savGoalPerQ(g);
+        amt=pq;
+        g.saved=(+g.saved||0)+pq;
+        g.deposits=[...(g.deposits||[]),{date:_todayYMD(),amt:pq,auto:true}];
+        if(g.saved>=g.target)g.done=true;
+      }
+    }
+    expInc=1;
+  }
+  else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);expInc=1;}
+  else if(type==='imp'){
+    // Find impulse amount from retoChecks (skip super/gas — those are fixed expenses)
+    const ck3=cycleKey();
+    Object.entries(S.retoChecks||{}).forEach(([k2,checks2])=>{
+      if(!k2.endsWith('_'+ck3))return;
+      const rid2=k2.replace('_'+ck3,'');
+      if(/surv_super|surv_gas/.test(rid2))return;
+      checks2.forEach(c2=>{
+        if(c2.pass===false&&c2.spent>0){
+          const numId2=Date.parse(c2.date+'T12:00')+c2.idx;
+          if(numId2===id)amt=c2.spent;
+        }
+      });
+    });
+    expInc=1;
+  }
+  // FASE 6: defaultear paidWith:'debito' si no estaba seteado
+  const baseObj=typeof v==='object'?v:{at:v||Date.now()};
+  items[key]={...baseObj,applied:true,amt,paidWith:baseObj.paidWith||'debito'};
+  return {amt,expInc,debtInc};
+}
 function applyPayments(){
   try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('applyPayments.backup',e);}
   const ck=planCk();
@@ -10632,79 +10735,10 @@ function applyPayments(){
   let appliedExp=0,appliedDebt=0,appliedAmt=0;
   const newlyApplied=[]; // FASE 6: track keys aplicados en esta corrida
   for(const key in items){
-    const v=items[key];
-    if(v==='applied'||(typeof v==='object'&&v?.applied)||key.startsWith('_'))continue;
-    const [type,idStr]=key.split('_');const id=+idStr;let amt=0;
-    const realAmt=typeof v==='object'?v.realAmt:null;
-    if(type==='debt'){
-      const d2=S.debts.find(x=>x.id===id);
-      if(d2){
-        amt=+d2.pay||0;
-        if(d2.curPay&&d2.totalPays&&d2.curPay<=d2.totalPays)d2.curPay=Math.min(d2.curPay+1,d2.totalPays+1);
-        d2.bal=Math.max(0,(+d2.bal||0)-amt);
-        // Si este abono dejó la deuda en saldo 0 (o completó el MSI), quedó
-        // LIQUIDADA: fija la fecha de liquidación a hoy si no tenía, para
-        // que salga de la lista activa y entre limpia al historial.
-        if(isDebtLiquidated(d2)&&!d2.liqDate)d2.liqDate=_todayYMD();
-        // Avanza nextPay al siguiente periodo según freq, así la deuda
-        // reaparece en el plan del próximo ciclo. Antes nextPay quedaba
-        // congelado y la deuda "desaparecía" después del primer pago.
-        const f2=d2.freq||'mensual';
-        if(f2!=='unico'&&d2.nextPay){
-          const np=new Date(d2.nextPay+'T12:00');
-          if(!isNaN(np)){
-            if(f2==='semanal')np.setDate(np.getDate()+7);
-            else if(f2==='quincenal')np.setDate(np.getDate()+15);
-            else if(f2==='bimestral')np.setMonth(np.getMonth()+2);
-            else np.setMonth(np.getMonth()+1); // mensual
-            d2.nextPay=_ymdLocal(np);
-          }
-        }
-        appliedDebt++;
-      }
-    }else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
-    else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=realAmt!==null?realAmt:(+e.amt||0);appliedExp++;}
-    else if(type==='sav'){
-      const g=S.savGoals.find(x=>x.id===id);
-      if(g){
-        // Si el usuario ya hizo abonos en este ciclo, usar ese monto y NO
-        // crear otro deposit (evita doble-conteo: antes se sumaban tanto el
-        // abono manual como el auto-deposit del apply).
-        const depExisting=metaDepsInCycle(g,ck);
-        if(depExisting>0){
-          amt=depExisting;
-        }else{
-          const pq=savGoalPerQ(g);
-          amt=pq;
-          g.saved=(+g.saved||0)+pq;
-          g.deposits=[...(g.deposits||[]),{date:_todayYMD(),amt:pq,auto:true}];
-          if(g.saved>=g.target)g.done=true;
-        }
-      }
-      appliedExp++;
-    }
-    else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)amt=Math.round((+e.amt||0)/2);appliedExp++;}
-    else if(type==='imp'){
-      // Find impulse amount from retoChecks (skip super/gas — those are fixed expenses)
-      const ck3=cycleKey();
-      Object.entries(S.retoChecks||{}).forEach(([k2,checks2])=>{
-        if(!k2.endsWith('_'+ck3))return;
-        const rid2=k2.replace('_'+ck3,'');
-        if(/surv_super|surv_gas/.test(rid2))return;
-        checks2.forEach(c2=>{
-          if(c2.pass===false&&c2.spent>0){
-            const numId2=Date.parse(c2.date+'T12:00')+c2.idx;
-            if(numId2===id)amt=c2.spent;
-          }
-        });
-      });
-      appliedExp++;
-    }
-    appliedAmt+=amt;
-    // FASE 6: defaultear paidWith:'debito' si no estaba seteado
-    const baseObj=typeof v==='object'?v:{at:v||Date.now()};
-    items[key]={...baseObj,applied:true,amt,paidWith:baseObj.paidWith||'debito'};
-    newlyApplied.push({key,amt});
+    const r=_applyOneItem(items,key,ck);
+    if(!r)continue;
+    appliedExp+=r.expInc;appliedDebt+=r.debtInc;appliedAmt+=r.amt;
+    newlyApplied.push({key,amt:r.amt});
   }
   items._appliedTotal=((+items._appliedTotal)||0)+appliedAmt;
   S.paidItems[ck]=items;
@@ -11311,7 +11345,7 @@ try{
     <!-- DEFICIT ALERT -->
     ${mUnpaidT>0&&!showNext?`<div class="card card-red" style="padding:14px 18px">
       <div style="font-size:13px;color:var(--terra);line-height:1.7">⚠️ Tienes <strong>pagos pendientes por ${fx(Math.round(mUnpaidT))}</strong> (${mUnpaid.length} gasto${mUnpaid.length!==1?'s':''} y deudas). Selecciónalos y aplícalos conforme vayas pagando.</div>
-      <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">Palomear un pago solo lo <strong>selecciona</strong> (ámbar). Hasta que toques <strong>"Aplicar seleccionados"</strong> se descuenta de tu quincena (verde).</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.6;margin-top:6px">Toca el círculo de un pago para registrarlo — se <strong>descuenta al momento</strong> (verde) y puedes deshacerlo tocándolo otra vez. Si ves pagos en <strong>ámbar</strong> (seleccionados de antes), aplícalos con "Aplicar seleccionados".</div>
     </div>`:''}
 
     <!-- ESTADO CUENTA -->

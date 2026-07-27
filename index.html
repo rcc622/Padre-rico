@@ -4388,6 +4388,7 @@ function _enableCardCollapse(){
   }catch(e){_logErr('_enableCardCollapse',e);}
 }
 function openCierreModal(){
+  _czStep='revisar'; // el asistente siempre arranca en el paso de revisión
   document.getElementById('cierreQnaModal').style.display='block';
   document.body.style.overflow='hidden';
   // Entrada en el historial: el botón atrás cierra el modal en vez de salir
@@ -4817,6 +4818,28 @@ function rDash(){
   const wis=(()=>{try{return getDailyWisdom();}catch(e){return null;}})();
 
   document.getElementById('tab-dash').innerHTML=`
+  <!-- 1 · HERO: anillo de score + disponible + las 2 acciones del día -->
+  <div class="card">
+    <div class="dh-hero">
+      <button class="dh-ring" onclick="openScoreDetail()" aria-label="Ver de dónde sale tu score">
+        <svg width="108" height="108" viewBox="0 0 108 108"><circle cx="54" cy="54" r="46" fill="none" stroke="var(--bg2)" stroke-width="9"/><circle cx="54" cy="54" r="46" fill="none" stroke="${sc}" stroke-width="9" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="${Math.round(289*(1-Math.min(100,Math.max(0,s))/100))}" transform="rotate(-90 54 54)"/></svg>
+        <span class="dh-ring-mid"><b style="color:${sc}">${s}</b><i>${r.emoji}</i></span>
+      </button>
+      <div class="dh-hero-right" onclick="go('plan')">
+        <div class="dh-klabel">🌊 Disponible esta quincena</div>
+        <div class="dh-kbig" style="color:${pFlow>=0?'var(--sage2)':'var(--terra)'}">${fx(Math.round(pFlow))}</div>
+        <span class="dh-delta ${pFlow>=0?'up':'down'}">${pFlow>=0?'Libre tras gastos, ahorro y deudas ›':'⚠ Déficit — compromisos > ingreso ›'}</span>
+        <div class="dh-klabel" style="margin-top:8px;text-transform:none;letter-spacing:0">Rango: <strong style="color:${sc}">${r.name}</strong>${_nextRank?` · ${_nextRank.min-s} pts para ${_nextRank.name} ${_nextRank.emoji}`:' · ¡Máximo!'}</div>
+      </div>
+    </div>
+    <div class="dh-hero-foot">
+      ${_committed
+        ?`<button class="dh-pill ghost" onclick="openSavStatusModal()">✅ Ya te pagaste${(S.savStreak||0)>0?' · 🔥'+S.savStreak:''}</button>`
+        :`<button class="dh-pill sage" onclick="openSavCommitModal()">🪙 Ya aparté mi ahorro</button>`}
+      <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cerrar mes</button>
+    </div>
+  </div>
+
   <!-- CIERRE INMINENTE (≤2 días) -->
   ${(()=>{try{
     const w=getCycleWindow();
@@ -4872,28 +4895,6 @@ function rDash(){
     }
     return '<div class="card" style="border:2px solid rgba(160,112,48,.45);background:linear-gradient(135deg,rgba(160,112,48,.08) 0%,rgba(78,124,106,.04) 100%);margin-bottom:13px;padding:16px"><div class="row-b" style="margin-bottom:10px"><div><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">'+headerLabel+'</div><div style="font-size:15px;color:var(--txt);font-weight:bold;margin-top:2px">Jugada Estratégica</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+headerSub+'</div></div><div style="text-align:right"><div style="font-size:10px;color:var(--muted)">Bono</div><div style="font-size:18px;font-weight:bold;color:var(--amber)">'+fx(p.bf)+'</div></div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">'+introCopy+'</div>'+playsBody+footNote+'</div>';
   }catch(e){return'';}})()}
-
-  <!-- 1 · HERO: anillo de score + disponible + las 2 acciones del día -->
-  <div class="card">
-    <div class="dh-hero">
-      <button class="dh-ring" onclick="openScoreDetail()" aria-label="Ver de dónde sale tu score">
-        <svg width="108" height="108" viewBox="0 0 108 108"><circle cx="54" cy="54" r="46" fill="none" stroke="var(--bg2)" stroke-width="9"/><circle cx="54" cy="54" r="46" fill="none" stroke="${sc}" stroke-width="9" stroke-linecap="round" stroke-dasharray="289" stroke-dashoffset="${Math.round(289*(1-Math.min(100,Math.max(0,s))/100))}" transform="rotate(-90 54 54)"/></svg>
-        <span class="dh-ring-mid"><b style="color:${sc}">${s}</b><i>${r.emoji}</i></span>
-      </button>
-      <div class="dh-hero-right" onclick="go('plan')">
-        <div class="dh-klabel">🌊 Disponible esta quincena</div>
-        <div class="dh-kbig" style="color:${pFlow>=0?'var(--sage2)':'var(--terra)'}">${fx(Math.round(pFlow))}</div>
-        <span class="dh-delta ${pFlow>=0?'up':'down'}">${pFlow>=0?'Libre tras gastos, ahorro y deudas ›':'⚠ Déficit — compromisos > ingreso ›'}</span>
-        <div class="dh-klabel" style="margin-top:8px;text-transform:none;letter-spacing:0">Rango: <strong style="color:${sc}">${r.name}</strong>${_nextRank?` · ${_nextRank.min-s} pts para ${_nextRank.name} ${_nextRank.emoji}`:' · ¡Máximo!'}</div>
-      </div>
-    </div>
-    <div class="dh-hero-foot">
-      ${_committed
-        ?`<button class="dh-pill ghost" onclick="openSavStatusModal()">✅ Ya te pagaste${(S.savStreak||0)>0?' · 🔥'+S.savStreak:''}</button>`
-        :`<button class="dh-pill sage" onclick="openSavCommitModal()">🪙 Ya aparté mi ahorro</button>`}
-      <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cerrar mes</button>
-    </div>
-  </div>
 
   ${(()=>{ // Primeros pasos: guía al usuario nuevo (o que saltó el onboarding)
     try{
@@ -5089,6 +5090,7 @@ function rDash(){
 let nuTxns=[];
 let nuDebit=[],nuCredit=[];
 let qnaFilter='all'; // 'all', '1ra', '2da'
+let _czStep='revisar'; // asistente del cierre: 'revisar' (análisis) → 'cerrar' (guardar capítulo)
 const HK={
   '🛒 Minisuper / OXXO':['OXXO','7-ELEVEN','7ELEVEN','EXTRA SUPER','BUEN PRECIO','MODELORAMA','DUNOSUSA','BARA ','CADENA COMERCIAL'],
   '🚗 Delivery':['UBER EATS','UBEREATS','RAPPI','DIDI FOOD','DIDIFOOD','CORNERSHOP','JUSTO'],
@@ -6705,7 +6707,12 @@ function rQuincena(){
   ${!hasAny?`
   <div class="card"><div class="ct">¿Cómo descargo el CSV de Nu?</div><div style="font-size:13px;line-height:2.1;color:var(--txt2)"><div>1. Abre la app de Nu en tu celular</div><div>2. Toca tu foto de perfil (esquina superior)</div><div>3. Busca "Exportar transacciones" o "Historial"</div><div>4. Descarga el CSV de tu <strong>cuenta</strong></div><div style="margin-top:6px;font-size:11px;color:var(--muted)">💡 Si tu CSV cubre un mes completo, la app lo detecta y te deja filtrar por quincena.</div></div></div>
   `:`
-  <!-- QUINCENA FILTER -->
+
+  <div class="chips" style="margin-bottom:12px;position:sticky;top:44px;z-index:5;background:var(--bg);padding:6px 0">
+    <button class="chip" style="${_czStep==='revisar'?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="_czStep='revisar';rQuincena()">1 · Revisar</button>
+    <button class="chip" style="${_czStep==='cerrar'?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="_czStep='cerrar';rQuincena()">2 · Cerrar</button>
+  </div>
+  ${_czStep==='revisar'?`  <!-- QUINCENA FILTER -->
   ${isMonthly&&hasAny?`<div class="card card-amber" style="padding:12px 16px">
     <div style="font-size:12px;color:var(--amber);font-weight:bold;margin-bottom:6px">📅 CSV mensual detectado</div>
     <div style="font-size:11px;color:var(--txt2);margin-bottom:10px;line-height:1.5">Tu estado de cuenta cubre más de 15 días. Selecciona la quincena a analizar:</div>
@@ -6839,12 +6846,7 @@ function rQuincena(){
     </div>`;
   }catch(e){return'';}})()}
 
-  <!-- SAVE SNAPSHOT -->
-  ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
-    <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo${qnaFilter!=='all'?' ('+qnaFilter+' qna)':''}?</div>
-    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">${qnaFilter!=='all'?'Se guardarán solo las transacciones de la '+qnaFilter+' quincena.':'Guarda las métricas para comparar con futuras quincenas.'}</div>
-    <button class="btn btn-sage" onclick="saveSnapshotChecked(filterByQna([...nuDebit,...nuCredit],qnaFilter),'debit')">Guardar capítulo</button>
-  </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo guardado</div></div>`}
+
 
   <!-- RESUMEN COMBINADO -->
   ${hasDebit&&hasCredit?`
@@ -6921,7 +6923,16 @@ function rQuincena(){
     </div>`;
   })()}
 
-  <button class="btn btn-ghost" onclick="nuDebit=[];nuCredit=[];nuTxns=[];qnaFilter='all';rQuincena()">↺ Cargar otro archivo</button>
+
+  <button class="btn btn-sage" style="width:100%;padding:15px;margin-top:4px" onclick="_czStep='cerrar';rQuincena();document.getElementById('cierreQnaModal').scrollTo(0,0)">Siguiente: Cerrar quincena →</button>
+  `:`  <!-- SAVE SNAPSHOT -->
+  ${!nuTxns._saved?`<div class="card card-grn" style="text-align:center">
+    <div style="font-size:13px;color:var(--sage2);margin-bottom:10px;font-weight:bold">📖 ¿Guardar como capítulo${qnaFilter!=='all'?' ('+qnaFilter+' qna)':''}?</div>
+    <div style="font-size:11px;color:var(--txt2);margin-bottom:12px">${qnaFilter!=='all'?'Se guardarán solo las transacciones de la '+qnaFilter+' quincena.':'Guarda las métricas para comparar con futuras quincenas.'}</div>
+    <button class="btn btn-sage" onclick="saveSnapshotChecked(filterByQna([...nuDebit,...nuCredit],qnaFilter),'debit')">Guardar capítulo</button>
+  </div>`:`<div class="card card-grn" style="text-align:center"><div style="color:var(--sage);font-size:12px">✓ Capítulo guardado</div></div>`}  <button class="btn btn-ghost" onclick="nuDebit=[];nuCredit=[];nuTxns=[];qnaFilter='all';rQuincena()">↺ Cargar otro archivo</button>
+  <button class="btn btn-ghost" style="width:100%;margin-top:8px" onclick="_czStep='revisar';rQuincena();document.getElementById('cierreQnaModal').scrollTo(0,0)">← Volver a revisar</button>
+  `}
   `}`;
 }
 

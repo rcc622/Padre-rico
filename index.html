@@ -1048,9 +1048,9 @@ const INFO={
   simulador:'<strong>Simulador "¿Qué pasa si?"</strong><br><br>Mueve los sliders para proyectar 12 meses:<br>• Hormiga: reduce minisuper, delivery, online<br>• Ahorro %: sube tu porcentaje<br>• Pago extra: dinero adicional a deudas<br>• Bono a deuda: aplica 70% de tu bono semestral<br><br>Línea verde = con cambios. Roja = sin cambios.',
   ahorroPotencial:'<strong>Ahorro Potencial</strong> es la suma de dinero que podrías liberar esta quincena si cumples todos los retos que tienes activos.<br><br>Cada reto tiene un monto estimado (ej: "Llevar lunch" = $723). Si activas 3 retos, el ahorro potencial suma los 3.<br><br><strong>Déficit</strong> es cuánto te falta para cubrir todos tus gastos fijos y deudas con tu ingreso quincenal. Si el ahorro potencial iguala o supera el déficit, ¡tus retos cubren el hueco!<br><br>La barra muestra qué porcentaje del déficit cubres con tus retos activos.',
   badges:'<strong>Badges</strong> son rangos que reflejan tu nivel financiero actual. A diferencia de los logros, los badges pueden perderse — si tu score baja de 50, pierdes el badge "Medio Camino".<br><br>Piensa en ellos como tu "título" actual. Cada badge desbloqueado demuestra que alcanzaste ese nivel al menos una vez.',
-  logrosInfo:'<strong>Logros</strong> son hitos permanentes. Una vez desbloqueados, son tuyos para siempre — no se pierden aunque tu situación cambie.<br><br>Representan acciones concretas: subir tu primer CSV, liquidar una deuda, completar un reto. Son evidencia de tu progreso.',
+  logrosInfo:'<strong>Logros</strong> son hitos permanentes. Una vez desbloqueados, son tuyos para siempre — no se pierden aunque tu situación cambie.<br><br>Representan acciones concretas: cerrar tu primera quincena, liquidar una deuda, completar un reto. Son evidencia de tu progreso.',
   badges:'<strong>Badges</strong> son rangos que reflejan tu nivel financiero actual.<br><br>A diferencia de los logros (que son hitos de una sola vez), los badges representan dónde estás HOY: tu score, tu porcentaje de ahorro, tu patrimonio.<br><br>Toca cualquier badge para saber qué necesitas para desbloquearlo.',
-  logrosInfo:'<strong>Logros</strong> son hitos que desbloqueas una sola vez al cumplir una meta. Ejemplo: subir tu primer CSV, liquidar tu primera deuda, evitar 10 impulsos.<br><br>Cada logro tiene un botón (?) que te explica por qué lo ganaste y qué significa.',
+  logrosInfo:'<strong>Logros</strong> son hitos que desbloqueas una sola vez al cumplir una meta. Ejemplo: cerrar tu primera quincena, liquidar tu primera deuda, evitar 10 impulsos.<br><br>Cada logro tiene un botón (?) que te explica por qué lo ganaste y qué significa.',
 };
 const ib=(key,label)=>'<button class="info-btn" onclick="event.stopPropagation();showInfo(\''+(label||key)+'\',INFO.'+key+')">?</button>';
 
@@ -4847,7 +4847,7 @@ function rDash(){
     const daysLeft=Math.ceil((w.end-today)/864e5);
     if(daysLeft<0||daysLeft>2)return'';
     const label=daysLeft===0?'HOY CIERRA TU QUINCENA':daysLeft===1?'MAÑANA CIERRA TU QUINCENA':'CIERRA EN 2 DÍAS';
-    return '<div class="card" style="border:2px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.09) 0%,rgba(184,92,74,.04) 100%);margin-bottom:13px;padding:14px 16px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">📊 '+label+'</div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Sube tu CSV de Nu o cierra con tu bitácora de Diarios para crear el capítulo.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openCierreModal()">📊 Abrir Cierre de quincena</button></div>';
+    return '<div class="card" style="border:2px solid var(--amber);background:linear-gradient(135deg,rgba(160,112,48,.09) 0%,rgba(184,92,74,.04) 100%);margin-bottom:13px;padding:14px 16px"><div class="row-b" style="margin-bottom:8px"><div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold">📊 '+label+'</div></div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Cierra con tu bitácora de Diarios para crear el capítulo.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openCierreModal()">📊 Abrir Cierre de quincena</button></div>';
   }catch(e){return'';}})()}
 
   <!-- FASE 5 · DÉFICIT DE QUINCENA ANTERIOR (recordatorio amable hasta resolver) -->
@@ -4928,7 +4928,7 @@ function rDash(){
       ${_sparkSvg(debtSeries,'var(--sky)')}
     </div>
     <div class="dh-kpi ${hormigaTotal&&_hormigaDelta!==null&&_hormigaDelta>0?'warn':''}" onclick="${hormigaTotal?'toggleHormigaDetail()':'openCierreModal()'}">
-      <span class="ico">🐜</span><div class="v" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div><div class="l">${hormigaTotal?'Hormiga'+(_hormigaDelta!==null?(_hormigaDelta>0?' · ▲ '+_hormigaDelta+'% ¡ojo!':' · ▼ '+Math.abs(_hormigaDelta)+'%'):'')+' ▾':'Hormiga · sube tu CSV'}</div>
+      <span class="ico">🐜</span><div class="v" style="color:${hormigaTotal?'var(--amber)':'var(--muted)'}">${hormigaTotal?fx(hormigaTotal):'—'}</div><div class="l">${hormigaTotal?'Hormiga'+(_hormigaDelta!==null?(_hormigaDelta>0?' · ▲ '+_hormigaDelta+'% ¡ojo!':' · ▼ '+Math.abs(_hormigaDelta)+'%'):'')+' ▾':'Hormiga · cierra tu mes'}</div>
     </div>
     <div class="dh-kpi" onclick="go('historia')">
       <span class="ico">🔥</span><div class="v">${streak} qna${streak!==1?'s':''}</div><div class="l">Racha de capítulos ›</div>
@@ -4987,7 +4987,7 @@ function rDash(){
   <div class="card">
     <div class="dh-ct">📈 Tu historia en ${snapsA.length} capítulo${snapsA.length!==1?'s':''} <span class="more" onclick="go('historia')">ver todo ›</span></div>
     ${(()=>{
-      if(snapsA.length<2)return '<div style="font-size:12px;color:var(--muted);line-height:1.6">Tu historia se dibuja con cada cierre de quincena. '+(snapsA.length===0?'Sube tu primer CSV o cierra tu quincena para escribir el capítulo 1.':'Un capítulo más y verás tu primera gráfica.')+'</div>';
+      if(snapsA.length<2)return '<div style="font-size:12px;color:var(--muted);line-height:1.6">Tu historia se dibuja con cada cierre de quincena. '+(snapsA.length===0?'Cierra tu quincena para escribir el capítulo 1.':'Un capítulo más y verás tu primera gráfica.')+'</div>';
       const N=Math.min(snapsA.length,8);
       const nws=snapsA.slice(-N).map(x=>+x.patrimonio||0);
       const dbs=snapsA.slice(-N).map(x=>+x.deudaTotal||0);
@@ -6675,38 +6675,10 @@ function rQuincena(){
       <span style="font-size:18px">🔧</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--txt)">2 · Conciliar con banco</div><div style="font-size:10px;color:var(--muted)">Compara el cierre de la app vs tu saldo real</div></div><span style="color:var(--muted)">›</span>
     </div>
     <div onclick="cerrarQnaDiarios()" style="cursor:pointer;border:1.5px solid var(--sage);border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px;background:rgba(78,124,106,.06)">
-      <span style="font-size:18px">📖</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--sage)">3 · Cerrar / crear capítulo</div><div style="font-size:10px;color:var(--muted)">Con tu bitácora de Diarios — o sube el CSV abajo</div></div><span style="color:var(--sage)">›</span>
+      <span style="font-size:18px">📖</span><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--sage)">3 · Cerrar / crear capítulo</div><div style="font-size:10px;color:var(--muted)">Con tu bitácora de Diarios</div></div><span style="color:var(--sage)">›</span>
     </div>
   </div>
-  <div class="card card-sage">
-    <div class="ct">📊 Análisis de Estado de Cuenta</div>
-    <div style="font-size:12px;color:var(--txt2);line-height:1.7">Sube tu CSV de Nu (cuenta de débito) para analizar tus gastos, detectar hormiga y comparar quincenas.</div>
-    ${S.snapshots.length>0?`<div style="margin-top:10px;font-size:11px;color:var(--sage)">📖 ${S.snapshots.length} capítulo${S.snapshots.length>1?'s':''} guardado${S.snapshots.length>1?'s':''}</div>`:''}
-  </div>
-
-  <!-- UPLOAD -->
-  ${hasAny?`
-  <div class="card" style="text-align:center;padding:16px;border-color:var(--sage)">
-    <div style="font-size:24px;margin-bottom:6px">✅</div>
-    <div style="font-size:13px;font-weight:bold;color:var(--sage);margin-bottom:4px">${fAll.length} transacciones cargadas</div>
-    <div style="font-size:11px;color:var(--muted)">Total: ${fx(totAll)}</div>
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="nuDebit=[];nuCredit=[];nuTxns=[];qnaFilter='all';rQuincena()">↺ Cargar otro archivo</button>
-  </div>
-  `:`
-  <div class="card" style="text-align:center;padding:22px">
-    <div style="font-size:40px;margin-bottom:12px">📂</div>
-    <div style="font-size:15px;margin-bottom:6px;color:var(--txt)">Sube tu CSV de Nu</div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:14px">Perfil → Exportar transacciones → CSV de tu cuenta</div>
-    <button class="btn btn-sage" onclick="document.getElementById('fupD').click()">Subir estado de cuenta</button>
-    <input type="file" id="fupD" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'debit')">
-    <div style="margin-top:12px"><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--muted)" onclick="document.getElementById('fupC2').click()">¿También tienes CSV de TDC?</button>
-    <input type="file" id="fupC2" accept=".csv,.txt" style="display:none" onchange="onFileType(this.files[0],'credit')"></div>
-  </div>
-  `}
-
-  ${!hasAny?`
-  <div class="card"><div class="ct">¿Cómo descargo el CSV de Nu?</div><div style="font-size:13px;line-height:2.1;color:var(--txt2)"><div>1. Abre la app de Nu en tu celular</div><div>2. Toca tu foto de perfil (esquina superior)</div><div>3. Busca "Exportar transacciones" o "Historial"</div><div>4. Descarga el CSV de tu <strong>cuenta</strong></div><div style="margin-top:6px;font-size:11px;color:var(--muted)">💡 Si tu CSV cubre un mes completo, la app lo detecta y te deja filtrar por quincena.</div></div></div>
-  `:`
+  ${!hasAny?``:`
 
   <div class="chips" style="margin-bottom:12px;position:sticky;top:44px;z-index:5;background:var(--bg);padding:6px 0">
     <button class="chip" style="${_czStep==='revisar'?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':''}" onclick="_czStep='revisar';rQuincena()">1 · Revisar</button>
@@ -11675,8 +11647,8 @@ try{
         : '📊 Cerrar quincena';
       const headerColor=urgent?'var(--amber)':'var(--sage)';
       const body=urgent
-        ? 'Es momento de subir tu CSV de Nu y crear el capítulo de esta quincena. Tus hábitos, retos y gastos se consolidan en tu Historia.'
-        : 'Cuando termine la quincena, sube tu CSV de Nu aquí para crear un capítulo nuevo en tu Historia.';
+        ? 'Es momento de cerrar tu quincena y crear el capítulo. Tus hábitos, retos y gastos se consolidan en tu Historia.'
+        : 'Cuando termine la quincena, ciérrala aquí para crear un capítulo nuevo en tu Historia.';
       return `<div class="card" style="${bgStyle}">
         <div style="font-size:10px;color:${headerColor};text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:6px">${headerLabel}</div>
         <div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">${body}</div>
@@ -14046,7 +14018,7 @@ function rHistoria(){
     const mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
     const simLocked=!!S._simLocked; // candado persistente en el estado
     ct=`<div class="card card-sage"><div class="ct">🔮 ¿Qué Pasa Si...?</div><div style="font-size:12px;color:var(--txt2);line-height:1.7">Mueve los sliders y ve en tiempo real cómo tus decisiones impactan tu futuro a 12 meses.</div></div>
-    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Sube al menos un CSV en Inicio → "Cerrar mes" para calibrar los sliders con tus datos reales.</div></div>':''}
+    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Cierra al menos una quincena en Inicio → "Cerrar mes" para calibrar los sliders con tus datos reales.</div></div>':''}
     <div class="card" id="simSl"><div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">Ajusta tus hábitos ${ib("simulador","Simulador")}</div><button class="btn btn-sm ${simLocked?'btn-red':'btn-ghost'}" style="padding:5px 10px;font-size:11px" onclick="toggleSimLock()">${simLocked?'🔒 Bloqueado':'🔓 Libre'}</button></div>
       ${simLocked?'<div style="font-size:11px;color:var(--terra);background:rgba(184,92,74,.06);padding:8px 10px;border-radius:6px;margin-bottom:12px;line-height:1.5">🔒 Sliders bloqueados. Tap el botón para desbloquear y ajustar.</div>':''}
       ${(()=>{
@@ -14318,7 +14290,7 @@ function rHistoria(){
   if(histView==='cats'){
     const snaps=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
     if(!snaps.length){
-      ct='<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">No hay capítulos guardados todavía.<br>Sube tu primer CSV en Inicio → "Cerrar mes".</div></div>';
+      ct='<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">No hay capítulos guardados todavía.<br>Cierra tu primera quincena en Inicio → "Cerrar mes".</div></div>';
     } else {
       // Default to most recent capítulo
       let chIdx=histCatsCh;
@@ -14754,7 +14726,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}${histView!=='ajustes'?'':`<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías que usa el análisis del CSV (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div>`}<button class="hist-cta" onclick="openCierreModal()">📊 Subir CSV · Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}${histView!=='ajustes'?'':`<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías del análisis de gastos (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div>`}<button class="hist-cta" onclick="openCierreModal()">📊 Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para

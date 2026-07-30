@@ -2270,7 +2270,9 @@ function depositSavGoal(id,prefix){
 const SAVGOAL_WD_KINDS={
   emergencia:{e:'🚨',n:'Emergencia',c:'var(--terra)'},
   enganche:{e:'🧾',n:'Enganche / proveedor o servicio',c:'var(--amber)'},
-  ajuste:{e:'✏️',n:'Otro ajuste',c:'var(--muted)'}
+  // 'ajuste' = el dinero NO se gastó: regresa a tu cuenta (o corrige un
+  // registro). Ambos motores (Inicio y Plan) lo netean: no cuenta como salida.
+  ajuste:{e:'↩',n:'Regresó a mi cuenta (no fue gasto)',c:'var(--muted)'}
 };
 const savGoalWdKind=k=>SAVGOAL_WD_KINDS[k]||(S.savWdKinds||[]).find(x=>x.k===k)||null;
 // Tipos de salida PERSONALIZADOS: el usuario puede agregar los suyos además de
@@ -2313,7 +2315,9 @@ function updSavGoalSaved(id){
     +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:6px">📉 Es un retiro · ¿de qué tipo?</label>'
     +'<select id="_quSavKind" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
     +wdKindOptions('')
-    +'</select></div>'
+    +'</select>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.6">🚨 / 🧾 = lo <strong>gastaste</strong> desde la cajita (cuenta como salida de la quincena). ↩ = el dinero <strong>regresa a tu cuenta</strong> (no es gasto; tu saldo de la quincena sube).</div>'
+    +'</div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quSavConcept" placeholder="Abono nómina, enganche bodega, retiro…" style="width:100%;padding:8px;font-size:13px"></div>'
     +'<div style="margin-bottom:10px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">📅 Fecha del movimiento</label><input type="date" id="_quSavDate" value="'+_todayYMD()+'" style="width:100%;padding:8px;font-size:13px"></div>'
     +(assetOpts?'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">🏦 Activo afectado</label><select id="_quSavAsset" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'+assetOpts+'</select><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">El abono/retiro se reflejará en el saldo del activo elegido.</div></div>':'');
@@ -2999,9 +3003,20 @@ function calcCycleBalance(ck){
 
     // ── EGRESOS ── (mismo desglose que Plan de Acción)
     let gastos=0;
+    const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
+    // Metas con movimientos REALES en la ventana: su fuente de verdad son los
+    // depósitos (bloque 4). La cuota 'sav_' aplicada en el Plan se IGNORA para
+    // esas metas — igual que el Estado de Cuenta (rPlan: si deps.length usa el
+    // neto y nunca la cuota). Sin esto el abono real Y la cuota aplicada se
+    // restaban las dos (déficit fantasma en el banner de Inicio).
+    const _savConDeps=new Set();
+    (S.savGoals||[]).forEach(g=>{
+      if((g.deposits||[]).some(d=>d&&d.date&&d.date>=startYMD&&d.date<=endYMD))_savConDeps.add('sav_'+g.id);
+    });
     // 1) Pagos aplicados del Plan (usa amt real registrado al aplicar)
     for(const k in paid){
       if(k.startsWith('_'))continue;
+      if(_savConDeps.has(k))continue;
       const v=paid[k];
       const applied=typeof v==='object'?v.applied:(v==='applied');
       if(!applied)continue;
@@ -3015,7 +3030,10 @@ function calcCycleBalance(ck){
       // Plan usa getRealAmt() primero; sin esto, cuando amt≠realAmt los dos
       // motores daban totales distintos (p.ej. deuda con amt 178 / realAmt 1).
       let amt=typeof v==='object'?(v.realAmt!=null?+v.realAmt:(+v.amt||0)):0;
-      if(!amt){
+      // realAmt EXPLÍCITO en 0 = "este pago realmente costó $0" (editado por el
+      // usuario). NO cae al fallback del catálogo — el Plan usa getRealAmt()
+      // y también lo cuenta como 0; releer el catálogo aquí descuadraba ambos.
+      if(!amt&&!(typeof v==='object'&&v.realAmt!=null)){
         // Fallback para items legacy sin amt ni realAmt registrado
         const parts=k.split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
         if(t==='exp'||t==='expw2'||t==='expw3'){
@@ -3031,7 +3049,6 @@ function calcCycleBalance(ck){
       gastos+=amt;
     }
     // 2) Gastos diarios del ciclo (todos los no-pending dentro de la ventana)
-    const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
     (S.gastosDiarios||[]).forEach(g=>{
       if(g.pending||!g.date)return;
       if(g.date<startYMD||g.date>endYMD)return;
@@ -15132,16 +15149,24 @@ function exportAudit(){
       // ── Motor A: applied desde S.paidItems (lo que usa calcCycleBalance) ──
       const appliedItems=[],selectedItems=[],huerfanos=[];
       let storedApplied=0,storedAppliedTdc=0,tdcpay=0,storedSelected=0;
+      // Espejo de calcCycleBalance: cuotas 'sav_' de metas con movimientos
+      // reales en la ventana NO suman (la fuente de verdad son los depósitos).
+      const _savConDeps=new Set();
+      (S.savGoals||[]).forEach(g=>{
+        if((g.deposits||[]).some(d=>d&&d.date&&d.date>=startYMD&&d.date<=endYMD))_savConDeps.add('sav_'+g.id);
+      });
       for(const k in paid){
         if(k.startsWith('_'))continue;
         const st=stOf(k);if(!st)continue;
         const ent=_entity(k);
         let amt=st.realAmt!=null?st.realAmt:st.amt;
         let fromLive=false;
-        if(!amt&&ent.amt!=null){amt=ent.amt;fromLive=true;}
+        // realAmt explícito (aunque sea 0) manda: no releer el catálogo vivo.
+        if(!amt&&st.realAmt==null&&ent.amt!=null){amt=ent.amt;fromLive=true;}
         const rec={key:k,amt:_r2(amt),method:st.method,fromLive,exists:ent.exists,name:st.name||ent.name};
         if(k.startsWith('tdcpay_')){tdcpay+=amt;appliedItems.push(rec);continue;}
         if(st.applied){
+          if(_savConDeps.has(k)){appliedItems.push({...rec,skipped:'meta-con-movimientos'});continue;}
           if(st.method==='tdc')storedAppliedTdc+=amt;else storedApplied+=amt;
           appliedItems.push(rec);
           if(!ent.exists)huerfanos.push(rec);

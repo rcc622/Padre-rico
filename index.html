@@ -8323,6 +8323,10 @@ function _cobRepeatHint(p){
 // = sí salió (preserva el comportamiento previo). prefix: 'cb' | 'qcb'.
 function _cobGZon(){return 'flex:1;padding:9px 6px;font-size:12px;font-weight:bold;border:1.5px solid var(--sky);border-radius:7px;font-family:Georgia,serif;cursor:pointer;background:var(--sky);color:#fff;line-height:1.3;text-align:center';}
 function _cobGZoff(){return 'flex:1;padding:9px 6px;font-size:12px;font-weight:bold;border:1.5px solid var(--border);border-radius:7px;font-family:Georgia,serif;cursor:pointer;background:transparent;color:var(--txt2);line-height:1.3;text-align:center';}
+// Opciones de categoría de Día a día (de fábrica + personalizadas) para el
+// gasto vinculado de una cobranza. El usuario elige con qué categoría se
+// guarda (antes siempre caía en 'otro' y salía con concepto equivocado).
+function _cobCatOptions(sel){return _allDiarioCats().map(c=>'<option value="'+c.k+'"'+(c.k===sel?' selected':'')+'>'+c.e+' '+_escH(c.n)+'</option>').join('');}
 function _cobGastoSelector(prefix){
   return '<div style="margin-bottom:12px">'
     +'<div style="font-size:11px;color:var(--muted);margin-bottom:6px">¿Este dinero salió de tu cuenta?</div>'
@@ -8331,6 +8335,10 @@ function _cobGastoSelector(prefix){
       +'<button type="button" id="'+prefix+'GZn" onclick="_setCobGasto(\''+prefix+'\',0)" style="'+_cobGZoff()+'">🤝 No · solo cobro<br><span style="font-weight:normal;font-size:10px;opacity:.85">sin gasto</span></button>'
     +'</div>'
     +'<input type="hidden" id="'+prefix+'IsGasto" value="1">'
+    +'<div id="'+prefix+'CatWrap" style="margin-top:8px">'
+      +'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;text-transform:none">📂 Categoría del gasto en Día a día</label>'
+      +'<select id="'+prefix+'GastoCat" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'+_cobCatOptions('otro')+'</select>'
+    +'</div>'
     +'</div>';
 }
 function _setCobGasto(prefix,v){
@@ -8338,6 +8346,8 @@ function _setCobGasto(prefix,v){
   const y=document.getElementById(prefix+'GZy'),n=document.getElementById(prefix+'GZn');
   if(y)y.style.cssText=v?_cobGZon():_cobGZoff();
   if(n)n.style.cssText=v?_cobGZoff():_cobGZon();
+  // La categoría solo aplica si se crea gasto vinculado.
+  const cw=document.getElementById(prefix+'CatWrap');if(cw)cw.style.display=v?'block':'none';
 }
 function addCobranza(src){
   // src='gd' → widget de Día a día (ids con prefijo cbg); default → Ingresos (cb)
@@ -8354,6 +8364,8 @@ function addCobranza(src){
   // ¿Salió de tu cuenta como gasto? (selector del form, default sí). Si NO,
   // es "solo cobro": no se crea gasto vinculado ni gastoId.
   const _isGasto=(document.getElementById(p+'IsGasto')?.value!=='0');
+  // Categoría elegida para el gasto vinculado en Día a día (default 'otro').
+  const _gcat=document.getElementById(p+'GastoCat')?.value||'otro';
   // Genera N ocurrencias con la misma config; cada una avanza fecha de
   // préstamo y de pago esperado según el periodo. La primera (steps=0) usa
   // las fechas tal cual. Un repeatId común las vincula como serie.
@@ -8370,13 +8382,13 @@ function addCobranza(src){
       dateLent:_dl,
       dateExpected:_cobAdvanceDate(dateExpected,repeat,i),
       paid:false,
-      ...(_isGasto?{gastoId:_gid}:{}),
+      ...(_isGasto?{gastoId:_gid,gastoCat:_gcat}:{}),
       ...(repeatId?{repeatId,repeatFreq:repeat,repeatIdx:i+1,repeatTotal:count}:{})
     });
     // El préstamo SALE de tu cuenta → gasto vinculado (no esencial). Al cobrar
     // entra un ingreso que lo neutraliza. cobLink: se borra junto con la cobranza.
     // En "solo cobro" no se crea gasto (no salió de tu bolsa esta vez).
-    if(_isGasto)_gastos.push({id:_gid,name:_concept,amt:amount,cat:'otro',date:_dl,paidWith:'debito',cobLink:true});
+    if(_isGasto)_gastos.push({id:_gid,name:_concept,amt:amount,cat:_gcat,date:_dl,paidWith:'debito',cobLink:true});
   }
   pt(_isGasto
     ?{cobranzas:[...(S.cobranzas||[]),...nuevas],gastosDiarios:[...(S.gastosDiarios||[]),..._gastos]}
@@ -8412,7 +8424,15 @@ function editCobranza(id){
     +'<label style="font-size:11px;color:var(--muted)">Monto a cobrar $</label>'
     +'<input type="number" inputmode="decimal" id="cbEdAmount" value="'+(+c.amount||0)+'" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-weight:bold;color:var(--sky);font-family:Georgia,serif">'
     +'<div style="display:flex;gap:8px"><div style="flex:1"><label style="font-size:11px;color:var(--muted)">Fecha del préstamo</label><input type="date" id="cbEdDateLent" value="'+_escA(c.dateLent||_todayYMD())+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif"></div>'
-    +'<div style="flex:1"><label style="font-size:11px;color:var(--muted)">Fecha esperada de pago</label><input type="date" id="cbEdDateExp" value="'+_escA(c.dateExpected||'')+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif"></div></div>';
+    +'<div style="flex:1"><label style="font-size:11px;color:var(--muted)">Fecha esperada de pago</label><input type="date" id="cbEdDateExp" value="'+_escA(c.dateExpected||'')+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;font-family:Georgia,serif"></div></div>'
+    // Categoría del gasto vinculado en Día a día (solo si esta cobranza creó
+    // gasto). Permite corregir las que quedaron con categoría equivocada.
+    +(c.gastoId?(()=>{
+      const _lg=(S.gastosDiarios||[]).find(x=>x.id===c.gastoId&&x.cobLink);
+      const _cur=(_lg&&_lg.cat)||c.gastoCat||'otro';
+      return '<div style="margin-top:10px"><label style="font-size:11px;color:var(--muted)">📂 Categoría del gasto en Día a día</label>'
+        +'<select id="cbEdGastoCat" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin-top:4px;background:#fff;font-family:Georgia,serif">'+_cobCatOptions(_cur)+'</select></div>';
+    })():'');
   showConfirm('✏️ Editar cobranza',body,()=>{
     const debtor=(document.getElementById('cbEdDebtor')?.value||'').trim();
     const concept=(document.getElementById('cbEdConcept')?.value||'').trim();
@@ -8421,10 +8441,11 @@ function editCobranza(id){
     const dateExpected=document.getElementById('cbEdDateExp')?.value||'';
     if(!debtor){toast('¿Quién te debe?');return;}
     if(amount<=0){toast('Monto inválido');return;}
-    const patch={...c,debtor,concept,amount,dateLent,dateExpected};
-    // Sincroniza el gasto auto-creado vinculado (cobLink) con el nuevo monto/concepto/fecha.
+    const _gcat=document.getElementById('cbEdGastoCat')?.value||c.gastoCat||'otro';
+    const patch={...c,debtor,concept,amount,dateLent,dateExpected,...(c.gastoId?{gastoCat:_gcat}:{})};
+    // Sincroniza el gasto auto-creado vinculado (cobLink) con el nuevo monto/concepto/fecha/categoría.
     const _gc=(concept&&concept.trim())||('Préstamo a '+debtor);
-    const newGd=c.gastoId?(S.gastosDiarios||[]).map(x=>(x.id===c.gastoId&&x.cobLink)?{...x,name:_gc,amt:amount,date:dateLent}:x):S.gastosDiarios;
+    const newGd=c.gastoId?(S.gastosDiarios||[]).map(x=>(x.id===c.gastoId&&x.cobLink)?{...x,name:_gc,amt:amount,date:dateLent,cat:_gcat}:x):S.gastosDiarios;
     pt({cobranzas:(S.cobranzas||[]).map(x=>String(x.id)===String(id)?patch:x),gastosDiarios:newGd});
     closeConfirm();toast('✓ Cobranza actualizada');_refreshCobranza();
   });
@@ -8766,10 +8787,11 @@ function _qCobranzaSave(){
   if(amount<=0){toast('Monto debe ser mayor a 0');return;}
   // ¿Salió de tu cuenta como gasto? (default sí). "Solo cobro" → sin gasto.
   const _isGasto=(document.getElementById('qcbIsGasto')?.value!=='0');
+  const _gcat=document.getElementById('qcbGastoCat')?.value||'otro';
   const _gid=Date.now();
-  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false,...(_isGasto?{gastoId:_gid}:{})};
+  const c={id:_uid(),debtor,concept,amount,dateLent,dateExpected,paid:false,...(_isGasto?{gastoId:_gid,gastoCat:_gcat}:{})};
   if(_isGasto){
-    const _g={id:_gid,name:(concept&&concept.trim())||('Préstamo a '+debtor),amt:amount,cat:'otro',date:dateLent||_todayYMD(),paidWith:'debito',cobLink:true};
+    const _g={id:_gid,name:(concept&&concept.trim())||('Préstamo a '+debtor),amt:amount,cat:_gcat,date:dateLent||_todayYMD(),paidWith:'debito',cobLink:true};
     pt({cobranzas:[...(S.cobranzas||[]),c],gastosDiarios:[...(S.gastosDiarios||[]),_g]});
   }else{
     pt({cobranzas:[...(S.cobranzas||[]),c]});

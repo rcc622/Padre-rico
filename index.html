@@ -2688,6 +2688,79 @@ function cycleSavGoalFreq(id){
   toast('📅 Ahora apartas por '+_SAVE_FREQS[nf].lbl);
   _refreshActive();
 }
+// ══ AJUSTES DE UNA META / CAJITA ═════════════════════
+// Los datos con los que se crea una meta (icono, nombre, objetivo, fecha,
+// cadencia y propósito) sólo se podían definir al crearla: para corregir un
+// dato había que borrarla y rehacerla, perdiendo el historial. Este modal los
+// deja editar en caliente. NO toca movimientos, saldos ni activos: sólo la
+// definición de la meta. Cambiar el objetivo sí mueve la cuota sugerida
+// (savGoalPlan), que es justo lo que el usuario espera al reajustarla.
+const _SG_ICONS=['🎯','🎉','🏠','🚗','✈️','🎄','📱','🎓','💍','🛡️','💻','🏥','🎁','🛠️'];
+function savGoalSettings(id){
+  const g=S.savGoals.find(x=>x.id===id);if(!g)return;
+  const icoCur=g.icon||'🎯';
+  const icons=_SG_ICONS.includes(icoCur)?_SG_ICONS:[icoCur,..._SG_ICONS];
+  const freqCur=_SAVE_FREQS[g.saveFreq]?g.saveFreq:'quincenal';
+  const tipoCur=(g.tipo||'consumo')==='patrimonio'?'patrimonio':'consumo';
+  const tgtCur=Math.round(+g.target||0);
+  const st=metaFundState(g);
+  const aid=_metaPrimaryAssetId(g);
+  const asset=aid!=null?(S.assets||[]).find(a=>a.id===aid):null;
+  const lbl=t=>'<label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">'+t+'</label>';
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Ajustes de <strong style="color:var(--sage)">'+icoCur+' '+_escH(g.name)+'</strong>. Ya '+(st.isConsumo?'juntaste':'tienes')+' <strong style="color:var(--sage)">'+fx(st.isConsumo?st.grossIn:st.balance)+'</strong> — los movimientos no se tocan.</div>'
+    +'<div style="display:grid;grid-template-columns:auto 1fr;gap:8px;margin-bottom:10px">'
+      +'<div>'+lbl('Icono')+'<select id="_sgsIcon" style="width:64px;text-align:center;font-size:18px;padding:8px;border:1px solid var(--border);border-radius:6px;background:#fff">'+icons.map(e=>'<option'+(e===icoCur?' selected':'')+'>'+e+'</option>').join('')+'</select></div>'
+      +'<div>'+lbl('¿Para qué ahorras?')+'<input type="text" id="_sgsName" value="'+_escA(g.name||'')+'" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px"></div>'
+    +'</div>'
+    +'<div class="g2" style="margin-bottom:10px">'
+      +'<div>'+lbl('¿Cuánto necesitas? ($)')+'<input type="number" inputmode="decimal" id="_sgsTarget" value="'+tgtCur+'" style="width:100%;padding:9px;font-size:15px;text-align:center;font-weight:bold;border:1px solid var(--border);border-radius:6px" onclick="this.select()"></div>'
+      +'<div>'+lbl('¿Para cuándo?')+'<input type="date" id="_sgsDate" value="'+_escA(g.deadline||'')+'" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px"></div>'
+    +'</div>'
+    +'<div style="margin-bottom:10px">'+lbl('¿Cada cuándo quieres apartar?')
+      +'<select id="_sgsFreq" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
+      +Object.keys(_SAVE_FREQS).map(k=>'<option value="'+k+'"'+(k===freqCur?' selected':'')+'>📅 Por '+_SAVE_FREQS[k].lbl+'</option>').join('')
+      +'</select></div>'
+    +'<div style="margin-bottom:10px">'+lbl('¿Para qué es este dinero?')
+      +'<select id="_sgsTipo" style="width:100%;padding:9px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">'
+      +'<option value="consumo"'+(tipoCur==='consumo'?' selected':'')+'>🛒 Consumo (se gasta)</option>'
+      +'<option value="patrimonio"'+(tipoCur==='patrimonio'?' selected':'')+'>🏗️ Patrimonio (construye)</option>'
+      +'</select><div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Patrimonio suma a tu patrimonio neto y a tu score; consumo no (lo vas a gastar).</div></div>'
+    +(asset?'<div style="font-size:10px;color:var(--muted);line-height:1.5;padding:8px 10px;background:rgba(78,124,106,.06);border-radius:6px">💎 Esta meta vive en la cajita <strong>'+_escH(asset.name)+'</strong>. El nombre del activo se cambia en <em>Finanzas → Activos</em>.</div>':'')
+    +'<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">Cambiar el objetivo o la fecha sólo recalcula cuánto apartar por periodo. Tus movimientos y saldos quedan igual.</div>';
+  showConfirm('⚙️ Ajustes de la meta',body,()=>{
+    let name=(document.getElementById('_sgsName')?.value||'').trim();
+    let target=Math.round(+(document.getElementById('_sgsTarget')?.value)||0);
+    let deadline=document.getElementById('_sgsDate')?.value||'';
+    const icon=document.getElementById('_sgsIcon')?.value||icoCur;
+    const fv=document.getElementById('_sgsFreq')?.value;
+    const saveFreq=_SAVE_FREQS[fv]?fv:freqCur;
+    const tipo=document.getElementById('_sgsTipo')?.value==='patrimonio'?'patrimonio':'consumo';
+    // Un campo inválido conserva el valor anterior (nunca dejamos la meta rota
+    // ni perdemos el resto de los cambios) y se avisa qué no se aplicó.
+    const kept=[];
+    if(!name){name=g.name;kept.push('nombre');}
+    if(!(target>0)){target=tgtCur;kept.push('objetivo');}
+    if(!deadline){deadline=g.deadline||'';kept.push('fecha');}
+    // Si cambia el objetivo, "alcanzada" se recalcula desde los datos (bruto
+    // para consumo, saldo para patrimonio). Si no cambia, respetamos el flag
+    // manual de "✓ Completar".
+    let done=!!g.done;
+    if(target!==tgtCur){
+      const have=tipo==='consumo'?_metaGrossIn(g):Math.round(+g.saved||0);
+      done=target>0&&have>=target;
+    }
+    pt({savGoals:S.savGoals.map(gx=>gx.id!==id?gx:{...gx,name,target,deadline,icon,saveFreq,tipo,done})});
+    closeConfirm();
+    toast(kept.length?'⚙️ Guardado · se conservó '+kept.join(' y '):'⚙️ Ajustes guardados');
+    _refreshActive();hdrUp&&hdrUp();
+    try{if(cur==='dash')rDash();}catch(e){}
+  });
+  // Guardar ajustes no es destructivo: el botón va en verde, no en rojo.
+  try{
+    const b=document.querySelector('#confirmModal .modal-box .btn-red');
+    if(b){b.className='btn btn-sage';b.textContent='✓ Guardar cambios';}
+  }catch(e){}
+}
 // Suma de los abonos hechos a una meta dentro del ciclo dado (o el actual).
 // Antes el Plan siempre usaba savGoalPerQ (la cuota sugerida) aunque el
 // usuario hubiera abonado más manualmente. Resultado: un abono real de
@@ -12391,7 +12464,7 @@ function metasCardHTML(){
           <div class="row" style="gap:8px"><span style="font-size:22px">${g.icon||'🎯'}</span><div><div style="font-weight:bold;color:var(--txt);font-size:15px">${_escH(g.name)}</div><div style="font-size:10px;color:var(--muted);margin-top:2px">📅 ${dlLbl}${g.deadline?' · '+(closed?'✓ Cerrada':consuming?'✅ Fondeada · en pagos':reached?'✅ ¡Meta alcanzada!':g.done?'✓ Completada (cerrada manualmente)':isOverdue?'⚠️ '+Math.abs(daysLeft)+'d vencida':'Faltan '+daysLeft+'d ('+qLeft+' qna'+(qLeft>1?'s':'')+')'):''}</div><div style="margin-top:5px;display:flex;gap:6px;flex-wrap:wrap"><button onclick="toggleSavGoalTipo(${g.id})" title="Cambiar propósito (afecta tu patrimonio)" style="background:${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.1)':'rgba(160,112,48,.1)'};border:1px solid ${(g.tipo||'consumo')==='patrimonio'?'rgba(78,124,106,.3)':'rgba(160,112,48,.3)'};border-radius:5px;color:${(g.tipo||'consumo')==='patrimonio'?'var(--sage)':'var(--amber)'};cursor:pointer;font-size:10px;padding:2px 8px;font-family:Georgia,serif">${(g.tipo||'consumo')==='patrimonio'?'🏗️ Patrimonio':'🛒 Consumo'} ⇄</button>${!closed&&!consuming?`<button onclick="cycleSavGoalFreq(${g.id})" title="Cambiar cada cuándo apartas" style="background:rgba(74,110,140,.1);border:1px solid rgba(74,110,140,.3);border-radius:5px;color:var(--sky);cursor:pointer;font-size:10px;padding:2px 8px;font-family:Georgia,serif">📅 por ${_plan.label} ⇄</button>`:''}</div></div></div>
           <button class="btn btn-red btn-sm" onclick="rmSavGoal(${g.id})">✕</button>
         </div>
-        <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="updSavGoalSaved(${g.id})" title="Actualizar monto ahorrado (retiros/ajustes)" style="padding:1px 6px;font-size:11px">✏️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
+        <div class="row-b" style="margin-bottom:4px"><span class="row" style="gap:6px;align-items:center"><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(+g.saved||0))}</span><button class="btn btn-ghost btn-sm" onclick="savGoalSettings(${g.id})" title="Ajustes de esta cajita (icono, nombre, objetivo, fecha, cadencia)" aria-label="Ajustes de la meta" style="padding:1px 6px;font-size:11px">⚙️</button></span><span style="font-size:12px;color:var(--txt2)">de ${fx(g.target)}</span></div>
         <div class="pw" style="height:8px;margin-bottom:8px"><div class="pb" style="width:${pct.toFixed(0)}%;background:${isDone?'var(--sage)':'var(--sky)'}"></div></div>
         ${_savGoalBreakdownBar(g)}
         ${yldBadge}

@@ -1155,6 +1155,21 @@ function getWeeksInCycle(window){
   }
   return base;
 }
+// Ocurrencias de un gasto SEMANAL en una ventana. Con día de la semana
+// explícito (weekDay 1-7) cuenta las veces que ESE día cae dentro de la
+// ventana — puede diferir del conteo de sábados de getWeeksInCycle (ej. el
+// ciclo 30/07–14/08 tiene 3 jueves pero solo 2 sábados) — y es el MISMO
+// criterio que usa buildCyclePayments, así el banner de Inicio y los retos
+// cuadran con las ocurrencias del Plan. Sin weekDay devuelve null y el
+// caller cae a getWeeksInCycle (sábados + override manual), como siempre.
+function weeklyOccsInWindow(e,win){
+  const wd=+(e&&e.weekDay)||0;
+  if(!(wd>=1&&wd<=7))return null;
+  const jsDay=wd===7?0:wd;
+  let n=0;const d=new Date(win.start);
+  while(d<=win.end){if(d.getDay()===jsDay)n++;d.setDate(d.getDate()+1);}
+  return n;
+}
 function isLongCycleAuto(){
   const w=getCycleWindow();
   let sats=0;
@@ -1206,7 +1221,7 @@ function cycleExpenseTotal(w){
     // (mismo criterio que el Plan en buildCyclePayments). Aditivo: sin endDate no cambia.
     if(e.endDate&&_winStartYMD>e.endDate)return;
     const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;
-    if(f==='semanal')total+=(+e.amt||0)*(isCurrent?getWeeksInCycle():getWeeksInCycle(win));
+    if(f==='semanal'){const _n=weeklyOccsInWindow(e,win);total+=(+e.amt||0)*(_n!=null?_n:(isCurrent?getWeeksInCycle():getWeeksInCycle(win)));}
     else if(f==='quincenal')total+=(+e.amt||0);
     else if(pd>0&&dayInWindow(pd,win))total+=mo;
     else if(!pd)total+=mo/2;
@@ -1638,7 +1653,7 @@ function genSurvivalRetos(deficit){
     const bfQ=bonusInCycle(qS,qE,S.inc)?(+S.inc.bf||0):0;
     let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,qS,qE))extQ+=(+x.amt||0);});
     const incQ=salarioQ+bfQ+extQ;
-    let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*weeksInC;else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
+    let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal'){const _n=weeklyOccsInWindow(e,{start:qS,end:qE});expQ+=(+e.amt||0)*(_n!=null?_n:weeksInC);}else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0)expQ+=mo;else expQ+=mo/2;});
     let dbtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);if(f==='quincenal')dbtQ+=(db.pay||0);else dbtQ+=mo/2;});
     return incQ-expQ-dbtQ-(savAmt()/2);
   }catch(e){return 0;}})();
@@ -8067,14 +8082,15 @@ function _effectiveNextPay(d){
 // HTML de los campos extra del gasto fijo, compartido por el form estático y
 // por updExpFields (así no se desincronizan). El campo "Día de pago aprox."
 // ahora aparece para TODAS las periodicidades (antes solo mensual/bimestral).
-// Nota: en semanal/quincenal el día es referencia/ubicación — NO cambia el
-// monto ni en qué ciclo aplica (el motor de cuadre ignora payDay ahí).
+// Nota: en quincenal el día es referencia/ubicación — NO cambia el monto ni
+// en qué ciclo aplica (el motor de cuadre ignora payDay ahí). En semanal, el
+// día de la semana SÍ ancla las ocurrencias (ver buildCyclePayments).
 function _expExtraFieldsHTML(f,ee){
   const pdVal=(ee&&ee.payDay)?ee.payDay:'';
   // Semanal: en vez del día del mes (1-31, que no aplica a algo semanal),
-  // se elige el DÍA DE LA SEMANA (1=Lun..7=Dom). Es la ubicación del cobro —
-  // solo cambia en qué día se muestra en el Plan; el monto y el conteo de
-  // ocurrencias siguen por semana (el motor de cuadre no usa este campo).
+  // se elige el DÍA DE LA SEMANA (1=Lun..7=Dom). Ancla las ocurrencias del
+  // ciclo a las fechas REALES de ese día (2 ó 3 por quincena según el
+  // calendario); sin elegirlo, el conteo cae al ancla de sábados.
   const wdVal=(ee&&ee.weekDay!=null&&ee.weekDay!=='')?String(ee.weekDay):'';
   let pdField;
   if(f==='semanal'){
@@ -8100,7 +8116,7 @@ function _expExtraFieldsHTML(f,ee){
     second='<div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">'+((ee&&ee.amt!=null)?freqLabel(ee.amt,f):'')+'</div></div>';
   }
   let note='';
-  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Recurre cada semana (≈4.33 pagos/mes). El día de la semana ubica el cobro en el Plan — no cambia el monto. "Automático" = sábado.</div>';
+  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Recurre cada semana (≈4.33 pagos/mes). Con día de la semana elegido, el Plan agenda un pago en CADA fecha real de ese día dentro de la quincena (2 ó 3 según el calendario). "Automático" = sábado.</div>';
   else if(f==='quincenal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Aplica una vez en cada quincena del mes (el monto no cambia). Elige un preset (1&15, 5&20, 15&último) o deja un día manual — solo ubica en qué día se muestra el pago.</div>';
   return '<div class="g2" style="margin-bottom:'+(note?'4':'10')+'px">'+pdField+second+'</div>'+note;
 }
@@ -8315,7 +8331,9 @@ function addExp(){const n=document.getElementById('en')?.value.trim();const a=+d
   // semanal/quincenal es referencia/ubicación (el motor de cuadre lo ignora).
   const pd=(+(document.getElementById('epd')?.value)||0);
   // Día de la semana (1=Lun..7=Dom) solo para gastos semanales; 0 = automático
-  // (sábado). Para otras periodicidades no existe el campo → queda 0.
+  // (sábado). Con día elegido, el motor ancla las ocurrencias del ciclo a las
+  // fechas reales de ese día (buildCyclePayments / weeklyOccsInWindow).
+  // Para otras periodicidades no existe el campo → queda 0.
   const wdRaw=document.getElementById('ewd')?.value||'';
   const wd=(f==='semanal'&&wdRaw!=='')?(Math.min(7,Math.max(1,+wdRaw||0))):0;
   // Preset quincenal (solo display): '1-15' | '5-20' | '15-ult' | '' (día manual).
@@ -11044,16 +11062,20 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
     // quincenas que EMPIEZAN después de su fecha de fin; sigue cobrándose en la
     // quincena que contiene esa fecha. Campo opcional nuevo: sin él, nada cambia.
     if(e.endDate&&_cStartYMD>e.endDate)return;
-    if(f==='semanal'){const w=+e.amt||0;const weeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();const wOff=ct==='2da'?2:0;
-      // Día de la semana elegido (SOLO display): mapea la ocurrencia wi al
-      // wi-ésimo día de ese weekday dentro del ciclo. La vigencia y el conteo
-      // de ocurrencias siguen ancladas al sábado (abajo) → expQ y el cuadre
-      // NO cambian. Sin weekDay, cae a sábado (comportamiento previo).
-      let _wdayNums=null;const _wd=+(e.weekDay)||0;
-      if(_wd>=1&&_wd<=7){const _jsDay=_wd===7?0:_wd;_wdayNums=[];const _wsd=new Date(cStart);while(_wsd<=cEnd){if(_wsd.getDay()===_jsDay)_wdayNums.push(_wsd.getDate());_wsd.setDate(_wsd.getDate()+1);}}
+    if(f==='semanal'){const w=+e.amt||0;const wOff=ct==='2da'?2:0;
+      // Día de la semana elegido: además de ubicar la fecha, ANCLA el conteo
+      // y la vigencia de las ocurrencias. Un ciclo puede tener 3 jueves con
+      // solo 2 sábados (ej. 30/07–14/08: jue 30, 6 y 13 vs sáb 1 y 8) y con
+      // el ancla de sábados la ocurrencia del jueves 13 nunca aparecía. Con
+      // weekDay explícito mandan las fechas reales de ese día (el override
+      // manual de quincena larga no aplica: ya no hay nada que aproximar).
+      // Sin weekDay, TODO igual que antes (conteo por sábados).
+      let _wdayNums=null,_wdayYMD=null;const _wd=+(e.weekDay)||0;
+      if(_wd>=1&&_wd<=7){const _jsDay=_wd===7?0:_wd;_wdayNums=[];_wdayYMD=[];const _wsd=new Date(cStart);while(_wsd<=cEnd){if(_wsd.getDay()===_jsDay){_wdayNums.push(_wsd.getDate());_wdayYMD.push(_ymdLocal(_wsd));}_wsd.setDate(_wsd.getDate()+1);}}
+      const weeks=_wdayNums?_wdayNums.length:(useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle());
       for(let wi=0;wi<weeks;wi++){
       // Vigencia POR OCURRENCIA: un gasto semanal con comienzo/conclusión solo
-      // aplica en las semanas (sábados ancla) que caen dentro de [startDate,endDate].
+      // aplica en las fechas ancla (día elegido, o sábados) dentro de [startDate,endDate].
       // El gate grueso de arriba ya descarta el ciclo entero cuando NO se traslapa;
       // esto recorta las semanas sueltas que quedan fuera dentro de un ciclo que SÍ
       // se traslapa (p.ej. una conclusión a media quincena → el pago de la semana
@@ -11061,9 +11083,9 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       // ocurrencias y mismo expQ (w*weeks) que antes. Los pagos YA aplicados que
       // queden fuera los recoge el barrido de "reconciliados" del Plan, así que el
       // cuadre Inicio↔Plan no se rompe.
-      const _satY=_cycleSatYMD[wi];
-      if(_satY&&((e.startDate&&_satY<e.startDate)||(e.endDate&&_satY>e.endDate)))continue;
-      expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:(_wdayNums&&_wdayNums[wi]!=null?_wdayNums[wi]:(_cycleSats[wi]||0)),freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
+      const _anchorY=_wdayYMD?_wdayYMD[wi]:_cycleSatYMD[wi];
+      if(_anchorY&&((e.startDate&&_anchorY<e.startDate)||(e.endDate&&_anchorY>e.endDate)))continue;
+      expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:(_wdayNums?(_wdayNums[wi]||0):(_cycleSats[wi]||0)),freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
     else if(f==='quincenal'){expQ+=(+e.amt||0);const _qday=e.qnaPreset?_qnaPresetDay(e.qnaPreset,ct,cStart):(pd||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:_qday,freq:f});}
     else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
     else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
@@ -12095,7 +12117,7 @@ function renderRetos(){
   const salQ=S.inc.sal/2;const bfQ=bonusInCycle(cStart,cEnd,S.inc)?(+S.inc.bf||0):0;
   let extQ=0;S.extras.forEach(x=>{if(x.tipo==='recurrente')extQ+=toMonthly(+x.amt||0,x.freq||'mensual')/2;else if(extraUnicoEnVentana(x,cStart,cEnd))extQ+=(+x.amt||0);});
   const incQ=salQ+bfQ+extQ;
-  let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal')expQ+=(+e.amt||0)*getWeeksInCycle();else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
+  let expQ=0;S.exp.forEach(e=>{const f=e.freq||'mensual';const mo=toMonthly(+e.amt||0,f);const pd=+(e.payDay)||0;if(f==='semanal'){const _n=weeklyOccsInWindow(e,_rw);expQ+=(+e.amt||0)*(_n!=null?_n:getWeeksInCycle());}else if(f==='quincenal')expQ+=(+e.amt||0);else if(pd>0&&dayInC(pd))expQ+=mo;else if(!pd)expQ+=mo/2;});
   let debtQ=0;S.debts.forEach(db=>{if((+db.bal||0)<=0)return;if(db.curPay&&db.totalPays&&db.curPay>db.totalPays)return;const f=db.freq||'mensual';const mo=toMonthly(+db.pay||0,f);const pd=+(db.payDay)||0;if(db.nextPay){const np=new Date(db.nextPay+'T12:00');if(np>=cStart&&np<=cEnd)debtQ+=(+db.pay||0);}else if(f==='quincenal')debtQ+=(db.pay||0);else if(pd>0&&dayInC(pd))debtQ+=mo;else if(!pd)debtQ+=mo/2;});
   const savQ=savAmt()/2;
   const savGQ=S.savGoals.filter(g=>!g.done&&g.target>(+g.saved||0)).reduce((a,g)=>a+savGoalPerQ(g),0);

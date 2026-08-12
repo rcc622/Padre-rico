@@ -639,6 +639,28 @@ function _normalizeState(st){
   }catch(e){_logErr('normalize.fixCk',e);}
   _migrateV6(st);
   _reconcileStandaloneMetas(st);
+  _migrateSalidasV9(st);
+}
+// ── Counter de Salidas (V9): categorías pasan de boolean esencial a un
+// tipo de 3 valores (hormiga | esencial | salida). One-shot y reversible
+// desde el editor de categorías (no se hardcodea nada en DIARIO_CATS):
+//   · Impulso (de fábrica) arranca como tipo "salida" vía S.diarioCatTipos.
+//   · Categorías custom cuyo nombre contenga "salida"/"paseo" (y no sean
+//     esenciales) arrancan con tipo "salida".
+// Los movimientos NO se tocan: heredan el tipo de su categoría en runtime
+// (igual que ya pasaba con esencial), así que no hay nada que descuadrar.
+function _migrateSalidasV9(st){
+  if(st._salidasTipoV9)return;
+  try{
+    if(!st.diarioCatTipos||typeof st.diarioCatTipos!=='object')st.diarioCatTipos={};
+    if(!st.diarioCatTipos.impulso)st.diarioCatTipos.impulso='salida';
+    (st.diarioUserCats||[]).forEach(c=>{
+      if(!c||c.tipo)return;
+      if(!c.esencial&&/salida|paseo/i.test(c.n||''))c.tipo='salida';
+    });
+    // Flag solo si terminó sin errores (si falla, se reintenta en la próxima carga)
+    st._salidasTipoV9=1;
+  }catch(e){_logErr('_migrateSalidasV9',e);}
 }
 // SELF-HEALING: el saldo de una meta SIN activo ligado SIEMPRE debe ser la suma
 // de sus movimientos (g.deposits). Antes g.saved podía divergir de su propio
@@ -5160,7 +5182,8 @@ function rDash(){
     </div>
     ${(()=>{
       // Top categorías de la quincena — dónde más se va el dinero (solo
-      // presupuesto: excluye esenciales y pendientes, igual que el medidor).
+      // presupuesto hormiga: excluye esenciales, salidas y pendientes,
+      // igual que el medidor).
       try{
         const bc=diariosCycleByCat(_ck);
         const ents=Object.entries(bc).sort((a,b)=>b[1]-a[1]).slice(0,3);
@@ -5858,7 +5881,7 @@ function _expDiarioRun(kind){
       // Resolver la clave de categoría a su nombre legible. Las categorías
       // propias usan un UUID como clave; sin esto el CSV exportaba el UUID
       // crudo (y las categorías borradas caían como "Otro" via diarioCat).
-      list.forEach(g=>rows.push([esc(g.date),esc(g.name||''),esc(diarioCat(g.cat).n),esc(isEsencial(g)?'esencial':'hormiga'),esc(g.paidWith==='tdc'?'TDC':'Debito'),(g.paidWith==='tdc'?'true':'false'),(+g.amt||0)].join(',')));
+      list.forEach(g=>rows.push([esc(g.date),esc(g.name||''),esc(diarioCat(g.cat).n),esc(gastoTipo(g)),esc(g.paidWith==='tdc'?'TDC':'Debito'),(g.paidWith==='tdc'?'true':'false'),(+g.amt||0)].join(',')));
       // BOM para que Excel respete acentos/emoji
       const blob=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});
       const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bitacora-diarios-'+label+'.csv';a.click();
@@ -7086,14 +7109,31 @@ const _allDiarioCats=()=>{
   return [...DIARIO_CATS.map(c=>{const o=ov[c.k];return o&&(o.e||o.n)?{...c,e:o.e||c.e,n:o.n||c.n}:c;}),...(S.diarioUserCats||[])];
 };
 const diarioCat=k=>_allDiarioCats().find(c=>c.k===k)||DIARIO_CATS[DIARIO_CATS.length-1];
-// Esencial = la categoría default 'esencial' o cualquier custom marcada
-// como esencial. Buscamos en runtime para que editar la categoría
-// afecte a entradas viejas sin tener que migrarlas.
-const isEsencial=g=>{
-  if(!g||!g.cat)return false;
-  if(g.cat==='esencial')return true;
-  const c=(S.diarioUserCats||[]).find(x=>x.k===g.cat);
-  return !!(c&&c.esencial);
+// ── Tipo de categoría: 'hormiga' | 'esencial' | 'salida' ─────────────
+// Mutuamente excluyentes: un movimiento pega a UN solo counter (hormiga o
+// salidas) o a ninguno (esencial). Se resuelve en runtime para que editar
+// la categoría afecte a entradas viejas sin tener que migrarlas.
+// Fuentes (en orden): campo tipo de la custom → boolean esencial legado →
+// override S.diarioCatTipos (para las de fábrica) → clave 'esencial' → hormiga.
+const diarioCatTipo=k=>{
+  if(!k)return 'hormiga';
+  const c=(S.diarioUserCats||[]).find(x=>x.k===k);
+  if(c)return c.tipo==='salida'||c.tipo==='esencial'||c.tipo==='hormiga'?c.tipo:(c.esencial?'esencial':'hormiga');
+  if(k==='esencial')return 'esencial';
+  const ov=(S.diarioCatTipos||{})[k];
+  return ov==='salida'||ov==='esencial'?ov:'hormiga';
+};
+const gastoTipo=g=>diarioCatTipo(g&&g.cat);
+const isEsencial=g=>gastoTipo(g)==='esencial';
+const isSalida=g=>gastoTipo(g)==='salida';
+// Badge corto para selects/listas: 🧾 esencial (custom), 🎡 salida.
+const _catTipoBadge=k=>{const t=diarioCatTipo(k);return t==='salida'?' 🎡':(t==='esencial'&&k!=='esencial'?' 🧾':'');};
+// Chip con el tipo para la lista de gestión de categorías — de un vistazo
+// se ve qué counter alimenta cada una (ESENCIAL / HORMIGA / SALIDA).
+const _catTipoChip=k=>{
+  const t=diarioCatTipo(k);
+  const cfg=t==='salida'?['🎡 salida','rgba(74,110,140,.15)','var(--sky)']:t==='esencial'?['🧾 esencial','rgba(120,120,120,.15)','var(--muted)']:['🐜 hormiga','rgba(78,124,106,.12)','var(--sage)'];
+  return '<span style="font-size:9px;background:'+cfg[1]+';color:'+cfg[2]+';padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">'+cfg[0]+'</span>';
 };
 
 // Helpers para el "Presupuesto de Innecesarios" del ciclo. El budget puede
@@ -7110,12 +7150,15 @@ function setDiarioBudgetForCycle(ck,v){
   S.gastoDiarioBudgetByCycle[ck]=+v||0;
   sv();
 }
+// Solo tipo hormiga: los esenciales viven en gastos fijos y las salidas
+// tienen su propio counter/tope (salidasCycleSpent) — un mov pega a UN solo
+// counter, así que aquí NO se cuentan (elimina el doble conteo por diseño).
 function diariosCycleSpent(ck){
   try{
     const w=cycleWindowFromKey(ck);
     const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
     return (S.gastosDiarios||[])
-      .filter(g=>!g.pending&&!isEsencial(g))
+      .filter(g=>!g.pending&&gastoTipo(g)==='hormiga')
       .filter(g=>g.date&&g.date>=startYMD&&g.date<=endYMD)
       .reduce((a,g)=>a+(+g.amt||0),0);
   }catch(e){_logErr('diariosCycleSpent',e);return 0;}
@@ -7126,11 +7169,41 @@ function diariosCycleByCat(ck){
     const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
     const out={};
     (S.gastosDiarios||[])
-      .filter(g=>!g.pending&&!isEsencial(g))
+      .filter(g=>!g.pending&&gastoTipo(g)==='hormiga')
       .filter(g=>g.date&&g.date>=startYMD&&g.date<=endYMD)
       .forEach(g=>{const k=g.cat||'otro';out[k]=(out[k]||0)+(+g.amt||0);});
     return out;
   }catch(e){_logErr('diariosCycleByCat',e);return {};}
+}
+// ── Counter de Salidas: presupuesto y derivados por ciclo ─────────────
+// Gemelo del counter hormiga. NO mueve dinero: se deriva al vuelo de la
+// bitácora (única fuente), cero estado acumulado aparte, cero riesgo de
+// descuadre. El flujo de efectivo real ya lo suma el motor de balances
+// (que toma TODOS los diarios), así que esto es solo tracking contra tope.
+const SALIDA_GRANDE_MIN=300; // un día con suma salida ≥ esto = 1 salida grande
+function getSalidasBudgetForCycle(ck){
+  const byCk=S.salidasBudgetByCycle||{};
+  if(byCk[ck]!==undefined&&byCk[ck]!==null&&byCk[ck]!=='')return +byCk[ck]||0;
+  return S.salidasBudget!=null&&S.salidasBudget!==''?(+S.salidasBudget||0):600; // default 600 (regla del plan)
+}
+function salidasCycleByDay(ck){
+  try{
+    const w=cycleWindowFromKey(ck);
+    const startYMD=_ymdLocal(w.start),endYMD=_ymdLocal(w.end);
+    const out={};
+    (S.gastosDiarios||[])
+      .filter(g=>!g.pending&&isSalida(g))
+      .filter(g=>g.date&&g.date>=startYMD&&g.date<=endYMD)
+      .forEach(g=>{out[g.date]=(out[g.date]||0)+(+g.amt||0);});
+    return out;
+  }catch(e){_logErr('salidasCycleByDay',e);return {};}
+}
+function salidasCycleSpent(ck){
+  return Object.values(salidasCycleByDay(ck)).reduce((a,v)=>a+v,0);
+}
+// Regla "salida grande": agrupar por DÍA; máx 1 por quincena (regla del plan).
+function salidasGrandesUsadas(ck){
+  return Object.values(salidasCycleByDay(ck)).filter(v=>v>=SALIDA_GRANDE_MIN).length;
 }
 const QUICK_EXP=[
   {n:'🏠 Renta',a:0,c:'Hogar / Renta'},{n:'🏫 Colegio / Escuela',a:0,c:'Educación / Escuelas'},
@@ -8648,24 +8721,37 @@ function _findRecentDup(name,amt,date){
 // que sea) y elegir si cuentan como esencial (fuera de presup. hormiga).
 // Las defaults (DIARIO_CATS) no se tocan; las custom viven en
 // S.diarioUserCats. Se mezclan via _allDiarioCats().
+// Selector de TIPO DE GASTO (3 opciones mutuamente excluyentes) — reemplaza
+// al checkbox "Es esencial". Compartido por el editor de categorías custom y
+// el de las de fábrica.
+function _catTipoRadios(name,cur){
+  const opts=[
+    {v:'hormiga',lbl:'🐜 <strong>Hormiga</strong>',d:'cuenta en el presupuesto hormiga/impulso'},
+    {v:'esencial',lbl:'🧾 <strong>Esencial</strong>',d:'queda fuera de todo presupuesto'},
+    {v:'salida',lbl:'🎡 <strong>Salida</strong>',d:'cuenta en el presupuesto de salidas'}
+  ];
+  return '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">TIPO DE GASTO</div>'
+    +opts.map(o=>'<label style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(120,120,120,.06);border-radius:8px;cursor:pointer;text-transform:none;font-size:13px;color:var(--txt2);margin-bottom:4px"><input type="radio" name="'+name+'" value="'+o.v+'" '+(cur===o.v?'checked':'')+' style="width:auto;accent-color:var(--muted)"><span>'+o.lbl+' <span style="font-size:11px;color:var(--muted)">— '+o.d+'</span></span></label>').join('');
+}
 function openDiarioCatModal(editKey){
   const editing=editKey?(S.diarioUserCats||[]).find(c=>c.k===editKey):null;
   const body='<label style="font-size:11px;color:var(--muted)">Nombre</label>'
     +'<input type="text" id="dcName" placeholder="Skincare, cigarros, mascota..." value="'+_escA(editing?.n||'')+'" maxlength="32" style="width:100%;padding:11px;font-size:14px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
     +'<label style="font-size:11px;color:var(--muted)">Emoji <span style="color:var(--muted)">(opcional)</span></label>'
     +'<input type="text" id="dcEmoji" placeholder="📦" value="'+_escA(editing?.e||'')+'" maxlength="4" style="width:100%;padding:11px;font-size:20px;text-align:center;border:1px solid var(--border);border-radius:6px;margin:4px 0 12px;font-family:Georgia,serif">'
-    +'<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:rgba(120,120,120,.06);border-radius:8px;cursor:pointer;text-transform:none;font-size:13px;color:var(--txt2);margin-bottom:4px"><input type="checkbox" id="dcEsen" '+(editing?.esencial?'checked':'')+' style="width:auto;accent-color:var(--muted)"><span>🧾 <strong>Es esencial</strong> (queda fuera del presupuesto hormiga/impulso)</span></label>'
-    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Marca esto si son gastos necesarios que pagaste a débito y no quieres que peguen al presupuesto de innecesarios.</div>';
+    +_catTipoRadios('dcTipo',editing?(editing.tipo||(editing.esencial?'esencial':'hormiga')):'hormiga')
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">🎡 <strong>Salida</strong> es para paseos, restaurantes de salida, entradas, estacionamiento/peaje del paseo. Pegan al presupuesto de Salidas, no al de hormiga.</div>';
   showConfirm(editing?'✏️ Editar categoría':'+ Nueva categoría',body,()=>{
     const n=(document.getElementById('dcName')?.value||'').trim();
     const e=(document.getElementById('dcEmoji')?.value||'').trim()||'📦';
-    const esencial=document.getElementById('dcEsen')?.checked||false;
+    const tipo=document.querySelector('input[name="dcTipo"]:checked')?.value||'hormiga';
+    const esencial=tipo==='esencial'; // boolean legado en sync (retro-compat con respaldos viejos)
     if(!n){toast('Falta el nombre');return;}
     if(editing){
-      pt({diarioUserCats:(S.diarioUserCats||[]).map(c=>c.k===editKey?{...c,n,e,esencial}:c)});
+      pt({diarioUserCats:(S.diarioUserCats||[]).map(c=>c.k===editKey?{...c,n,e,tipo,esencial}:c)});
       toast('✓ Categoría actualizada');
     }else{
-      const newCat={k:_uid(),n,e,esencial,custom:true};
+      const newCat={k:_uid(),n,e,tipo,esencial,custom:true};
       pt({diarioUserCats:[...(S.diarioUserCats||[]),newCat]});
       _diarioCat=newCat.k;
       toast('✓ Categoría "'+n+'" agregada');
@@ -8701,6 +8787,10 @@ function openDiarioFactoryEdit(k){
     +'<input type="text" id="dfcName" value="'+_escA(curC.n)+'" maxlength="28">'
     +'</div>';
   if((S.diarioCatLabels||{})[k])body+='<div style="font-size:10px;color:var(--muted);margin-top:4px">Original: '+base.e+' '+_escH(base.n)+'</div>';
+  // Tipo editable también en las de fábrica (así la migración Impulso→salida
+  // es reversible desde aquí). La clave 'esencial' queda fija: es el ancla
+  // semántica del sistema (gastos urgentes se registran hardcodeados a ella).
+  if(k!=='esencial')body+='<div style="margin-top:10px">'+_catTipoRadios('dfcTipo',diarioCatTipo(k))+'</div>';
   showConfirm('✏️ Editar categoría',body,null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost" style="flex:1" onclick="closeConfirm()">Cancelar</button>'
@@ -8718,6 +8808,12 @@ function _saveDiarioFactoryLabel(k){
     if(!S.diarioCatLabels)S.diarioCatLabels={};
     if(e===base.e&&n===base.n)delete S.diarioCatLabels[k];
     else S.diarioCatLabels[k]={e:e,n:n};
+    // Tipo de la categoría de fábrica (hormiga por default → sin override)
+    if(k!=='esencial'){
+      const tipo=document.querySelector('input[name="dfcTipo"]:checked')?.value;
+      if(tipo==='salida'||tipo==='esencial'){if(!S.diarioCatTipos)S.diarioCatTipos={};S.diarioCatTipos[k]=tipo;}
+      else if(tipo==='hormiga'&&S.diarioCatTipos)delete S.diarioCatTipos[k];
+    }
     sv();
     closeConfirm();
     toast('✓ '+e+' '+n);
@@ -9107,7 +9203,7 @@ function openQuickDiario(prefill){
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:1px">Categoría</div>'
     +'<div style="display:flex;gap:6px;align-items:center;margin-bottom:12px">'
     +'<select id="qdCatSel" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="_quickDiarioCat=this.value">'
-    +cats.map(c=>'<option value="'+c.k+'"'+(c.k===_quickDiarioCat?' selected':'')+'>'+c.e+' '+_escH(c.n)+(c.custom&&c.esencial?' 🧾':'')+'</option>').join('')
+    +cats.map(c=>'<option value="'+c.k+'"'+(c.k===_quickDiarioCat?' selected':'')+'>'+c.e+' '+_escH(c.n)+_catTipoBadge(c.k)+'</option>').join('')
     +'</select>'
     +'<button type="button" class="chip" style="font-size:11px;padding:9px 11px;border-style:dashed;color:var(--sage);font-weight:bold;white-space:nowrap" onclick="_openQuickDiarioNewCat()">+ Nueva</button>'
     +'</div>'
@@ -9218,7 +9314,7 @@ function editDiario(id){
     +'<label style="font-size:11px;color:var(--muted)">Monto $</label>'
     +'<input type="number" id="gdEdA" value="'+(+g.amt||0)+'" inputmode="decimal" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-weight:bold;color:var(--terra);font-family:Georgia,serif">'
     +'<label style="font-size:11px;color:var(--muted)">Categoría</label>'
-    +'<select id="gdEdC" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif;background:#fff">'+_allDiarioCats().map(c=>'<option value="'+c.k+'"'+((g.cat||'otro')===c.k?' selected':'')+'>'+c.e+' '+c.n+(c.custom&&c.esencial?' (esencial)':'')+'</option>').join('')+'</select>'
+    +'<select id="gdEdC" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif;background:#fff">'+_allDiarioCats().map(c=>{const _t=diarioCatTipo(c.k);return '<option value="'+c.k+'"'+((g.cat||'otro')===c.k?' selected':'')+'>'+c.e+' '+c.n+(_t==='salida'?' (salida)':c.custom&&_t==='esencial'?' (esencial)':'')+'</option>';}).join('')+'</select>'
     +'<label style="font-size:11px;color:var(--muted)">Fecha</label>'
     +'<input type="date" id="gdEdD" value="'+_escA(g.date||_todayYMD())+'" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;margin:4px 0 10px;font-family:Georgia,serif">'
     +'<label style="font-size:11px;color:var(--muted)">Método de pago</label>'
@@ -9303,6 +9399,17 @@ function setDiarioBudget(){
   try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
   try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
 }
+// Presupuesto del counter de Salidas — mismo esquema que el hormiga:
+// override del ciclo actual + default global para las siguientes quincenas.
+function setSalidasBudget(){
+  const v=+(document.getElementById('gdSalBudget')?.value)||0;
+  const ck=cycleKey();
+  if(!S.salidasBudgetByCycle)S.salidasBudgetByCycle={};
+  S.salidasBudgetByCycle[ck]=v;
+  pt({salidasBudget:v});
+  toast('Presupuesto de salidas actualizado');
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+}
 function cerrarQnaDiarios(){
   // Cierra el ciclo que el usuario está VIENDO en Diarios (no siempre el
   // actual). Antes usaba getCycleWindow() fijo, así que al pasar de quincena
@@ -9323,10 +9430,10 @@ function _cierreReviewFlags(list){
   const flags=[];const seen={};
   const linked=new Set((S.cobranzas||[]).map(c=>c.gastoId).filter(x=>x!=null));
   (list||[]).forEach(g=>{
-    const reasons=[];const nm=(g.name||'').toLowerCase();const amt=+g.amt||0;const esen=isEsencial(g);
+    const reasons=[];const nm=(g.name||'').toLowerCase();const amt=+g.amt||0;const tp=gastoTipo(g);const esen=tp==='esencial';
     if(/\b(prest|preste|prest[eé]|fiad|le di|le pres|adelant)/i.test(nm)&&!g.cobLink&&!linked.has(g.id))reasons.push('🤝 ¿Es un préstamo? El dinero prestado se cobra, no se consume — conviene mandarlo a Cobranza.');
     if(g.cat==='snack'&&amt>120)reasons.push('🏷️ Quedó en "Snack" (la categoría por defecto) con monto alto — ¿es correcto?');
-    else if(!esen&&amt>=300)reasons.push('💰 Monto alto ('+fx(amt)+') para gasto no esencial — ¿bien categorizado?');
+    else if(tp==='hormiga'&&amt>=300)reasons.push('💰 Monto alto ('+fx(amt)+') para gasto hormiga — ¿bien categorizado? (si fue un paseo, va en una categoría 🎡 Salida)');
     const dk=(g.date||'')+'|'+amt;
     // Nombra el gasto con el que choca (mismo monto y fecha) para que el usuario
     // pueda compararlos; guarda el nombre del PRIMERO en seen[dk].
@@ -9487,7 +9594,7 @@ function _renderDiariosCatEditor(cap){
     h+='<div style="padding:11px 14px;'+bb+(esen?'background:rgba(120,120,120,.04)':'')+'">';
     h+='<div class="row-b" style="margin-bottom:6px;gap:8px"><span style="font-size:12px;color:var(--txt);font-weight:bold;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(g.name||'—')+'</span><span style="font-size:12px;color:'+(esen?'var(--muted)':'var(--terra)')+';font-weight:bold;flex-shrink:0">'+fx(+g.amt||0)+'</span></div>';
     h+='<div class="row" style="gap:8px;align-items:center"><select onchange="_editSnapDiarioCat('+g.id+',this.value,\''+cap.id+'\')" style="flex:1;padding:7px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif">';
-    h+=cats.map(cc=>'<option value="'+cc.k+'"'+(g.cat===cc.k?' selected':'')+'>'+cc.e+' '+_escH(cc.n)+(cc.custom&&cc.esencial?' 🧾':'')+'</option>').join('');
+    h+=cats.map(cc=>'<option value="'+cc.k+'"'+(g.cat===cc.k?' selected':'')+'>'+cc.e+' '+_escH(cc.n)+_catTipoBadge(cc.k)+'</option>').join('');
     h+='</select><span style="font-size:10px;color:var(--muted);flex-shrink:0;white-space:nowrap">'+_escH(g.date||'')+'</span></div>';
     h+='</div>';
   });
@@ -11696,12 +11803,13 @@ try{
         const total=ds.reduce((a,g)=>a+(+g.amt||0),0);
         const rows=ds.slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(g=>{
           const c=diarioCat(g.cat);
-          const esen=isEsencial(g);
+          const _tp=gastoTipo(g);
+          const esen=_tp==='esencial';
           return `<div class="row-b" style="padding:5px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px;gap:8px">
             <div class="row" style="gap:6px;flex:1;min-width:0">
               <span style="flex-shrink:0">${c.e}</span>
               <div style="min-width:0;overflow:hidden">
-                <div style="color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escH(g.name||c.n)}${esen?' <span style="font-size:8px;color:var(--muted);letter-spacing:.3px">🧾</span>':''}</div>
+                <div style="color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_escH(g.name||c.n)}${esen?' <span style="font-size:8px;color:var(--muted);letter-spacing:.3px">🧾</span>':_tp==='salida'?' <span style="font-size:8px;color:var(--sky);letter-spacing:.3px">🎡</span>':''}</div>
                 <div style="font-size:9px;color:var(--muted)">${fmtDate(g.date)} · ${_escH(c.n)}${g.paidWith==='tdc'?' · 💳':''}</div>
               </div>
             </div>
@@ -12641,10 +12749,12 @@ function rHabitos(){
     const pendingList=cycleList.filter(g=>g.pending);
     const confirmedList=cycleList.filter(g=>!g.pending);
     const esencialList=confirmedList.filter(isEsencial);
-    const budgetList=confirmedList.filter(g=>!isEsencial(g));
+    const salidaList=confirmedList.filter(isSalida);
+    const budgetList=confirmedList.filter(g=>gastoTipo(g)==='hormiga');
     const totalEsen=esencialList.reduce((a,g)=>a+(+g.amt||0),0);
+    const totalSal=salidaList.reduce((a,g)=>a+(+g.amt||0),0);
     const totalQ=budgetList.reduce((a,g)=>a+(+g.amt||0),0);
-    const totalAll=totalQ+totalEsen;
+    const totalAll=totalQ+totalSal+totalEsen;
     const totalPending=pendingList.reduce((a,g)=>a+(+g.amt||0),0);
     const todayISO=_todayYMD();
     const budget=getDiarioBudgetForCycle(_dck);
@@ -12695,6 +12805,23 @@ function rHabitos(){
       ${budget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctB}%;background:${bColor}"></div></div><div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: ${fx(budget)}</span><span style="color:${bColor};font-weight:bold">${pctB}% usado · ${fx(Math.max(0,budget-totalQ))} restante</span></div>`:''}
     </div>
     ${(()=>{
+      // 🎡 Counter de Salidas — gemelo del counter hormiga. Solo tracking
+      // contra tope: no mueve dinero (el flujo real ya está en los balances).
+      const salBudget=getSalidasBudgetForCycle(_dck);
+      const pctS=salBudget>0?Math.min(100,Math.round(totalSal/salBudget*100)):0;
+      const sColor=pctS<60?'var(--sage)':pctS<90?'var(--amber)':'var(--terra)';
+      const grandes=salidasGrandesUsadas(_dck);
+      const gBadge=grandes===0?'🟢':grandes===1?'🟡':'🔴';
+      return `<div class="card" style="margin-bottom:12px;border-left:3px solid var(--sky)">
+      <div style="margin-bottom:${salBudget>0?'10px':'0'}">
+        <div class="row-b"><div style="font-size:10px;color:var(--muted);margin-bottom:3px;text-transform:uppercase;letter-spacing:1px">🎡 Salidas de la quincena</div><span style="font-size:11px;color:var(--muted)">${salidaList.length} mov${salidaList.length!==1?'s':''}</span></div>
+        <div class="stat" style="color:${totalSal>salBudget&&salBudget>0?'var(--terra)':'var(--sky)'}">${fx(Math.round(totalSal))}</div>
+      </div>
+      ${salBudget>0?`<div class="pw" style="height:8px;margin-bottom:6px"><div class="pb" style="width:${pctS}%;background:${sColor}"></div></div><div class="row-b" style="font-size:11px;margin-bottom:6px"><span style="color:var(--muted)">Presupuesto: ${fx(salBudget)}</span><span style="color:${sColor};font-weight:bold">${pctS}% usado · ${fx(Math.max(0,salBudget-totalSal))} restante</span></div>`:''}
+      <div style="font-size:11px;color:var(--muted)">Salida grande: ${gBadge} <strong style="color:${grandes>1?'var(--terra)':'var(--txt2)'}">${grandes}/1</strong> usada${grandes>1?'s · te pasaste del máx. del plan':''} <span style="opacity:.7">(un día con salidas ≥ ${fx(SALIDA_GRANDE_MIN)} = 1 grande · máx 1 por quincena)</span></div>
+    </div>`;
+    })()}
+    ${(()=>{
       // Resumen compacto de TDC dentro de Diarios — colapsado por default.
       // El usuario quiere ver el estado de la TDC sin salir de Diarios.
       const cfg=S.tdcConfig||{};
@@ -12728,8 +12855,11 @@ function rHabitos(){
       <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:6px">⏳ ${pendingList.length} Pre-registro${pendingList.length!==1?'s':''} desde retos (${fx(Math.round(totalPending))})</div>
       <div style="font-size:11px;color:var(--txt2);line-height:1.6">Cuando fallaste un reto y registraste un gasto, se pre-registró aquí. Confirma (✓) si sí lo gastaste, o cancela (✕) si no. Mientras esté pendiente no cuenta al presupuesto.</div>
     </div>`:''}
-    <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);padding:6px 0">⚙️ ${budget>0?'Ajustar':'Poner'} presupuesto de quincena</summary>
-      <div class="row" style="gap:8px;margin-top:8px"><input type="number" inputmode="decimal" id="gdBudget" placeholder="0" value="${budget||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setDiarioBudget()">Guardar</button></div>
+    <details style="margin-bottom:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);padding:6px 0">⚙️ ${budget>0?'Ajustar':'Poner'} presupuestos de quincena</summary>
+      <label style="font-size:10px;color:var(--muted);margin-top:8px;display:block">🐜 Hormiga / impulso</label>
+      <div class="row" style="gap:8px;margin-top:4px"><input type="number" inputmode="decimal" id="gdBudget" placeholder="0" value="${budget||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setDiarioBudget()">Guardar</button></div>
+      <label style="font-size:10px;color:var(--muted);margin-top:8px;display:block">🎡 Salidas</label>
+      <div class="row" style="gap:8px;margin-top:4px"><input type="number" inputmode="decimal" id="gdSalBudget" placeholder="0" value="${getSalidasBudgetForCycle(_dck)||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setSalidasBudget()">Guardar</button></div>
     </details>
     <details style="margin-bottom:12px"${isLong?' open':''}><summary style="cursor:pointer;font-size:11px;color:${isLong?'var(--amber)':'var(--muted)'};padding:6px 0;font-weight:${isLong?'bold':'normal'}">📅 Quincena larga (3 fines de semana)${isLong?' · ACTIVA':''}</summary>
       <div style="font-size:11px;color:var(--muted);margin:8px 0;line-height:1.7">
@@ -12752,15 +12882,15 @@ function rHabitos(){
       </div>
       <div style="margin-bottom:8px"><label>Categoría</label>
         <div style="display:flex;gap:6px;align-items:center">
-          <select id="gdCatSel" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="selDiarioCat(this.value)">${_allDiarioCats().map(c=>{const sel=_diarioCat===c.k;const esBdg=c.custom&&c.esencial?' 🧾':'';return `<option value="${c.k}"${sel?' selected':''}>${c.e} ${_escH(c.n)}${esBdg}</option>`;}).join('')}</select>
+          <select id="gdCatSel" style="flex:1;padding:10px;font-size:13px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="selDiarioCat(this.value)">${_allDiarioCats().map(c=>{const sel=_diarioCat===c.k;return `<option value="${c.k}"${sel?' selected':''}>${c.e} ${_escH(c.n)}${_catTipoBadge(c.k)}</option>`;}).join('')}</select>
           <button type="button" class="chip" style="border-style:dashed;color:var(--sage);font-weight:bold;white-space:nowrap;padding:9px 11px" onclick="openDiarioCatModal()">+ Nueva</button>
         </div>
         <div style="margin-top:6px"><button type="button" class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="toggleDiarioCatManage()">⚙️ Gestionar categorías (${_allDiarioCats().length}) ${S._dcManageOpen?'▲':'▼'}</button>${S._dcManageOpen?`<div style="margin-top:8px;padding:10px;background:rgba(120,120,120,.04);border-radius:6px;border:1px solid var(--border)">
           <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin-bottom:4px">De fábrica · toca ✏️ para renombrar</div>
-          ${DIARIO_CATS.map(c=>{const cc=diarioCat(c.k);const ed=!!(S.diarioCatLabels||{})[c.k];return `<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${cc.e} ${_escH(cc.n)}</span>${ed?'<span style="font-size:9px;color:var(--amber)">editada</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioFactoryEdit('${c.k}')">✏️</button></div></div>`;}).join('')}
-          ${(S.diarioUserCats||[]).length>0?`<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin:10px 0 4px">Mis categorías</div>${(S.diarioUserCats||[]).map(c=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${c.e} ${_escH(c.n)}</span>${c.esencial?'<span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">🧾 esencial</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioCatModal('${c.k}')">✏️</button><button type="button" class="btn btn-red btn-sm" style="padding:3px 6px;font-size:11px" onclick="rmDiarioUserCat('${c.k}')">✕</button></div></div>`).join('')}`:''}
+          ${DIARIO_CATS.map(c=>{const cc=diarioCat(c.k);const ed=!!(S.diarioCatLabels||{})[c.k];return `<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${cc.e} ${_escH(cc.n)}</span>${_catTipoChip(c.k)}${ed?'<span style="font-size:9px;color:var(--amber)">editada</span>':''}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioFactoryEdit('${c.k}')">✏️</button></div></div>`;}).join('')}
+          ${(S.diarioUserCats||[]).length>0?`<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:bold;margin:10px 0 4px">Mis categorías</div>${(S.diarioUserCats||[]).map(c=>`<div class="row-b" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:12px"><div class="row" style="gap:6px;flex:1;min-width:0"><span>${c.e} ${_escH(c.n)}</span>${_catTipoChip(c.k)}</div><div class="row" style="gap:4px;flex-shrink:0"><button type="button" class="btn btn-ghost btn-sm" style="padding:3px 6px;font-size:11px" onclick="openDiarioCatModal('${c.k}')">✏️</button><button type="button" class="btn btn-red btn-sm" style="padding:3px 6px;font-size:11px" onclick="rmDiarioUserCat('${c.k}')">✕</button></div></div>`).join('')}`:''}
         </div>`:''}</div>
-        <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares). Quedan en la bitácora pero <strong>no pegan</strong> a tu presupuesto hormiga/impulso. Puedes crear tus propias categorías y elegir si cuentan como esenciales.</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">💡 Usa <strong>🧾 Esencial</strong> para gastos necesarios que pagaste a débito (gasolina extra, súper de emergencia, útiles escolares): quedan en la bitácora pero <strong>no pegan</strong> a ningún presupuesto. Usa categorías <strong>🎡 Salida</strong> para paseos, restaurantes de salida, entradas y peajes del paseo: pegan al counter de <strong>Salidas</strong>, no al hormiga. Cada gasto cuenta en <strong>un solo</strong> counter según el tipo de su categoría.</div>
       </div>
       <div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="gdd" value="${todayISO}"></div>
       <!-- Antes había un solo botón "+ Agregar" que abría un modal pidiendo
@@ -12782,13 +12912,15 @@ function rHabitos(){
         <div class="row-b" style="padding:6px 8px;background:var(--sagedim);border-radius:6px;margin-bottom:6px"><span style="font-size:11px;color:var(--sage);font-weight:bold;text-transform:uppercase;letter-spacing:.5px">${fmtDD(dk)}</span><span style="font-size:12px;color:var(--sage);font-weight:bold">${fx(Math.round(dayTotal))}</span></div>
         ${byDay[dk].map(g=>{
           const c=diarioCat(g.cat);
-          const esen=isEsencial(g);
+          const tp=gastoTipo(g);
+          const esen=tp==='esencial';
           const pend=!!g.pending;
           const rowBg=pend?'background:rgba(160,112,48,.06);border-left:3px solid var(--amber)':(esen?'background:rgba(120,120,120,.04)':'');
           const priceColor=pend?'var(--amber)':(esen?'var(--muted)':'var(--terra)');
           const badge=pend
             ?' <span style="font-size:9px;background:rgba(160,112,48,.15);color:var(--amber);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">⏳ pendiente</span>'
-            :(esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>':'');
+            :(esen?' <span style="font-size:9px;background:rgba(120,120,120,.15);color:var(--muted);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">fuera presup.</span>'
+            :tp==='salida'?' <span style="font-size:9px;background:rgba(74,110,140,.15);color:var(--sky);padding:1px 5px;border-radius:4px;font-weight:bold;letter-spacing:.3px;text-transform:uppercase">🎡 salida</span>':'');
           const subLabel=pend?'⏳ Pre-registrado desde reto · confirma o cancela':c.n;
           const actions=pend
             ?'<button class="btn btn-sage btn-sm" title="Confirmar gasto" style="padding:4px 8px;font-size:11px" onclick="confirmPendingDiario('+g.id+')">✓</button><button class="btn btn-red btn-sm" title="Cancelar pre-registro" onclick="cancelPendingDiario('+g.id+')">✕</button>'
@@ -12802,7 +12934,7 @@ function rHabitos(){
     }).join('')}
   </div>`:`<div class="card" style="text-align:center;padding:24px 16px;color:var(--muted);font-size:12px">${_isCurrentDc?'Aún no registras gastos en esta quincena. Empieza con esa coca del OXXO 🥤':'No hay gastos registrados en esta quincena.'}</div>`}
 
-  ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
+  ${Object.keys(byCat).length>0?`<div class="card"><div class="ct">Por categoría (solo presupuesto)</div>${Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,t])=>{const c=diarioCat(k);return`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${c.e} ${c.n}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxCat*100).toFixed(0)}%;background:rgba(184,92,74,.45)"></div></div></div>`;}).join('')}${totalSal>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🎡 Salidas aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalSal))}</strong> · pegan a su propio counter, no al hormiga.</div>`:''}${totalEsen>0?`<div style="border-top:1px dashed var(--border);padding-top:10px;margin-top:10px;font-size:11px;color:var(--muted);line-height:1.6">🧾 Esenciales aparte: <strong style="color:var(--txt2)">${fx(Math.round(totalEsen))}</strong> · no cuentan aquí porque no son gasto impulso/hormiga.</div>`:''}</div>`:''}
 
   ${otroAlert?`<div class="card card-amber" style="border:1px solid var(--amber)">
     <div class="ct">📦 Demasiado en "${_escH(diarioCat('otro').n)}"</div>
@@ -15924,16 +16056,21 @@ function buildAIReport(){
     L.push('**Periodo de esta bitácora:** '+(_pIni||'—')+' → '+(_pFin||'—')+' · '+(_periodDias>0?_periodDias+' días (~'+_periodQnas+' quincenas) · ':'')+_dgAll.length+' movimientos · suma '+fxn(_sumLedger)+'. ⚠️ Los agregados de abajo cubren TODO este rango'+(_periodDias>0?' ('+_periodDias+' días)':'')+', no un solo mes (salvo la "Tendencia mensual"). Para cortes por mes exacto usa el **ledger crudo** del final de esta sección.');
     L.push('');
     const byCat={};
-    diarios.forEach(g=>{const k=g.cat||'otro';if(!byCat[k])byCat[k]={total:0,n:0,es:isEsencial(g)};byCat[k].total+=(+g.amt||0);byCat[k].n++;});
+    diarios.forEach(g=>{const k=g.cat||'otro';if(!byCat[k])byCat[k]={total:0,n:0,tp:gastoTipo(g)};byCat[k].total+=(+g.amt||0);byCat[k].n++;});
     const catRows=Object.entries(byCat).sort((a,b)=>b[1].total-a[1].total);
     const totalD=diarios.reduce((a,g)=>a+(+g.amt||0),0);
-    const totalHormiga=catRows.filter(([,d])=>!d.es).reduce((a,[,d])=>a+d.total,0);
+    const totalHormiga=catRows.filter(([,d])=>d.tp==='hormiga').reduce((a,[,d])=>a+d.total,0);
+    const totalSalidas=catRows.filter(([,d])=>d.tp==='salida').reduce((a,[,d])=>a+d.total,0);
     L.push('| Categoría | Total | Movs | Promedio | Tipo |');
     L.push('|---|--:|--:|--:|---|');
-    catRows.forEach(([k,d])=>{const cc=diarioCat(k);L.push('| '+(cc?cc.e+' '+cc.n:k)+' | '+fxn(d.total)+' | '+d.n+' | '+fxn(Math.round(d.total/d.n))+' | '+(d.es?'esencial':'🐜 hormiga')+' |');});
+    catRows.forEach(([k,d])=>{const cc=diarioCat(k);L.push('| '+(cc?cc.e+' '+cc.n:k)+' | '+fxn(d.total)+' | '+d.n+' | '+fxn(Math.round(d.total/d.n))+' | '+(d.tp==='esencial'?'esencial':d.tp==='salida'?'🎡 salida':'🐜 hormiga')+' |');});
     L.push('| **Total registrado** | **'+fxn(totalD)+'** | '+diarios.length+' | | |');
     L.push('');
-    L.push('**Gasto hormiga (no esencial) que registro:** '+fxn(totalHormiga)+' de '+fxn(totalD)+' ('+(totalD>0?Math.round(totalHormiga/totalD*100):0)+'%) — proyectado a 12 meses según el periodo cubierto abajo.');
+    // Hormiga y salidas se reportan por separado: cada uno tiene su propio
+    // tope quincenal y un movimiento pega a UN solo counter.
+    L.push('**Gasto hormiga que registro:** '+fxn(totalHormiga)+' de '+fxn(totalD)+' ('+(totalD>0?Math.round(totalHormiga/totalD*100):0)+'%) — proyectado a 12 meses según el periodo cubierto abajo.');
+    L.push('');
+    L.push('**Gasto de salidas (🎡, tope aparte) que registro:** '+fxn(totalSalidas)+' de '+fxn(totalD)+' ('+(totalD>0?Math.round(totalSalidas/totalD*100):0)+'%) — analiza cada tope por separado: salidas NO cuenta en el hormiga.');
     L.push('');
     // E2 · Desglose por método de pago. El total con TDC es deuda devengada:
     // gasto ya hecho a crédito que aún no toca el corte y NO está en la "Deuda
@@ -15950,14 +16087,14 @@ function buildAIReport(){
     L.push('');
     // Tendencia por mes
     const byMonth={};
-    diarios.forEach(g=>{const m=String(g.date||'').slice(0,7);if(m.length!==7)return;if(!byMonth[m])byMonth[m]={total:0,horm:0,n:0};byMonth[m].total+=(+g.amt||0);byMonth[m].n++;if(!isEsencial(g))byMonth[m].horm+=(+g.amt||0);});
+    diarios.forEach(g=>{const m=String(g.date||'').slice(0,7);if(m.length!==7)return;if(!byMonth[m])byMonth[m]={total:0,horm:0,sal:0,n:0};byMonth[m].total+=(+g.amt||0);byMonth[m].n++;const _tp=gastoTipo(g);if(_tp==='hormiga')byMonth[m].horm+=(+g.amt||0);else if(_tp==='salida')byMonth[m].sal+=(+g.amt||0);});
     const monthRows=Object.entries(byMonth).sort((a,b)=>a[0]<b[0]?-1:1);
     if(monthRows.length){
       L.push('### Tendencia mensual (solo lo que registro)');
       L.push('');
-      L.push('| Mes | Gasto registrado | De eso, hormiga | Movs |');
-      L.push('|---|--:|--:|--:|');
-      monthRows.slice(-6).forEach(([m,d])=>L.push('| '+m+' | '+fxn(d.total)+' | '+fxn(d.horm)+' | '+d.n+' |'));
+      L.push('| Mes | Gasto registrado | De eso, hormiga | De eso, salidas | Movs |');
+      L.push('|---|--:|--:|--:|--:|');
+      monthRows.slice(-6).forEach(([m,d])=>L.push('| '+m+' | '+fxn(d.total)+' | '+fxn(d.horm)+' | '+fxn(d.sal)+' | '+d.n+' |'));
       L.push('');
     }
     // Top gastos registrados
@@ -15976,7 +16113,7 @@ function buildAIReport(){
     L.push('|---|---|---|---|---|--:|');
     [...diarios].sort((a,b)=>String(a.date||'')<String(b.date||'')?-1:String(a.date||'')>String(b.date||'')?1:0).forEach(g=>{
       const cc=diarioCat(g.cat);
-      L.push('| '+(g.date||'')+' | '+_mdCell(g.name||'—')+' | '+_mdCell(cc.n)+' | '+(isEsencial(g)?'esencial':'hormiga')+' | '+(g.paidWith==='tdc'?'TDC':'Debito')+' | '+(+g.amt||0)+' |');
+      L.push('| '+(g.date||'')+' | '+_mdCell(g.name||'—')+' | '+_mdCell(cc.n)+' | '+gastoTipo(g)+' | '+(g.paidWith==='tdc'?'TDC':'Debito')+' | '+(+g.amt||0)+' |');
     });
     L.push('');
   }else{
@@ -16027,13 +16164,14 @@ function buildAIReport(){
         ingreso:_qsnap.incQ,ingresoSinExtra:_qsnap.incQ-_qsnap.extQ,extra:_qsnap.extQ,
         gastosFijos:_qsnap.expQ,deudaMinima:_qsnap.dbtQ,gastosDiarios:_qsnap.diaQ,ahorro:_qsnap.savQ,
         presupuestoInnecesarios:Math.round(getDiarioBudgetForCycle(cycleKey())),innecesariosGastado:Math.round(diariosCycleSpent(cycleKey())),
+        presupuestoSalidas:Math.round(getSalidasBudgetForCycle(cycleKey())),salidasGastado:Math.round(salidasCycleSpent(cycleKey())),salidasGrandesUsadas:salidasGrandesUsadas(cycleKey()),
         flujoLibreAntesExtra:_qsnap.freeQNoExtra,flujoLibreDespuesExtra:_qsnap.freeQ,
         saldoArrastrado:_qsnap.carryQ,disponibleAlCierre:_qsnap.freeQ+_qsnap.carryQ},
       proyeccionQuincenas:_ingBlocks.proyeccionQuincenas,
       deudas:_nd};
     L.push('## 7 · analisisInput (bloque consolidado para máquina)');
     L.push('');
-    L.push('> Todo lo anterior en un solo objeto parseable. **`ingresoBase`** desglosa mi ingreso fijo: `salarioQuincenal` (cae en TODAS las quincenas) y `bonoFijo` (ingreso GARANTIZADO y RECURRENTE que cae COMPLETO en UNA sola quincena del mes — la que indica `bonoFijoCaeEnCiclo`/`bonoFijoDia`; NO es un windfall, es presupuestable). **`proyeccionQuincenas`** es LO MÁS IMPORTANTE para el plan: trae el ingreso de las próximas quincenas, NO solo la actual — `ingresoGarantizado` (=salario+bono fijo, planea sobre ESTO) y `ingresoProyectado` (=garantizado + extra ya confirmado, NUNCA promedios). `tipo` marca `flaca` (sin bono) vs `grande` (con bono): las quincenas NO son iguales, esa asimetría ES la planeación. **`horasExtra`** separa `ganadasSinCobrar` (trabajadas pero NO pagadas aún — NO es dinero disponible) de `cobradasEsteCiclo`; nunca fondees obligaciones con fecha usando extra no cobrado. Antes de sugerir romper un ahorro o pedir crédito, verifica el `ingresoGarantizado` de TODAS las quincenas del horizonte: un gap suele ser error de proyección, no crisis real. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `ahorroMensual` es mi META programada; `ahorroEjecutado` (bool) dice si de verdad la aparto — si es false, `flujoMensual` YA la trata como flujo libre (no la restes otra vez). `capacidadQuincenal` es la del ciclo actual y sale de los MISMOS line items con fecha que mi pantalla de Pagos (Estado de Cuenta): `gastosFijos` y `deudaMinima` son los pagos que de verdad caen dentro del ciclo (no un mensual÷2), `gastosDiarios` es mi bitácora real del ciclo, `ahorro` es lo realmente apartado, y `flujoLibreDespuesExtra` es el flujo que GENERA este ciclo. NO lo recalcules por promedio. `saldoArrastrado` es el sobrante REAL con el que abrí el ciclo (dinero que YA tengo en la cuenta, calibrado manualmente al conciliar con el banco); NO es flujo generado por este ciclo y es de UNA SOLA VEZ, así que NO lo asumas recurrente en las próximas quincenas. `disponibleAlCierre` = `flujoLibreDespuesExtra` + `saldoArrastrado` es el dinero libre REAL de este ciclo (lo que puedo desplegar hoy). Nota: las horas extra aún "por cobrar" (aceptadas pero no pagadas) NO se cuentan como ingreso hasta que se marcan pagadas — por eso pueden no aparecer aunque las vea proyectadas en Pagos. `presupuestoInnecesarios` es el TOPE de gasto hormiga/no necesario que YO defino para esta quincena (mi límite auto-impuesto; los esenciales NO cuentan ahí) y `innecesariosGastado` es lo que llevo gastado de ese tope — respeta ese presupuesto como mi meta y dime si voy por encima. `deudas` van normalizadas: `grupoKey` (llave para agrupar la MISMA deuda escrita distinto; agrupa por este campo, no por `nombre` crudo), `pagoMensual`/`pagoQuincenal` equivalentes, `pagosHechos`/`pagosTotales` (avance de liquidación), `saldo` (única verdad de si sigue viva), `tasaPct`, `vencimiento` (fecha en que la deuda queda SALDADA — su última mensualidad o el pago del único; NO es la fecha del próximo pago), `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve). Para "qué cae esta quincena" usa `capacidadQuincenal` (sale del motor con fechas), no estas fechas de liquidación.');
+    L.push('> Todo lo anterior en un solo objeto parseable. **`ingresoBase`** desglosa mi ingreso fijo: `salarioQuincenal` (cae en TODAS las quincenas) y `bonoFijo` (ingreso GARANTIZADO y RECURRENTE que cae COMPLETO en UNA sola quincena del mes — la que indica `bonoFijoCaeEnCiclo`/`bonoFijoDia`; NO es un windfall, es presupuestable). **`proyeccionQuincenas`** es LO MÁS IMPORTANTE para el plan: trae el ingreso de las próximas quincenas, NO solo la actual — `ingresoGarantizado` (=salario+bono fijo, planea sobre ESTO) y `ingresoProyectado` (=garantizado + extra ya confirmado, NUNCA promedios). `tipo` marca `flaca` (sin bono) vs `grande` (con bono): las quincenas NO son iguales, esa asimetría ES la planeación. **`horasExtra`** separa `ganadasSinCobrar` (trabajadas pero NO pagadas aún — NO es dinero disponible) de `cobradasEsteCiclo`; nunca fondees obligaciones con fecha usando extra no cobrado. Antes de sugerir romper un ahorro o pedir crédito, verifica el `ingresoGarantizado` de TODAS las quincenas del horizonte: un gap suele ser error de proyección, no crisis real. `periodo` trae días y quincenas reales de la bitácora. En `foto`, `patrimonio` es activos − deuda formal; `tdcDevengada` es el gasto a crédito sin pagar hoy (float del ciclo, el usuario paga su TDC completa cada corte) y `patrimonioReal` = patrimonio − tdcDevengada (no se descuenta del patrimonio base para no hacerlo rebotar en sierra cada ciclo). ⚠️ `flujoMensual` y `pagoDeudaMensual` SOLO cuentan deudas recurrentes; los pagos `unico` (bills finitos: inscripciones, útiles, etc.) NO están ahí. `pagosUnicosProximosTotal` es su saldo pendiente, `reservaPagosUnicosMensual` los prorratea hasta su vencimiento, y `flujoMensualAjustado` = `flujoMensual` − esa reserva: ese es el flujo libre REAL para planear. El detalle por cargo está en `pagosUnicosProximos`. `ahorroMensual` es mi META programada; `ahorroEjecutado` (bool) dice si de verdad la aparto — si es false, `flujoMensual` YA la trata como flujo libre (no la restes otra vez). `capacidadQuincenal` es la del ciclo actual y sale de los MISMOS line items con fecha que mi pantalla de Pagos (Estado de Cuenta): `gastosFijos` y `deudaMinima` son los pagos que de verdad caen dentro del ciclo (no un mensual÷2), `gastosDiarios` es mi bitácora real del ciclo, `ahorro` es lo realmente apartado, y `flujoLibreDespuesExtra` es el flujo que GENERA este ciclo. NO lo recalcules por promedio. `saldoArrastrado` es el sobrante REAL con el que abrí el ciclo (dinero que YA tengo en la cuenta, calibrado manualmente al conciliar con el banco); NO es flujo generado por este ciclo y es de UNA SOLA VEZ, así que NO lo asumas recurrente en las próximas quincenas. `disponibleAlCierre` = `flujoLibreDespuesExtra` + `saldoArrastrado` es el dinero libre REAL de este ciclo (lo que puedo desplegar hoy). Nota: las horas extra aún "por cobrar" (aceptadas pero no pagadas) NO se cuentan como ingreso hasta que se marcan pagadas — por eso pueden no aparecer aunque las vea proyectadas en Pagos. `presupuestoInnecesarios` es el TOPE de gasto hormiga/no necesario que YO defino para esta quincena (mi límite auto-impuesto; los esenciales NO cuentan ahí) y `innecesariosGastado` es lo que llevo gastado de ese tope — respeta ese presupuesto como mi meta y dime si voy por encima. `presupuestoSalidas`/`salidasGastado` son el tope y gasto de mi counter de SALIDAS (paseos, restaurantes de salida, entradas, peajes del paseo: categorías tipo `salida`), un tope SEPARADO del hormiga — cada movimiento pega a UN solo counter, así que NO sumes salidas dentro de `innecesariosGastado`; analiza cada tope por separado. `salidasGrandesUsadas` cuenta los días del ciclo cuya suma de salidas fue ≥ $300 (mi regla: máximo 1 salida grande por quincena — si va en 2 o más, ya me pasé de esa regla). `deudas` van normalizadas: `grupoKey` (llave para agrupar la MISMA deuda escrita distinto; agrupa por este campo, no por `nombre` crudo), `pagoMensual`/`pagoQuincenal` equivalentes, `pagosHechos`/`pagosTotales` (avance de liquidación), `saldo` (única verdad de si sigue viva), `tasaPct`, `vencimiento` (fecha en que la deuda queda SALDADA — su última mensualidad o el pago del único; NO es la fecha del próximo pago), `esPagoMinimo` (deuda con interés sin MSI fijo = pago tipo mínimo, hay margen para abonar más) y `prioridad` (orden avalancha, 1 = atacar primero; reordénala si recomiendas bola de nieve). Para "qué cae esta quincena" usa `capacidadQuincenal` (sale del motor con fechas), no estas fechas de liquidación.');
     L.push('');
     L.push('```json');
     L.push(JSON.stringify(_ai));

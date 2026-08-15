@@ -13638,13 +13638,30 @@ function markOtAsPaid(otCk){
   // sin que nada lo reemplazara. Ahora al confirmar registramos un ingreso
   // extra one-shot con fecha de hoy, así el dinero queda contado en el ciclo
   // donde realmente cayó el payroll.
-  const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a marcar como <strong style="color:var(--sage)">pagadas</strong> las <strong>'+totalHrs.toFixed(1)+' horas</strong> ('+fx(totalMoney)+') del ciclo <strong>'+otCk+'</strong>.<br><br>Se va a registrar automáticamente como <strong style="color:var(--sage)">ingreso extra</strong> con la fecha de hoy, así aparece reflejado en tu balance del ciclo actual.</div>';
+  const body='<div style="font-size:12px;line-height:1.7;color:var(--txt2)">Vas a marcar como <strong style="color:var(--sage)">pagadas</strong> las <strong>'+totalHrs.toFixed(1)+' horas</strong> ('+fx(totalMoney)+') del ciclo <strong>'+otCk+'</strong>.<br><br>Se registran como <strong style="color:var(--sage)">ingreso extra</strong> en la fecha en que el dinero cayó a tu cuenta:</div>'
+    +'<label style="font-size:11px;color:var(--muted);display:block;margin:10px 0 4px">📅 ¿Qué día te depositaron estas horas?</label>'
+    +'<input type="date" id="_otPayDate" value="'+_todayYMD()+'">'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">Si el depósito cayó en una quincena que YA conciliaste con el banco, no se crea el ingreso extra: ese dinero ya quedó contado dentro de la conciliación (contarlo otra vez lo duplicaría).</div>';
   showConfirm('💵 ¿Marcar como pagadas?',body,()=>{
-    const today=_todayYMD();
-    const newExtra={id:_uid(),name:'Horas extra ('+otCk+')',amt:totalMoney,tipo:'unico',date:today,fromOvertime:otCk};
-    const newOtLog={...S.overtimeLog,[otCk]:{...ot,paid:true,paidAt:new Date().toISOString()}};
+    const payDate=document.getElementById('_otPayDate')?.value||_todayYMD();
+    const newOtLog={...S.overtimeLog,[otCk]:{...ot,paid:true,paidAt:new Date().toISOString(),paidDate:payDate}};
+    // ¿La fecha del depósito cae en una quincena ya conciliada? Entonces ese
+    // dinero ya está amarrado dentro del saldo real de esa conciliación (y de
+    // su arrastre). Crear el extra lo contaría DOBLE — solo marcamos pagadas.
+    let conciliado=false;
+    try{
+      const [y,m,d]=payDate.split('-').map(Number);
+      const payCk=ckForYMD(y,m-1,d);
+      conciliado=!!((S.reconAdjust||{})[payCk]&&(S.reconAdjust||{})[payCk].estado==='conciliado');
+    }catch(e){}
+    if(conciliado){
+      pt({overtimeLog:newOtLog});
+      closeConfirm();toast('✓ Pagadas · sin ingreso extra (esa quincena ya está conciliada)');rPlan();
+      return;
+    }
+    const newExtra={id:_uid(),name:'Horas extra ('+otCk+')',amt:totalMoney,tipo:'unico',date:payDate,fromOvertime:otCk};
     pt({overtimeLog:newOtLog,extras:[...(S.extras||[]),newExtra]});
-    closeConfirm();toast('💵 +'+fx(totalMoney)+' como ingreso extra');rPlan();
+    closeConfirm();toast('💵 +'+fx(totalMoney)+' como ingreso extra ('+payDate+')');rPlan();
   });
 }
 function toggleOtHistory(){S._otHistColl=S._otHistColl===false;sv();rPlan();}

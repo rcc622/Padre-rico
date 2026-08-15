@@ -4291,15 +4291,33 @@ function cycleLabelPl(){return (S.cycleMode==='quincenal')?'quincenas':'meses';}
 function qStreak(){
   if(!S.snapshots.length)return 0;
   const sorted=[...S.snapshots].sort((a,b)=>new Date(b.periodEnd||b.date)-new Date(a.periodEnd||a.date));
+  // Dos snapshots del MISMO periodo (débito + crédito del mismo CSV) son UN
+  // capítulo, no dos: sin el dedupe la racha contaba archivos y salía más
+  // grande que el número de capítulos del timeline.
+  const _seen=new Set();
+  const dedup=sorted.filter(s=>{const k=(s.periodStart||'')+'|'+(s.periodEnd||s.date||'');if(_seen.has(k))return false;_seen.add(k);return true;});
   // Tolerance: cycle length + ~10 days margin (handles months of 28-31 days, quincenas of 14-16)
   const maxGap=cycleDays()+(S.cycleMode==='quincenal'?6:15);
   let streak=1;
-  for(let i=1;i<sorted.length;i++){
-    const prev=new Date(sorted[i-1].periodEnd||sorted[i-1].date),cur=new Date(sorted[i].periodEnd||sorted[i].date);
+  for(let i=1;i<dedup.length;i++){
+    const prev=new Date(dedup[i-1].periodEnd||dedup[i-1].date),cur=new Date(dedup[i].periodEnd||dedup[i].date);
     const diffDays=Math.round((prev-cur)/864e5);
     if(diffDays<=maxGap)streak++;else break;
   }
   return streak;
+}
+// Número de CAPÍTULOS como los numera el timeline: snapshots que comparten el
+// mismo periodo (débito + crédito) se agrupan en uno. Mismo pareo que la vista.
+function snapChapterCount(){
+  const snaps=S.snapshots||[];
+  const used=new Set();let groups=0;
+  snaps.forEach(sn=>{
+    if(used.has(sn.id))return;
+    const partner=snaps.find(s2=>s2.id!==sn.id&&!used.has(s2.id)&&s2.periodStart===sn.periodStart&&s2.periodEnd===sn.periodEnd);
+    used.add(sn.id);if(partner)used.add(partner.id);
+    groups++;
+  });
+  return groups;
 }
 
 // ══ RANGOS ══════════════════════════════════════════
@@ -15027,7 +15045,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snaps.length,'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}${histView!=='ajustes'?'':`<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías del análisis de gastos (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div>`}<button class="hist-cta" onclick="openCierreModal()">📊 Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snapChapterCount(),'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}${histView!=='ajustes'?'':`<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías del análisis de gastos (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div>`}<button class="hist-cta" onclick="openCierreModal()">📊 Cerrar mes</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para

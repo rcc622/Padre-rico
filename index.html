@@ -12663,10 +12663,10 @@ function metasCardHTML(){
       </div>
       <div style="margin-bottom:10px"><label>¿Dónde vive el dinero?</label>
         <select id="sgcaj" style="width:100%;padding:9px;border:1px solid var(--border);border-radius:6px;background:#fff;font-family:Georgia,serif" onchange="document.getElementById('sgcajInit').style.display=this.value==='nueva'?'block':'none'">
+          <option value="nueva">💎 Meta + cajita ligada (recomendado)</option>
           <option value="solo">🎯 Solo meta — sin cajita (no toca activos)</option>
-          <option value="nueva">💎 Crear meta + cajita (activo nuevo)</option>
         </select>
-        <div id="sgcajInit" style="display:none;margin-top:8px"><label>Saldo inicial de la cajita ($)</label><input type="number" id="sgcajVal" placeholder="0" inputmode="decimal"><div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Se crea un <strong>activo</strong> con este nombre. Lo que ya tengas ahorrado va aquí; los abonos/retiros futuros viven en la cajita.</div></div>
+        <div id="sgcajInit" style="margin-top:8px"><label>Saldo inicial de la cajita ($)</label><input type="number" id="sgcajVal" placeholder="0" inputmode="decimal"><div style="font-size:10px;color:var(--muted);margin-top:5px;line-height:1.5">Se crea un <strong>activo</strong> con este nombre. Lo que ya tengas ahorrado va aquí; los abonos/retiros futuros viven en la cajita.</div></div>
       </div>
       <button class="btn btn-sage" onclick="addSavGoalH()">🎯 Crear meta de ahorro</button>
     </div>

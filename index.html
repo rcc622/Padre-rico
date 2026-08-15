@@ -13044,8 +13044,10 @@ function renderAIPlanSection(){
       </div>
     </div>`;
     // Una tarjeta por quincena con sus acciones como checkboxes. Los checks
-    // solo se activan en la quincena vigente (hoy dentro de su rango); las
-    // pasadas/futuras quedan en solo lectura, igual que los pendientes.
+    // se activan en la quincena vigente Y en las YA PASADAS (para poder marcar
+    // lo que sí se hizo pero se olvidó registrar antes del brinco de quincena).
+    // Solo las FUTURAS quedan en solo lectura. Los checks son puro seguimiento
+    // (aiPlanToggle no toca dinero), así que abrir el pasado no mueve números.
     const _todY=_todayYMD();
     p.quincenas.forEach((q,i)=>{
       const acts=q.acciones||[];
@@ -13056,10 +13058,11 @@ function renderAIPlanSection(){
       // no vienen, caemos al cálculo por ciclos desde la fecha de importación.
       let fechas='';const rg=aiPlanQRange(i);
       if(rg){fechas=aiPlanFmtRange(rg.s,rg.e);}
-      const editable=rg?(rg.s<=_todY&&_todY<=rg.e):false; // hoy dentro del rango
+      const editable=rg?(rg.s<=_todY):false; // ya arrancó (vigente o pasada)
+      const pasada=rg?(rg.e<_todY):false;
       h+=`<div class="card" style="padding:12px 16px${allDone?';opacity:.65':''}">
         <div class="row-b" style="margin-bottom:${fechas?'3px':'8px'};flex-wrap:nowrap;gap:8px"><div style="font-size:12px;font-weight:bold;color:var(--txt);min-width:0">${allDone?'✅ ':''}${_escH(q.titulo)}</div><span style="font-size:10px;color:var(--muted);white-space:nowrap;flex:0 0 auto">${dN}/${acts.length}</span></div>
-        ${fechas?`<div style="font-size:10px;color:var(--sky);margin-bottom:8px;font-weight:bold">📅 ${fechas}${editable?'':' · solo lectura'}</div>`:''}`;
+        ${fechas?`<div style="font-size:10px;color:var(--sky);margin-bottom:8px;font-weight:bold">📅 ${fechas}${editable?(pasada?' · pasada, aún editable':''):' · solo lectura hasta que llegue'}</div>`:''}`;
       acts.forEach((a,j)=>{
         const k='q'+(i+1)+'_'+j;const on=!!checks[k];
         const cb=editable

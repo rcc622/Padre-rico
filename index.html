@@ -3131,7 +3131,13 @@ function calcCycleBalance(ck){
     // se han pagado (proyección de payroll) — idéntico al Estado de Cuenta del
     // Plan (_otEarned usa accepted && !paid). Antes se sumaba con `paid`, lo que
     // contaba las horas extra DOS veces como ingreso en cada quincena.
-    const _otSrcCk=prevCycleKeyOf(ck);
+    // Y solo en ciclos NO pasados: en una quincena ya cerrada esa lana nunca
+    // llegó al banco (sigue por cobrar), así que no cuenta para su cierre —
+    // mismo gate que el EC del Plan (_otSrcCk=_isPast?null:...). Sin esto el
+    // cierre del modal de conciliar quedaba arriba del EC exactamente por las
+    // OT pendientes (delta 2,752 en 7-1ra con 16 h × $172 sin marcar pagadas).
+    const _otIsPastCk=ckToOrder(ck)<ckToOrder(cycleKey());
+    const _otSrcCk=_otIsPastCk?null:prevCycleKeyOf(ck);
     const _otSrc=_otSrcCk?(S.overtimeLog||{})[_otSrcCk]:null;
     if(_otSrc&&_otSrc.accepted&&!_otSrc.paid){
       ingreso+=(_otSrc.entries||[]).reduce((a,e)=>a+Math.round((+e.hours||0)*(+_otSrc.rate||0)),0);

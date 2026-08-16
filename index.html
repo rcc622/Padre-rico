@@ -14643,7 +14643,21 @@ function rHistoria(){
         const isCur=i===chIdx;
         html+='<button class="chip" style="'+(isCur?'background:var(--sagedim);border-color:rgba(78,124,106,.3);color:var(--sage);font-weight:bold':'')+'" onclick="histCatsCh='+i+';rHistoria()">'+lbl+'</button>';
       });
-      html+='</div></div>';
+      html+='</div>';
+      // Ficha del capítulo seleccionado + eliminar INDIVIDUAL. En el Timeline
+      // los archivos del mismo periodo se agrupan en una tarjeta y su ✕ borra
+      // el grupo completo; aquí se ve cada archivo por separado (rango, fuente,
+      // movimientos) y se puede borrar SOLO este — p.ej. un duplicado.
+      (()=>{
+        const _capRango=cap.periodStart?(fmtDate(cap.periodStart)+' → '+fmtDate(cap.periodEnd)):fmtDate(cap.date);
+        const _capSrc=cap.source==='debit'?'💳 Débito':cap.source==='credit'?'💳 Crédito':cap.source==='diarios'?'📖 Diarios/EC':'📊 Combinado';
+        const _capMovs=(cap.allTxns||[]).length;
+        html+='<div class="row-b" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);gap:8px;flex-wrap:nowrap">'
+          +'<div style="font-size:11px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">C'+(chIdx+1)+' · '+_capSrc+' · '+_capRango+(_capMovs?' · '+_capMovs+' movs':'')+' · Score '+(cap.score!=null?cap.score:'—')+'</div>'
+          +'<button class="btn btn-ghost btn-sm" style="flex:0 0 auto;font-size:10px;color:var(--terra);border-color:rgba(184,92,74,.35)" onclick="delSnap('+Math.round(cap.id)+')">🗑 Eliminar este archivo</button>'
+          +'</div>';
+      })();
+      html+='</div>';
 
       if(cap.source==='diarios'){
         // Capítulo de Diarios: editor con la taxonomía de Diarios (no la de

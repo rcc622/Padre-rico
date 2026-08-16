@@ -14654,7 +14654,7 @@ function rHistoria(){
         const _capMovs=(cap.allTxns||[]).length;
         html+='<div class="row-b" style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);gap:8px;flex-wrap:nowrap">'
           +'<div style="font-size:11px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">C'+(chIdx+1)+' · '+_capSrc+' · '+_capRango+(_capMovs?' · '+_capMovs+' movs':'')+' · Score '+(cap.score!=null?cap.score:'—')+'</div>'
-          +'<button class="btn btn-ghost btn-sm" style="flex:0 0 auto;font-size:10px;color:var(--terra);border-color:rgba(184,92,74,.35)" onclick="delSnap(\''+String(cap.id).replace(/[^\w-]/g,'')+'\')">🗑 Eliminar este archivo</button>'
+          +'<button class="btn btn-ghost btn-sm" style="flex:0 0 auto;font-size:10px;color:var(--terra);border-color:rgba(184,92,74,.35)" onclick="delSnapCats()">🗑 Eliminar este archivo</button>'
           +'</div>';
       })();
       html+='</div>';
@@ -15417,6 +15417,21 @@ function delSnap(id){
 }
 let expandedSnap=null;
 function toggleSnapDetail(id){expandedSnap=String(expandedSnap)===String(id)?null:String(id);rHistoria();}
+// Eliminar el capítulo SELECCIONADO en Categorías, resuelto por índice y
+// borrado por REFERENCIA de objeto (s!==cap) — inmune a cualquier formato de
+// id (numérico legacy, float o UUID string) e ids duplicados: borra solo ESE.
+function delSnapCats(){
+  const snaps=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
+  if(!snaps.length)return;
+  let i=(typeof histCatsCh==='number')?histCatsCh:snaps.length-1;
+  if(i<0||i>=snaps.length)i=snaps.length-1;
+  const cap=snaps[i];if(!cap)return;
+  showConfirm('🗑 ¿Eliminar este capítulo?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se borra de tu historia (solo este archivo). Podrás deshacerlo unos segundos.</div>',()=>{
+    const _s=JSON.stringify(S);
+    pt({snapshots:S.snapshots.filter(s=>s!==cap)});
+    closeConfirm();histCatsCh=null;_undoToast('Capítulo eliminado',_s);rHistoria();
+  });
+}
 
 function exportData(){
   const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});

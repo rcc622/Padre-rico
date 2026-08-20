@@ -1184,13 +1184,22 @@ function getWeeksInCycle(window){
 // criterio que usa buildCyclePayments, así el banner de Inicio y los retos
 // cuadran con las ocurrencias del Plan. Sin weekDay devuelve null y el
 // caller cae a getWeeksInCycle (sábados + override manual), como siempre.
+// QUINCENA LARGA: el detector (3+ sábados, o marca manual del ciclo actual)
+// manda también con weekDay explícito — un ciclo con 3 fines de semana de
+// compras implica 3 súper/gasolina aunque el día elegido (ej. domingo) solo
+// caiga 2 veces en la ventana (15/08–29/08: dom 16 y 23, pero sáb 15/22/29).
+// Se toma el MAX(fechas reales, semanas del ciclo): nunca reduce el conteo
+// (el caso 3 jueves / 2 sábados sigue dando 3) y en ciclo normal no cambia.
 function weeklyOccsInWindow(e,win){
   const wd=+(e&&e.weekDay)||0;
   if(!(wd>=1&&wd<=7))return null;
   const jsDay=wd===7?0:wd;
   let n=0;const d=new Date(win.start);
   while(d<=win.end){if(d.getDay()===jsDay)n++;d.setDate(d.getDate()+1);}
-  return n;
+  const cw=getCycleWindow();
+  const isCur=_ymdLocal(win.start)===_ymdLocal(cw.start)&&_ymdLocal(win.end)===_ymdLocal(cw.end);
+  const weeks=isCur?getWeeksInCycle():getWeeksInCycle(win);
+  return Math.max(n,weeks);
 }
 function isLongCycleAuto(){
   const w=getCycleWindow();
@@ -7510,6 +7519,27 @@ try{
 
   ${flujoView==='gastos'?`
   <!-- ═══ GASTOS FIJOS ═══ -->
+  ${(()=>{
+    // 📅 Detector de quincena larga — vive aquí (y no en Día a día) porque
+    // lo que afecta son los GASTOS FIJOS semanales: con 3 fines de semana
+    // el súper/gasolina se cuentan 3 veces en el ciclo (Sem extra en el Plan).
+    const _lw=getCycleWindow();
+    const longAuto=isLongCycleAuto();
+    const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
+    const isLong=longAuto||longManual;
+    const _lRange=_lw.start.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+' al '+_lw.end.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
+    return `<div class="card"${isLong?' style="border-left:3px solid var(--amber)"':''}>
+    <details${isLong?' open':''}><summary style="cursor:pointer;font-size:11px;color:${isLong?'var(--amber)':'var(--muted)'};padding:2px 0;font-weight:${isLong?'bold':'normal'}">📅 Quincena larga (3 fines de semana) · ${_lRange}${isLong?' · ACTIVA':''}</summary>
+      <div style="font-size:11px;color:var(--muted);margin:8px 0;line-height:1.7">
+        Detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga (3+ sábados en el ciclo)':'No es larga por calendario (2 sábados)'}</strong>.<br>
+        Con quincena larga, tus gastos fijos <strong>semanales</strong> (súper, gasolina...) cuentan <strong>3 veces</strong> en el ciclo: la semana extra aparece en el Plan anclada al 3er sábado, aunque el gasto tenga otro día de la semana elegido.
+        ${longManual?'<br>🟠 Activaste manualmente la semana extra para esta quincena.':''}
+        ${!longAuto?'<br>Si tú sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (ej. te pagaron antes o compraste el sábado previo al payday), actívalo manual:':''}
+      </div>
+      <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
+    </details>
+  </div>`;
+  })()}
   <div class="card">
     <div class="ct">${editExpId?'✏️ Editando gasto':'📋 Agregar gasto fijo'}</div>
     ${(()=>{const ee=editExpId?S.exp.find(e=>e.id===editExpId):null;const freq=ee?.freq||'mensual';const allCats=[...EXP_CATS,...(S.expUserCats||[])];return`
@@ -8213,7 +8243,7 @@ function _expExtraFieldsHTML(f,ee){
     second='<div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">'+((ee&&ee.amt!=null)?freqLabel(ee.amt,f):'')+'</div></div>';
   }
   let note='';
-  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Recurre cada semana (≈4.33 pagos/mes). Con día de la semana elegido, el Plan agenda un pago en CADA fecha real de ese día dentro de la quincena (2 ó 3 según el calendario). "Automático" = sábado.</div>';
+  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Recurre cada semana (≈4.33 pagos/mes). Con día de la semana elegido, el Plan agenda un pago en CADA fecha real de ese día dentro de la quincena (2 ó 3 según el calendario). "Automático" = sábado. En <strong>quincena larga</strong> (3 fines de semana) siempre son 3 pagos: si tu día solo cae 2 veces, la semana extra se ancla al 3er sábado.</div>';
   else if(f==='quincenal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Aplica una vez en cada quincena del mes (el monto no cambia). Elige un preset (1&15, 5&20, 15&último) o deja un día manual — solo ubica en qué día se muestra el pago.</div>';
   return '<div class="g2" style="margin-bottom:'+(note?'4':'10')+'px">'+pdField+second+'</div>'+note;
 }
@@ -11198,12 +11228,27 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       // y la vigencia de las ocurrencias. Un ciclo puede tener 3 jueves con
       // solo 2 sábados (ej. 30/07–14/08: jue 30, 6 y 13 vs sáb 1 y 8) y con
       // el ancla de sábados la ocurrencia del jueves 13 nunca aparecía. Con
-      // weekDay explícito mandan las fechas reales de ese día (el override
-      // manual de quincena larga no aplica: ya no hay nada que aproximar).
+      // weekDay explícito mandan las fechas reales de ese día, PERO la
+      // quincena larga (3+ sábados / marca manual) pone el piso: un ciclo
+      // con 3 fines de semana de compras genera 3 ocurrencias aunque el día
+      // elegido solo caiga 2 veces (ej. 15/08–29/08 con súper en domingo:
+      // dom 16 y 23 + semana extra anclada al 3er sábado, día 29). MAX, así
+      // el caso 3 jueves / 2 sábados sigue dando 3 y el ciclo normal no
+      // cambia. Mismo criterio que weeklyOccsInWindow (cuadre Inicio↔Plan).
       // Sin weekDay, TODO igual que antes (conteo por sábados).
       let _wdayNums=null,_wdayYMD=null;const _wd=+(e.weekDay)||0;
       if(_wd>=1&&_wd<=7){const _jsDay=_wd===7?0:_wd;_wdayNums=[];_wdayYMD=[];const _wsd=new Date(cStart);while(_wsd<=cEnd){if(_wsd.getDay()===_jsDay){_wdayNums.push(_wsd.getDate());_wdayYMD.push(_ymdLocal(_wsd));}_wsd.setDate(_wsd.getDate()+1);}}
-      const weeks=_wdayNums?_wdayNums.length:(useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle());
+      const _cycleWeeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();
+      let weeks;
+      if(_wdayNums){
+        weeks=Math.max(_wdayNums.length,_cycleWeeks);
+        // Semana(s) extra de quincena larga: ancla en los sábados restantes
+        // del ciclo (día/YMD reales) para que el Plan muestre fecha y la
+        // vigencia por ocurrencia siga funcionando.
+        while(_wdayNums.length<weeks){const _k=_wdayNums.length;_wdayNums.push(_cycleSats[_k]||0);_wdayYMD.push(_cycleSatYMD[_k]||null);}
+      }else{
+        weeks=_cycleWeeks;
+      }
       for(let wi=0;wi<weeks;wi++){
       // Vigencia POR OCURRENCIA: un gasto semanal con comienzo/conclusión solo
       // aplica en las fechas ancla (día elegido, o sábados) dentro de [startDate,endDate].
@@ -12796,9 +12841,6 @@ function rHabitos(){
     const otroPct=totalQ>0?Math.round(otroAmt/totalQ*100):0;
     const otroAlert=otroCount>0&&(otroCount>=5||otroPct>=30);
     const fmtDD=iso=>{if(!iso)return'';if(iso===todayISO)return'Hoy';const y=new Date();y.setDate(y.getDate()-1);if(iso===_ymdLocal(y))return'Ayer';return new Date(iso+'T12:00').toLocaleDateString('es-MX',{weekday:'short',day:'2-digit',month:'2-digit'});};
-    const longAuto=(()=>{let s=0;const d=new Date(w.start);while(d<=w.end){if(d.getDay()===6)s++;d.setDate(d.getDate()+1);}return s>=3;})();
-    const longManual=!!(S.longCycleOverrides||{})[_dck];
-    const isLong=longAuto||longManual;
     return `
   <!-- ═══ GASTOS DIARIOS ═══ -->
   <div class="card">
@@ -12884,14 +12926,6 @@ function rHabitos(){
       <div class="row" style="gap:8px;margin-top:4px"><input type="number" inputmode="decimal" id="gdBudget" placeholder="0" value="${budget||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setDiarioBudget()">Guardar</button></div>
       <label style="font-size:10px;color:var(--muted);margin-top:8px;display:block">🎡 Salidas</label>
       <div class="row" style="gap:8px;margin-top:4px"><input type="number" inputmode="decimal" id="gdSalBudget" placeholder="0" value="${getSalidasBudgetForCycle(_dck)||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setSalidasBudget()">Guardar</button></div>
-    </details>
-    <details style="margin-bottom:12px"${isLong?' open':''}><summary style="cursor:pointer;font-size:11px;color:${isLong?'var(--amber)':'var(--muted)'};padding:6px 0;font-weight:${isLong?'bold':'normal'}">📅 Quincena larga (3 fines de semana)${isLong?' · ACTIVA':''}</summary>
-      <div style="font-size:11px;color:var(--muted);margin:8px 0;line-height:1.7">
-        Detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga (3+ sábados en el ciclo)':'No es larga por calendario (2 sábados)'}</strong>.<br>
-        ${longManual?'🟠 Activaste manualmente Sem 3 para esta quincena.':''}
-        ${!longAuto?'<br>Si tú sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (ej. te pagaron antes o compraste el sábado previo al payday), actívalo manual:':''}
-      </div>
-      <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
     </details>
   </div>
 

@@ -7519,27 +7519,6 @@ try{
 
   ${flujoView==='gastos'?`
   <!-- ═══ GASTOS FIJOS ═══ -->
-  ${(()=>{
-    // 📅 Detector de quincena larga — vive aquí (y no en Día a día) porque
-    // lo que afecta son los GASTOS FIJOS semanales: con 3 fines de semana
-    // el súper/gasolina se cuentan 3 veces en el ciclo (Sem extra en el Plan).
-    const _lw=getCycleWindow();
-    const longAuto=isLongCycleAuto();
-    const longManual=!!(S.longCycleOverrides||{})[cycleKey()];
-    const isLong=longAuto||longManual;
-    const _lRange=_lw.start.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+' al '+_lw.end.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
-    return `<div class="card"${isLong?' style="border-left:3px solid var(--amber)"':''}>
-    <details${isLong?' open':''}><summary style="cursor:pointer;font-size:11px;color:${isLong?'var(--amber)':'var(--muted)'};padding:2px 0;font-weight:${isLong?'bold':'normal'}">📅 Quincena larga (3 fines de semana) · ${_lRange}${isLong?' · ACTIVA':''}</summary>
-      <div style="font-size:11px;color:var(--muted);margin:8px 0;line-height:1.7">
-        Detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga (3+ sábados en el ciclo)':'No es larga por calendario (2 sábados)'}</strong>.<br>
-        Con quincena larga, tus gastos fijos <strong>semanales</strong> (súper, gasolina...) cuentan <strong>3 veces</strong> en el ciclo: la semana extra aparece en el Plan anclada al 3er sábado, aunque el gasto tenga otro día de la semana elegido.
-        ${longManual?'<br>🟠 Activaste manualmente la semana extra para esta quincena.':''}
-        ${!longAuto?'<br>Si tú sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (ej. te pagaron antes o compraste el sábado previo al payday), actívalo manual:':''}
-      </div>
-      <button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>
-    </details>
-  </div>`;
-  })()}
   <div class="card">
     <div class="ct">${editExpId?'✏️ Editando gasto':'📋 Agregar gasto fijo'}</div>
     ${(()=>{const ee=editExpId?S.exp.find(e=>e.id===editExpId):null;const freq=ee?.freq||'mensual';const allCats=[...EXP_CATS,...(S.expUserCats||[])];return`
@@ -9437,6 +9416,25 @@ function editDiarioBudget(ck){
     toast('✓ Presupuesto guardado');
     closeConfirm();
     try{rPlan();}catch(e){_logErr('editDiarioBudget',e);}
+  });
+}
+function editSalidasBudget(ck){
+  if(!ck)return;
+  const cur=getSalidasBudgetForCycle(ck);
+  const wLbl=(()=>{try{return fmtCycleRange(ck);}catch(e){return ck;}})();
+  const body='<div style="font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:12px">'
+    +'Define tu tope de <strong>salidas</strong> (paseos, restaurantes, entradas, peajes del paseo) para <strong>'+wLbl+'</strong>.'
+    +'<br><br>Es un tope SEPARADO del de innecesarios: cada movimiento pega a un solo counter. Es tracking contra tope — el dinero ya está reflejado en el Estado de cuenta, esto no lo vuelve a restar.</div>'
+    +'<label>Tope de salidas del ciclo ($)</label>'
+    +'<input type="number" inputmode="decimal" id="sBudCk" placeholder="1000" value="'+(cur||'')+'" style="width:100%;padding:11px;font-size:18px;text-align:center;font-weight:bold;color:var(--sky);font-family:Georgia,serif;border:1px solid var(--border);border-radius:6px;margin-bottom:6px">';
+  showConfirm('🎡 Salidas · '+wLbl,body,()=>{
+    const v=+(document.getElementById('sBudCk')?.value)||0;
+    if(!S.salidasBudgetByCycle)S.salidasBudgetByCycle={};
+    S.salidasBudgetByCycle[ck]=v;
+    sv();
+    toast('✓ Tope de salidas guardado');
+    closeConfirm();
+    try{rPlan();}catch(e){_logErr('editSalidasBudget',e);}
   });
 }
 function setDiarioBudget(){
@@ -11778,6 +11776,43 @@ try{
     </div>`;
     })()}
 
+    <!-- ═══ QUINCENA LARGA (3 fines de semana) ═══ -->
+    <!-- Vive en el Plan (entre el Estado de cuenta y el presupuesto de
+         innecesarios) porque es lo que MUEVE los números del ciclo: con 3
+         fines de semana los gastos fijos SEMANALES (súper, gasolina) se
+         cuentan 3 veces y aparece una "Sem" extra en Pagos del ciclo.
+         El toggle manual solo aplica al ciclo ACTUAL (getWeeksInCycle ignora
+         el override en ventanas de otros ciclos), así que en quincenas
+         pasadas/futuras se muestra solo la detección automática. -->
+    ${(()=>{
+      const _lw=cycleWindowFromKey(_viewCk);
+      let _sats=0;{const _sd=new Date(_lw.start);while(_sd<=_lw.end){if(_sd.getDay()===6)_sats++;_sd.setDate(_sd.getDate()+1);}}
+      const longAuto=_sats>=3;
+      const longManual=_isCurrent&&!!(S.longCycleOverrides||{})[_viewCk];
+      const isLong=longAuto||longManual;
+      const _col=isLong?'var(--amber)':'var(--muted)';
+      // Costo de la semana extra: suma de los gastos fijos semanales VIGENTES
+      // en el ciclo (mismo gate grueso de start/endDate que buildCyclePayments).
+      const _sY=_ymdLocal(_lw.start),_eY=_ymdLocal(_lw.end);
+      const _sem=(S.exp||[]).filter(e=>(e.freq||'mensual')==='semanal'&&!(e.startDate&&_eY<e.startDate)&&!(e.endDate&&_sY>e.endDate));
+      const _extra=_sem.reduce((a,e)=>a+(+e.amt||0),0);
+      return `<div class="card" style="border-left:3px solid ${isLong?'var(--amber)':'var(--border)'}">
+        <details${isLong?' open':''}>
+          <summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent">
+            <div class="ct" style="margin-bottom:0;color:${_col}">📅 Quincena larga</div>
+            <span style="font-size:11px;font-weight:bold;color:${_col}">${isLong?'✓ ACTIVA · 3 semanas':'No · 2 semanas'} <span style="font-size:9px;color:var(--muted)">▾</span></span>
+          </summary>
+          <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:10px">
+            Este ciclo tiene <strong style="color:var(--txt2)">${_sats} sábado${_sats!==1?'s':''}</strong> · detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga':'no es larga'}</strong>.${longManual?' 🟠 Además la marcaste manual.':''}
+            <br>Con quincena larga tus gastos fijos <strong>semanales</strong> (súper, gasolina…) cuentan <strong>3 veces</strong>: la semana extra sale en <em>Pagos del ciclo</em> anclada al 3er sábado, aunque el gasto tenga otro día de la semana elegido.
+            ${_sem.length>0?`<br><span style="color:${isLong?'var(--amber)':'var(--muted)'}">${isLong?'Semana extra incluida':'Si se activara sumaría'}: <strong>${fx(Math.round(_extra))}</strong> (${_sem.length} gasto${_sem.length!==1?'s':''} semanal${_sem.length!==1?'es':''}).</span>`:''}
+            ${!_isCurrent?'<br><span style="font-style:italic">Solo lectura: la marca manual únicamente aplica a la quincena en curso.</span>':(!longAuto?'<br>Si sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (te pagaron antes, compraste el sábado previo al payday), actívala:':'')}
+          </div>
+          ${_isCurrent?`<button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%;margin-top:10px" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>`:''}
+        </details>
+      </div>`;
+    })()}
+
     <!-- ═══ PRESUPUESTO DE INNECESARIOS ═══ -->
     <!-- Vincula S.gastoDiarioBudgetByCycle (budget por ciclo) con
          S.gastosDiarios (gastos reales diarios, excluyendo 'esencial').
@@ -11809,6 +11844,40 @@ try{
             <div style="font-size:10px;color:${_over?'var(--terra)':'var(--muted)'};margin-top:2px">${_over?'⚠ Excedido por '+fx(_spent-_bud):fx(_rest)+' restante'}</div>
           </div>
         </div>`}
+      </div>`;
+    })()}
+
+    <!-- ═══ PRESUPUESTO DE SALIDAS ═══ -->
+    <!-- Gemelo del counter de innecesarios: tope SEPARADO (paseos, restaurantes,
+         entradas). Un movimiento pega a UN SOLO counter (isSalida decide), así
+         que estos montos NO están dentro de "innecesarios" — no los sumes.
+         Es solo tracking contra tope: el flujo real ya está en los balances,
+         esta tarjeta no mueve ningún número del Estado de cuenta. -->
+    ${(()=>{
+      const _sBud=getSalidasBudgetForCycle(_viewCk);
+      const _sSpent=showNext?0:salidasCycleSpent(_viewCk); // próxima qna aún no tiene gastos
+      const _sRest=Math.max(0,_sBud-_sSpent);
+      const _sOver=_sSpent>_sBud;
+      const _sPct=_sBud>0?Math.min(100,Math.round(_sSpent/_sBud*100)):0;
+      const _sCol=_sOver?'var(--terra)':_sPct>=80?'var(--amber)':'var(--sky)';
+      const _gr=showNext?0:salidasGrandesUsadas(_viewCk);
+      const _grBadge=_gr===0?'🟢':_gr===1?'🟡':'🔴';
+      return `<div class="card" style="border-left:3px solid ${_sCol}">
+        <div class="row-b" style="margin-bottom:8px">
+          <div class="ct" style="margin-bottom:0">🎡 Presupuesto salidas${showNext?' · próxima qna':''}</div>
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="editSalidasBudget('${_viewCk}')">✏️ Editar</button>
+        </div>
+        ${_sBud===0?`<div style="font-size:12px;color:var(--muted);line-height:1.7;padding:8px 0">Aún no defines un tope de salidas para esta quincena. Tap <strong>✏️ Editar</strong> para fijarlo.</div>`:`
+        <div class="row" style="gap:10px;align-items:center">
+          <div style="flex:1;min-width:0">
+            <div class="pw" style="height:10px"><div class="pb" style="width:${_sPct}%;background:${_sCol}"></div></div>
+          </div>
+          <div style="flex-shrink:0;text-align:right;line-height:1.2">
+            <div style="font-size:13px;font-weight:bold;color:${_sCol};font-family:Georgia,serif"><span>${fx(Math.round(_sSpent))}</span><span style="color:var(--muted);font-weight:normal"> / ${fx(_sBud)}</span></div>
+            <div style="font-size:10px;color:${_sOver?'var(--terra)':'var(--muted)'};margin-top:2px">${_sOver?'⚠ Excedido por '+fx(Math.round(_sSpent-_sBud)):fx(Math.round(_sRest))+' restante'}</div>
+          </div>
+        </div>`}
+        ${showNext?'':`<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.6">Salida grande: ${_grBadge} <strong style="color:${_gr>1?'var(--terra)':'var(--txt2)'}">${_gr}/1</strong> usada${_gr!==1?'s':''}${_gr>1?' · te pasaste del máx. del plan':''} <span style="opacity:.7">(un día con salidas ≥ ${fx(SALIDA_GRANDE_MIN)} = 1 grande)</span></div>`}
       </div>`;
     })()}
 

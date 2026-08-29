@@ -476,7 +476,7 @@ let S={version:5,goal:'',deadline:'',goalDelta:0,goalBaseNW:0,goalBaseDate:'',do
   cobranzas:[],
   snapshots:[],waitList:[],impulsesBudget:2000,challenges:[],achievements:[],dashPeriod:'quincenal',aiPlanHistory:[],reconAdjust:{},bonoPlaySel:{},
   paidItems:{},survivalRetos:[],debtSort:'prox',debtGroupCollapsed:{},savGoals:[],savWdKinds:[],retoChecks:{},overtimeLog:{},customHabits:[],impulseSpent:{},
-  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],diarioCatLabels:{},expUserCats:[],habitoFormado:{},longCycleOverrides:{},
+  gastosDiarios:[],gastoDiarioBudget:0,gastoDiarioBudgetByCycle:{},recurringAch:{},userCategories:{},userCatsCustom:[],userCatLabels:{},merchantAliases:{},txnCatExceptions:{},diarioUserCats:[],diarioCatLabels:{},expUserCats:[],habitoFormado:{},longCycleOverrides:{},paydayLog:{}, // paydayLog[ck]={date,expected,at}: fecha REAL del depósito de la nómina que abre el ciclo ck
   savStreak:0,savStreakBest:0,savCommits:{},
   deficitDecisions:{},
   carryover:{}, // Saldo positivo real arrastrado de una quincena a la siguiente (confirmado al conciliar). carryover[ck]={amount,fromCk,confirmedAt}. Aditivo: 0 por default → no altera balances históricos.
@@ -568,6 +568,7 @@ function _normalizeState(st){
   }catch(e){_logErr('migCatKeys',e);}
   if(!isObj(st.habitoFormado))st.habitoFormado={};
   if(!isObj(st.longCycleOverrides))st.longCycleOverrides={};
+  if(!isObj(st.paydayLog))st.paydayLog={};
   if(!isObj(st.savCommits))st.savCommits={};
   if(!isObj(st.deficitDecisions))st.deficitDecisions={};
   if(!isObj(st.carryover))st.carryover={};
@@ -627,7 +628,7 @@ function _normalizeState(st){
       if(!o||typeof o!=='object')return;
       Object.keys(o).forEach(k=>{const nk=_fixCk(k);if(nk!==k){if(!(nk in o))o[nk]=o[k];delete o[k];}});
     };
-    ['paidItems','savCommits','gastoDiarioBudgetByCycle','longCycleOverrides','deficitDecisions','carryover','impulseSpent','overtimeLog'].forEach(k=>_fixCkMap(st[k]));
+    ['paidItems','savCommits','gastoDiarioBudgetByCycle','longCycleOverrides','paydayLog','deficitDecisions','carryover','impulseSpent','overtimeLog'].forEach(k=>_fixCkMap(st[k]));
     (st.incHistory||[]).forEach(h=>{if(h&&h.from)h.from=_fixCk(h.from);});
     (st.survivalRetos||[]).forEach(r=>{if(r&&r.cycle)r.cycle=_fixCk(r.cycle);});
     if(st.retoChecks&&typeof st.retoChecks==='object'){
@@ -1240,6 +1241,50 @@ function toggleLongCycle(){
     else S.longCycleOverrides[ck]=true;
     toast('✓ Marcada como quincena larga · Sem 3 disponible');
   }
+  sv();rFlujo();rPlan();rHabitos();
+}
+// ── NÓMINA / PAGO DE QUINCENA ──
+// Regla del usuario: la nómina se paga el 15 y el último día del mes; si cae
+// en fin de semana, se paga hasta el siguiente día hábil. Estas funciones
+// registran la fecha REAL del depósito y, si fue un ADELANTO (cayó dentro del
+// ciclo actual, antes de que abra el ciclo que le corresponde), fuerzan la
+// quincena corta (longCycleOverrides[ck]=false): la semana extra de compras se
+// paga con esa nómina y cuenta en el ciclo que abre, no en el actual. Aditivo:
+// solo mueve la proyección de semanales; NO mueve el ingreso de ciclo ni toca
+// balances ya cerrados.
+// Fecha esperada de la nómina que ABRE el ciclo ck: día 15 (ciclos 2da) o fin
+// de mes (ciclos 1ra), rodada al siguiente día hábil si cae sáb/dom.
+function expectedPaydayForCycle(ck){
+  const m=String(ck||'').match(/^(\d+)-(\d+)-(1ra|2da)$/);
+  if(!m)return null;
+  const y=+m[1],mo=+m[2]-1,tipo=m[3];
+  const d=tipo==='2da'?new Date(y,mo,15):new Date(y,mo+1,0);
+  while(d.getDay()===0||d.getDay()===6)d.setDate(d.getDate()+1);
+  return d;
+}
+function registerPaydayAdvance(dateYMD){
+  if(!dateYMD)return;
+  const ck=cycleKey(),nk=nextCycleKeyOf(ck);
+  if(!S.paydayLog)S.paydayLog={};
+  const exp=expectedPaydayForCycle(nk);
+  S.paydayLog[nk]={date:dateYMD,expected:exp?_ymdLocal(exp):null,at:Date.now()};
+  const isAdvance=dateYMD<=_ymdLocal(getCycleWindow().end);
+  if(isAdvance&&getWeeksInCycle()===3){
+    if(!S.longCycleOverrides)S.longCycleOverrides={};
+    S.longCycleOverrides[ck]=false;
+    toast('💵 Adelanto registrado · este ciclo cuenta 2 semanas; la semana extra va con la nómina nueva');
+  }else{
+    toast('💵 Depósito de nómina registrado');
+  }
+  sv();rFlujo();rPlan();rHabitos();
+}
+function undoPaydayAdvance(){
+  const ck=cycleKey(),nk=nextCycleKeyOf(ck);
+  if(S.paydayLog)delete S.paydayLog[nk];
+  // Revierte SOLO el override que puso el registro (false → vuelve al auto);
+  // una marca manual de larga (true) no se toca.
+  if((S.longCycleOverrides||{})[ck]===false)delete S.longCycleOverrides[ck];
+  toast('Registro de nómina deshecho');
   sv();rFlujo();rPlan();rHabitos();
 }
 // Fuente de verdad: ¿el día-del-mes `pd` cae dentro de la ventana de ciclo
@@ -11838,6 +11883,23 @@ try{
             ${!_isCurrent?'<br><span style="font-style:italic">Solo lectura: la marca manual únicamente aplica a la quincena en curso.</span>':(!longAuto&&!isLong?'<br>Si sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (te pagaron antes, compraste el sábado previo al payday), actívala:':(isLong?'<br>Si la semana extra la vas a cubrir con el <em>siguiente</em> ciclo (te adelantaron la quincena), desactívala y esos gastos contarán allá:':''))}
           </div>
           ${_isCurrent?`<button class="btn ${isLong?'btn-red':'btn-sage'} btn-sm" style="width:100%;margin-top:10px" onclick="toggleLongCycle()">${isLong?'↩ Desactivar quincena larga (contar 2 semanas)':'✓ Marcar esta quincena como larga'}</button>`:''}
+          ${_isCurrent?(()=>{
+            // Registro de nómina: la del SIGUIENTE ciclo es la que puede llegar
+            // como adelanto dentro de este. Registrarla con fecha ≤ fin de este
+            // ciclo fuerza sola la quincena corta (registerPaydayAdvance).
+            const _nk=nextCycleKeyOf(_viewCk);
+            const _exp=expectedPaydayForCycle(_nk);
+            const _reg=(S.paydayLog||{})[_nk];
+            const _fmtD=d=>d?d.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'}):'—';
+            const _endY=_ymdLocal(_lw.end);
+            return `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:11px;color:var(--muted);line-height:1.7">
+              💵 <strong style="color:var(--txt2)">Nómina del siguiente ciclo</strong> · esperada: <strong style="color:var(--txt2)">${_fmtD(_exp)}</strong> <span style="font-size:10px">(regla: día 15 / fin de mes; si cae en fin de semana, el siguiente día hábil)</span>.
+              ${_reg?`<br>Depositada: <strong style="color:var(--sage)">${_fmtD(new Date(_reg.date+'T12:00'))}</strong>${_reg.date<=_endY?' · <span style="color:var(--amber)">llegó adelantada — la semana extra cuenta en el ciclo que abre</span>':''}
+              <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="undoPaydayAdvance()">↩ Deshacer registro de nómina</button>`
+              :`<br>¿Te la depositaron antes? Registra la fecha real y la semana extra se pasa sola al siguiente ciclo:
+              <div style="display:flex;gap:8px;margin-top:8px"><input type="date" id="paydayAdvDate" value="${_todayYMD()}" style="flex:1;padding:8px;font-size:13px"><button class="btn btn-sage btn-sm" onclick="registerPaydayAdvance(document.getElementById('paydayAdvDate').value)">Registrar</button></div>`}
+            </div>`;
+          })():''}
         </details>
       </div>`;
     })()}

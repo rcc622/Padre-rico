@@ -1164,6 +1164,11 @@ function diariosThisCycle(ck){
 }
 // Returns 2 or 3. Counts Saturdays inside the cycle window.
 // If ≥3 Saturdays OR user manually flagged this cycle as "larga", returns 3.
+// Override TRI-ESTADO en S.longCycleOverrides[ck]: true = forzada larga,
+// false = forzada CORTA (aunque el auto detecte 3 sábados — ej. te adelantaron
+// la quincena y la semana extra la vas a cubrir con el siguiente ciclo),
+// ausente = manda la detección automática. Antes solo existía true, así que
+// "Quitar marca de larga" en un ciclo auto-detectado no desactivaba nada.
 function getWeeksInCycle(window){
   const w=window||getCycleWindow();
   let sats=0;
@@ -1172,8 +1177,9 @@ function getWeeksInCycle(window){
   let base=sats>=3?3:2;
   // Manual override only applies to the current cycle (no window arg)
   if(!window){
-    const manual=(S.longCycleOverrides||{})[cycleKey()];
-    if(manual)base=3;
+    const ov=(S.longCycleOverrides||{})[cycleKey()];
+    if(ov===false)base=2;
+    else if(ov)base=3;
   }
   return base;
 }
@@ -1199,6 +1205,12 @@ function weeklyOccsInWindow(e,win){
   const cw=getCycleWindow();
   const isCur=_ymdLocal(win.start)===_ymdLocal(cw.start)&&_ymdLocal(win.end)===_ymdLocal(cw.end);
   const weeks=isCur?getWeeksInCycle():getWeeksInCycle(win);
+  // Forzada CORTA (override===false): el usuario decidió que la 3ra semana de
+  // compras pertenece al siguiente ciclo (le adelantaron la quincena), así que
+  // aquí el tope manda sobre las fechas reales — cap a `weeks` en vez de MAX.
+  // Solo con override explícito en false; el caso 3 jueves / 2 sábados sin
+  // override sigue dando 3, como siempre.
+  if(isCur&&(S.longCycleOverrides||{})[cycleKey()]===false)return Math.min(n,weeks);
   return Math.max(n,weeks);
 }
 function isLongCycleAuto(){
@@ -1211,11 +1223,21 @@ function isLongCycleAuto(){
 function toggleLongCycle(){
   const ck=cycleKey();
   if(!S.longCycleOverrides)S.longCycleOverrides={};
-  if(S.longCycleOverrides[ck]){
-    delete S.longCycleOverrides[ck];
-    toast('Quincena larga desactivada');
+  const ov=S.longCycleOverrides[ck];
+  const auto=isLongCycleAuto();
+  const isLong=ov===false?false:(ov?true:auto);
+  if(isLong){
+    // Desactivar: si la detección automática dice larga, borrar la marca
+    // manual NO basta (el auto la re-encendía y el botón "no hacía nada").
+    // Se guarda false = forzada corta; sin auto, basta con borrar la marca.
+    if(auto)S.longCycleOverrides[ck]=false;
+    else delete S.longCycleOverrides[ck];
+    toast('Quincena larga desactivada · este ciclo cuenta 2 semanas');
   }else{
-    S.longCycleOverrides[ck]=true;
+    // Activar: con auto larga basta quitar el false (vuelve al auto);
+    // sin auto se fuerza con true, como siempre.
+    if(auto)delete S.longCycleOverrides[ck];
+    else S.longCycleOverrides[ck]=true;
     toast('✓ Marcada como quincena larga · Sem 3 disponible');
   }
   sv();rFlujo();rPlan();rHabitos();
@@ -11237,9 +11259,14 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       let _wdayNums=null,_wdayYMD=null;const _wd=+(e.weekDay)||0;
       if(_wd>=1&&_wd<=7){const _jsDay=_wd===7?0:_wd;_wdayNums=[];_wdayYMD=[];const _wsd=new Date(cStart);while(_wsd<=cEnd){if(_wsd.getDay()===_jsDay){_wdayNums.push(_wsd.getDate());_wdayYMD.push(_ymdLocal(_wsd));}_wsd.setDate(_wsd.getDate()+1);}}
       const _cycleWeeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();
+      // Forzada CORTA (override===false, solo ciclo actual): el tope de semanas
+      // manda sobre las fechas reales del día elegido — MIN en vez de MAX, la
+      // 3ra ocurrencia se va al siguiente ciclo. Mismo criterio que
+      // weeklyOccsInWindow para que Inicio y Plan sigan cuadrando.
+      const _forcedShort=!useWindowWeeks&&(S.longCycleOverrides||{})[cycleKey()]===false;
       let weeks;
       if(_wdayNums){
-        weeks=Math.max(_wdayNums.length,_cycleWeeks);
+        weeks=_forcedShort?Math.min(_wdayNums.length,_cycleWeeks):Math.max(_wdayNums.length,_cycleWeeks);
         // Semana(s) extra de quincena larga: ancla en los sábados restantes
         // del ciclo (día/YMD reales) para que el Plan muestre fecha y la
         // vigencia por ocurrencia siga funcionando.
@@ -11788,8 +11815,10 @@ try{
       const _lw=cycleWindowFromKey(_viewCk);
       let _sats=0;{const _sd=new Date(_lw.start);while(_sd<=_lw.end){if(_sd.getDay()===6)_sats++;_sd.setDate(_sd.getDate()+1);}}
       const longAuto=_sats>=3;
-      const longManual=_isCurrent&&!!(S.longCycleOverrides||{})[_viewCk];
-      const isLong=longAuto||longManual;
+      const _lov=_isCurrent?(S.longCycleOverrides||{})[_viewCk]:undefined;
+      const longManual=_lov===true;
+      const longOff=_lov===false; // forzada corta: gana sobre la detección auto
+      const isLong=longOff?false:(longAuto||longManual);
       const _col=isLong?'var(--amber)':'var(--muted)';
       // Costo de la semana extra: suma de los gastos fijos semanales VIGENTES
       // en el ciclo (mismo gate grueso de start/endDate que buildCyclePayments).
@@ -11803,12 +11832,12 @@ try{
             <span style="font-size:11px;font-weight:bold;color:${_col}">${isLong?'✓ ACTIVA · 3 semanas':'No · 2 semanas'} <span style="font-size:9px;color:var(--muted)">▾</span></span>
           </summary>
           <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:10px">
-            Este ciclo tiene <strong style="color:var(--txt2)">${_sats} sábado${_sats!==1?'s':''}</strong> · detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga':'no es larga'}</strong>.${longManual?' 🟠 Además la marcaste manual.':''}
+            Este ciclo tiene <strong style="color:var(--txt2)">${_sats} sábado${_sats!==1?'s':''}</strong> · detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga':'no es larga'}</strong>.${longManual?' 🟠 Además la marcaste manual.':''}${longOff?' 🔕 La desactivaste manual: este ciclo cuenta <strong>2 semanas</strong> (la semana extra pasa al siguiente).':''}
             <br>Con quincena larga tus gastos fijos <strong>semanales</strong> (súper, gasolina…) cuentan <strong>3 veces</strong>: la semana extra sale en <em>Pagos del ciclo</em> anclada al 3er sábado, aunque el gasto tenga otro día de la semana elegido.
             ${_sem.length>0?`<br><span style="color:${isLong?'var(--amber)':'var(--muted)'}">${isLong?'Semana extra incluida':'Si se activara sumaría'}: <strong>${fx(Math.round(_extra))}</strong> (${_sem.length} gasto${_sem.length!==1?'s':''} semanal${_sem.length!==1?'es':''}).</span>`:''}
-            ${!_isCurrent?'<br><span style="font-style:italic">Solo lectura: la marca manual únicamente aplica a la quincena en curso.</span>':(!longAuto?'<br>Si sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (te pagaron antes, compraste el sábado previo al payday), actívala:':'')}
+            ${!_isCurrent?'<br><span style="font-style:italic">Solo lectura: la marca manual únicamente aplica a la quincena en curso.</span>':(!longAuto&&!isLong?'<br>Si sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (te pagaron antes, compraste el sábado previo al payday), actívala:':(isLong?'<br>Si la semana extra la vas a cubrir con el <em>siguiente</em> ciclo (te adelantaron la quincena), desactívala y esos gastos contarán allá:':''))}
           </div>
-          ${_isCurrent?`<button class="btn ${longManual?'btn-red':'btn-sage'} btn-sm" style="width:100%;margin-top:10px" onclick="toggleLongCycle()">${longManual?'↩ Quitar marca de larga':'✓ Marcar esta quincena como larga'}</button>`:''}
+          ${_isCurrent?`<button class="btn ${isLong?'btn-red':'btn-sage'} btn-sm" style="width:100%;margin-top:10px" onclick="toggleLongCycle()">${isLong?'↩ Desactivar quincena larga (contar 2 semanas)':'✓ Marcar esta quincena como larga'}</button>`:''}
         </details>
       </div>`;
     })()}

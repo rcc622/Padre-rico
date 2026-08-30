@@ -4789,7 +4789,10 @@ function hdrUp(){
   el.style.color=scCol(s);
   const today=new Date();
   const dtEl=document.getElementById('hdr-date');
-  if(dtEl){const dd=today.getDate();const cyc=(dd>=15&&dd<=29)?'2da quincena (pago del 15)':'1ra quincena (pago del 30)';dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'2-digit',year:'2-digit'})+' · '+cyc;dtEl.title='v'+(window.APP_BUILD||'?');}
+  // Tipo de quincena desde el ciclo REAL (getCycleWindow respeta la frontera
+  // móvil de nómina adelantada), no desde el número de día: el 29 con adelanto
+  // registrado ya es 1ra quincena, aunque 15≤29≤29.
+  if(dtEl){const _cw=getCycleWindow();const _adv=advStartOf(cycleKey());const cyc=(_cw.type==='2da'?'2da quincena (pago del 15)':'1ra quincena (pago del 30)')+(_adv?' · adelantada':'');dtEl.textContent=today.toLocaleDateString('es-MX',{weekday:'long',day:'2-digit',month:'2-digit',year:'2-digit'})+' · '+cyc;dtEl.title='v'+(window.APP_BUILD||'?');}
 }
 function launchApp(){document.getElementById('onboarding').style.display='none';const a=document.getElementById('app');a.style.display='flex';a.style.flexDirection='column';document.getElementById('fabContainer').style.display='';const _h=(location.hash||'').slice(1);go(_NAV_TABS.includes(_h)?_h:_restoreNavTab());}
 
@@ -11776,7 +11779,14 @@ try{
       mandatory.push({day:cfg.dueDay,name:'💳 Pago TDC (corte '+corteDate.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'})+')',amt:Math.round(bucket.total),type:'deuda',id:1,ptype:'tdcpend',paid:false,tdcPending:true});
     })();
 
-    mandatory.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;return a.day-b.day;});
+    // Orden CRONOLÓGICO dentro del ciclo, no por número de día: en ciclos que
+    // cruzan de mes (30..14 canónico, o 29..14 con nómina adelantada) el día
+    // 30 va ANTES que el día 1 — sin esto, los pagos de mañana 30 salían
+    // hasta el fondo, después de los de septiembre. Rank = días desde el
+    // inicio del ciclo a la 1ra ocurrencia de ese día; sin día (0) al final.
+    const _sd0=cStart.getDate(),_dim0=new Date(cStart.getFullYear(),cStart.getMonth()+1,0).getDate();
+    const _dayRank=d=>d>=_sd0?d-_sd0:_dim0-_sd0+d;
+    mandatory.sort((a,b)=>{if(a.day&&!b.day)return-1;if(!a.day&&b.day)return 1;if(!a.day&&!b.day)return 0;return _dayRank(a.day)-_dayRank(b.day);});
     const passedDay=today.getDate();
     const allPays=[...mandatory,...optional];
 

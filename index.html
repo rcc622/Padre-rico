@@ -956,19 +956,68 @@ function navDiarioCycle(dir){
 // al 1 de marzo, y la 1ra empezaba el 28 — los días 28-feb y 1-mar quedaban en
 // DOS ventanas a la vez y los gastos de esos días se contaban doble.
 function _qnaEndDay(y,mo){return Math.min(29,new Date(y,mo+1,0).getDate());}
+function _ymdToDate(s){const p=String(s).split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
+// Ventana CANÓNICA de un cycleKey (sin ajustes de nómina adelantada); null si
+// el key no parsea. La ventana pública (con frontera móvil) es cycleWindowFromKey.
+function _rawCycleWindow(ck){
+  const m=String(ck||'').match(/^(\d+)-(\d+)-(1ra|2da)$/);
+  if(!m)return null;
+  const y=+m[1],mo=+m[2]-1,tipo=m[3]; // mo is 0-indexed label month
+  if(tipo==='2da'){
+    // 2da qna: 15 a min(29, fin de mes) del mes etiquetado
+    return {start:new Date(y,mo,15),end:new Date(y,mo,_qnaEndDay(y,mo)),type:'2da'};
+  }
+  // 1ra qna: día siguiente al fin de la 2da del mes mo, hasta el 14 de mo+1
+  // '2026-3-1ra' → mo=2 (marzo 0-indexed) → start Mar 30, end Abr 14
+  return {start:new Date(y,mo,_qnaEndDay(y,mo)+1),end:new Date(y,mo+1,14),type:'1ra'};
+}
+// ── FRONTERA MÓVIL POR NÓMINA ADELANTADA ──
+// Si la nómina que ABRE el ciclo ck se depositó ANTES de su inicio canónico
+// (registro en S.paydayLog[ck] con fecha dentro de la quincena canónica
+// previa), la quincena arranca ese día: ck absorbe los días [depósito..fin
+// canónico previo] y el ciclo previo termina el día anterior. Devuelve la
+// fecha 'YYYY-MM-DD' del adelanto válido, o null (sin registro, pago a
+// tiempo/tarde, o fecha fuera de rango). ÚNICA fuente del ajuste: ckForYMD,
+// cycleWindowFromKey y getCycleWindow derivan de aquí, así el mapeo
+// fecha↔ciclo y las ventanas se mueven JUNTOS y los dos motores (Inicio y
+// Plan) siguen cuadrando — igual que sin adelanto, solo con otra frontera.
+function advStartOf(ck){
+  try{
+    if(typeof S==='undefined'||!S||!S.paydayLog)return null;
+    const rec=S.paydayLog[ck];
+    if(!rec||!rec.date)return null;
+    const w=_rawCycleWindow(ck);if(!w)return null;
+    if(rec.date>=_ymdLocal(w.start))return null;
+    const pw=_rawCycleWindow(prevCycleKeyOf(ck));if(!pw)return null;
+    if(rec.date<_ymdLocal(pw.start))return null;
+    return rec.date;
+  }catch(e){return null;}
+}
 function cycleWindowFromKey(ck){
   try{
-    const m=ck.match(/^(\d+)-(\d+)-(1ra|2da)$/);
-    if(!m)return getCycleWindow();
-    const y=+m[1],mo=+m[2]-1,tipo=m[3]; // mo is 0-indexed label month
-    if(tipo==='2da'){
-      // 2da qna: 15 a min(29, fin de mes) del mes etiquetado
-      return {start:new Date(y,mo,15),end:new Date(y,mo,_qnaEndDay(y,mo)),type:'2da'};
-    }
-    // 1ra qna: día siguiente al fin de la 2da del mes mo, hasta el 14 de mo+1
-    // '2026-3-1ra' → mo=2 (marzo 0-indexed) → start Mar 30, end Abr 14
-    return {start:new Date(y,mo,_qnaEndDay(y,mo)+1),end:new Date(y,mo+1,14),type:'1ra'};
+    const w=_rawCycleWindow(ck);
+    if(!w)return getCycleWindow();
+    const a=advStartOf(ck);
+    if(a)w.start=_ymdToDate(a); // este ciclo arrancó adelantado
+    const na=advStartOf(nextCycleKeyOf(ck));
+    if(na){const e=_ymdToDate(na);e.setDate(e.getDate()-1);w.end=e;} // cedió su cola al siguiente
+    return w;
   }catch(e){return getCycleWindow();}
+}
+// Sábados de la parte CANÓNICA de una ventana (excluye días absorbidos o
+// cedidos por la frontera móvil). Base de la detección de "quincena larga":
+// los días absorbidos entran al conteo de pagos por sus fechas reales, no
+// deben además inflar el piso de semanas (inventaría una Sem extra fantasma).
+function _canonSats(w){
+  let s=new Date(w.start),e=new Date(w.end);
+  try{
+    const ek=ckForYMD(e.getFullYear(),e.getMonth(),e.getDate());
+    const rw=_rawCycleWindow(ek);
+    if(rw){if(rw.start>s)s=new Date(rw.start);if(rw.end<e)e=new Date(rw.end);}
+  }catch(_e){}
+  let sats=0;const d=new Date(s);
+  while(d<=e){if(d.getDay()===6)sats++;d.setDate(d.getDate()+1);}
+  return sats;
 }
 // Get all known cycle keys (from paidItems + current + next), sorted chronologically
 function allCycleKeys(){
@@ -1084,14 +1133,26 @@ const ib=(key,label)=>'<button class="info-btn" onclick="event.stopPropagation()
 // lógica inline (así no se desincroniza — p.ej. el caso de enero, donde la 1ra
 // quincena pertenece a diciembre del año anterior).
 function ckForYMD(y,m,d){
-  if(d>=15&&d<=29)return y+'-'+(m+1)+'-2da';
-  if(d>=30)return y+'-'+(m+1)+'-1ra';
+  let ck;
+  if(d>=15&&d<=29)ck=y+'-'+(m+1)+'-2da';
+  else if(d>=30)ck=y+'-'+(m+1)+'-1ra';
   // d in [1..14]: el ciclo empezó ~día 30 del mes ANTERIOR (label = mes previo).
   // En enero el mes previo es diciembre del año pasado — sin este caso se
   // devolvía 'y-0-1ra' (mes 0 inexistente), distinto de la '(y-1)-12-1ra' que
   // genera prevCycleKeyOf para la MISMA quincena, partiendo los datos en dos.
-  if(m===0)return (y-1)+'-12-1ra';
-  return y+'-'+m+'-1ra';
+  else if(m===0)ck=(y-1)+'-12-1ra';
+  else ck=y+'-'+m+'-1ra';
+  // Frontera móvil: si la nómina que abre el ciclo SIGUIENTE se depositó en o
+  // antes de esta fecha (adelanto registrado), el día ya pertenece a ese ciclo.
+  try{
+    const nk=nextCycleKeyOf(ck);
+    const a=advStartOf(nk);
+    if(a){
+      const ymd=y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      if(ymd>=a)return nk;
+    }
+  }catch(e){}
+  return ck;
 }
 function cycleKey(){
   const today=new Date();today.setHours(0,0,0,0);
@@ -1132,6 +1193,13 @@ function prevCycleKeyOf(ck){
 function getCycleWindow(ref){
   const t=ref?new Date(ref):new Date();t.setHours(0,0,0,0);
   const d=t.getDate(),m=t.getMonth(),y=t.getFullYear();
+  // Deriva del mapeo fecha→ciclo (ckForYMD) y su ventana ajustada, para que la
+  // frontera móvil de nómina adelantada aplique igual aquí que en todo lo demás.
+  try{
+    const ck=ckForYMD(y,m,d);
+    if(_rawCycleWindow(ck))return cycleWindowFromKey(ck);
+  }catch(e){}
+  // Fallback legacy (no debería ocurrir: ckForYMD siempre da un key válido)
   if(d>=15&&d<=29){
     return {start:new Date(y,m,15),end:new Date(y,m,_qnaEndDay(y,m)),type:'2da'};
   }
@@ -1172,9 +1240,10 @@ function diariosThisCycle(ck){
 // "Quitar marca de larga" en un ciclo auto-detectado no desactivaba nada.
 function getWeeksInCycle(window){
   const w=window||getCycleWindow();
-  let sats=0;
-  const d=new Date(w.start);
-  while(d<=w.end){if(d.getDay()===6)sats++;d.setDate(d.getDate()+1);}
+  // _canonSats: solo los sábados de la parte canónica del ciclo — con frontera
+  // móvil, los días absorbidos por adelanto no inflan el piso de semanas (sus
+  // pagos entran por fecha real) y los cedidos ya no cuentan aquí.
+  const sats=_canonSats(w);
   let base=sats>=3?3:2;
   // Manual override only applies to the current cycle (no window arg)
   if(!window){
@@ -1198,8 +1267,12 @@ function getWeeksInCycle(window){
 // Se toma el MAX(fechas reales, semanas del ciclo): nunca reduce el conteo
 // (el caso 3 jueves / 2 sábados sigue dando 3) y en ciclo normal no cambia.
 function weeklyOccsInWindow(e,win){
-  const wd=+(e&&e.weekDay)||0;
-  if(!(wd>=1&&wd<=7))return null;
+  // Sin weekDay explícito, el ancla es sábado (mismo default que el Plan).
+  // Contar por fechas reales de sábado equivale al conteo viejo por
+  // getWeeksInCycle en ciclos canónicos (el piso/tope MAX-MIN reconcilia
+  // ambos), y con frontera móvil suma/quita la semana absorbida/cedida.
+  let wd=+(e&&e.weekDay)||0;
+  if(!(wd>=1&&wd<=7))wd=6;
   const jsDay=wd===7?0:wd;
   let n=0;const d=new Date(win.start);
   while(d<=win.end){if(d.getDay()===jsDay)n++;d.setDate(d.getDate()+1);}
@@ -1215,11 +1288,8 @@ function weeklyOccsInWindow(e,win){
   return Math.max(n,weeks);
 }
 function isLongCycleAuto(){
-  const w=getCycleWindow();
-  let sats=0;
-  const d=new Date(w.start);
-  while(d<=w.end){if(d.getDay()===6)sats++;d.setDate(d.getDate()+1);}
-  return sats>=3;
+  // Mismo criterio que getWeeksInCycle: sábados de la parte canónica.
+  return _canonSats(getCycleWindow())>=3;
 }
 function toggleLongCycle(){
   const ck=cycleKey();
@@ -1264,27 +1334,75 @@ function expectedPaydayForCycle(ck){
 }
 function registerPaydayAdvance(dateYMD){
   if(!dateYMD)return;
-  const ck=cycleKey(),nk=nextCycleKeyOf(ck);
+  const ck=cycleKey(),nk=nextCycleKeyOf(ck); // ck = ciclo actual ANTES del ajuste
   if(!S.paydayLog)S.paydayLog={};
   const exp=expectedPaydayForCycle(nk);
-  S.paydayLog[nk]={date:dateYMD,expected:exp?_ymdLocal(exp):null,at:Date.now()};
-  const isAdvance=dateYMD<=_ymdLocal(getCycleWindow().end);
-  if(isAdvance&&getWeeksInCycle()===3){
-    if(!S.longCycleOverrides)S.longCycleOverrides={};
-    S.longCycleOverrides[ck]=false;
-    toast('💵 Adelanto registrado · este ciclo cuenta 2 semanas; la semana extra va con la nómina nueva');
+  const rec={date:dateYMD,expected:exp?_ymdLocal(exp):null,at:Date.now()};
+  S.paydayLog[nk]=rec;
+  const a=advStartOf(nk); // null si no fue adelanto (pago a tiempo o fecha inválida)
+  if(a){
+    // FRONTERA MÓVIL: nk arranca en `a`. Los pagos PENDIENTES de los días
+    // absorbidos se re-agendan solos (todo cae por ventana); aquí migramos los
+    // ya APLICADOS/seleccionados de ese tramo (p.ej. un pago único hecho el
+    // mismo día del depósito): su día agendado cae en [a..fin canónico], así
+    // que ahora pertenecen a paidItems[nk] — Inicio y Plan los cuentan allá.
+    // Solo items NO semanales (los semanales por fecha real no colisionan de
+    // llave y sus aplicados previos al adelanto quedan bien donde están).
+    const rawEnd=_rawCycleWindow(ck).end;
+    const zone={start:_ymdToDate(a),end:rawEnd};
+    const items=(S.paidItems||{})[ck]||{};
+    const moved=[];
+    Object.keys(items).forEach(k=>{
+      if(k.startsWith('_')||k.startsWith('tdcpay_'))return;
+      const parts=k.split('_');const t=parts[0];const idn=+(parts.slice(1).join('_'));
+      let pd=0;
+      if(t==='exp'){
+        const e=(S.exp||[]).find(x=>x.id===idn);
+        if(!e)return;
+        const f=e.freq||'mensual';
+        if(f==='semanal'||f==='quincenal')return;
+        pd=+(e.payDay)||0;
+      }else if(t==='debt'){
+        const db=(S.debts||[]).find(x=>x.id===idn);
+        if(!db)return;
+        pd=+(db.payDay)||0;
+        if(!pd&&db.nextPay)pd=new Date(db.nextPay+'T12:00').getDate();
+      }else return; // expw2/expw3, sav, apt, imp: no se migran
+      if(!pd||!dayInWindow(pd,zone))return;
+      if(!S.paidItems[nk])S.paidItems[nk]={};
+      if(!(k in S.paidItems[nk])){S.paidItems[nk][k]=items[k];moved.push(k);}
+      delete items[k];
+    });
+    rec.moved=moved;
+    toast('💵 Adelanto registrado · la quincena nueva arranca el '+_ymdToDate(a).getDate()+' y sus pagos viven en su bloque');
   }else{
     toast('💵 Depósito de nómina registrado');
   }
   sv();rFlujo();rPlan();rHabitos();
 }
-function undoPaydayAdvance(){
-  const ck=cycleKey(),nk=nextCycleKeyOf(ck);
-  if(S.paydayLog)delete S.paydayLog[nk];
-  // Revierte SOLO el override que puso el registro (false → vuelve al auto);
-  // una marca manual de larga (true) no se toca.
-  if((S.longCycleOverrides||{})[ck]===false)delete S.longCycleOverrides[ck];
-  toast('Registro de nómina deshecho');
+function undoPaydayAdvance(ckAdv){
+  // ckAdv = ciclo cuya nómina se registró. Sin argumento: el actual si él
+  // mismo tiene registro (ya somos la quincena adelantada), si no el siguiente.
+  let nk=ckAdv;
+  if(!nk){
+    const cur=cycleKey();
+    nk=(S.paydayLog||{})[cur]?cur:nextCycleKeyOf(cur);
+  }
+  const rec=(S.paydayLog||{})[nk];
+  if(!rec)return;
+  const pk=prevCycleKeyOf(nk);
+  // Regresa los pagos migrados a su ciclo original
+  (rec.moved||[]).forEach(k=>{
+    if(S.paidItems[nk]&&(k in S.paidItems[nk])){
+      if(!S.paidItems[pk])S.paidItems[pk]={};
+      if(!(k in S.paidItems[pk]))S.paidItems[pk][k]=S.paidItems[nk][k];
+      delete S.paidItems[nk][k];
+    }
+  });
+  delete S.paydayLog[nk];
+  // Legacy: limpia el override false que ponía la versión anterior del registro
+  if((S.longCycleOverrides||{})[pk]===false)delete S.longCycleOverrides[pk];
+  toast('Registro de nómina deshecho · frontera restaurada');
   sv();rFlujo();rPlan();rHabitos();
 }
 // Fuente de verdad: ¿el día-del-mes `pd` cae dentro de la ventana de ciclo
@@ -11317,7 +11435,11 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
         // vigencia por ocurrencia siga funcionando.
         while(_wdayNums.length<weeks){const _k=_wdayNums.length;_wdayNums.push(_cycleSats[_k]||0);_wdayYMD.push(_cycleSatYMD[_k]||null);}
       }else{
-        weeks=_cycleWeeks;
+        // Sin día elegido = ancla sábado: los sábados REALES de la ventana
+        // mandan (en ciclos canónicos #sábados ≤ piso, así que MAX no cambia
+        // nada; con frontera móvil suma la semana absorbida). Forzada corta:
+        // MIN, igual que arriba. Mismo criterio que weeklyOccsInWindow.
+        weeks=_forcedShort?Math.min(_cycleSats.length,_cycleWeeks):Math.max(_cycleSats.length,_cycleWeeks);
       }
       for(let wi=0;wi<weeks;wi++){
       // Vigencia POR OCURRENCIA: un gasto semanal con comienzo/conclusión solo
@@ -11858,7 +11980,7 @@ try{
          pasadas/futuras se muestra solo la detección automática. -->
     ${(()=>{
       const _lw=cycleWindowFromKey(_viewCk);
-      let _sats=0;{const _sd=new Date(_lw.start);while(_sd<=_lw.end){if(_sd.getDay()===6)_sats++;_sd.setDate(_sd.getDate()+1);}}
+      const _sats=_canonSats(_lw); // sábados de la parte canónica (frontera móvil no infla el piso)
       const longAuto=_sats>=3;
       const _lov=_isCurrent?(S.longCycleOverrides||{})[_viewCk]:undefined;
       const longManual=_lov===true;
@@ -11885,18 +12007,22 @@ try{
           ${_isCurrent?`<button class="btn ${isLong?'btn-red':'btn-sage'} btn-sm" style="width:100%;margin-top:10px" onclick="toggleLongCycle()">${isLong?'↩ Desactivar quincena larga (contar 2 semanas)':'✓ Marcar esta quincena como larga'}</button>`:''}
           ${_isCurrent?(()=>{
             // Registro de nómina: la del SIGUIENTE ciclo es la que puede llegar
-            // como adelanto dentro de este. Registrarla con fecha ≤ fin de este
-            // ciclo fuerza sola la quincena corta (registerPaydayAdvance).
+            // como adelanto dentro de este. Registrarla con fecha anterior a su
+            // inicio canónico MUEVE LA FRONTERA (advStartOf): la quincena nueva
+            // arranca ese día y absorbe los pagos del tramo (registerPaydayAdvance).
             const _nk=nextCycleKeyOf(_viewCk);
             const _exp=expectedPaydayForCycle(_nk);
             const _reg=(S.paydayLog||{})[_nk];
             const _fmtD=d=>d?d.toLocaleDateString('es-MX',{weekday:'short',day:'numeric',month:'short'}):'—';
             const _endY=_ymdLocal(_lw.end);
+            const _ownAdv=advStartOf(_viewCk); // este ciclo arrancó adelantado
             return `<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:11px;color:var(--muted);line-height:1.7">
+              ${_ownAdv?`💵 <strong style="color:var(--sage)">Esta quincena arrancó el ${_fmtD(_ymdToDate(_ownAdv))}</strong> (nómina adelantada): absorbe los pagos desde ese día — por eso los ves en este bloque.
+              <button class="btn btn-ghost btn-sm" style="width:100%;margin:8px 0;font-size:11px" onclick="undoPaydayAdvance('${_viewCk}')">↩ Deshacer adelanto (frontera normal)</button><br>`:''}
               💵 <strong style="color:var(--txt2)">Nómina del siguiente ciclo</strong> · esperada: <strong style="color:var(--txt2)">${_fmtD(_exp)}</strong> <span style="font-size:10px">(regla: día 15 / fin de mes; si cae en fin de semana, el siguiente día hábil)</span>.
-              ${_reg?`<br>Depositada: <strong style="color:var(--sage)">${_fmtD(new Date(_reg.date+'T12:00'))}</strong>${_reg.date<=_endY?' · <span style="color:var(--amber)">llegó adelantada — la semana extra cuenta en el ciclo que abre</span>':''}
-              <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="undoPaydayAdvance()">↩ Deshacer registro de nómina</button>`
-              :`<br>¿Te la depositaron antes? Registra la fecha real y la semana extra se pasa sola al siguiente ciclo:
+              ${_reg?`<br>Depositada: <strong style="color:var(--sage)">${_fmtD(new Date(_reg.date+'T12:00'))}</strong>${_reg.date<=_endY?' · <span style="color:var(--amber)">llegó adelantada — la quincena nueva arranca ese día y sus pagos pasan a su bloque</span>':''}
+              <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px;font-size:11px" onclick="undoPaydayAdvance('${_nk}')">↩ Deshacer registro de nómina</button>`
+              :`<br>¿Te la depositaron antes? Registra la fecha real: la quincena nueva arranca ese día y los pagos desde esa fecha (pendientes y aplicados) pasan a su bloque:
               <div style="display:flex;gap:8px;margin-top:8px"><input type="date" id="paydayAdvDate" value="${_todayYMD()}" style="flex:1;padding:8px;font-size:13px"><button class="btn btn-sage btn-sm" onclick="registerPaydayAdvance(document.getElementById('paydayAdvDate').value)">Registrar</button></div>`}
             </div>`;
           })():''}

@@ -2292,9 +2292,9 @@ function toggleRetoCheck(retoId,idx){
     const expMatch=S.exp.find(e=>isSuper?/super|súper|despensa|mandado/i.test(e.name||''):/gasol/i.test(e.name||''));
     const budgeted=expMatch?(+expMatch.amt||0):0;
     const label=isSuper?'súper':'gasolina';
-    // Label week as Sem 1/2 (1ra qna) or Sem 3/4 (2da qna)
-    const ctd=new Date();
-    const wOff2=ctd.getDate()>=15&&ctd.getDate()<=29?2:0;
+    // Label week as Sem 1/2 (1ra qna) or Sem 3/4 (2da qna). Por TIPO de ciclo
+    // real (no por número de día): con nómina adelantada el día 29 ya es 1ra.
+    const wOff2=getCycleWindow().type==='2da'?2:0;
     const semLbl=(idx+1+wOff2);
     const body='<div style="font-size:13px;color:var(--txt2);margin-bottom:14px;text-align:center;line-height:1.7"><strong>'+reto.name+' — Sem '+semLbl+'</strong></div>'
       +'<div style="font-size:12px;color:var(--txt2);margin-bottom:14px;text-align:center">Presupuesto semanal de '+label+': <strong>'+fx(budgeted)+'</strong><br>¿Cuánto gastaste realmente esta semana?</div>'

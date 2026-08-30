@@ -4064,7 +4064,11 @@ function _bonoStepLive(step){
   if(step.type==='sav'||step.type==='reserve')return {done:!!step.done,missing:false};
   const d=(S.debts||[]).find(x=>x.id===step.debtId);
   if(!d)return {done:!!step.done,missing:true};
-  return {done:(+d.bal||0)<=(+step.targetBal||0)+0.5,missing:false};
+  // Deuda existente: se marca sola cuando el saldo real llega a la meta, PERO
+  // el palomeo manual (step.done) también cuenta — antes un abono hecho fuera
+  // de la app (o aún no registrado en la deuda) dejaba el paso en ⏳ sin forma
+  // de completarlo. OR, nunca AND: el saldo real jamás des-marca un palomeo.
+  return {done:(+d.bal||0)<=(+step.targetBal||0)+0.5||!!step.done,missing:false};
 }
 function _bonoSelProgress(sel){
   const total=(sel.steps||[]).length;
@@ -4088,7 +4092,7 @@ function chooseBonoPlay(key){
       try{if(cur==='plan')rPlan();}catch(e){}
     };
     const prev=(S.bonoPlaySel||{})[ck];
-    const prevManualDone=(prev&&prev.chosenKey!==key)?(prev.steps||[]).filter(s=>(s.type==='sav'||s.type==='reserve')&&s.done).length:0;
+    const prevManualDone=(prev&&prev.chosenKey!==key)?(prev.steps||[]).filter(s=>s.done).length:0;
     if(prevManualDone>0){
       showConfirm('¿Cambiar de jugada?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Ya tenías <strong>'+prevManualDone+' paso'+(prevManualDone!==1?'s':'')+'</strong> manual'+(prevManualDone!==1?'es':'')+' marcado'+(prevManualDone!==1?'s':'')+' en la jugada '+prev.chosenKey+'. Cambiar de jugada reinicia ese marcado (los pasos de deuda no se pierden — se recalculan solos de tu saldo real).</div>',doChoose);
     }else doChoose();
@@ -4116,10 +4120,12 @@ function _renderBonoChecklist(sel,compact){
   h+='<div class="pw" style="margin-bottom:10px"><div class="pb" style="width:'+pct+'%;background:var(--sage)"></div></div>';
   h+=sel.steps.map(s=>{
     const live=_bonoStepLive(s);
-    // Tocable a mano si es de ahorro, O si su deuda de referencia ya no
-    // existe (la borraste al liquidarla) — sin esto, un paso de deuda
-    // "huérfano" se quedaba en ⏳ para siempre, sin forma de completarlo.
-    const manual=s.type==='sav'||s.type==='reserve'||live.missing;
+    // TODO paso es tocable a mano salvo uno de deuda ya completado POR SALDO
+    // real (ahí manda el saldo, no hay nada que togglear). Los de deuda
+    // pendientes ahora aceptan palomeo manual (abonos hechos fuera de la app);
+    // además se siguen marcando solos cuando el saldo llega a la meta.
+    const _autoBySaldo=live.done&&!s.done&&s.type!=='sav'&&s.type!=='reserve'&&!live.missing;
+    const manual=!_autoBySaldo;
     const onAttr=manual?' onclick="toggleBonoStepDone(\''+sel.ck+'\',\''+s.id+'\')" style="cursor:pointer"':'';
     const missingNote=live.missing?' <span style="color:var(--muted);font-size:10px">(ya no existe esa deuda — '+(live.done?'marcada':'tócalo si ya la pagaste')+')</span>':'';
     return '<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);gap:8px"'+onAttr+'>'
@@ -4129,7 +4135,7 @@ function _renderBonoChecklist(sel,compact){
   }).join('');
   if(!compact){
     h+='<div style="font-size:10px;color:var(--txt2);margin-top:10px;line-height:1.5;padding:8px 10px;background:var(--amberdim);border-radius:6px"><strong style="color:var(--amber)">💡 Es una sugerencia, no una obligación.</strong> Muestra un buen reparto para el <strong>día que cae tu bono</strong> — no descuenta lo que ya gastaste este ciclo. Para tu fondeo real y al día, manda tu <strong>Plan de IA</strong>. Palomear es opcional.</div>';
-    h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">✅ = se marcó solo (tu saldo real ya llegó a la meta). ⬜ = tócalo a mano si quieres (ahorro y reservas, o una deuda que ya borraste).</div>';
+    h+='<div style="font-size:10px;color:var(--muted);margin-top:6px;line-height:1.5">✅ = completado (los de deuda se marcan solos cuando tu saldo real llega a la meta, o los palomeas tú). ⬜ = tócalo a mano cuando lo hagas.</div>';
     if(sel.alternates&&sel.alternates.length){
       h+='<div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);margin-bottom:6px">¿Cambiar de jugada?</div><div class="row" style="gap:6px;flex-wrap:wrap">'
         +sel.alternates.map(a=>'<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:5px 10px" onclick="chooseBonoPlay(\''+a.key+'\')">'+a.label+'</button>').join('')
@@ -5504,6 +5510,11 @@ const USER_CATS=[
   {id:'E_hogar',label:'🚨 Hogar (emergencia)',group:'emergencia'},
   {id:'E_familia',label:'🚨 Familia (emergencia)',group:'emergencia'},
   {id:'E_otra',label:'🚨 Otra emergencia',group:'emergencia'},
+  // ── SALIDA · paseos y planes en familia (su propio bucket, NO hormiga ni impulso)
+  {id:'S_paseo',label:'🎭 Salida / paseo',group:'salida'},
+  {id:'S_restfam',label:'🍽️ Restaurante en familia',group:'salida'},
+  {id:'S_evento',label:'🎟️ Evento / entradas',group:'salida'},
+  {id:'S_otra',label:'❓ Otra salida',group:'salida'},
   // ── LINKEABLES · pago de algo planeado en Plan de Acción
   {id:'X_fijo',label:'🏠 Fijo (renta, servicios)',group:'fijo',exclude:true,linkable:'exp'},
   {id:'X_deuda',label:'💳 Pago de deuda',group:'deuda',exclude:true,linkable:'debts'},
@@ -5518,7 +5529,7 @@ const USER_CATS=[
 // comportamiento (hormiga/exclude) se derivan SIEMPRE del grupo al leer:
 // un dato viejo, editado a mano o de un respaldo nunca puede romper la
 // categorización ni colar un gasto al bucket equivocado.
-const _CUSTOM_CAT_FLAGS={hormiga:{hormiga:true},impulso:{},emergencia:{},fijo:{exclude:true},deuda:{exclude:true},otros:{exclude:true}};
+const _CUSTOM_CAT_FLAGS={hormiga:{hormiga:true},impulso:{},salida:{},emergencia:{},fijo:{exclude:true},deuda:{exclude:true},otros:{exclude:true}};
 function allUserCats(){
   try{
     // S.userCatLabels: nombre/emoji personalizado por id (editor 🏷️). Las de
@@ -5547,7 +5558,7 @@ function _hkDisplay(origLabel){
 // cerraron (no se reescribe historia).
 function openCatEditor(){
   const ov=S.userCatLabels||{};
-  const groups=[['hormiga','🐜 Hormiga'],['impulso','💥 Impulso'],['emergencia','🚨 Emergencia'],['fijo','🏠 Pago fijo'],['deuda','💳 Pago deuda'],['otros','🚫 Excluir']];
+  const groups=[['hormiga','🐜 Hormiga'],['impulso','💥 Impulso'],['salida','🎭 Salida'],['emergencia','🚨 Emergencia'],['fijo','🏠 Pago fijo'],['deuda','💳 Pago deuda'],['otros','🚫 Excluir']];
   let body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Toca ✏️ para cambiar emoji y nombre. Aplica de aquí en adelante; tus capítulos guardados conservan el nombre con el que se cerraron.</div>';
   body+='<div style="max-height:380px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:2px 12px 8px">';
   groups.forEach(([g,gl])=>{
@@ -5848,30 +5859,26 @@ function detectH(txns){
 // FASE NIVEL 1: detecta impulso y emergencia agregados por subcategoría
 // Estructura paralela a detectH pero solo para grupos no-hormiga
 function detectImpulsoEmergencia(txns){
-  const imp={},eme={};
+  const imp={},eme={},sal={};
+  const _push=(bucket,info,t)=>{
+    const k=info.label;
+    if(!bucket[k])bucket[k]={total:0,count:0,txns:[]};
+    bucket[k].total+=t.amt;
+    bucket[k].count++;
+    bucket[k].txns.push({desc:(t.desc||'').slice(0,40),amt:t.amt,date:t.date||''});
+  };
   txns.forEach(t=>{
     try{
       const userCat=applyTxnCategory(t);
       if(!userCat)return;
       const info=getUserCatInfo(userCat);
       if(!info||info.exclude)return;
-      const target=imp; // not used directly; switch below
-      if(info.group==='impulso'){
-        const k=info.label;
-        if(!imp[k])imp[k]={total:0,count:0,txns:[]};
-        imp[k].total+=t.amt;
-        imp[k].count++;
-        imp[k].txns.push({desc:(t.desc||'').slice(0,40),amt:t.amt,date:t.date||''});
-      } else if(info.group==='emergencia'){
-        const k=info.label;
-        if(!eme[k])eme[k]={total:0,count:0,txns:[]};
-        eme[k].total+=t.amt;
-        eme[k].count++;
-        eme[k].txns.push({desc:(t.desc||'').slice(0,40),amt:t.amt,date:t.date||''});
-      }
+      if(info.group==='impulso')_push(imp,info,t);
+      else if(info.group==='emergencia')_push(eme,info,t);
+      else if(info.group==='salida')_push(sal,info,t);
     }catch(e){}
   });
-  return{impulso:imp,emergencia:eme};
+  return{impulso:imp,emergencia:eme,salidas:sal};
 }
 // Clasificador hormiga/impulso/servicio para CSV
 // Hormiga: goteo pequeño frecuente (OXXO, café, delivery barato)
@@ -6277,6 +6284,7 @@ function _renderCatStep1(){
   const tiles=[
     {grp:'hormiga',e:'🐜',n:'Hormiga',d:'Habitual, frecuente',c:'var(--sage)',bg:'var(--sagedim)'},
     {grp:'impulso',e:'💥',n:'Impulso',d:'Emocional, esporádico',c:'#A07030',bg:'rgba(160,112,48,.12)'},
+    {grp:'salida',e:'🎭',n:'Salida',d:'Paseo, plan en familia',c:'#8A6E9E',bg:'rgba(138,110,158,.12)'},
     {grp:'emergencia',e:'🚨',n:'Emergencia',d:'No planeado, necesario',c:'var(--terra)',bg:'rgba(184,92,74,.10)'},
     {grp:'fijo',e:'🏠',n:'Pago Fijo',d:'De Plan de Acción',c:'var(--sky)',bg:'rgba(74,110,140,.10)'},
     {grp:'deuda',e:'💳',n:'Pago Deuda',d:'De Plan de Acción',c:'var(--sky)',bg:'rgba(74,110,140,.10)'},
@@ -6348,6 +6356,9 @@ function _renderCatStep2(group){
   } else if(group==='impulso'){
     allUserCats().filter(c=>c.group==='impulso').forEach(c=>{body+=btn(c,'rgba(160,112,48,.12)','#A07030','#A07030');});
     body+=newBtn('impulso');
+  } else if(group==='salida'){
+    allUserCats().filter(c=>c.group==='salida').forEach(c=>{body+=btn(c,'rgba(138,110,158,.12)','#8A6E9E','#8A6E9E');});
+    body+=newBtn('salida');
   } else if(group==='emergencia'){
     allUserCats().filter(c=>c.group==='emergencia').forEach(c=>{body+=btn(c,'rgba(184,92,74,.10)','var(--terra)','var(--terra)');});
     body+=newBtn('emergencia');
@@ -6394,6 +6405,7 @@ function _renderCatStep2(group){
 const _NEWCAT_GROUP_INFO={
   hormiga:{n:'Hormiga',e:'🐜',hint:'Contará en tus gráficas de hormiga, igual que las de fábrica.'},
   impulso:{n:'Impulso',e:'💥',hint:'Contará en el grupo de impulsos.'},
+  salida:{n:'Salida',e:'🎭',hint:'Contará en el grupo de salidas (fuera de hormiga e impulsos).'},
   emergencia:{n:'Emergencia',e:'🚨',hint:'Contará en el grupo de emergencias.'},
   fijo:{n:'Pago Fijo',e:'🏠',hint:'Se excluye del análisis de fugas, como los demás fijos.'},
   deuda:{n:'Pago Deuda',e:'💳',hint:'Se excluye del análisis de fugas, como los demás pagos de deuda.'},
@@ -6902,9 +6914,8 @@ function saveSnapshot(txns,source){
     // FASE 1 BARRAS · desglose por categoría (gastos fijos) y grupo (deudas)
     expByCat:(()=>{const m={};(S.exp||[]).forEach(e=>{const k=(e.cat||'Sin categoría').trim()||'Sin categoría';const mo=toMonthly(+e.amt||0,e.freq||'mensual');m[k]=(m[k]||0)+mo;});return m;})(),
     debtByGroup:(()=>{const m={};(S.debts||[]).forEach(d=>{if((+d.bal||0)<=0)return;const k=(d.group||d.name||'Sin grupo').trim()||'Sin grupo';m[k]=(m[k]||0)+(+d.bal||0);});return m;})(),
-    // FASE NIVEL 1 · impulso y emergencia separados de hormiga
-    impulso:detectImpulsoEmergencia(txns).impulso,
-    emergencia:detectImpulsoEmergencia(txns).emergencia,
+    // FASE NIVEL 1 · impulso, emergencia y salidas separados de hormiga
+    ...(()=>{const ie=detectImpulsoEmergencia(txns);return{impulso:ie.impulso,emergencia:ie.emergencia,salidas:ie.salidas};})(),
   };
   pt({snapshots:[...S.snapshots,snap]});
   // LOAD NEXT TRIGGER: tell user when the next chapter will be ready
@@ -6959,7 +6970,7 @@ function recalcAllSnapshots(){
       // Re-detectar impulso y emergencia (Nivel 1)
       const ie=detectImpulsoEmergencia(snap.allTxns);
       recalced++;
-      return{...snap,hormiga,buckets,impulso:ie.impulso,emergencia:ie.emergencia,expByCat:curExpByCat,debtByGroup:curDebtByGroup,_recalcedAt:new Date().toISOString()};
+      return{...snap,hormiga,buckets,impulso:ie.impulso,emergencia:ie.emergencia,salidas:ie.salidas,expByCat:curExpByCat,debtByGroup:curDebtByGroup,_recalcedAt:new Date().toISOString()};
     });
     pt({snapshots:newSnaps});
     toast('✅ '+recalced+' capítulos recalculados'+(skipped?' ('+skipped+' sin datos)':''));
@@ -14821,6 +14832,12 @@ function rHistoria(){
             if(!horm[k])horm[k]={total:0};
             horm[k].total+=(v&&v.total)||0;
           }));
+          // Sum impulso + salidas across chunk (para la gráfica 🎭)
+          const impSal={};
+          chunk.forEach(s=>[s.impulso,s.salidas].forEach(src=>Object.entries(src||{}).forEach(([k,v])=>{
+            if(!impSal[k])impSal[k]={total:0};
+            impSal[k].total+=(v&&v.total)||0;
+          })));
           // Sum expByCat across chunk (flows)
           const exp={};
           chunk.forEach(s=>Object.entries(s.expByCat||{}).forEach(([k,v])=>{
@@ -14828,7 +14845,7 @@ function rHistoria(){
           }));
           // Debt balance: point-in-time, take LAST
           const debt=last.debtByGroup||{};
-          out.push({periodEnd:last.periodEnd||last.date,patrimonio:last.patrimonio,deudaTotal:last.deudaTotal,score:last.score,hormiga:horm,expByCat:exp,debtByGroup:debt,_label:'P'+(out.length+1)});
+          out.push({periodEnd:last.periodEnd||last.date,patrimonio:last.patrimonio,deudaTotal:last.deudaTotal,score:last.score,hormiga:horm,impSal,expByCat:exp,debtByGroup:debt,_label:'P'+(out.length+1)});
         }
         return out;
       })();
@@ -14918,6 +14935,7 @@ function rHistoria(){
           +mkC('📊 Patrimonio Neto',aggSnaps.map(s=>s.patrimonio||0),'#4E7C6A',false,labels,true)
           +mkMixed('⛓️ Deuda por Grupo',aggSnaps,s=>s.debtByGroup||{})
           +mkMixed('🐜 Hormiga por Categoría',aggSnaps,s=>{const o={};Object.entries(s.hormiga||{}).forEach(([k,v])=>{o[k]=(v&&v.total)||0;});return o;})
+          +mkMixed('🎭 Impulsos y Salidas',aggSnaps,s=>{const o={};[s.impulso,s.salidas,s.impSal].forEach(src=>Object.entries(src||{}).forEach(([k,v])=>{o[k]=(o[k]||0)+((v&&v.total!=null)?+v.total:(+v||0));}));return o;})
           +mkMixed('📋 Gastos Fijos por Categoría',aggSnaps,s=>s.expByCat||{})
           +mkC('📈 Score',aggSnaps.map(s=>s.score||0),'#4A6E8C',true,labels,true);
         // FRENTE 5: Prestige stars card

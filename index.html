@@ -8069,7 +8069,7 @@ try{
       html+='<div style="'+paidWrapStyle+'">'+
         '<div class="row-b" style="margin-bottom:6px">'+
           '<div class="row"><span style="font-weight:bold;font-size:14px;'+paidName+'">'+_escH(d.name)+'</span>'+(hasMSI?'<span class="badge bdg-sky">'+d.curPay+' de '+d.totalPays+'</span>':'')+(d.note?'<span class="badge bdg-amber">'+_escH(d.note)+'</span>':'')+(d.group&&debtSort!=='grupo'?'<span class="badge bdg-sky">'+_escH(d.group)+'</span>':'')+(d.firstPay&&d.firstPay>_todayYMD()?'<span class="badge bdg-amber">🗓️ inicia '+fmtDate(d.firstPay)+'</span>':'')+_intBadge+paidBadgeBig+'</div>'+
-          '<div class="row debt-card-actions" style="gap:4px"><button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
+          '<div class="row debt-card-actions" style="gap:4px">'+(!_isLiquidated?'<button class="btn btn-ghost btn-sm" onclick="openDebtAbonoModal('+d.id+')" style="padding:4px 8px;color:var(--sage);font-weight:bold" title="Abonar o liquidar">💸</button>':'')+'<button class="btn btn-ghost btn-sm" onclick="editDebt('+d.id+')" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmDebt('+d.id+')">✕</button></div>'+
         '</div>'+
         '<div class="row-b" style="margin-bottom:8px">'+
           '<div>'+
@@ -11277,6 +11277,75 @@ function confirmAdelantarPago(id){
     +'</div>',
     ()=>adelantarPago(id));
 }
+// ══ ABONAR / LIQUIDAR EN UN TAP ══════
+// Un solo flujo que imita la acción real: eliges monto (cuota, liquidar, o
+// libre) y método, y la app hace TODO consistente: baja el saldo de la deuda
+// (fuente de verdad), registra la salida como pago aplicado del ciclo (mismo
+// shape que applyPayments/adelantarPago, así Inicio y Plan cuadran solos) y,
+// si el saldo llega a 0, la deja liquidada hoy. Los pasos del reparto del
+// bono se marcan solos al bajar el saldo.
+function openDebtAbonoModal(id){
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){toast('Deuda no encontrada');return;}
+  const bal=Math.max(0,+d.bal||0);
+  if(bal<=0){toast('Esta deuda ya está en $0');return;}
+  const cuota=Math.min(Math.max(0,+d.pay||0)||bal,bal);
+  const chip=(lbl,amt)=>'<button class="btn btn-ghost btn-sm" style="flex:1;font-size:11px" onclick="document.getElementById(\'_abnAmt\').value='+amt+'">'+lbl+'</button>';
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:10px">Saldo actual: <strong style="color:var(--terra)">'+fx(bal)+'</strong> · cuota '+fx(+d.pay||0)+'</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:4px">¿Cuánto abonaste?</div>'
+    +'<input type="number" inputmode="decimal" id="_abnAmt" value="'+cuota+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">'
+    +'<div class="row" style="gap:6px;margin-top:8px">'+chip('Cuota '+fx(cuota),cuota)+chip('🏁 Liquidar '+fx(bal),bal)+'</div>'
+    +'<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:12px;color:var(--txt2);cursor:pointer"><input type="checkbox" id="_abnTdc" style="width:18px;height:18px">💳 Lo pagué con TDC (sale de tu efectivo al pagar la tarjeta)</label>'
+    +'<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">Baja el saldo de la deuda y registra la salida en tu Estado de Cuenta de esta quincena, todo en uno. Si el saldo llega a $0, queda liquidada hoy.</div>';
+  showConfirm('💸 Abonar a '+_escH(d.name),body,()=>{
+    const monto=+((document.getElementById('_abnAmt')||{}).value)||0;
+    const tdc=!!((document.getElementById('_abnTdc')||{}).checked);
+    applyDebtAbono(id,monto,tdc?'tdc':'debito');
+  });
+}
+function applyDebtAbono(id,monto,metodo){
+  const d=S.debts.find(x=>x.id===id);
+  if(!d){toast('Deuda no encontrada');return;}
+  monto=Math.round(+monto||0);
+  const bal=Math.max(0,+d.bal||0);
+  if(monto<=0){toast('Pon un monto válido');return;}
+  if(monto>bal)monto=bal; // nunca abonar más que el saldo
+  try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('applyDebtAbono.backup',e);}
+  const liquida=monto>=bal;
+  d.bal=Math.max(0,bal-monto);
+  if(liquida){
+    d.liqDate=_todayYMD();
+    if(d.curPay&&d.totalPays)d.curPay=d.totalPays+1;
+  }else if(d.curPay&&d.totalPays&&(+d.pay||0)>0){
+    // MSI: avanza el contador por cuotas COMPLETAS cubiertas. Cosmético: el
+    // saldo es la única fuente de verdad (isDebtLiquidated usa bal).
+    const full=Math.floor(monto/(+d.pay));
+    if(full>0)d.curPay=Math.min(d.totalPays,(+d.curPay||1)+full);
+  }
+  // Registrar la salida en el ciclo actual. Si el pago agendado 'debt_id' aún
+  // no está aplicado, usa esa llave (sale como pagado normal en el Plan); si
+  // ya está aplicado (abono extra), llave sintética 'debtx_…' que ambos
+  // motores recogen: Inicio suma cualquier aplicado con monto, y el Plan lo
+  // levanta con el barrido de reconciliados (nombre incluido).
+  try{
+    const ck=(typeof planCk==='function'?planCk():cycleKey());
+    if(!S.paidItems)S.paidItems={};
+    if(!S.paidItems[ck])S.paidItems[ck]={};
+    const items=S.paidItems[ck];
+    const rec={at:Date.now(),applied:true,amt:monto,realAmt:monto,paidWith:metodo==='tdc'?'tdc':'debito',name:(liquida?'Liquidación · ':'Abono extra · ')+d.name};
+    if(liquida)rec.liqAdelanto=true; // reactivarDeuda puede revertirla
+    const baseK='debt_'+id,ex=items[baseK];
+    const yaAplicado=ex&&(typeof ex==='object'?ex.applied:ex==='applied');
+    if(!yaAplicado)items[baseK]=rec;
+    else items['debtx_'+id+'_'+Date.now()]=rec;
+    items._appliedTotal=((+items._appliedTotal)||0)+monto;
+  }catch(e){_logErr('applyDebtAbono.registro',e);}
+  sv();
+  try{checkAch();}catch(e){}
+  try{closeConfirm();}catch(e){}
+  toast(liquida?'🏁 '+d.name+' liquidada · '+fx(monto)+' registrado':'💸 Abono de '+fx(monto)+' aplicado · queda '+fx(Math.max(0,+d.bal||0)));
+  try{rPlan();rFlujo();if(typeof rDash==='function')rDash();}catch(e){}
+}
 function adelantarPago(id){
   try{localStorage.setItem('prv5_backup',JSON.stringify(S));localStorage.setItem('prv5_backup_date',new Date().toISOString());}catch(e){_logErr('adelantarPago.backup',e);}
   const d=S.debts.find(x=>x.id===id);
@@ -12413,7 +12482,7 @@ try{
         </div>
       </div>
       <div style="background:var(--skydim);border:1px solid rgba(74,110,140,.2);border-radius:8px;padding:12px;font-size:12px;color:var(--sky);line-height:1.7;margin-bottom:16px">
-        💡 Cuando termines de pagar la <strong>#1</strong>, toma ese pago y súmalo a la <strong>#2</strong>. El pago crece como bola de nieve y cada deuda cae más rápido.<br><br>🏁 ¿Vas a adelantar un pago? <strong>Toca cualquier deuda</strong> para liquidarla por completo: te pedirá confirmación antes de aplicarla.
+        💡 Cuando termines de pagar la <strong>#1</strong>, toma ese pago y súmalo a la <strong>#2</strong>. El pago crece como bola de nieve y cada deuda cae más rápido.<br><br>💸 ¿Vas a adelantar un pago? <strong>Toca cualquier deuda</strong> para abonar lo que quieras o liquidarla por completo — baja el saldo y registra la salida en tu Estado de Cuenta, todo en uno.
       </div>
 
       ${sortedActive.map((db,i)=>{
@@ -12432,8 +12501,9 @@ try{
         const _bal=Math.max(0,+db.bal||0);
         const _restP=hasMSI?Math.max(0,(+db.totalPays||0)-Math.max(0,(+db.curPay||1)-1)):((+db.pay||0)>0?Math.ceil(_bal/(+db.pay||1)):0);
         const _restTxt=_restP>0?'falta'+(_restP>1?'n':'')+' '+_restP+' pago'+(_restP>1?'s':''):'';
-        const clickable=!paidThisCycle;
-        return`<div ${clickable?'onclick="confirmAdelantarPago('+db.id+')" role="button" tabindex="0" ':''}style="padding:14px 0;border-bottom:1px solid var(--border);${paidThisCycle?'opacity:.62':'cursor:pointer'}">
+        // SIEMPRE tocable → modal Abonar/Liquidar (antes la fila "✓ ABONO" no
+        // era clickeable y no había forma de abonar extra o liquidar desde aquí)
+        return`<div onclick="openDebtAbonoModal(${db.id})" role="button" tabindex="0" style="padding:14px 0;border-bottom:1px solid var(--border);cursor:pointer${paidThisCycle?';opacity:.75':''}">
           <div class="row-b" style="margin-bottom:4px">
             <div class="row" style="gap:8px">
               ${paidThisCycle?'<span style="background:var(--sky);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px" title="Sólo cubriste el abono de este ciclo — la deuda sigue viva">✓ ABONO</span>':isFirst?'<span style="background:var(--terra);color:#fff;font-size:9px;padding:2px 8px;border-radius:4px;font-weight:bold;letter-spacing:.5px">AHORA</span>':'<span style="font-size:13px;color:var(--muted);min-width:24px;font-weight:bold">#'+(i+1)+'</span>'}
@@ -12444,8 +12514,8 @@ try{
           </div>
           <div style="font-size:11px;color:var(--muted);line-height:1.5;padding-left:32px">
             ${paidThisCycle
-              ?'✓ Abono de este ciclo aplicado — <strong style="color:var(--sky)">sigue activa</strong> · queda saldo <strong style="color:var(--terra)">'+fx(_bal)+'</strong>'+(_restTxt?' · '+_restTxt:'')
-              :'Pago: '+fx(db.pay)+'/'+fqLabel+' · saldo '+fx(_bal)+(_restTxt?' ('+_restTxt+')':'')+(npLabel?' · '+npLabel:'')+(liqLabel?' · '+liqLabel:'')+'<br><span style="color:var(--sage);font-weight:bold">🏁 Toca para adelantar y liquidar</span>'}
+              ?'✓ Abono de este ciclo aplicado — <strong style="color:var(--sky)">sigue activa</strong> · queda saldo <strong style="color:var(--terra)">'+fx(_bal)+'</strong>'+(_restTxt?' · '+_restTxt:'')+'<br><span style="color:var(--sage);font-weight:bold">💸 Toca para abonar extra o liquidar</span>'
+              :'Pago: '+fx(db.pay)+'/'+fqLabel+' · saldo '+fx(_bal)+(_restTxt?' ('+_restTxt+')':'')+(npLabel?' · '+npLabel:'')+(liqLabel?' · '+liqLabel:'')+'<br><span style="color:var(--sage);font-weight:bold">💸 Toca para abonar o liquidar</span>'}
           </div>
         </div>`;
       }).join('')}

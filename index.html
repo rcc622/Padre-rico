@@ -12111,7 +12111,7 @@ try{
       const _sem=(S.exp||[]).filter(e=>(e.freq||'mensual')==='semanal'&&!(e.startDate&&_eY<e.startDate)&&!(e.endDate&&_sY>e.endDate));
       const _extra=_sem.reduce((a,e)=>a+(+e.amt||0),0);
       return `<div class="card" style="border-left:3px solid ${isLong?'var(--amber)':'var(--border)'}">
-        <details${isLong?' open':''}>
+        <details><!-- siempre contraída: el summary ya muestra el estado (ACTIVA/No · semanas) -->
           <summary class="row-b" style="list-style:none;cursor:pointer;-webkit-tap-highlight-color:transparent">
             <div class="ct" style="margin-bottom:0;color:${_col}">📅 Quincena larga</div>
             <span style="font-size:11px;font-weight:bold;color:${_col}">${isLong?'✓ ACTIVA · 3 semanas':'No · 2 semanas'} <span style="font-size:9px;color:var(--muted)">▾</span></span>

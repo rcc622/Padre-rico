@@ -17062,6 +17062,57 @@ function _backupReminder(){
   }catch(e){}
 }
 
+// ══ MEMORIA DE TARJETAS COLAPSABLES ═════════════════
+// Recuerda (localStorage) el estado abierto/cerrado de cada <details> que el
+// USUARIO toca y lo re-aplica en cada render y refresh, hasta que lo cambie.
+// Llave = pestaña + texto del summary normalizado (sin números/montos, así
+// "(2)" o "$1,600" no rompen la memoria). Solo se guardan los que el usuario
+// ha tocado con un click real: los estados que la app maneja sola (abrir
+// automático por contexto) no se pisan mientras no los toques.
+(function(){
+  const LS='prv5_detStates';
+  let map={};
+  try{map=JSON.parse(localStorage.getItem(LS)||'{}')||{};}catch(e){map={};}
+  const keyOf=(det)=>{
+    try{
+      const sum=det.querySelector(':scope > summary');
+      if(!sum)return null;
+      const t=(sum.textContent||'').replace(/[\d$,.%()\/·:+-]/g,'').replace(/\s+/g,' ').trim().slice(0,48);
+      if(!t)return null;
+      return (typeof cur!=='undefined'&&cur?cur:'x')+'|'+t;
+    }catch(e){return null;}
+  };
+  // 1) Click real del usuario en un summary → recordar el estado resultante
+  document.addEventListener('click',ev=>{
+    const sum=ev.target&&ev.target.closest&&ev.target.closest('summary');
+    if(!sum)return;
+    const det=sum.parentElement;
+    if(!det||det.tagName!=='DETAILS')return;
+    setTimeout(()=>{
+      const k=keyOf(det);
+      if(!k)return;
+      map[k]=!!det.open;
+      try{localStorage.setItem(LS,JSON.stringify(map));}catch(e){}
+    },0);
+  },true);
+  // 2) En cada render (la app re-arma el HTML), re-aplicar lo recordado.
+  //    Cambiar el atributo open no dispara childList → sin loops.
+  const apply=()=>{
+    try{
+      document.querySelectorAll('details').forEach(det=>{
+        const k=keyOf(det);
+        if(k&&Object.prototype.hasOwnProperty.call(map,k)&&det.open!==map[k])det.open=map[k];
+      });
+    }catch(e){}
+  };
+  try{
+    new MutationObserver(muts=>{
+      for(const m of muts){if(m.addedNodes&&m.addedNodes.length){apply();return;}}
+    }).observe(document.body,{childList:true,subtree:true});
+    apply();
+  }catch(e){}
+})();
+
 // ══ INIT ════════════════════════════════════════════
 ld();initPWA();
 if(S.done){launchApp();_backupReminder();}else{setDL();drawDots();document.getElementById('onboarding').style.display='flex';}

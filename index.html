@@ -1254,36 +1254,37 @@ function getWeeksInCycle(window){
   return base;
 }
 // Ocurrencias de un gasto SEMANAL en una ventana. Con día de la semana
-// explícito (weekDay 1-7) cuenta las veces que ESE día cae dentro de la
-// ventana — puede diferir del conteo de sábados de getWeeksInCycle (ej. el
-// ciclo 30/07–14/08 tiene 3 jueves pero solo 2 sábados) — y es el MISMO
-// criterio que usa buildCyclePayments, así el banner de Inicio y los retos
-// cuadran con las ocurrencias del Plan. Sin weekDay devuelve null y el
-// caller cae a getWeeksInCycle (sábados + override manual), como siempre.
-// QUINCENA LARGA: el detector (3+ sábados, o marca manual del ciclo actual)
-// manda también con weekDay explícito — un ciclo con 3 fines de semana de
-// compras implica 3 súper/gasolina aunque el día elegido (ej. domingo) solo
-// caiga 2 veces en la ventana (15/08–29/08: dom 16 y 23, pero sáb 15/22/29).
-// Se toma el MAX(fechas reales, semanas del ciclo): nunca reduce el conteo
-// (el caso 3 jueves / 2 sábados sigue dando 3) y en ciclo normal no cambia.
+// explícito (weekDay 1-7) MANDAN LAS FECHAS REALES de ese día: cuenta las
+// veces que ESE día cae dentro de la ventana, ni más ni menos. Es el MISMO
+// criterio que usa buildCyclePayments, así el banner de Inicio, los retos y
+// el Plan cuadran. Sin weekDay el ancla sigue siendo sábado + el piso/tope de
+// getWeeksInCycle (quincena larga / override manual), como siempre.
+// QUINCENA LARGA con día elegido: ANTES el detector (3+ sábados o marca
+// manual) ponía piso también aquí — un jueves que solo caía 2 veces en la
+// ventana se contaba 3, y el Plan anclaba esa 3ra al 3er SÁBADO del ciclo
+// (ej. ciclo 29/08–14/09: "Comidas Lorenzo jueves" aparecía el sáb 12/09).
+// Eso además la contaba dos veces: la ocurrencia real (jue 17/09) vuelve a
+// salir en el siguiente ciclo. Ahora, con día elegido, las fechas reales son
+// la única fuente: 2 jueves = 2 pagos; la 3ra semana se cobra en su ciclo.
 function weeklyOccsInWindow(e,win){
+  let wd=+(e&&e.weekDay)||0;
+  const hasWd=(wd>=1&&wd<=7);
+  if(!hasWd)wd=6;
+  const jsDay=wd===7?0:wd;
+  let n=0;const d=new Date(win.start);
+  while(d<=win.end){if(d.getDay()===jsDay)n++;d.setDate(d.getDate()+1);}
+  // Día de la semana elegido → fechas reales, sin piso ni tope.
+  if(hasWd)return n;
   // Sin weekDay explícito, el ancla es sábado (mismo default que el Plan).
   // Contar por fechas reales de sábado equivale al conteo viejo por
   // getWeeksInCycle en ciclos canónicos (el piso/tope MAX-MIN reconcilia
   // ambos), y con frontera móvil suma/quita la semana absorbida/cedida.
-  let wd=+(e&&e.weekDay)||0;
-  if(!(wd>=1&&wd<=7))wd=6;
-  const jsDay=wd===7?0:wd;
-  let n=0;const d=new Date(win.start);
-  while(d<=win.end){if(d.getDay()===jsDay)n++;d.setDate(d.getDate()+1);}
   const cw=getCycleWindow();
   const isCur=_ymdLocal(win.start)===_ymdLocal(cw.start)&&_ymdLocal(win.end)===_ymdLocal(cw.end);
   const weeks=isCur?getWeeksInCycle():getWeeksInCycle(win);
   // Forzada CORTA (override===false): el usuario decidió que la 3ra semana de
   // compras pertenece al siguiente ciclo (le adelantaron la quincena), así que
   // aquí el tope manda sobre las fechas reales — cap a `weeks` en vez de MAX.
-  // Solo con override explícito en false; el caso 3 jueves / 2 sábados sin
-  // override sigue dando 3, como siempre.
   if(isCur&&(S.longCycleOverrides||{})[cycleKey()]===false)return Math.min(n,weeks);
   return Math.max(n,weeks);
 }
@@ -8421,7 +8422,7 @@ function _expExtraFieldsHTML(f,ee){
     second='<div style="display:flex;align-items:flex-end"><div id="expMoPrev" style="font-size:12px;color:var(--sage);font-weight:bold;padding-bottom:11px">'+((ee&&ee.amt!=null)?freqLabel(ee.amt,f):'')+'</div></div>';
   }
   let note='';
-  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Recurre cada semana (≈4.33 pagos/mes). Con día de la semana elegido, el Plan agenda un pago en CADA fecha real de ese día dentro de la quincena (2 ó 3 según el calendario). "Automático" = sábado. En <strong>quincena larga</strong> (3 fines de semana) siempre son 3 pagos: si tu día solo cae 2 veces, la semana extra se ancla al 3er sábado.</div>';
+  if(f==='semanal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Recurre cada semana (≈4.33 pagos/mes). Con día de la semana elegido, el Plan agenda un pago en CADA fecha real de ese día dentro de la quincena (2 ó 3 según el calendario) y nada más: si tu día solo cae 2 veces, son 2 pagos aunque la quincena sea larga — el tercero se cobra en el ciclo donde su fecha sí cae. "Automático" = sábado: ahí sí, en <strong>quincena larga</strong> (3 fines de semana) cuenta 3 pagos.</div>';
   else if(f==='quincenal')note='<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Aplica una vez en cada quincena del mes (el monto no cambia). Elige un preset (1&15, 5&20, 15&último) o deja un día manual — solo ubica en qué día se muestra el pago.</div>';
   return '<div class="g2" style="margin-bottom:'+(note?'4':'10')+'px">'+pdField+second+'</div>'+note;
 }
@@ -11522,14 +11523,14 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       // y la vigencia de las ocurrencias. Un ciclo puede tener 3 jueves con
       // solo 2 sábados (ej. 30/07–14/08: jue 30, 6 y 13 vs sáb 1 y 8) y con
       // el ancla de sábados la ocurrencia del jueves 13 nunca aparecía. Con
-      // weekDay explícito mandan las fechas reales de ese día, PERO la
-      // quincena larga (3+ sábados / marca manual) pone el piso: un ciclo
-      // con 3 fines de semana de compras genera 3 ocurrencias aunque el día
-      // elegido solo caiga 2 veces (ej. 15/08–29/08 con súper en domingo:
-      // dom 16 y 23 + semana extra anclada al 3er sábado, día 29). MAX, así
-      // el caso 3 jueves / 2 sábados sigue dando 3 y el ciclo normal no
-      // cambia. Mismo criterio que weeklyOccsInWindow (cuadre Inicio↔Plan).
-      // Sin weekDay, TODO igual que antes (conteo por sábados).
+      // weekDay explícito mandan SIEMPRE las fechas reales de ese día: ni la
+      // quincena larga ni la marca manual agregan ocurrencias. Antes sí:
+      // ponían piso de 3 y la semana extra se anclaba al 3er SÁBADO, así que
+      // un gasto de jueves salía agendado en sábado (ciclo 29/08–14/09:
+      // "Comidas Lorenzo jueves" caía el 12/09) y se cobraba doble, porque
+      // su jueves real (17/09) vuelve a agendarse en el siguiente ciclo.
+      // Mismo criterio que weeklyOccsInWindow (cuadre Inicio↔Plan).
+      // Sin weekDay, TODO igual que antes (conteo por sábados + piso/tope).
       let _wdayNums=null,_wdayYMD=null;const _wd=+(e.weekDay)||0;
       if(_wd>=1&&_wd<=7){const _jsDay=_wd===7?0:_wd;_wdayNums=[];_wdayYMD=[];const _wsd=new Date(cStart);while(_wsd<=cEnd){if(_wsd.getDay()===_jsDay){_wdayNums.push(_wsd.getDate());_wdayYMD.push(_ymdLocal(_wsd));}_wsd.setDate(_wsd.getDate()+1);}}
       const _cycleWeeks=useWindowWeeks?getWeeksInCycle({start:cStart,end:cEnd}):getWeeksInCycle();
@@ -11540,11 +11541,10 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       const _forcedShort=!useWindowWeeks&&(S.longCycleOverrides||{})[cycleKey()]===false;
       let weeks;
       if(_wdayNums){
-        weeks=_forcedShort?Math.min(_wdayNums.length,_cycleWeeks):Math.max(_wdayNums.length,_cycleWeeks);
-        // Semana(s) extra de quincena larga: ancla en los sábados restantes
-        // del ciclo (día/YMD reales) para que el Plan muestre fecha y la
-        // vigencia por ocurrencia siga funcionando.
-        while(_wdayNums.length<weeks){const _k=_wdayNums.length;_wdayNums.push(_cycleSats[_k]||0);_wdayYMD.push(_cycleSatYMD[_k]||null);}
+        // Fechas reales del día elegido: una ocurrencia por fecha, sin piso de
+        // quincena larga ni relleno anclado a sábados. La semana que no cae en
+        // esta ventana se agenda sola en el ciclo donde sí cae.
+        weeks=_wdayNums.length;
       }else{
         // Sin día elegido = ancla sábado: los sábados REALES de la ventana
         // mandan (en ciclos canónicos #sábados ≤ piso, así que MAX no cambia
@@ -12106,9 +12106,15 @@ try{
       const isLong=longOff?false:(longAuto||longManual);
       const _col=isLong?'var(--amber)':'var(--muted)';
       // Costo de la semana extra: suma de los gastos fijos semanales VIGENTES
-      // en el ciclo (mismo gate grueso de start/endDate que buildCyclePayments).
+      // en el ciclo (mismo gate grueso de start/endDate que buildCyclePayments)
+      // y SIN día de la semana elegido — esos son los únicos que la quincena
+      // larga puede multiplicar. Los que tienen día elegido (jueves, domingo…)
+      // se agendan por sus fechas reales y no reciben semana extra.
       const _sY=_ymdLocal(_lw.start),_eY=_ymdLocal(_lw.end);
-      const _sem=(S.exp||[]).filter(e=>(e.freq||'mensual')==='semanal'&&!(e.startDate&&_eY<e.startDate)&&!(e.endDate&&_sY>e.endDate));
+      const _semAll=(S.exp||[]).filter(e=>(e.freq||'mensual')==='semanal'&&!(e.startDate&&_eY<e.startDate)&&!(e.endDate&&_sY>e.endDate));
+      const _tieneWd=e=>{const _w=+(e.weekDay)||0;return _w>=1&&_w<=7;};
+      const _semWd=_semAll.filter(_tieneWd);
+      const _sem=_semAll.filter(e=>!_tieneWd(e));
       const _extra=_sem.reduce((a,e)=>a+(+e.amt||0),0);
       return `<div class="card" style="border-left:3px solid ${isLong?'var(--amber)':'var(--border)'}">
         <details><!-- siempre contraída: el summary ya muestra el estado (ACTIVA/No · semanas) -->
@@ -12118,8 +12124,10 @@ try{
           </summary>
           <div style="font-size:11px;color:var(--muted);line-height:1.7;margin-top:10px">
             Este ciclo tiene <strong style="color:var(--txt2)">${_sats} sábado${_sats!==1?'s':''}</strong> · detección automática: <strong style="color:${longAuto?'var(--sage)':'var(--muted)'}">${longAuto?'SÍ es larga':'no es larga'}</strong>.${longManual?' 🟠 Además la marcaste manual.':''}${longOff?' 🔕 La desactivaste manual: este ciclo cuenta <strong>2 semanas</strong> (la semana extra pasa al siguiente).':''}
-            <br>Con quincena larga tus gastos fijos <strong>semanales</strong> (súper, gasolina…) cuentan <strong>3 veces</strong>: la semana extra sale en <em>Pagos del ciclo</em> anclada al 3er sábado, aunque el gasto tenga otro día de la semana elegido.
+            <br>Con quincena larga tus gastos fijos <strong>semanales SIN día de la semana elegido</strong> (ancla sábado) cuentan <strong>3 veces</strong>: la semana extra sale en <em>Pagos del ciclo</em> anclada al 3er sábado.
+            <br>Los semanales <strong>con día elegido</strong> (jueves, domingo…) se agendan por sus <strong>fechas reales</strong>: si ese día solo cae 2 veces en la quincena, son 2 pagos — el tercero se cobra en el ciclo donde su fecha sí cae.
             ${_sem.length>0?`<br><span style="color:${isLong?'var(--amber)':'var(--muted)'}">${isLong?'Semana extra incluida':'Si se activara sumaría'}: <strong>${fx(Math.round(_extra))}</strong> (${_sem.length} gasto${_sem.length!==1?'s':''} semanal${_sem.length!==1?'es':''}).</span>`:''}
+            ${_semWd.length>0?`<br><span style="color:var(--muted)">${_semWd.length} gasto${_semWd.length!==1?'s':''} semanal${_semWd.length!==1?'es':''} con día elegido no ${_semWd.length!==1?'reciben':'recibe'} semana extra (van por fecha real).</span>`:''}
             ${!_isCurrent?'<br><span style="font-style:italic">Solo lectura: la marca manual únicamente aplica a la quincena en curso.</span>':(!longAuto&&!isLong?'<br>Si sabes que <em>efectivamente</em> vas a tener 3 fines de semana de compras (te pagaron antes, compraste el sábado previo al payday), actívala:':(isLong?'<br>Si la semana extra la vas a cubrir con el <em>siguiente</em> ciclo (te adelantaron la quincena), desactívala y esos gastos contarán allá:':''))}
           </div>
           ${_isCurrent?`<button class="btn ${isLong?'btn-red':'btn-sage'} btn-sm" style="width:100%;margin-top:10px" onclick="toggleLongCycle()">${isLong?'↩ Desactivar quincena larga (contar 2 semanas)':'✓ Marcar esta quincena como larga'}</button>`:''}

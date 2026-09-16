@@ -8049,7 +8049,10 @@ try{
       const _intBadge=d.hasInterest&&d.interestAmt>0?'<span class="badge" style="background:rgba(184,92,74,.12);color:var(--terra);border:1px solid rgba(184,92,74,.3)">📊 '+d.interestPct+'% int. · '+fx(d.interestAmt)+'</span>':'';
       // Liquidada con descuento por adelantar: el saldo se fue a $0 pero de la
       // quincena sólo salió lo pagado. El badge deja ver el ahorro conseguido.
-      const _liqDesc=+d.liqDiscount||0;
+      // Gate en _isLiquidated: si la deuda vuelve a estar activa (p.ej. el
+      // usuario le subió el saldo desde ✏️ Editar, que conserva los campos),
+      // el dato del descuento queda viejo y no debe seguir anunciándose.
+      const _liqDesc=_isLiquidated?(+d.liqDiscount||0):0;
       const _descBadge=_liqDesc>0?'<span class="badge" style="background:rgba(160,112,48,.12);color:var(--amber);border:1px solid rgba(160,112,48,.35);text-decoration:none" title="Pagaste '+fx(+d.liqPaid||0)+' de '+fx(+d.liqBalBefore||0)+' — te descontaron '+fx(_liqDesc)+' por pagar antes">🏷️ Descuento '+fx(_liqDesc)+'</span>':'';
       const paidWrapStyle=_isLiquidated
         ?'padding:12px 0;border-bottom:1px solid var(--border);opacity:.5;background:rgba(78,124,106,.06);border-left:3px solid var(--sage);padding-left:10px'

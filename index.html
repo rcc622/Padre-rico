@@ -3717,6 +3717,84 @@ function tdcPay(){
     rFlujo();if(typeof rPlan==='function')rPlan();if(typeof rDash==='function')rDash();
   });
 }
+
+// ══ DETALLE DE LA TDC (solo lectura) ══════════════════════
+// Responde la pregunta "¿por qué tengo algo por pagar?". Los dos buckets
+// (📋 Por pagar / 🔄 Ciclo actual) mostraban sólo el total, y el total no
+// dice NADA de por qué un cargo cayó de un lado o del otro — eso depende de
+// la FECHA del cargo contra la fecha de corte. Aquí se ve cada movimiento con
+// su fecha, agrupado por el corte que lo facturó, con su vencimiento.
+// No mueve dinero: sólo lee tdcBuckets().
+
+// Fecha de un cargo, normalizada a YYYY-MM-DD. paidItems guarda 'at' (epoch ms)
+// y los diarios guardan 'YYYY-MM-DD'; sin esto una de las dos sale como
+// "Invalid Date" en la lista.
+function _tdcChargeYMD(c){
+  const d=c&&c.date;
+  if(typeof d==='number')return _ymdLocal(new Date(d));
+  if(typeof d==='string'&&/^\d{4}-\d{2}-\d{2}/.test(d))return d.slice(0,10);
+  const p=new Date(d||Date.now());
+  return isNaN(p.getTime())?'':_ymdLocal(p);
+}
+function tdcVerDetalle(which){
+  try{
+    const cfg=S.tdcConfig||{};
+    const b=tdcBuckets();
+    const esBilled=which==='billed';
+    const total=esBilled?b.billedTotal:b.current.total;
+    const color=esBilled?'var(--terra)':'var(--sky)';
+    const hoy=new Date();hoy.setHours(0,0,0,0);
+    const grupos=esBilled
+      ?b.billed.map(c=>({corte:c.corteDate,charges:c.charges,total:c.total}))
+      :(b.current.charges.length?[{corte:b.current.corteDate,charges:b.current.charges,total:b.current.total}]:[]);
+    const intro=esBilled
+      ?'<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Estos cargos <strong>ya pasaron por un corte</strong> y la app los sigue viendo <strong>sin saldar</strong>. Un cargo sale de aquí <strong>sólo</strong> cuando tocas <strong>✓ Pagar</strong> — ese botón es el que los marca como pagados. Si ya pagaste la tarjeta por fuera de la app, tócalo para ponerlos al corriente.</div>'
+      :'<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cargos hechos <strong>después del último corte</strong>. Todavía no se pagan: entran al estado de cuenta que cierra en la fecha de abajo y se paga después.</div>';
+    let body=intro;
+    if(!grupos.length){
+      body+='<div style="text-align:center;padding:18px;color:var(--muted);font-size:12px">Sin movimientos aquí.</div>';
+    }else{
+      grupos.forEach(g=>{
+        const corteYMD=g.corte?_ymdLocal(g.corte):'';
+        let cab='';
+        if(corteYMD){
+          if(esBilled){
+            const due=tdcDueDateForCorte(g.corte,cfg);
+            const dd=Math.ceil((due-hoy)/864e5);
+            const venc=dd<0?'<span style="color:var(--terra)">venció hace '+Math.abs(dd)+' día'+(dd===-1?'':'s')+'</span>':dd===0?'<span style="color:var(--terra)">vence hoy</span>':'vence en '+dd+' día'+(dd===1?'':'s');
+            cab='Cortó el <strong>'+fmtDate(corteYMD)+'</strong> · pago '+fmtDate(_ymdLocal(due))+' · '+venc;
+          }else{
+            const dd=Math.ceil((g.corte-hoy)/864e5);
+            const due=tdcDueDateForCorte(g.corte,cfg);
+            cab='Corta el <strong>'+fmtDate(corteYMD)+'</strong> (en '+dd+' día'+(dd===1?'':'s')+') · se paga el '+fmtDate(_ymdLocal(due));
+          }
+        }
+        const rows=g.charges.slice().sort((x,y)=>{
+          const a=_tdcChargeYMD(x),c2=_tdcChargeYMD(y);
+          return a<c2?-1:a>c2?1:0;
+        }).map(c=>'<div class="row-b" style="padding:7px 0;border-bottom:1px dashed var(--border);font-size:12px;align-items:flex-start">'
+          +'<div style="flex:1;min-width:0;padding-right:10px">'
+            +'<div style="color:var(--txt);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+_escH(c.name||'Movimiento sin nombre')+'</div>'
+            +'<div style="font-size:10px;color:var(--muted)">'+(fmtDate(_tdcChargeYMD(c))||'sin fecha')+(c.diarioId?' · 🛒 diario':' · 📋 pago aplicado')+'</div>'
+          +'</div>'
+          +'<strong style="color:'+color+';flex-shrink:0">'+fx(c.amt)+'</strong></div>').join('');
+        body+='<div style="margin-bottom:14px">'
+          +(cab?'<div style="font-size:10px;color:var(--muted);line-height:1.6;padding:7px 9px;background:var(--bg);border-radius:6px;margin-bottom:6px">'+cab+'</div>':'')
+          +rows
+          +'<div class="row-b" style="padding-top:7px;font-size:12px"><span style="color:var(--muted)">Subtotal · '+g.charges.length+' mov'+(g.charges.length!==1?'s':'')+'</span><strong style="color:'+color+'">'+fx(g.total)+'</strong></div>'
+        +'</div>';
+      });
+      body+='<div class="row-b" style="padding-top:10px;border-top:2px solid '+color+'"><strong style="color:'+color+'">Total</strong><strong style="color:'+color+';font-size:17px">'+fx(total)+'</strong></div>';
+    }
+    showConfirm((esBilled?'📋 Por pagar · ':'🔄 Ciclo actual · ')+fx(total),body,null);
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+    if(row){
+      row.innerHTML=(esBilled&&total>0)
+        ?'<button class="btn btn-ghost btn-sm" style="flex:0 0 auto;padding:10px 16px" onclick="closeConfirm()">Cerrar</button><button class="btn btn-sage" style="flex:1" onclick="closeConfirm();setTimeout(tdcPay,120)">✓ Pagar '+fx(total)+'</button>'
+        :'<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cerrar</button>';
+    }
+  }catch(e){_logErr('tdcVerDetalle',e);toast('No pude abrir el detalle');}
+}
 // FASE 6 · Migración manual: encuentra applied items sin paidWith explícito
 // (legacy items donde el método se asume 'debito' por default sin que el usuario lo haya confirmado)
 function unclassifiedPayments(){
@@ -7841,24 +7919,24 @@ try{
 
       <!-- Two buckets -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-        <!-- Billed (to pay) -->
-        <div style="padding:10px;background:${b.billedTotal>0?'rgba(184,92,74,.08)':'rgba(160,140,120,.06)'};border-radius:8px;border:1px solid ${b.billedTotal>0?'rgba(184,92,74,.3)':'var(--border)'}">
+        <!-- Billed (to pay) · tocar = detalle movimiento por movimiento con fecha -->
+        <div role="button" tabindex="0" onclick="tdcVerDetalle('billed')" style="padding:10px;background:${b.billedTotal>0?'rgba(184,92,74,.08)':'rgba(160,140,120,.06)'};border-radius:8px;border:1px solid ${b.billedTotal>0?'rgba(184,92,74,.3)':'var(--border)'};cursor:pointer">
           <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">📋 Por pagar</div>
           <div style="font-size:16px;font-weight:bold;color:${b.billedTotal>0?'var(--terra)':'var(--muted)'};margin-top:2px">${fx(b.billedTotal)}</div>
           <div style="font-size:10px;color:var(--muted);margin-top:2px;min-height:14px">${dueText||(b.billedTotal===0?'Nada pendiente':'')}</div>
+          <div style="font-size:10px;color:${b.billedTotal>0?'var(--terra)':'var(--muted)'};font-weight:bold;margin-top:4px">Ver detalle →</div>
         </div>
-        <!-- Current cycle -->
-        <div style="padding:10px;background:rgba(74,110,140,.08);border-radius:8px;border:1px solid rgba(74,110,140,.3)">
+        <!-- Current cycle · tocar = detalle movimiento por movimiento con fecha -->
+        <div role="button" tabindex="0" onclick="tdcVerDetalle('current')" style="padding:10px;background:rgba(74,110,140,.08);border-radius:8px;border:1px solid rgba(74,110,140,.3);cursor:pointer">
           <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">🔄 Ciclo actual</div>
           <div style="font-size:16px;font-weight:bold;color:var(--sky);margin-top:2px">${fx(b.current.total)}</div>
           <div style="font-size:10px;color:var(--muted);margin-top:2px">Corta en ${daysToCorte}d</div>
+          <div style="font-size:10px;color:var(--sky);font-weight:bold;margin-top:4px">Ver detalle →</div>
         </div>
       </div>
 
       ${b.billedTotal>0?`<button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="tdcPay()">✓ Pagar ${fx(b.billedTotal)}</button>`:b.current.total>0?'<div style="text-align:center;font-size:11px;color:var(--muted);padding:8px;line-height:1.5">💡 El ciclo actual aún no corta.<br>El pago estará disponible después del corte.</div>':'<div style="text-align:center;font-size:12px;color:var(--sage);padding:8px">🎉 TDC sin movimientos</div>'}
 
-      ${b.billed.length>0?`<details style="margin-top:10px"><summary style="font-size:11px;color:var(--terra);cursor:pointer;padding:6px 0;font-weight:bold">Ver ${b.billed.reduce((s,c)=>s+c.charges.length,0)} mov. por pagar</summary><div style="max-height:160px;overflow-y:auto;margin-top:6px">${b.billed.flatMap(c=>c.charges).map(d=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2);max-width:70%;overflow:hidden;text-overflow:ellipsis">'+_escH(d.name)+'</span><strong style="color:var(--terra)">'+fx(d.amt)+'</strong></div>').join('')}</div></details>`:''}
-      ${b.current.charges.length>0?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--sky);cursor:pointer;padding:6px 0">Ver ${b.current.charges.length} mov. ciclo actual</summary><div style="max-height:160px;overflow-y:auto;margin-top:6px">${b.current.charges.map(d=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2);max-width:70%;overflow:hidden;text-overflow:ellipsis">'+_escH(d.name)+'</span><strong style="color:var(--sky)">'+fx(d.amt)+'</strong></div>').join('')}</div></details>`:''}
       ${S.tdcPayments&&S.tdcPayments.length>0?`<details style="margin-top:6px"><summary style="font-size:11px;color:var(--muted);cursor:pointer;padding:6px 0">Historial de pagos (${S.tdcPayments.length})</summary><div style="margin-top:6px">${[...S.tdcPayments].reverse().slice(0,10).map(p=>'<div class="row-b" style="padding:6px 0;border-bottom:1px dashed var(--border);font-size:11px"><span style="color:var(--txt2)">'+new Date(p.at).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'})+'</span><strong style="color:var(--sage)">'+fx(p.amount)+'</strong></div>').join('')}</div></details>`:''}
     </div>`;
   })()}
@@ -13347,36 +13425,6 @@ function rHabitos(){
       <div style="font-size:11px;color:var(--muted)">Salida grande: ${gBadge} <strong style="color:${grandes>1?'var(--terra)':'var(--txt2)'}">${grandes}/1</strong> usada${grandes>1?'s · te pasaste del máx. del plan':''} <span style="opacity:.7">(un día con salidas ≥ ${fx(SALIDA_GRANDE_MIN)} = 1 grande · máx 1 por quincena)</span></div>
     </div>`;
     })()}
-    ${(()=>{
-      // Resumen compacto de TDC dentro de Diarios — colapsado por default.
-      // El usuario quiere ver el estado de la TDC sin salir de Diarios.
-      const cfg=S.tdcConfig||{};
-      if(!cfg.limit||(!cfg.corteDay&&!cfg.corteUltimoDelMes)||!cfg.dueDay)return '';
-      try{
-        const b=tdcBuckets();
-        const used=b.grandTotal;
-        const limit=+cfg.limit||0;
-        const pct=limit>0?Math.min(100,Math.round(used/limit*100)):0;
-        const avail=Math.max(0,limit-used);
-        const over=used>limit;
-        const barColor=over?'var(--terra)':pct>=80?'var(--amber)':'var(--sky)';
-        const corteDisplay=cfg.corteUltimoDelMes?'último día':cfg.corteDay;
-        return '<details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:11px;color:var(--sky);padding:8px 10px;background:rgba(74,110,140,.06);border-radius:6px;list-style:none">'
-          +'<div class="row-b"><span style="font-weight:bold">💳 TDC · '+fx(used)+' usado</span><span style="font-size:11px;color:var(--muted)">'+pct+'% · '+fx(avail)+' disp.</span></div>'
-          +'</summary>'
-          +'<div style="padding:12px 10px 4px">'
-          +'<div class="row-b" style="margin-bottom:4px"><span style="font-size:10px;color:var(--muted)">Usado total</span><span style="font-size:10px;color:var(--muted)">Límite '+fx(limit)+'</span></div>'
-          +'<div class="row-b" style="margin-bottom:6px"><strong style="font-size:18px;color:'+barColor+';font-family:Georgia,serif">'+fx(used)+'</strong><span style="font-size:11px;color:'+(over?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(over?'Sobre límite':fx(avail)+' disp.')+'</span></div>'
-          +'<div class="pw" style="height:8px;margin-bottom:10px"><div class="pb" style="width:'+pct+'%;background:'+barColor+'"></div></div>'
-          +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">'
-          +'<div style="padding:8px;background:'+(b.billedTotal>0?'rgba(184,92,74,.08)':'rgba(160,140,120,.06)')+';border-radius:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase">📋 Por pagar</div><div style="font-size:14px;font-weight:bold;color:'+(b.billedTotal>0?'var(--terra)':'var(--muted)')+'">'+fx(b.billedTotal)+'</div></div>'
-          +'<div style="padding:8px;background:rgba(74,110,140,.08);border-radius:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase">🔄 Ciclo actual</div><div style="font-size:14px;font-weight:bold;color:var(--sky)">'+fx(b.current.total)+'</div></div>'
-          +'</div>'
-          +'<div style="font-size:10px;color:var(--muted);margin-top:6px">Corte '+corteDisplay+' · pago día '+cfg.dueDay+'</div>'
-          +(b.current.charges.length>0?'<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border)"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Movimientos ciclo actual ('+b.current.charges.length+')</div><div style="max-height:150px;overflow-y:auto">'+b.current.charges.map(c=>'<div class="row-b" style="padding:5px 0;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt2);max-width:65%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+c.name+'</span><strong style="color:var(--sky)">'+fx(c.amt)+'</strong></div>').join('')+'</div></div>':'')
-          +'</div></details>';
-      }catch(e){return '';}
-    })()}
     ${pendingList.length>0?`<div class="card" style="border:2px solid var(--amber);background:rgba(160,112,48,.06);margin-bottom:12px;padding:12px 14px">
       <div style="font-size:10px;color:var(--amber);text-transform:uppercase;letter-spacing:1.2px;font-weight:bold;margin-bottom:6px">⏳ ${pendingList.length} Pre-registro${pendingList.length!==1?'s':''} desde retos (${fx(Math.round(totalPending))})</div>
       <div style="font-size:11px;color:var(--txt2);line-height:1.6">Cuando fallaste un reto y registraste un gasto, se pre-registró aquí. Confirma (✓) si sí lo gastaste, o cancela (✕) si no. Mientras esté pendiente no cuenta al presupuesto.</div>
@@ -13388,6 +13436,68 @@ function rHabitos(){
       <div class="row" style="gap:8px;margin-top:4px"><input type="number" inputmode="decimal" id="gdSalBudget" placeholder="0" value="${getSalidasBudgetForCycle(_dck)||''}" style="flex:1"><button class="btn btn-sage btn-sm" onclick="setSalidasBudget()">Guardar</button></div>
     </details>
   </div>
+
+  <!-- ═══ TDC · TARJETA PROPIA ═══
+       Antes vivía DENTRO de la card de Gastos diarios, colapsada en un
+       <details>. Ahí se leía como si la TDC fuera parte del presupuesto
+       hormiga, que es otra cosa: el hormiga mide lo que gastas a débito en
+       la quincena, la TDC mide lo que debes a la tarjeta por ciclo de corte.
+       Sacarla a su propia card separa las dos lecturas. -->
+  ${(()=>{
+    const cfg=S.tdcConfig||{};
+    if(!cfg.limit||(!cfg.corteDay&&!cfg.corteUltimoDelMes)||!cfg.dueDay)return '';
+    try{
+      const b=tdcBuckets();
+      const used=b.grandTotal;
+      const limit=+cfg.limit||0;
+      const pct=limit>0?Math.min(100,Math.round(used/limit*100)):0;
+      const avail=Math.max(0,limit-used);
+      const over=used>limit;
+      const barColor=over?'var(--terra)':pct>=80?'var(--amber)':'var(--sky)';
+      const corteDisplay=cfg.corteUltimoDelMes?'último día':cfg.corteDay;
+      const hoy=new Date();hoy.setHours(0,0,0,0);
+      // Próximo corte que aún no ocurre (si el de este mes ya pasó, el siguiente)
+      const c0=tdcCorteForDate(hoy,cfg);
+      const proxCorte=c0>hoy?c0:new Date(c0.getFullYear(),c0.getMonth()+1,tdcEffectiveCorteDay(c0.getFullYear(),c0.getMonth()+1,cfg));
+      const dCorte=Math.ceil((proxCorte-hoy)/864e5);
+      let dueTxt='Nada pendiente';
+      if(b.billed.length>0){
+        const due=tdcDueDateForCorte(b.billed[0].corteDate,cfg);
+        const dd=Math.ceil((due-hoy)/864e5);
+        dueTxt=dd<0?'⚠️ Venció hace '+Math.abs(dd)+'d':dd===0?'Vence hoy':dd===1?'Vence mañana':'Vence en '+dd+'d';
+      }
+      // Las dos cajas son BOTONES: abren el detalle movimiento por movimiento
+      // con la fecha de cada cargo, que es el dato que explica por qué cayó
+      // en un bucket o en el otro.
+      const caja=(which,emoji,titulo,monto,col,bg,bd,pie)=>
+        '<div role="button" tabindex="0" onclick="tdcVerDetalle(\''+which+'\')" style="padding:10px;background:'+bg+';border:1px solid '+bd+';border-radius:8px;cursor:pointer">'
+        +'<div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">'+emoji+' '+titulo+'</div>'
+        +'<div style="font-size:16px;font-weight:bold;color:'+col+';margin-top:2px">'+fx(monto)+'</div>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:2px;min-height:14px">'+pie+'</div>'
+        +'<div style="font-size:10px;color:'+col+';font-weight:bold;margin-top:4px">Ver detalle →</div>'
+        +'</div>';
+      return '<div class="card" style="border-left:3px solid '+barColor+'">'
+        +'<div class="row-b" style="margin-bottom:10px">'
+          +'<div><div class="ct" style="margin-bottom:0;color:var(--sky)">💳 Tu Tarjeta de Crédito</div>'
+          +'<div style="font-size:10px;color:var(--muted);margin-top:2px">Corte '+corteDisplay+' · pago día '+cfg.dueDay+'</div></div>'
+          +'<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 8px" onclick="tdcEditConfig()">⚙️</button>'
+        +'</div>'
+        +'<div class="row-b" style="margin-bottom:4px"><span style="font-size:11px;color:var(--muted)">Usado total</span><span style="font-size:11px;color:var(--muted)">Límite '+fx(limit)+'</span></div>'
+        +'<div class="row-b" style="margin-bottom:8px"><strong style="font-size:22px;color:'+barColor+';font-family:Georgia,serif">'+fx(used)+'</strong><span style="font-size:12px;color:'+(over?'var(--terra)':'var(--sage)')+';font-weight:bold">'+(over?'Sobre límite':fx(avail)+' disp.')+'</span></div>'
+        +'<div class="pw" style="height:10px;margin-bottom:12px"><div class="pb" style="width:'+pct+'%;background:'+barColor+'"></div></div>'
+        +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">'
+          +caja('billed','📋','Por pagar',b.billedTotal,b.billedTotal>0?'var(--terra)':'var(--muted)',b.billedTotal>0?'rgba(184,92,74,.08)':'rgba(160,140,120,.06)',b.billedTotal>0?'rgba(184,92,74,.3)':'var(--border)',dueTxt)
+          +caja('current','🔄','Ciclo actual',b.current.total,'var(--sky)','rgba(74,110,140,.08)','rgba(74,110,140,.3)','Corta en '+dCorte+'d')
+        +'</div>'
+        +(b.billedTotal>0
+          ?'<button class="btn btn-sage" style="width:100%;padding:13px;font-size:14px" onclick="tdcPay()">✓ Pagar '+fx(b.billedTotal)+'</button>'
+          :(b.current.total>0
+            ?'<div style="text-align:center;font-size:11px;color:var(--muted);padding:6px;line-height:1.5">💡 El ciclo actual aún no corta. El pago se habilita después del corte.</div>'
+            :'<div style="text-align:center;font-size:12px;color:var(--sage);padding:6px">🎉 TDC sin movimientos</div>'))
+        +'<div style="font-size:10px;color:var(--muted);margin-top:10px;line-height:1.5">💡 Esto <strong>no</strong> es el presupuesto hormiga: ahí va lo que gastas a débito en la quincena. Aquí va lo que le debes a la tarjeta, agrupado por su ciclo de corte.</div>'
+      +'</div>';
+    }catch(e){_logErr('tdcCardDiarios',e);return '';}
+  })()}
 
   <!-- ═══ REGISTRAR GASTO · tarjeta colapsable propia ═══ -->
   <div class="card">

@@ -8299,7 +8299,16 @@ try{
       </div>
       ${tAss()>0?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;color:var(--terra);border:1px solid rgba(184,92,74,.3)" onclick="openRetiroPicker()">📤 Registrar retiro</button>`:''}
     </div>
-    ${S.assets.filter(a=>!a.archived).map(a=>{
+    <div style="font-size:11px;color:var(--muted);line-height:1.6">
+      💡 Usa <strong>🔄</strong> para actualizar el saldo rápido cuando Mercado Pago o Cajita te paguen rendimiento. Tu patrimonio en Inicio se recalcula solo.
+    </div>
+  </div>
+
+  <!-- UNA TARJETA POR CAJITA — antes las 8 cajitas iban apiladas DENTRO de
+       una sola card, separadas apenas por una línea: con movimientos y
+       proyecciones abiertas era un muro donde no se veía dónde terminaba una
+       y empezaba la otra. Cada una es ahora su propia card. -->
+  ${S.assets.filter(a=>!a.archived).map(a=>{
       const my=_monthlyYield(a);
       const yldLine=a.gen&&my>0?'+'+fx(Math.round(my))+'/mes · '+(+a.yldPct||0)+'% anual':'Sin rendimiento registrado';
       // La proyección de rendimiento solo tiene sentido si el dinero va a estar
@@ -8362,11 +8371,14 @@ try{
       const linkedMetas=metasForAsset(a.id);
       const goalOv=linkedMetas.map(g=>_goalOverlay(g)).join('');
       const twinMeta=linkedMetas.length?null:unlinkedTwinMeta(a);
+      // Borde de acento: verde si la cajita genera rendimiento, neutro si no.
+      // Da identidad a cada tarjeta y de un vistazo separa las que trabajan.
+      const _accent=(a.gen&&my>0)?'var(--sage)':'rgba(120,120,120,.3)';
       return `
-      <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div class="card" style="border-left:3px solid ${_accent}">
         <div class="row-b">
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;font-weight:bold;color:var(--txt);display:flex;align-items:center;gap:6px">${a.gen?'<span style="font-size:11px">📈</span>':''}${_escH(a.name)}</div>
+            <div style="font-size:15px;font-weight:bold;color:var(--txt);display:flex;align-items:center;gap:6px">${a.gen?'<span style="font-size:12px">📈</span>':''}${_escH(a.name)}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:2px">${yldLine}</div>
           </div>
           <div style="text-align:right;margin-right:8px"><div style="font-size:15px;font-weight:bold;color:var(--sage)">${fx(a.val)}</div></div>
@@ -8385,13 +8397,9 @@ try{
       </div>
     `;}).join('')}
     ${(()=>{const arch=S.assets.filter(a=>a.archived);if(!arch.length)return '';
-      return '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;padding:6px 0">📦 Cajitas archivadas · '+arch.length+'</summary><div style="margin-top:6px">'
+      return '<div class="card"><details><summary style="cursor:pointer;font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;font-weight:bold;padding:6px 0">📦 Cajitas archivadas · '+arch.length+'</summary><div style="margin-top:6px">'
       +arch.map(a=>'<div class="row-b" style="padding:8px 2px;border-bottom:1px dashed var(--border)"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:bold;color:var(--muted)">📦 '+_escH(a.name)+'</div><div style="font-size:10px;color:var(--muted);margin-top:2px">'+fx(+a.val||0)+' · '+((a.events||[]).length)+' movimiento'+(((a.events||[]).length)!==1?'s':'')+' · en histórico</div></div><div class="row" style="gap:4px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="toggleAssetArchived('+a.id+')" title="Reactivar">↩</button><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="delAsset('+a.id+')" title="Eliminar definitivamente">🗑️</button></div></div>').join('')
-      +'</div></details>';})()}
-    <div style="font-size:11px;color:var(--muted);margin-top:12px;line-height:1.6;padding-top:10px;border-top:1px dashed var(--border)">
-      💡 Usa <strong>🔄</strong> para actualizar el saldo rápido cuando Mercado Pago o Cajita te paguen rendimiento. Tu patrimonio en Inicio se recalcula solo.
-    </div>
-  </div>
+      +'</div></details></div>';})()}
   `:`
   <div class="card" style="text-align:center;padding:20px 16px">
     <div style="font-size:32px;margin-bottom:8px">🌱</div>

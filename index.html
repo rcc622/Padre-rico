@@ -10355,7 +10355,11 @@ function openAssetMovement(assetId,opts){
     body+='<div style="display:flex;gap:8px;margin-bottom:12px">'+seg('in','🟢','Entra','var(--sage)','var(--sagedim)')+seg('out','🔴','Sale','var(--terra)','var(--terradim)')+'</div>';
   }
   body+='<div style="margin-bottom:10px"><label>Monto ($)</label><input type="number" id="_amAmt" inputmode="decimal" value="'+(isEdit?Math.abs(+ev.amount||0):'')+'" placeholder="0" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>';
-  body+='<div id="_amKindWrap" style="display:'+(dir==='out'&&!special?'block':'none')+';margin-bottom:10px"><label>¿Qué tipo de salida?</label><select id="_amKind" style="width:100%;padding:9px;font-size:13px">'+wdKindOptions((ev&&ev.kind)||'')+'</select>'
+  // Default ↩ Regresó: en la vida real (Nu) el dinero de una cajita pasa primero
+  // a tu cuenta y luego se paga. Al guardar un retiro nuevo se ofrece registrar
+  // el gasto diario prellenado (_amOfferGasto) para que el neto en cuenta sea 0.
+  body+='<div id="_amKindWrap" style="display:'+(dir==='out'&&!special?'block':'none')+';margin-bottom:10px"><label>¿Qué tipo de salida?</label><select id="_amKind" style="width:100%;padding:9px;font-size:13px">'+wdKindOptions((ev&&ev.kind)||'ajuste')+'</select>'
+    +(isEdit?'':'<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">El retiro pasa a tu cuenta. Al guardar te ofrecemos registrar el gasto en Día a día ya prellenado.</div>')
     +'<div class="row" style="gap:6px;margin-top:6px"><input type="text" id="_amNewKind" placeholder="➕ Nuevo tipo de salida…" style="flex:1;padding:7px;font-size:12px" onkeydown="if(event.key===\'Enter\'){event.preventDefault();_amAddKind();}"><button type="button" class="btn btn-ghost btn-sm" style="flex-shrink:0;font-size:12px;padding:6px 12px" onclick="_amAddKind()">Agregar</button></div></div>';
   body+='<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_amDate" value="'+((ev&&ev.date)||_todayYMD())+'"></div>';
   body+='<div style="margin-bottom:4px"><label>Concepto (opcional)</label><input type="text" id="_amConcept" value="'+_escA((ev&&ev.concept)||'')+'" placeholder="Sueldo, transferencia, pago…" style="width:100%;padding:8px;font-size:13px"></div>';
@@ -10393,7 +10397,7 @@ function _amSave(){
   const dir=ctx.special||ctx.dir;
   const concept=(document.getElementById('_amConcept')?.value||'').trim()||(dir==='out'?'Retiro':'Depósito');
   const kind=dir==='out'?(document.getElementById('_amKind')?.value||'ajuste'):null;
-  let newAssets;
+  let newAssets,newEv=null;
   if(ctx.evId!=null){
     newAssets=S.assets.map(x=>{
       if(x.id!==ctx.assetId)return x;
@@ -10405,6 +10409,7 @@ function _amSave(){
     const ev=_mkAssetEvent(dir,used,concept,date);
     if(kind)ev.kind=kind;
     newAssets=_withAssetEvent(S.assets,ctx.assetId,ev);
+    newEv=ev;
   }
   const newBal=_recalcAsset(newAssets.find(x=>x.id===ctx.assetId)).val;
   const patch={assets:newAssets};
@@ -10426,6 +10431,65 @@ function _amSave(){
   toast((dir==='out'?'📉 −':'📈 +')+fx(amt)+' · Nuevo saldo '+fx(newBal));
   rFlujo();hdrUp&&hdrUp();
   try{if(cur==='plan')rPlan();}catch(e){}
+  // Retiro NUEVO: ofrecer el gasto diario prellenado. En setTimeout porque
+  // execConfirm cierra el modal justo después de este callback.
+  if(newEv&&newEv.type==='out'){const _aName=a.name||'cajita';setTimeout(()=>_amOfferGasto(ctx.assetId,newEv,_aName),80);}
+}
+// ══ Retiro de cajita → gasto diario prellenado ═══════════════════════
+// Para el Estado de Cuenta (Plan) y el banner de Inicio un retiro directo de
+// cajita REGRESA a tu cuenta (+$). Si en la vida real ese dinero se gastó,
+// falta el gasto diario a débito en la MISMA quincena: así el neto en tu
+// cuenta queda 0 y "Conciliar con banco" cuadra. Este modal lo ofrece
+// prellenado con los datos del retiro. Es aditivo: crea un gasto diario con
+// el mismo shape que addDiarioDirect (más fromAssetEvId para trazabilidad) y
+// no toca motores ni el evento del activo. "Solo retiro" = no fue gasto.
+function _amOfferGasto(assetId,ev,assetName){
+  try{
+    if(!ev||ev.type!=='out')return;
+    const amt=Math.round((+ev.amount||0)*100)/100;if(amt<=0)return;
+    const concept=(ev.concept&&ev.concept!=='Retiro')?ev.concept:('Pago desde '+assetName);
+    const cats=_allDiarioCats();
+    const lastCat=S._amGastoCat;
+    const defCat=cats.some(c=>c.k===lastCat)?lastCat:'esencial';
+    const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5">Retiraste <strong style="color:var(--terra)">'+fx(amt)+'</strong> de <strong style="color:var(--sage)">'+_escH(assetName)+'</strong>. Ese dinero ya cuenta como regresado a tu cuenta. Si lo gastaste, regístralo aquí para que el Estado de Cuenta cuadre.</div>'
+      +'<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">'
+        +'<div><label>Concepto</label><input type="text" id="_agName" value="'+_escA(concept)+'" style="width:100%;padding:8px;font-size:13px"></div>'
+        +'<div><label>Monto $</label><input type="number" id="_agAmt" inputmode="decimal" value="'+amt+'" style="width:100%;padding:8px;font-size:13px"></div>'
+      +'</div>'
+      +'<div style="margin-bottom:8px"><label>Categoría</label><select id="_agCat" style="width:100%;padding:9px;font-size:13px">'+cats.map(c=>'<option value="'+_escA(c.k)+'"'+(c.k===defCat?' selected':'')+'>'+c.e+' '+_escH(c.n)+_catTipoBadge(c.k)+'</option>').join('')+'</select>'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">🧾 Esencial no pega a ningún presupuesto. Una categoría hormiga sí cuenta en el presupuesto innecesarios.</div></div>'
+      +'<div style="margin-bottom:4px"><label>Fecha</label><input type="date" id="_agDate" value="'+_escA(ev.date||_todayYMD())+'" style="width:100%;padding:8px;font-size:13px">'
+        +'<div style="font-size:10px;color:var(--muted);margin-top:4px">Misma quincena que el retiro ('+_escH(ev.date||'')+'), si no, una quincena sube y la otra baja.</div></div>';
+    window._agCtx={assetId:assetId,evId:ev.id,evDate:ev.date||''};
+    showConfirm('🛒 ¿Fue un gasto?',body,null);
+    const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
+    if(row)row.innerHTML='<button type="button" class="btn btn-ghost" style="flex:1" onclick="closeConfirm();window._agCtx=null">↩ Solo retiro</button>'
+      +'<button type="button" class="btn btn-sage" style="flex:1.4;padding:13px;font-size:14px" onclick="_amGastoSave()">💵 Registrar gasto · Débito</button>';
+  }catch(e){_logErr('amOfferGasto',e);}
+}
+function _amGastoSave(){
+  const ctx=window._agCtx;if(!ctx){closeConfirm();return;}
+  const name=(document.getElementById('_agName')?.value||'').trim();
+  const amt=parseFloat(String(document.getElementById('_agAmt')?.value||'').replace(',','.'));
+  const cat=document.getElementById('_agCat')?.value||'esencial';
+  const date=document.getElementById('_agDate')?.value||ctx.evDate||_todayYMD();
+  if(!name){toast('⚠ Falta el concepto');return;}
+  if(!isFinite(amt)||amt<=0){toast('⚠ Monto inválido (debe ser mayor a 0)');return;}
+  // Misma quincena que el retiro: si no, el + y el − caen en ciclos distintos.
+  try{
+    const _ck=s=>{const p=String(s||'').split('-');return ckForYMD(+p[0],+p[1]-1,+p[2]);};
+    if(ctx.evDate&&_ck(date)!==_ck(ctx.evDate)){toast('⚠ La fecha cae en otra quincena que el retiro ('+ctx.evDate+')');return;}
+  }catch(e){}
+  const newDiario={id:Date.now(),name:name,amt:amt,cat:cat,date:date,paidWith:'debito',fromAssetId:ctx.assetId,fromAssetEvId:ctx.evId};
+  pt({gastosDiarios:[...(S.gastosDiarios||[]),newDiario],_amGastoCat:cat});
+  window._agCtx=null;
+  closeConfirm();
+  toast('✓ '+fx(amt)+' · 💵 Débito · '+_escH(name));
+  try{if(cur==='habitos'&&typeof rHabitos==='function')rHabitos();}catch(e){}
+  try{if(cur==='flujo'&&typeof rFlujo==='function')rFlujo();}catch(e){}
+  try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
+  try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
+  hdrUp&&hdrUp();
 }
 // Wrapper de compatibilidad: todos los puntos de entrada van al modal único.
 function editAssetEvent(assetId,evId){openAssetMovement(assetId,{evId:evId});}

@@ -2436,6 +2436,16 @@ function addSavGoal(){
 // siempre cuadre. El id del evento se guarda en dep.evId para poder
 // editar/eliminar el movimiento y sincronizar ambos lados.
 const _savDepId=()=>Date.now()+Math.floor(Math.random()*100000);
+// Depósito "baseline" de una meta: lo crea _doConvertAssetToMeta al ligar una
+// meta a una cajita que YA tenía saldo (opción "mantener la cajita"). NO movió
+// dinero: ese saldo ya había salido de tu cuenta en quincenas anteriores vía
+// los eventos de la cajita (los motores ya lo restaron en su fecha). Contarlo
+// como abono del ciclo lo DUPLICA (−$ de más en Inicio y Plan). Los 3 motores
+// (calcCycleBalance, EC del Plan, auditoría) lo saltan con este helper. Sí
+// cuenta para el avance de la meta (g.saved), eso no se toca.
+// Detección: flag explícito (nuevos) o huella legacy: assetId sin evId con
+// la nota que escribe _doConvertAssetToMeta.
+const _isMetaBaselineDep=d=>!!d&&(+d.amt||0)>0&&(d.baseline===true||(d.assetId!=null&&d.evId==null&&(d.note==='Saldo inicial'||String(d.note||'').startsWith('Desde '))));
 // Aplica un movimiento a su activo ligado. amt es con signo (+entra/−sale).
 // kind (opcional) = tipo de retiro (emergencia/enganche/ajuste) que se guarda
 // en el evento para que la barra de desglose pueda agruparlo por concepto.
@@ -3001,7 +3011,7 @@ function metaDepsInCycle(g,ck){
   if(!g||!g.deposits)return 0;
   const w=cycleWindowFromKey(ck||planCk());
   const sYMD=_ymdLocal(w.start),eYMD=_ymdLocal(w.end);
-  return g.deposits.filter(d=>d&&d.date&&d.date>=sYMD&&d.date<=eYMD).reduce((a,d)=>a+(+d.amt||0),0);
+  return g.deposits.filter(d=>d&&!_isMetaBaselineDep(d)&&d.date&&d.date>=sYMD&&d.date<=eYMD).reduce((a,d)=>a+(+d.amt||0),0);
 }
 // Cantidad real que la meta aporta al Plan en un ciclo: si ya hubo abonos
 // los usa; si no, devuelve la cuota sugerida savGoalPerQ.
@@ -3348,7 +3358,7 @@ function calcCycleBalance(ck){
     // restaban las dos (déficit fantasma en el banner de Inicio).
     const _savConDeps=new Set();
     (S.savGoals||[]).forEach(g=>{
-      if((g.deposits||[]).some(d=>d&&d.date&&d.date>=startYMD&&d.date<=endYMD))_savConDeps.add('sav_'+g.id);
+      if((g.deposits||[]).some(d=>d&&!_isMetaBaselineDep(d)&&d.date&&d.date>=startYMD&&d.date<=endYMD))_savConDeps.add('sav_'+g.id);
     });
     // 1) Pagos aplicados del Plan (usa amt real registrado al aplicar)
     for(const k in paid){
@@ -3406,6 +3416,7 @@ function calcCycleBalance(ck){
       (g.deposits||[]).forEach(d=>{
         if(!d||!d.date)return;
         if(d.date<startYMD||d.date>endYMD)return;
+        if(_isMetaBaselineDep(d))return; // saldo que ya vivía en la cajita: no es flujo
         const amt=+d.amt||0;
         if(amt>0)gastos+=amt;
         else if(amt<0&&(d.kind||'')==='ajuste')gastos+=amt; // regresa a tu cuenta
@@ -10145,7 +10156,9 @@ function _doConvertAssetToMeta(id){
     if(!dl){toast('Indica la fecha límite');return;}
     const gid=Date.now();
     const deposits=[];
-    if(val>0){const dep={id:gid+1,amt:val,date:_todayYMD(),note:'Saldo inicial'};if(keep){dep.assetId=a.id;dep.evId=null;}deposits.push(dep);}
+    // keep → baseline: el saldo ya vive en la cajita (ya salió de tu cuenta
+    // antes); los motores de flujo lo saltan (_isMetaBaselineDep).
+    if(val>0){const dep={id:gid+1,amt:val,date:_todayYMD(),note:'Saldo inicial'};if(keep){dep.assetId=a.id;dep.evId=null;dep.baseline=true;}deposits.push(dep);}
     const goal={id:gid,name,target,deadline:dl,saved:val,deposits,icon,tipo:'consumo',done:val>=target};
     if(keep)goal.lastAssetId=a.id;
     savGoals=[...S.savGoals,goal];goalName=name;
@@ -10155,7 +10168,7 @@ function _doConvertAssetToMeta(id){
     goalName=g.name;
     if(val>0){
       const dep={id:Date.now()+1,amt:val,date:_todayYMD(),note:'Desde '+a.name};
-      if(keep){dep.assetId=a.id;dep.evId=null;}
+      if(keep){dep.assetId=a.id;dep.evId=null;dep.baseline=true;}
       savGoals=S.savGoals.map(x=>{
         if(x.id!==g.id)return x;
         const saved=(+x.saved||0)+val;
@@ -11929,7 +11942,7 @@ try{
     const _mw=cycleWindowFromKey(planCk());const _mSY=_ymdLocal(_mw.start),_mEY=_ymdLocal(_mw.end);
     S.savGoals.forEach(g=>{
       const _esPatr=(g.tipo||'consumo')==='patrimonio';
-      const deps=(g.deposits||[]).filter(d=>d&&d.date&&d.date>=_mSY&&d.date<=_mEY);
+      const deps=(g.deposits||[]).filter(d=>d&&!_isMetaBaselineDep(d)&&d.date&&d.date>=_mSY&&d.date<=_mEY);
       if(deps.length){
         let net=0,ret=0;
         deps.forEach(d=>{const amt=+d.amt||0;net+=amt;if(amt<0&&(d.kind||'')!=='ajuste'){ret+=(-amt);_metaRetBreakdown.push({id:g.id,name:g.name,icon:g.icon,amt:-amt,kind:d.kind||'',note:d.note||''});}});
@@ -12028,7 +12041,7 @@ try{
       // fuente de verdad (los abonos reales), sin tener que checarla a mano ni
       // sumar un monto fantasma encima.
       const _mw=cycleWindowFromKey(planCk());const _msY=_ymdLocal(_mw.start),_meY=_ymdLocal(_mw.end);
-      const _realAb=(g.deposits||[]).filter(d=>d&&d.date&&d.date>=_msY&&d.date<=_meY&&(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
+      const _realAb=(g.deposits||[]).filter(d=>d&&!_isMetaBaselineDep(d)&&d.date&&d.date>=_msY&&d.date<=_meY&&(+d.amt||0)>0).reduce((a,d)=>a+(+d.amt||0),0);
       const _auto=!showNext&&_realAb>0;
       const perQ=_auto?_realAb:metaCycleAmt(g,planCk());
       const paid=_auto||(!showNext&&isPaid('sav',g.id));
@@ -12245,6 +12258,7 @@ try{
               if((gg.tipo||'consumo')==='patrimonio')return;
               (gg.deposits||[]).forEach(dd=>{
                 if(!dd||!dd.date||dd.date<_s2||dd.date>_e2)return;
+                if(_isMetaBaselineDep(dd))return; // excluido del neto, no se lista
                 rows.push({g:gg,d:dd});
               });
             });
@@ -16194,7 +16208,7 @@ function exportAudit(){
       // reales en la ventana NO suman (la fuente de verdad son los depósitos).
       const _savConDeps=new Set();
       (S.savGoals||[]).forEach(g=>{
-        if((g.deposits||[]).some(d=>d&&d.date&&d.date>=startYMD&&d.date<=endYMD))_savConDeps.add('sav_'+g.id);
+        if((g.deposits||[]).some(d=>d&&!_isMetaBaselineDep(d)&&d.date&&d.date>=startYMD&&d.date<=endYMD))_savConDeps.add('sav_'+g.id);
       });
       for(const k in paid){
         if(k.startsWith('_'))continue;
@@ -16259,7 +16273,9 @@ function exportAudit(){
         (g.deposits||[]).forEach(d=>{
           if(!d||!d.date||d.date<startYMD||d.date>endYMD)return;
           const amt=+d.amt||0;
-          metaMovs.push({goal:g.name,tipo:esPatr?'patrimonio':'consumo',amt:_r2(amt),kind:d.kind||'',date:d.date,note:(d.note||'').slice(0,30)});
+          const _base=_isMetaBaselineDep(d);
+          metaMovs.push({goal:g.name,tipo:esPatr?'patrimonio':'consumo',amt:_r2(amt),kind:d.kind||'',date:d.date,note:(d.note||'').slice(0,30),baseline:_base});
+          if(_base)return; // saldo que ya vivía en la cajita: no es flujo del ciclo
           if(esPatr){patrNet+=amt;return;}
           if(amt>0)metaAbono+=amt;else if((d.kind||'')==='ajuste')metaAjuste+=amt;else metaRetGastado+=(-amt);
         });

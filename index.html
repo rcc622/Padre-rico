@@ -29,6 +29,14 @@ input:focus,select:focus{border-color:var(--sage);box-shadow:0 0 0 3px rgba(78,1
 :focus-visible{outline:2px solid var(--sage2);outline-offset:2px}
 input::placeholder{color:var(--muted)}
 input[type=range]{background:none;border:none;padding:0;accent-color:var(--sage)}
+/* Fechas dd/mm/aa: el <input type=date> nativo pinta el formato del SISTEMA
+   (Android: mm/dd/aaaa). El input se queda (mismo value y picker) pero con
+   texto transparente y una capa .dfv encima con fmtDate. Ver _dfEnhance. */
+.dfw{position:relative;display:block;min-width:0}
+.dfw>input[type=date]{color:transparent!important;caret-color:transparent;-webkit-text-fill-color:transparent}
+.dfw>input[type=date]::-webkit-datetime-edit{color:transparent}
+.dfw>.dfv{position:absolute;top:0;bottom:0;left:0;right:0;display:flex;align-items:center;pointer-events:none;white-space:nowrap;overflow:hidden;color:var(--txt);line-height:1}
+.dfw>.dfv.ph{color:var(--muted)}
 /* Cuando sim está bloqueado, los sliders permiten scroll en lugar de capturar gestos */
 #simSl input[type=range]:disabled{touch-action:auto;pointer-events:none}
 #simSl input[type=range]:disabled::-webkit-slider-thumb{background:var(--muted);cursor:not-allowed}
@@ -17376,6 +17384,51 @@ function _backupReminder(){
 // ══ INIT ════════════════════════════════════════════
 ld();initPWA();
 if(S.done){launchApp();_backupReminder();}else{setDL();drawDots();document.getElementById('onboarding').style.display='flex';}
+// ══ FECHAS dd/mm/aa en <input type="date"> ═══════════════════════════
+// El input nativo pinta la fecha en el formato del SISTEMA (en Android suele
+// ser mm/dd/aaaa) y eso no se controla con HTML/CSS. Solución: el input
+// sigue siendo el nativo (mismo .value YYYY-MM-DD, mismo picker, misma caja)
+// pero su texto se vuelve transparente y encima se dibuja una capa .dfv con
+// fmtDate (dd/mm/aa). La lógica no cambia: solo se envuelve el input en .dfw
+// y lo que lo posiciona (márgenes/flex/ancho) pasa al wrapper. Se aplica a
+// los que ya existen y, vía MutationObserver, a los que se crean después
+// (modales con innerHTML, re-renders).
+function _dfEnhance(inp){
+  try{
+    if(!inp||inp.dataset.df||inp.type!=='date'||!inp.parentNode)return;
+    inp.dataset.df='1';
+    const cs=getComputedStyle(inp);
+    const w=document.createElement('span');w.className='dfw';
+    ['marginTop','marginRight','marginBottom','marginLeft'].forEach(k=>{w.style[k]=cs[k];});
+    inp.style.margin='0';
+    if(inp.style.flex){w.style.flex=inp.style.flex;inp.style.flex='';}
+    if(inp.style.width&&inp.style.width!=='100%')w.style.width=inp.style.width;
+    inp.style.width='100%';
+    inp.parentNode.insertBefore(w,inp);w.appendChild(inp);
+    const v=document.createElement('span');v.className='dfv';
+    v.style.paddingLeft=((parseFloat(cs.borderLeftWidth)||0)+(parseFloat(cs.paddingLeft)||0))+'px';
+    v.style.paddingRight=((parseFloat(cs.borderRightWidth)||0)+(parseFloat(cs.paddingRight)||0)+22)+'px';
+    v.style.fontSize=cs.fontSize;v.style.fontWeight=cs.fontWeight;v.style.fontFamily=cs.fontFamily;
+    if(cs.textAlign==='center')v.style.justifyContent='center';
+    w.appendChild(v);
+    const upd=()=>{const s=inp.value;let t='dd/mm/aa';if(s){try{t=fmtDate(s)||s;}catch(e){t=s;}}v.textContent=t;v.classList.toggle('ph',!s);};
+    upd();
+    inp.addEventListener('input',upd);inp.addEventListener('change',upd);
+    // Cambios por código (el.value='...') también refrescan la capa.
+    const desc=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value');
+    if(desc&&desc.set&&desc.get)Object.defineProperty(inp,'value',{configurable:true,get(){return desc.get.call(inp);},set(x){desc.set.call(inp,x);upd();}});
+    // Escritorio: un click en cualquier parte del campo abre el calendario
+    // (en touch el sistema ya lo abre solo).
+    if(!('ontouchstart' in window))inp.addEventListener('click',()=>{try{if(typeof inp.showPicker==='function')inp.showPicker();}catch(e){}});
+  }catch(e){_logErr('dfEnhance',e);}
+}
+function _dfEnhanceAll(root){try{(root||document).querySelectorAll('input[type=date]:not([data-df])').forEach(_dfEnhance);}catch(e){_logErr('dfEnhanceAll',e);}}
+(function(){try{
+  _dfEnhanceAll(document);
+  new MutationObserver(ms=>{
+    for(const m of ms){for(const n of m.addedNodes){if(n.nodeType===1){_dfEnhanceAll(document);return;}}}
+  }).observe(document.body,{childList:true,subtree:true});
+}catch(e){_logErr('dfInit',e);}})();
 </script>
 </body>
 </html>

@@ -1473,6 +1473,20 @@ function isApplied(type,id){
   const v=items[type+'_'+id];
   return v==='applied'||(typeof v==='object'&&v?.applied);
 }
+// Monto de un pago APLICADO del ciclo del Plan con la MISMA regla que
+// calcCycleBalance: realAmt explícito (aunque sea 0) → amt guardado al
+// aplicar → catálogo vivo (legacy sin amt). Fuente única para que el Estado
+// de Cuenta del Plan y el saldo de Inicio no diverjan.
+function _planAppliedAmt(type,id){
+  const v=(S.paidItems[planCk()]||{})[type+'_'+id];
+  if(typeof v==='object'&&v){
+    if(v.realAmt!=null)return +v.realAmt||0;
+    if(+v.amt)return +v.amt;
+  }
+  if(type==='exp'||type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);return e?(+e.amt||0):0;}
+  if(type==='debt'){const d=S.debts.find(x=>x.id===id);return d?(+d.pay||0):0;}
+  return 0;
+}
 function getRealAmt(type,id){
   const ck=planCk();
   const items=S.paidItems[ck]||{};
@@ -1592,7 +1606,30 @@ function _delAppliedItem(ck,key){
     });
   }catch(e){toast('Error');}
 }
-function togglePaid(type,id){
+// Fecha REAL del pago guardada al marcarlo (gastos fijos). Solo registro /
+// display: NO cambia el ciclo donde cuenta ni el monto (bajo blast-radius).
+function _getPaidDate(type,id){
+  const v=(S.paidItems[planCk()]||{})[type+'_'+id];
+  return (typeof v==='object'&&v&&v.paidDate)?v.paidDate:null;
+}
+// Fecha agendada (YYYY-MM-DD) del día-del-mes `day` dentro de la ventana del
+// ciclo del Plan. null si no hay día o no cae en la ventana.
+function _schedDateInPlan(day){
+  day=+day||0;if(!day)return null;
+  try{const w=cycleWindowFromKey(planCk());const d=new Date(w.start);d.setHours(12,0,0,0);const end=new Date(w.end);end.setHours(12,0,0,0);
+    while(d<=end){if(d.getDate()===day)return _ymdLocal(d);d.setDate(d.getDate()+1);}}catch(e){}
+  return null;
+}
+function _payDatePick(mode){
+  window._payDateMode=mode;
+  const a=document.getElementById('_pdBtnSched'),b=document.getElementById('_pdBtnOther'),w=document.getElementById('_pdOtherWrap');
+  const on='border:2px solid var(--sage);background:var(--sagedim);color:var(--sage)',off='border:2px solid var(--border);background:var(--bg);color:var(--muted)';
+  if(a)a.setAttribute('style','flex:1;padding:10px 4px;font-size:12px;font-weight:bold;border-radius:8px;cursor:pointer;font-family:Georgia,serif;'+(mode==='sched'?on:off));
+  if(b)b.setAttribute('style','flex:1;padding:10px 4px;font-size:12px;font-weight:bold;border-radius:8px;cursor:pointer;font-family:Georgia,serif;'+(mode==='other'?on:off));
+  if(w)w.style.display=mode==='other'?'block':'none';
+  if(mode==='other')setTimeout(()=>{try{document.getElementById('_payDateInp')?.focus();}catch(_){}},60);
+}
+function togglePaid(type,id,schedDay){
   const ck=planCk();
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
@@ -1625,8 +1662,25 @@ function togglePaid(type,id){
   const exp=(type==='exp'||type==='expw2'||type==='expw3')?S.exp.find(e=>e.id===id):null;
   const isWeeklyVariable=exp&&exp.freq==='semanal';
   
-  const body='<div style="padding:14px 16px;background:var(--bg);border-radius:10px;margin-bottom:14px;text-align:center">'
-    +'<div style="font-size:14px;font-weight:bold;color:var(--txt);margin-bottom:10px">'+info.name+'</div>'
+  // GASTOS FIJOS: preguntar qué día fue el pago (el programado u otro).
+  const _isFixedExp=(type==='exp'||type==='expw2'||type==='expw3');
+  // Fecha agendada futura (pagas antes de tiempo): no se ofrece "el
+  // programado" — aún no llega; el default es "otro día" = hoy.
+  const _sched0=_isFixedExp?_schedDateInPlan(schedDay):null;
+  const _sched=_sched0&&_sched0<=_todayYMD()?_sched0:null;
+  window._payDateMode=_isFixedExp?(_sched?'sched':'other'):null;
+  window._payDateSched=_sched;window._payDateSched0=_sched0;
+  const _fmtD=y=>{const d=new Date(y+'T12:00');return d.toLocaleDateString('es-MX',{weekday:'short',day:'2-digit',month:'2-digit'});};
+  const dateBlock=!_isFixedExp?'':(
+    '<div style="font-size:10px;color:var(--muted);margin-bottom:8px;text-align:center;text-transform:uppercase;letter-spacing:1px">¿Qué día fue el pago?</div>'
+    +'<div style="display:flex;gap:8px;margin-bottom:8px">'
+    +(_sched?'<button type="button" id="_pdBtnSched" onclick="_payDatePick(\'sched\')">📅 El programado<br><span style="font-weight:normal;font-size:11px">'+_fmtD(_sched)+'</span></button>':'')
+    +'<button type="button" id="_pdBtnOther" onclick="_payDatePick(\'other\')">📆 Otro día'+(_sched?'':'<br><span style="font-weight:normal;font-size:11px">'+(_sched0?'programado '+_fmtD(_sched0)+' · aún no llega':'sin día programado')+'</span>')+'</button>'
+    +'</div>'
+    +'<div id="_pdOtherWrap" style="display:none;margin-bottom:12px"><input type="date" id="_payDateInp" value="'+_todayYMD()+'" max="'+_todayYMD()+'" style="width:100%;padding:9px;font-size:14px;text-align:center"></div>'
+    +'<div style="height:6px"></div>');
+  const body=dateBlock+'<div style="padding:14px 16px;background:var(--bg);border-radius:10px;margin-bottom:14px;text-align:center">'
+    +'<div style="font-size:14px;font-weight:bold;color:var(--txt);margin-bottom:10px">'+_escH(info.name)+'</div>'
     +'<div style="font-size:10px;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:1px">Monto pagado</div>'
     +'<input type="number" inputmode="decimal" id="realAmtInput" value="'+budgeted+'" style="width:140px;font-size:24px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif;border:1px solid var(--border);border-radius:8px;padding:8px" onclick="this.select()">'
     +(budgeted>0?'<div style="font-size:10px;color:var(--muted);margin-top:4px">Presupuestado: '+fx(budgeted)+'</div>':'')
@@ -1640,6 +1694,7 @@ function togglePaid(type,id){
   showConfirm('✓ Marcar como pagado',body,null);
   const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
   if(row)row.innerHTML='<button class="btn btn-ghost btn-sm" style="width:100%" onclick="closeConfirm()">Cancelar</button>';
+  if(_isFixedExp)_payDatePick(window._payDateMode);
   setTimeout(()=>{
     const inp=document.getElementById('realAmtInput');
     if(inp){inp.oninput=function(){
@@ -1661,6 +1716,14 @@ function _confirmPayment(type,id,method,budgeted){
   // solo bloquear vacío, no-numérico o negativo. Todos los consumidores de
   // realAmt tratan 0 como "gastó $0" (usan !=null, no ||), así que cuadra.
   if(_raw===''||!isFinite(real)||real<0){toast('Ingresa un monto válido');return;}
+  // Fecha real del pago (solo gastos fijos; ver togglePaid).
+  let _paidDate=null;
+  if(window._payDateMode==='sched'&&window._payDateSched)_paidDate=window._payDateSched;
+  else if(window._payDateMode==='other'){
+    _paidDate=_toValidYMD(document.getElementById('_payDateInp')?.value||'');
+    if(!_paidDate){toast('⚠ Elige la fecha del pago');return;}
+    if(_paidDate>_todayYMD()){toast('⚠ La fecha no puede ser futura');return;}
+  }
   const ck=planCk();
   // Snapshot ANTES de cualquier mutación: es lo que restaura el "Deshacer"
   // y el respaldo pre-aplicación (mismo criterio que applyPayments).
@@ -1669,6 +1732,8 @@ function _confirmPayment(type,id,method,budgeted){
   if(!S.paidItems[ck])S.paidItems[ck]={};
   const key=type+'_'+id;
   const entry={at:Date.now(),paidWith:method};
+  if(_paidDate){entry.paidDate=_paidDate;if(window._payDateSched0)entry.schedDate=window._payDateSched0;}
+  window._payDateMode=null;window._payDateSched=null;window._payDateSched0=null;
   // Save realAmt only if different from budgeted
   if(real!==budgeted){entry.realAmt=real;entry.budgeted=budgeted;}
   S.paidItems[ck][key]=entry;
@@ -7836,7 +7901,8 @@ try{
     `;})()}
   </div>
 
-  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const _done=e.endDate&&e.endDate<_todayYMD();const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=!_done&&daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)${_done?';opacity:.55':''}"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${_escH(e.name)}</span><span class="badge bdg-sage">${_escH(e.cat)}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}${e.startDate&&e.startDate>_todayYMD()?`<span class="badge bdg-amber">🗓️ inicia ${fmtDate(e.startDate)}</span>`:''}${e.endDate?`<span class="badge ${_done?'bdg-red':'bdg-amber'}">🏁 ${_done?'terminó':'termina'} ${fmtDate(e.endDate)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">${_done?'Finalizado':`Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}`}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}<div class="row-b" style="padding-top:10px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total</span><span style="font-size:15px;color:var(--sage);font-weight:bold">${fx(Math.round(S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0)))}/mes</span></div></div>`:''}
+  ${(()=>{const nd=S.exp.filter(_expNoDay);if(!nd.length)return '';return `<div class="card" style="border:1px solid rgba(184,92,74,.35);background:rgba(184,92,74,.05)"><div style="font-size:12px;color:var(--terra);font-weight:bold;margin-bottom:4px">⚠ ${nd.length} gasto${nd.length>1?'s':''} sin día de cobro</div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin-bottom:8px">${nd.map(e=>'<strong>'+_escH(e.name)+'</strong>').join(', ')} ${nd.length>1?'son':'es'} ${nd[0].freq==='bimestral'&&nd.length===1?'bimestral':'mensual'} pero sin día, así que el Plan ${nd.length>1?'los parte':'lo parte'} a la mitad en CADA quincena. Elige el día y caerá completo en una sola.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="openExpNoDayFix()">📅 Elegir día de cobro</button></div>`;})()}
+  ${S.exp.length>0?`<div class="card"><div class="ct">Gastos registrados (${S.exp.length})</div>${S.exp.map(e=>{const f=e.freq||'mensual';const mo=toMonthly(e.amt,f);const fBdg=freqName(f);const _done=e.endDate&&e.endDate<_todayYMD();const np=nextPayDate(e);const npStr=np.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});const daysUntil=Math.ceil((np-new Date().setHours(0,0,0,0))/864e5);const urgente=!_done&&daysUntil<=3;return`<div class="row-b gasto-item" style="padding:8px 0;border-bottom:1px solid var(--border)${_done?';opacity:.55':''}"><div class="row" style="flex:1;min-width:0"><span style="color:var(--txt)">${_escH(e.name)}</span><span class="badge bdg-sage">${_escH(e.cat)}</span>${fBdg?`<span class="badge bdg-sky">${fBdg}</span>`:''}${_expNoDay(e)?`<span class="badge bdg-red" style="cursor:pointer" onclick="openExpNoDayFix()" title="Sin día de cobro: se parte a la mitad en cada quincena">⚠ sin día</span>`:''}${e.bimMeses?`<span class="badge bdg-amber">${e.bimMeses==='par'?'Par':'Non'}</span>`:''}${e.startDate&&e.startDate>_todayYMD()?`<span class="badge bdg-amber">🗓️ inicia ${fmtDate(e.startDate)}</span>`:''}${e.endDate?`<span class="badge ${_done?'bdg-red':'bdg-amber'}">🏁 ${_done?'terminó':'termina'} ${fmtDate(e.endDate)}</span>`:''}</div><div class="row" style="gap:6px;flex-shrink:0"><div style="text-align:right"><div style="color:var(--terra);font-weight:bold;font-size:13px">${fx(Math.round(mo))}/mes</div><div style="font-size:10px;color:${urgente?'var(--terra)':'var(--muted)'}">${_done?'Finalizado':_expNoDay(e)?'⚠ Sin día de cobro':`Próx: ${daysUntil===0?'HOY':daysUntil===1?'mañana':npStr} ${daysUntil>=0&&daysUntil<=3?'⚠️':''}`}</div></div><button class="btn btn-ghost btn-sm" onclick="editExp(${e.id})" style="padding:4px 8px">✏️</button><button class="btn btn-red btn-sm" onclick="rmExp(${e.id})">✕</button></div></div>`;}).join('')}<div class="row-b" style="padding-top:10px;margin-top:4px;border-top:1px solid var(--sage)"><span style="font-size:12px;color:var(--sage);font-weight:bold">Total</span><span style="font-size:15px;color:var(--sage);font-weight:bold">${fx(Math.round(S.exp.reduce((a,e)=>a+toMonthly(+e.amt||0,e.freq||'mensual'),0)))}/mes</span></div></div>`:''}
 
   ${Object.keys(bc).length>0?`<div class="card"><div class="ct">Por categoría (mensual)</div>${Object.entries(bc).sort((a,b)=>b[1]-a[1]).map(([cat,t])=>`<div style="margin-bottom:11px"><div class="row-b" style="margin-bottom:4px"><span style="font-size:12px;color:var(--txt)">${cat}</span><span style="font-size:12px;color:var(--terra);font-weight:bold">${fx(Math.round(t))}</span></div><div class="pw"><div class="pb" style="width:${(t/maxC*100).toFixed(0)}%;background:rgba(78,124,106,.45)"></div></div></div>`).join('')}</div>`:''}
   `:''}
@@ -8299,10 +8365,11 @@ try{
       <button class="btn btn-sage" style="width:100%;padding:14px;font-size:14px" onclick="openSavCommitModal()">${committed?'💰 Ver / completar':'✓ Apartar '+fx(sug)}</button>
     </div>`;
   })()}
+  ${invCardHTML()}
   ${S.assets.length>0?`
   <!-- LISTA DE ACTIVOS -->
   <div class="card">
-    <div class="ct">💎 Mis cajitas · activos (${S.assets.filter(a=>!a.archived).length})</div>
+    <div class="ct">💎 Mis cajitas · activos (${S.assets.filter(a=>!a.archived&&a.kind!=='bolsa').length})</div>
     <div class="card card-grn" style="margin-bottom:12px;padding:10px 14px;background:rgba(78,124,106,.08)">
       <div class="row-b">
         <div><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px">Total en activos</div><div class="stat" style="color:var(--sage)">${fx(tAss())}</div></div>
@@ -8319,7 +8386,7 @@ try{
        una sola card, separadas apenas por una línea: con movimientos y
        proyecciones abiertas era un muro donde no se veía dónde terminaba una
        y empezaba la otra. Cada una es ahora su propia card. -->
-  ${S.assets.filter(a=>!a.archived).map(a=>{
+  ${S.assets.filter(a=>!a.archived&&a.kind!=='bolsa').map(a=>{
       const my=_monthlyYield(a);
       const yldLine=a.gen&&my>0?'+'+fx(Math.round(my))+'/mes · '+(+a.yldPct||0)+'% anual':'Sin rendimiento registrado';
       // La proyección de rendimiento solo tiene sentido si el dinero va a estar
@@ -8542,6 +8609,26 @@ function updExpFields(){
   wrap.innerHTML=_expExtraFieldsHTML(f,{payDay:prevPd,weekDay:prevWd});
   prevExpMo();
 }
+// Gasto mensual/bimestral sin día de cobro → los motores lo prorratean mo/2 en
+// cada quincena (comportamiento legacy que se conserva para no mover números
+// ya cerrados). Se avisa en Finanzas para que el usuario fije el día.
+function _expNoDay(e){const f=(e&&e.freq)||'mensual';return (f==='mensual'||f==='bimestral')&&!((+e.payDay||0)>=1);}
+function openExpNoDayFix(){
+  const nd=S.exp.filter(_expNoDay);if(!nd.length){toast('Todos tus gastos tienen día');return;}
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">¿Qué día del mes se cobra cada uno? Con el día, el gasto cae <strong>completo</strong> en la quincena que lo contiene (1–14 o 30–31 → 1ra; 15–29 → 2da) en vez de partirse en dos.</div>'
+    +nd.map(e=>'<div class="row-b" style="gap:10px;padding:8px 0;border-bottom:1px dashed var(--border)"><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+_escH(e.name)+'</div><div style="font-size:10px;color:var(--muted)">'+fx(+e.amt||0)+' / '+freqShort(e.freq||'mensual')+'</div></div><input type="number" inputmode="numeric" min="1" max="31" id="_ndPd_'+e.id+'" placeholder="Día" style="width:80px;text-align:center;font-size:16px"></div>').join('')
+    +'<div style="font-size:10px;color:var(--muted);margin-top:8px;line-height:1.5">Los pagos que ya aplicaste no cambian de monto. Si uno ya pagado cae en otra quincena, el Plan lo muestra en "Pagos reconciliados" y el saldo sigue cuadrando con Inicio.</div>';
+  showConfirm('📅 Día de cobro',body,()=>{
+    const set={};let bad=false;
+    nd.forEach(e=>{const raw=(document.getElementById('_ndPd_'+e.id)?.value||'').trim();if(!raw)return;const v=Math.round(+raw);if(!(v>=1&&v<=31)){bad=true;return;}set[e.id]=v;});
+    if(bad){toast('⚠ El día debe ser 1-31');return;}
+    const n=Object.keys(set).length;if(!n){toast('Sin cambios');return;}
+    const _s=JSON.stringify(S);
+    pt({exp:S.exp.map(e=>set[e.id]?{...e,payDay:set[e.id]}:e)});
+    _undoToast('✓ Día de cobro fijado ('+n+')',_s);
+    try{rFlujo();}catch(e){}try{if(cur==='plan')rPlan();}catch(e){}
+  });
+}
 function nextPayDate(e){
   const np=_nextPayDateRaw(e);
   // Si el gasto aún no comienza, el próximo pago real es su fecha de inicio.
@@ -8741,6 +8828,10 @@ function addExp(){const n=document.getElementById('en')?.value.trim();const a=+d
   // Día de pago aprox: ahora se guarda para TODAS las periodicidades. En
   // semanal/quincenal es referencia/ubicación (el motor de cuadre lo ignora).
   const pd=(+(document.getElementById('epd')?.value)||0);
+  // Mensual/bimestral SIN día: el motor no sabe en qué quincena cae y lo parte
+  // a la mitad en CADA quincena (bug Tidal: $75/mes salía como $37 qnal). Ahora
+  // el día de cobro es obligatorio para esas periodicidades.
+  if((f==='mensual'||f==='bimestral')&&!(pd>=1&&pd<=31)){toast('⚠ Elige el día de cobro (1-31) para que caiga en una sola quincena');document.getElementById('epd')?.focus();return;}
   // Día de la semana (1=Lun..7=Dom) solo para gastos semanales; 0 = automático
   // (sábado). Con día elegido, el motor ancla las ocurrencias del ciclo a las
   // fechas reales de ese día (buildCyclePayments / weeklyOccsInWindow).
@@ -10847,6 +10938,218 @@ function openLedgerAudit(){
     if(row)row.innerHTML='<button class="btn btn-sage" style="width:100%" onclick="closeConfirm();try{if(cur===\'plan\')rPlan()}catch(e){}">Listo</button>';
   }catch(e){toast('Error al validar');}
 }
+// ══ INVERSIONES EN BOLSA (IBKR u otro broker) ═══════════════════════════
+// Una cuenta de bolsa es un ACTIVO más (S.assets con kind:'bolsa'), así los
+// motores de flujo (calcCycleBalance de Inicio y el Estado de Cuenta del Plan)
+// la tratan EXACTO igual que una cajita, sin tocar su lógica:
+//   · Depósito ('in')  = sale de tu cuenta bancaria en esa quincena.
+//   · Retiro   ('out') = regresa a tu cuenta.
+//   · Comprar/vender ocurre DENTRO del broker: no toca tu efectivo (solo
+//     cambia efectivo-en-broker ↔ posiciones; no genera eventos).
+//   · Cambios de precio / tipo de cambio → evento 'adjust' con mv:true
+//     ("Valuación de mercado"). Los motores de flujo solo cuentan in/out, así
+//     que la valuación mueve tu PATRIMONIO pero nunca tu quincena.
+//   · Dividendo → evento 'yield' (se queda en el broker; tampoco es flujo).
+// Posiciones y costo promedio (MXN) se DERIVAN de a.trades; efectivo en
+// broker = eventos no-valuación ± trades. a.val (Σ eventos) = valor total.
+const _INV_MV='Valuación de mercado';
+const _invIsMv=ev=>!!(ev&&ev.type==='adjust'&&ev.mv);
+const _invFxOf=(a,ccy)=>ccy==='USD'?(+a.fxUsd||0):1;
+const _invTradeFx=t=>t.ccy==='USD'?(+t.fx||0):1;
+const _invSym=s=>String(s||'').toUpperCase().replace(/[^A-Z0-9.\-]/g,'').slice(0,12);
+function _invAccounts(){return (S.assets||[]).filter(a=>a&&a.kind==='bolsa'&&!a.archived);}
+function _invHoldings(a){
+  const h={};
+  (a.trades||[]).slice().sort((x,y)=>(x.date||'').localeCompare(y.date||'')||(x.id-y.id)).forEach(t=>{
+    const k=t.sym,q=+t.qty||0;if(!k||q<=0)return;
+    if(!h[k])h[k]={sym:k,ccy:t.ccy||'USD',qty:0,costMx:0,realized:0};
+    const r=h[k],fx=_invTradeFx(t),px=+t.px||0,fee=+t.fee||0;
+    if(t.side==='buy'){r.qty+=q;r.costMx+=(q*px+fee)*fx;}
+    else{const avg=r.qty>0?r.costMx/r.qty:0;const sq=Math.min(q,r.qty);r.realized+=(sq*px-fee)*fx-avg*sq;r.costMx-=avg*sq;r.qty-=sq;if(r.qty<1e-9){r.qty=0;r.costMx=0;}}
+  });
+  return Object.values(h);
+}
+function _invCash(a){
+  let c=0;
+  (a.events||[]).forEach(ev=>{if(!_invIsMv(ev))c+=_eventDelta(ev);});
+  (a.trades||[]).forEach(t=>{const fx=_invTradeFx(t),q=+t.qty||0,px=+t.px||0,fee=+t.fee||0;c+=t.side==='buy'?-(q*px+fee)*fx:(q*px-fee)*fx;});
+  return c;
+}
+function _invMarket(a){
+  const all=_invHoldings(a);let mv=0,cost=0,realized=0;
+  all.forEach(r=>realized+=r.realized);
+  const rows=all.filter(r=>r.qty>1e-9).map(r=>{const p=(a.prices||{})[r.sym]||{};const px=+p.px||0;const val=r.qty*px*_invFxOf(a,r.ccy);mv+=val;cost+=r.costMx;return {...r,px,pxAt:p.at||'',valMx:val,pnl:val-r.costMx};});
+  const cash=_invCash(a);
+  return {rows,cash,mv,cost,realized,total:cash+mv,pnl:mv-cost};
+}
+// Re-sincroniza a.val con el valor de mercado mediante UN evento de valuación
+// por día (reemplaza el del mismo día en vez de acumular uno por cada ajuste).
+function _invRevalue(a){
+  const today=_todayYMD();
+  const base={...a,events:(a.events||[]).filter(ev=>!(_invIsMv(ev)&&ev.date===today))};
+  const diff=Math.round(_invMarket(base).total-_assetBalance(base));
+  if(Math.abs(diff)<1)return _recalcAsset(base);
+  const ev=_mkAssetEvent('adjust',diff,_INV_MV,today);ev.mv=true;
+  return _recalcAsset({...base,events:[...base.events,ev]});
+}
+function _invSave(a,msg){
+  pt({assets:S.assets.map(x=>x.id===a.id?_invRevalue(a):x)});
+  if(msg)toast(msg);
+  try{rFlujo();hdrUp&&hdrUp();}catch(e){}
+  try{if(cur==='plan')rPlan();}catch(e){}
+}
+function invNewAccount(){
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Tu cuenta de bolsa vive como un activo más: lo que deposites sale de tu quincena, y las subidas/bajadas de precio solo mueven tu patrimonio.</div>'
+    +'<div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="_invN" value="IBKR" maxlength="30"></div>'
+    +'<div style="margin-bottom:10px"><label>Efectivo que YA tiene la cuenta hoy ($ MXN)</label><input type="number" inputmode="decimal" id="_invC" value="0" onclick="this.select()"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Saldo previo (no cuenta como gasto de esta quincena). El depósito que vas a hacer regístralo después con ➕ Depositar.</div></div>'
+    +'<div style="margin-bottom:4px"><label>Tipo de cambio USD → MXN</label><input type="number" inputmode="decimal" id="_invFx" value="18.90" step="0.01"></div>';
+  showConfirm('📈 Nueva cuenta de inversión',body,()=>{
+    const n=(document.getElementById('_invN')?.value||'').trim()||'IBKR';
+    const c=Math.max(0,+(document.getElementById('_invC')?.value)||0);
+    const fxu=+(document.getElementById('_invFx')?.value)||0;
+    if(fxu<=0){toast('⚠ Tipo de cambio inválido');return;}
+    const events=c>0?[_mkAssetEvent('init',c,'Saldo inicial registrado')]:[];
+    const a={id:Date.now(),name:n,val:Math.round(c),gen:false,yldPct:0,kind:'bolsa',broker:n,fxUsd:fxu,prices:{},trades:[],events};
+    pt({assets:[...(S.assets||[]),a]});
+    toast('📈 Cuenta '+n+' creada');try{rFlujo();hdrUp&&hdrUp();}catch(e){}
+  });
+}
+function invMove(aid,dir){
+  const a=S.assets.find(x=>x.id===aid);if(!a)return;
+  const m=_invMarket(a);
+  const isIn=dir==='in';
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">'+(isIn?'Dinero que mandas de tu banco a <strong>'+_escH(a.name)+'</strong>. Sale de tu quincena (aparece en el Plan como movimiento a activos).':'Dinero que regresas de <strong>'+_escH(a.name)+'</strong> a tu banco. Efectivo disponible en el broker: <strong>'+fx(Math.round(m.cash))+'</strong>.')+'</div>'
+    +'<div style="margin-bottom:10px"><label>Monto ($ MXN)</label><input type="number" inputmode="decimal" id="_invMA" placeholder="0" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)"></div>'
+    +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_invMD" value="'+_todayYMD()+'"></div>'
+    +'<div><label>Concepto</label><input type="text" id="_invMC" value="'+(isIn?'Depósito a ':'Retiro de ')+_escA(a.name)+'"></div>';
+  showConfirm(isIn?'➕ Depositar':'➖ Retirar',body,()=>{
+    const amt=Math.abs(+(document.getElementById('_invMA')?.value)||0);
+    if(amt<=0){toast('⚠ Monto requerido');return;}
+    if(!isIn&&amt>m.cash+0.5){toast('⚠ Solo hay '+fx(Math.round(m.cash))+' en efectivo en el broker (vende antes)');return;}
+    const date=_toValidYMD(document.getElementById('_invMD')?.value||'')||_todayYMD();
+    const concept=(document.getElementById('_invMC')?.value||'').trim()||(isIn?'Depósito':'Retiro');
+    const ev=_mkAssetEvent(isIn?'in':'out',amt,concept,date);
+    _invSave({...a,events:[...(a.events||[]),ev]},(isIn?'📈 +':'📉 −')+fx(amt)+' · '+a.name);
+  });
+  setTimeout(()=>{try{document.getElementById('_invMA')?.focus();}catch(_){}},120);
+}
+function invTrade(aid,side,sym){
+  const a=S.assets.find(x=>x.id===aid);if(!a)return;
+  const m=_invMarket(a);const isBuy=side==='buy';
+  const held=m.rows.filter(r=>r.qty>0);
+  if(!isBuy&&!held.length){toast('No tienes posiciones para vender');return;}
+  const pre=sym?held.find(r=>r.sym===sym):(isBuy?null:held[0]);
+  const symField=isBuy
+    ?'<input type="text" id="_invTS" placeholder="VOO, AAPL, NAFTRAC…" value="'+_escA(sym||'')+'" style="text-transform:uppercase">'
+    :'<select id="_invTS">'+held.map(r=>'<option value="'+_escA(r.sym)+'"'+(pre&&pre.sym===r.sym?' selected':'')+'>'+_escH(r.sym)+' · '+(+r.qty.toFixed(6))+' acc.</option>').join('')+'</select>';
+  const ccy0=pre?pre.ccy:'USD';const px0=pre&&pre.px?pre.px:'';
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">'+(isBuy?'Compra dentro del broker. Usa el efectivo de la cuenta (<strong>'+fx(Math.round(m.cash))+'</strong>); no toca tu quincena.':'Venta dentro del broker. El dinero queda como efectivo en la cuenta; para traerlo a tu banco usa ➖ Retirar.')+'</div>'
+    +'<div class="g2" style="margin-bottom:10px"><div><label>Ticker</label>'+symField+'</div><div><label>Moneda</label><select id="_invTCcy"><option value="USD"'+(ccy0==='USD'?' selected':'')+'>USD</option><option value="MXN"'+(ccy0==='MXN'?' selected':'')+'>MXN</option></select></div></div>'
+    +'<div class="g2" style="margin-bottom:10px"><div><label>Acciones (admite fracción)</label><input type="number" inputmode="decimal" id="_invTQ" step="any" placeholder="0"></div><div><label>Precio por acción</label><input type="number" inputmode="decimal" id="_invTP" step="any" value="'+px0+'" placeholder="0"></div></div>'
+    +'<div class="g2" style="margin-bottom:10px"><div><label>Comisión (misma moneda)</label><input type="number" inputmode="decimal" id="_invTF" step="any" value="0"></div><div><label>USD → MXN</label><input type="number" inputmode="decimal" id="_invTX" step="0.0001" value="'+(+a.fxUsd||'')+'"></div></div>'
+    +'<div style="margin-bottom:4px"><label>Fecha</label><input type="date" id="_invTD" value="'+_todayYMD()+'"></div>'
+    +'<div id="_invTPrev" style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;min-height:16px"></div>';
+  showConfirm(isBuy?'🛒 Comprar':'💸 Vender',body,()=>{
+    const s=_invSym(document.getElementById('_invTS')?.value);
+    const ccy=document.getElementById('_invTCcy')?.value==='MXN'?'MXN':'USD';
+    const q=+(document.getElementById('_invTQ')?.value)||0;
+    const px=+(document.getElementById('_invTP')?.value)||0;
+    const fee=Math.max(0,+(document.getElementById('_invTF')?.value)||0);
+    const fxu=ccy==='USD'?(+(document.getElementById('_invTX')?.value)||0):1;
+    const date=_toValidYMD(document.getElementById('_invTD')?.value||'')||_todayYMD();
+    if(!s){toast('⚠ Falta el ticker');return;}
+    if(q<=0||px<=0){toast('⚠ Acciones y precio deben ser > 0');return;}
+    if(fxu<=0){toast('⚠ Tipo de cambio inválido');return;}
+    const h=held.find(r=>r.sym===s);
+    if(h&&h.ccy!==ccy){toast('⚠ '+s+' ya está registrado en '+h.ccy);return;}
+    const totMx=(isBuy?(q*px+fee):(q*px-fee))*fxu;
+    if(isBuy&&totMx>m.cash+0.5){toast('⚠ No alcanza: la compra cuesta '+fx(Math.round(totMx))+' y hay '+fx(Math.round(m.cash))+' en el broker. Deposita primero.');return;}
+    if(!isBuy&&(!h||q>h.qty+1e-9)){toast('⚠ Solo tienes '+(h?+h.qty.toFixed(6):0)+' acciones de '+s);return;}
+    const t={id:Date.now(),date,side:isBuy?'buy':'sell',sym:s,qty:q,px,ccy,fx:ccy==='USD'?fxu:1,fee};
+    const prices={...(a.prices||{})};const prev=prices[s];
+    if(!prev||!prev.at||date>=prev.at)prices[s]={px,ccy,at:date};
+    const next={...a,trades:[...(a.trades||[]),t],prices};
+    if(ccy==='USD'&&date>=_todayYMD())next.fxUsd=fxu;
+    _invSave(next,(isBuy?'🛒 Compraste ':'💸 Vendiste ')+(+q.toFixed(6))+' '+s+' · '+fx(Math.round(totMx)));
+  });
+  setTimeout(()=>{
+    const upd=()=>{const q=+(document.getElementById('_invTQ')?.value)||0,px=+(document.getElementById('_invTP')?.value)||0,fee=+(document.getElementById('_invTF')?.value)||0;const ccy=document.getElementById('_invTCcy')?.value;const fxu=ccy==='USD'?(+(document.getElementById('_invTX')?.value)||0):1;const el=document.getElementById('_invTPrev');if(!el)return;if(q>0&&px>0)el.innerHTML=(isBuy?'Total: ':'Recibes: ')+'<strong>'+fx(Math.round((isBuy?(q*px+fee):(q*px-fee))*fxu))+'</strong>'+(ccy==='USD'?' ('+(isBuy?q*px+fee:q*px-fee).toFixed(2)+' USD)':'');else el.innerHTML='';};
+    ['_invTQ','_invTP','_invTF','_invTX','_invTCcy'].forEach(id=>{const el=document.getElementById(id);if(el){el.oninput=upd;el.onchange=upd;}});
+    try{document.getElementById(isBuy&&!sym?'_invTS':'_invTQ')?.focus();}catch(_){}
+  },120);
+}
+function invPrices(aid){
+  const a=S.assets.find(x=>x.id===aid);if(!a)return;
+  const m=_invMarket(a);
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Actualiza precios y tipo de cambio (de la app de IBKR). Solo cambia tu patrimonio, no tu quincena.</div>'
+    +'<div style="margin-bottom:10px"><label>USD → MXN</label><input type="number" inputmode="decimal" id="_invPX" step="0.0001" value="'+(+a.fxUsd||'')+'"></div>'
+    +(m.rows.length?m.rows.map(r=>'<div class="row-b" style="gap:10px;padding:6px 0;border-bottom:1px dashed var(--border)"><div style="flex:1"><strong>'+_escH(r.sym)+'</strong> <span style="font-size:10px;color:var(--muted)">'+r.ccy+(r.pxAt?' · '+fmtDate(r.pxAt):'')+'</span></div><input type="number" inputmode="decimal" step="any" id="_invPP_'+_escA(r.sym)+'" value="'+(r.px||'')+'" style="width:110px;text-align:center"></div>').join(''):'<div style="font-size:11px;color:var(--muted)">Sin posiciones todavía.</div>');
+  showConfirm('🔄 Precios',body,()=>{
+    const fxu=+(document.getElementById('_invPX')?.value)||0;
+    if(fxu<=0){toast('⚠ Tipo de cambio inválido');return;}
+    const prices={...(a.prices||{})};const today=_todayYMD();
+    for(const r of m.rows){const v=+(document.getElementById('_invPP_'+r.sym)?.value)||0;if(v<=0){toast('⚠ Precio inválido para '+r.sym);return;}if(v!==r.px)prices[r.sym]={px:v,ccy:r.ccy,at:today};}
+    _invSave({...a,fxUsd:fxu,prices},'🔄 Valuación actualizada');
+  });
+}
+function invDividend(aid){
+  const a=S.assets.find(x=>x.id===aid);if(!a)return;
+  const syms=_invHoldings(a).map(r=>r.sym);
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Dividendo NETO (después de retención) que cayó en la cuenta. Se queda en el broker como efectivo; no cuenta en tu quincena hasta que lo retires.</div>'
+    +'<div class="g2" style="margin-bottom:10px"><div><label>Monto ($ MXN)</label><input type="number" inputmode="decimal" id="_invDA" step="any" placeholder="0"></div><div><label>Ticker</label><select id="_invDS"><option value="">—</option>'+syms.map(s=>'<option>'+_escH(s)+'</option>').join('')+'</select></div></div>'
+    +'<div><label>Fecha</label><input type="date" id="_invDD" value="'+_todayYMD()+'"></div>';
+  showConfirm('💵 Dividendo',body,()=>{
+    const amt=Math.abs(+(document.getElementById('_invDA')?.value)||0);
+    if(amt<=0){toast('⚠ Monto requerido');return;}
+    const s=_invSym(document.getElementById('_invDS')?.value);
+    const date=_toValidYMD(document.getElementById('_invDD')?.value||'')||_todayYMD();
+    const ev=_mkAssetEvent('yield',amt,'Dividendo'+(s?' '+s:''),date);
+    _invSave({...a,events:[...(a.events||[]),ev]},'💵 +'+fx(amt)+' dividendo');
+  });
+}
+function invDelTrade(aid,tid){
+  const a=S.assets.find(x=>x.id===aid);if(!a)return;
+  const t=(a.trades||[]).find(x=>x.id===tid);if(!t)return;
+  const rest={...a,trades:(a.trades||[]).filter(x=>x.id!==tid)};
+  if(_invHoldings(rest).some(r=>r.qty<-1e-9)){toast('⚠ No se puede: quedarían ventas sin compra');return;}
+  showConfirm('🗑 ¿Eliminar operación?','<div style="font-size:12px;color:var(--txt2);line-height:1.7">'+(t.side==='buy'?'Compra':'Venta')+' de <strong>'+(+(+t.qty).toFixed(6))+' '+_escH(t.sym)+'</strong> a '+t.px+' '+t.ccy+' ('+fmtDate(t.date)+'). Posiciones y efectivo se recalculan.</div>',()=>{
+    const _s=JSON.stringify(S);
+    _invSave(rest,null);_undoToast('🗑 Operación eliminada',_s);
+  });
+}
+function invCardHTML(){
+  const accs=_invAccounts();
+  if(!accs.length)return '<div class="card"><div class="ct">📈 Inversiones en bolsa</div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Registra tu cuenta de IBKR (u otro broker): depósitos, compras, ventas, dividendos y su valor de mercado. Lo que deposites sale de tu quincena; las subidas y bajadas solo mueven tu patrimonio.</div><button class="btn btn-sage" style="width:100%" onclick="invNewAccount()">+ Agregar cuenta de inversión</button></div>';
+  const pct=(n,d)=>d>0?((n/d)*100).toFixed(1)+'%':'—';
+  const sg=n=>(n>=0?'+':'−')+fx(Math.round(Math.abs(n)));
+  return accs.map(a=>{
+    const m=_invMarket(a);
+    const pnlCol=m.pnl>=0?'var(--sage)':'var(--terra)';
+    const rows=m.rows.length?m.rows.map(r=>{const c=r.pnl>=0?'var(--sage)':'var(--terra)';return '<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px"><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+_escH(r.sym)+'</div><div style="font-size:10px;color:var(--muted)">'+(+r.qty.toFixed(6))+' acc. · costo '+fx(Math.round(r.costMx/r.qty))+' c/u · precio '+(r.px?r.px+' '+r.ccy:'—')+'</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+fx(Math.round(r.valMx))+'</div><div style="font-size:10px;color:'+c+'">'+sg(r.pnl)+' · '+pct(r.pnl,r.costMx)+'</div></div><div class="row" style="gap:4px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:10px" onclick="invTrade('+a.id+',\'buy\',\''+_escA(r.sym)+'\')" title="Comprar más">＋</button><button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:10px" onclick="invTrade('+a.id+',\'sell\',\''+_escA(r.sym)+'\')" title="Vender">－</button></div></div>';}).join(''):'<div style="font-size:11px;color:var(--muted);padding:6px 0">Sin posiciones. Deposita y luego 🛒 Comprar.</div>';
+    const trades=(a.trades||[]).slice().sort((x,y)=>(y.date||'').localeCompare(x.date||'')||y.id-x.id);
+    const evs=(a.events||[]).filter(ev=>!_invIsMv(ev)).slice().sort((x,y)=>(y.date||'').localeCompare(x.date||'')||y.id-x.id);
+    const hist=(trades.length||evs.length)?'<details style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:bold;padding:4px 0">📋 Movimientos y operaciones ('+(trades.length+evs.length)+')</summary><div style="margin-top:6px">'
+      +trades.map(t=>'<div class="row-b" style="padding:5px 2px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt)">'+(t.side==='buy'?'🛒':'💸')+' '+fmtDate(t.date)+' · '+(t.side==='buy'?'Compra':'Venta')+' '+(+(+t.qty).toFixed(6))+' '+_escH(t.sym)+' @ '+t.px+' '+t.ccy+'</span><span class="row" style="gap:4px"><span style="color:var(--muted)">'+fx(Math.round((t.side==='buy'?(t.qty*t.px+(+t.fee||0)):(t.qty*t.px-(+t.fee||0)))*_invTradeFx(t)))+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="invDelTrade('+a.id+','+t.id+')">🗑️</button></span></div>').join('')
+      +evs.map(ev=>{const d=_eventDelta(ev);const ic=ev.type==='in'?'➕':ev.type==='out'?'➖':ev.type==='yield'?'💵':ev.type==='init'?'🌱':'🔄';return '<div class="row-b" style="padding:5px 2px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt)">'+ic+' '+fmtDate(ev.date)+' · '+_escH(ev.concept||'')+'</span><span class="row" style="gap:4px"><span style="color:'+(d>=0?'var(--sage)':'var(--terra)')+'">'+sg(d)+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="delAssetEvent('+a.id+','+ev.id+')">🗑️</button></span></div>';}).join('')
+      +'</div></details>':'';
+    return '<div class="card" style="border-left:3px solid var(--sky)">'
+      +'<div class="row-b"><div style="flex:1;min-width:0"><div class="ct" style="margin-bottom:2px">📈 '+_escH(a.name)+' · bolsa</div><div style="font-size:10px;color:var(--muted)">USD→MXN '+(+a.fxUsd||0)+'</div></div><div style="text-align:right"><div style="font-size:18px;font-weight:bold;color:var(--sage)">'+fx(Math.round(m.total))+'</div><div style="font-size:10px;color:'+pnlCol+'">'+(m.cost>0?sg(m.pnl)+' ('+pct(m.pnl,m.cost)+') no realizado':'valor total')+'</div></div></div>'
+      +'<div class="g2" style="margin:10px 0;gap:8px"><div style="padding:8px;background:rgba(74,110,140,.06);border-radius:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Efectivo en broker</div><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+fx(Math.round(m.cash))+'</div></div><div style="padding:8px;background:rgba(78,124,106,.06);border-radius:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Posiciones</div><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+fx(Math.round(m.mv))+'</div></div></div>'
+      +(Math.abs(m.realized)>=1?'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Ganancia realizada (ventas): <strong style="color:'+(m.realized>=0?'var(--sage)':'var(--terra)')+'">'+sg(m.realized)+'</strong></div>':'')
+      +rows
+      +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px">'
+        +'<button class="btn btn-sage btn-sm" onclick="invMove('+a.id+',\'in\')">➕ Depositar</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="invTrade('+a.id+',\'buy\')">🛒 Comprar</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="invTrade('+a.id+',\'sell\')">💸 Vender</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="invPrices('+a.id+')">🔄 Precios</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="invDividend('+a.id+')">💵 Dividendo</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="invMove('+a.id+',\'out\')">➖ Retirar</button>'
+      +'</div>'
+      +hist
+      +'<div style="text-align:right;margin-top:8px"><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--terra)" onclick="delAsset('+a.id+')">🗑️ Eliminar cuenta</button></div>'
+      +'</div>';
+  }).join('')+'<div style="text-align:center;margin:-4px 0 12px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="invNewAccount()">+ Otra cuenta de inversión</button></div>';
+}
 function quickUpdAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
   const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza el saldo actual de <strong style="color:var(--sage)">'+a.name+'</strong>. Úsalo cuando te paguen rendimiento o muevas dinero.</div>'
@@ -11327,7 +11630,11 @@ function _applyOneItem(items,key,ck){
   if(v==='applied'||(typeof v==='object'&&v?.applied)||key.startsWith('_'))return null;
   const [type,idStr]=key.split('_');const id=+idStr;let amt=0;
   let expInc=0,debtInc=0;
-  const realAmt=typeof v==='object'?v.realAmt:null;
+  // realAmt ausente (pagó lo presupuestado) llega como undefined: normalizar a
+  // null. Antes `undefined!==null` hacía amt=undefined y el pago aplicado se
+  // guardaba SIN monto, así que Inicio leía el catálogo vivo (si luego editabas
+  // el gasto, se movían quincenas ya cerradas). Mismo valor hoy; congela historia.
+  const realAmt=(typeof v==='object'&&v&&v.realAmt!=null)?+v.realAmt:null;
   if(type==='debt'){
     const d2=S.debts.find(x=>x.id===id);
     if(d2){
@@ -11776,8 +12083,8 @@ function buildCyclePayments(viewCk,cStart,cEnd,ct,useWindowWeeks){
       if(_anchorY&&((e.startDate&&_anchorY<e.startDate)||(e.endDate&&_anchorY>e.endDate)))continue;
       expQ+=w;const pt=wi===0?undefined:wi===1?'expw2':'expw3';const entry={id:e.id,name:e.name,amt:w,day:(_wdayNums?(_wdayNums[wi]||0):(_cycleSats[wi]||0)),freq:f,week:wi+1+wOff};if(pt)entry.paidType=pt;expDetail.push(entry);}}
     else if(f==='quincenal'){expQ+=(+e.amt||0);const _qday=e.qnaPreset?_qnaPresetDay(e.qnaPreset,ct,cStart):(pd||0);expDetail.push({id:e.id,name:e.name,amt:+e.amt||0,day:_qday,freq:f});}
-    else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
-    else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f});}}
+    else if(f==='bimestral'){const bm=e.bimMeses||'par';const isP=m2=>(m2+1)%2===0;const isT=bm==='par'?isP:m2=>!isP(m2);if(pd>0&&dayInCycle(pd)){const tm2=pd>=cStart.getDate()?cStart.getMonth():cEnd.getMonth();if(isT(tm2)){expQ+=e.amt;expDetail.push({id:e.id,name:e.name,amt:e.amt,day:pd,freq:f});}}else if(!pd){expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f,noDay:true});}}
+    else{if(pd>0){if(dayInCycle(pd)){expQ+=mo;expDetail.push({id:e.id,name:e.name,amt:mo,day:pd,freq:f});}}else{expQ+=mo/2;expDetail.push({id:e.id,name:e.name,amt:mo/2,day:0,freq:f,noDay:true});}}
   });
   // ── DEBTS ──
   let debtPayQ=0;const debtDetail=[];
@@ -11931,8 +12238,14 @@ try{
     // en su lugar sumamos el Pago TDC (items 'tdcpay_'). Así evitamos el doble
     // conteo y el monto cuadra con la lista de PAGADOS.
     const _isTdc=(type,id)=>getPaidMethod(type,id)==='tdc';
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(_isTdc(pt2,e.id))return;if(isApplied(pt2,e.id))appliedAmt2+=v;else if(isPaid(pt2,e.id))checkedAmt+=v;});
-    debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(_isTdc('debt',e.id))return;if(isApplied('debt',e.id))appliedAmt2+=v;else if(isPaid('debt',e.id))checkedAmt+=v;});
+    // APLICADOS: mismo monto que calcCycleBalance (Inicio) — realAmt, si no el
+    // amt GUARDADO al aplicar, si no el catálogo (_planAppliedAmt). Antes se
+    // usaba el monto del calendario (e.amt): un mensual SIN día se agenda a la
+    // mitad (Tidal $75 → $37.5) pero al pagarlo se guarda $75, y el Plan
+    // restaba $37.5 mientras Inicio restaba $75. En todos los demás casos el
+    // monto guardado == e.amt, así que nada más cambia.
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const r=getRealAmt(pt2,e.id);const v=r!==null?r:e.amt;if(_isTdc(pt2,e.id))return;if(isApplied(pt2,e.id))appliedAmt2+=_planAppliedAmt(pt2,e.id);else if(isPaid(pt2,e.id))checkedAmt+=v;});
+    debtDetail.forEach(e=>{const r=getRealAmt('debt',e.id);const v=r!==null?r:e.amt;if(_isTdc('debt',e.id))return;if(isApplied('debt',e.id))appliedAmt2+=_planAppliedAmt('debt',e.id);else if(isPaid('debt',e.id))checkedAmt+=v;});
     // METAS · fuente unificada = movimientos REALES del ciclo (sección Ahorro).
     // "Apartado a metas" = NETO del ciclo (abonos − retiros) = lo que de verdad
     // creció tu ahorro. Los retiros GASTADOS (emergencia/enganche) salen aparte
@@ -12032,7 +12345,7 @@ try{
   if(planView==='pagos'){
     // Build tracker — split mandatory vs optional
     const mandatory=[],optional=[];
-    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
+    expDetail.forEach(e=>{const pt2=e.paidType||'exp';const paid=!showNext&&isPaid(pt2,e.id);const label=e.week?e.name+' (Sem '+e.week+')':e.noDay?e.name+' · ½ sin día':e.name;mandatory.push({day:e.day||0,name:'📋 '+label,amt:e.amt,type:'gasto',id:e.id,ptype:pt2,paid});});
     debtDetail.forEach(e=>{const paid=!showNext&&isPaid('debt',e.id);const isU=S.debts.find(x=>x.id===e.id)?.freq==='unico';mandatory.push({day:e.day||0,name:'⛓️ '+e.name+(e.curPay&&e.totalPays?' ('+e.curPay+'/'+e.totalPays+')':'')+(e.isLast?' ✓ último':'')+(isU?' · pago único':''),amt:e.amt,type:'deuda',id:e.id,ptype:'debt',paid});});
     // Optional: savings, apartados, impulses
     S.savGoals.filter(g=>!g.done&&!g.closed&&g.target-(+g.saved||0)>0).forEach(g=>{
@@ -12133,7 +12446,7 @@ try{
     // Deficit = only mandatory unpaid
     const mandatoryDeficit=mUnpaidT-(incQ-appliedAmt2-checkedAmt);
 
-    const ri=(p,st)=>{const isT=!showNext&&p.day===passedDay;const col=st==='applied'?'var(--sage)':st==='selected'?'var(--amber)':p.type==='ahorro'?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const dl=isT?'→ HOY':p.day?'día '+p.day:'—';const cls=st!=='pending'?'paid-row':'';
+    const ri=(p,st)=>{const isT=!showNext&&p.day===passedDay;const col=st==='applied'?'var(--sage)':st==='selected'?'var(--amber)':p.type==='ahorro'?'var(--sage)':p.type==='gasto'?'var(--terra)':'var(--sky)';const _pdY=st!=='pending'?_getPaidDate(p.ptype,p.id):null;const _pdD=_pdY?new Date(_pdY+'T12:00'):null;const dl=(_pdD&&_pdD.getDate()!==(+p.day||0))?'pagó '+String(_pdD.getDate()).padStart(2,'0')+'/'+String(_pdD.getMonth()+1).padStart(2,'0'):isT?'→ HOY':p.day?'día '+p.day:'—';const cls=st!=='pending'?'paid-row':'';
       const rAmt=getRealAmt(p.ptype,p.id);
       const showReal=rAmt!==null&&Math.abs(rAmt-p.amt)>1;
       const diff=rAmt!==null?p.amt-rAmt:0;
@@ -12149,7 +12462,7 @@ try{
       })();
       return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
         <div class="row" style="gap:8px">
-          ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();flujoView='activos';go('flujo')" style="width:32px;height:32px;font-size:14px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id})" style="width:32px;height:32px;font-size:14px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:32px;height:32px;font-size:14px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:32px;height:32px;font-size:14px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
+          ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();flujoView='activos';go('flujo')" style="width:32px;height:32px;font-size:14px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id},${+p.day||0})" style="width:32px;height:32px;font-size:14px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:32px;height:32px;font-size:14px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:32px;height:32px;font-size:14px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
           <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
           <span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>
         </div>
@@ -12235,6 +12548,7 @@ try{
       const _totalOut=appliedAmt2+_checkedBal+impPendingTotal+_diarioAmt+_ahorroApartado+_metaOut+_metaRetOut+_assetNet;
       const _carry=carryoverMonto(_viewCk); // saldo inicial arrastrado de la quincena anterior (ingreso real)
       const _balance=incQ+_otEarned+_carry-_totalOut+reconAdjustMonto(_viewCk); // + saldo arrastrado (ingreso) + ajuste de conciliación (cuadra el cierre con el banco)
+      try{window._lastPlanEc={ck:_viewCk,balance:_balance};}catch(e){} // hook de verificación (cuadre Inicio↔Plan)
       return `<div class="card" style="background:rgba(78,124,106,.04);border:1px dashed var(--sage)">
       <div class="ct">💵 Estado de tu cuenta</div>
       <div style="font-size:13px;line-height:2.2">

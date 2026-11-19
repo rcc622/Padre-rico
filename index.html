@@ -3514,7 +3514,11 @@ function calcCycleBalance(ck){
 function pendingDeficitCycle(){
   try{
     const ck=cycleKey();
-    const allCycles=Object.keys(S.paidItems||{}).filter(c=>c!==ck).sort().reverse();
+    // Solo quincenas ANTERIORES a la actual, de la más reciente a la más vieja.
+    // Antes: .sort() alfabético ('2026-10-…' < '2026-9-…') e incluía futuras,
+    // así el banner podía mostrar un déficit que no era el más reciente.
+    const _ckO=ckToOrder(ck);
+    const allCycles=Object.keys(S.paidItems||{}).filter(c=>c!==ck&&ckToOrder(c)>0&&ckToOrder(c)<_ckO).sort((a,b)=>ckToOrder(b)-ckToOrder(a));
     for(const c of allCycles){
       if((S.deficitDecisions||{})[c])continue; // ya decidió
       const bal=calcCycleBalance(c);

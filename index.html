@@ -879,14 +879,6 @@ function toast(msg){
 // Se muestra después de cada pago aplicado. Si el usuario tapea el botón,
 // el método cambia de 'debito' (default) a 'tdc'. Si lo deja pasar, queda débito.
 let _toastTdcCtx=null;
-function toastSwitchTDC(msg,ck,key){
-  const el=document.getElementById('toast');
-  _toastTdcCtx={ck,key};
-  el.innerHTML=msg+' <span style="display:inline-block;background:rgba(255,255,255,.18);border-radius:6px;padding:3px 8px;margin-left:8px;cursor:pointer;font-weight:bold" onclick="_switchToTDC()">💳 TDC</span>';
-  el.classList.add('show');el.style.pointerEvents='auto';
-  clearTimeout(toastTimer);
-  toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';_toastTdcCtx=null;},4500);
-}
 // ══ UNDO DE BORRADOS ═════════════════════════════════
 // _undoToast(msg, snapJson): muestra toast con botón "Deshacer" (5s).
 // snapJson = JSON.stringify(S) tomado ANTES de la mutación. Si después del
@@ -1067,7 +1059,6 @@ function setHabitView(v){
   try{localStorage.setItem('prv5_habitView',v);}catch(e){}
   rHabitos();
 }
-function toggleFlujo(sec){flujoView=sec;rFlujo();}
 function showConfirm(title,body,onConfirm){
   _confirmCb=onConfirm;
   const m=document.getElementById('confirmModal');
@@ -1451,16 +1442,6 @@ function cycleExpenseTotal(w){
 function totalDiariosCycle(ck){return diariosThisCycle(ck).filter(g=>!g.pending&&g.paidWith!=='tdc').reduce((a,g)=>a+(+g.amt||0),0);}
 // Igual que totalDiariosCycle pero solo el conteo (para etiquetas).
 function diariosCashCount(ck){return diariosThisCycle(ck).filter(g=>!g.pending&&g.paidWith!=='tdc').length;}
-function calcImpulseSpent(ck){
-  let total=0;
-  Object.entries(S.retoChecks||{}).forEach(([k,checks])=>{
-    if(!k.endsWith('_'+ck))return;
-    const rid=k.replace('_'+ck,'');
-    if(/surv_super|surv_gas/.test(rid))return;
-    checks.forEach(c=>{if(c.pass===false&&(+c.spent||0)>0)total+=(+c.spent);});
-  });
-  return total;
-}
 function isPaid(type,id){
   const ck=planCk();
   const items=S.paidItems[ck]||{};
@@ -1810,49 +1791,6 @@ function _confirmPayment(type,id,method,budgeted){
   else msg='✓ Pagado y aplicado · '+methodTxt;
   _undoToast(msg,_snap);
 }
-function confirmRealAmt(type,id,budgeted){
-  const real=+(document.getElementById('realAmtInput')?.value)||0;
-  if(!real){toast('Ingresa el monto');return;}
-  const ck=planCk();
-  if(!S.paidItems[ck])S.paidItems[ck]={};
-  const key=type+'_'+id;
-  S.paidItems[ck][key]={at:Date.now(),realAmt:real,budgeted};
-  const diff=budgeted-real;
-  
-  // Auto-check corresponding weekly reto
-  if(type==='exp'||type==='expw2'||type==='expw3'){
-    const exp=S.exp.find(e=>e.id===id);
-    if(exp&&exp.freq==='semanal'){
-      const name=(exp.name||'').toLowerCase();
-      let retoId=null;
-      if(/super|súper|despensa|mandado/i.test(name))retoId='surv_super';
-      else if(/gasol/i.test(name))retoId='surv_gas';
-      if(retoId){
-        const sr=S.survivalRetos.find(r=>r.id===retoId&&r.cycle===ck&&r.active&&!r.completed);
-        if(sr){
-          // Sem 1 (exp) = idx 0, Sem 2 (expw2) = idx 1, Sem 3 (expw3) = idx 2
-          const weekIdx=type==='expw3'?2:type==='expw2'?1:0;
-          if(!S.retoChecks)S.retoChecks={};
-          const rk=retoId+'_'+ck;
-          if(!S.retoChecks[rk])S.retoChecks[rk]=[];
-          // Remove any existing entry for this idx (overwrite)
-          S.retoChecks[rk]=S.retoChecks[rk].filter(c=>c.idx!==weekIdx);
-          const saved=diff>0;
-          S.retoChecks[rk].push({idx:weekIdx,date:_todayYMD(),pass:saved||real<=budgeted,realAmt:real,budgeted});
-        }
-      }
-    }
-  }
-  
-  closeConfirm();
-  if(diff>0)toast('✓ Pagado · Ahorraste '+fx(diff));
-  else toast('✓ Pagado');
-  sv();rPlan();
-}
-function toggleImpulseItem(itemId){
-  // Impulse items use standard paidItems flow with ptype 'imp'
-  togglePaid('imp',itemId);
-}
 function pendingCount(){
   const ck=planCk();
   const items=S.paidItems[ck]||{};
@@ -1867,37 +1805,6 @@ function paidCount(){
   const ck=planCk();
   const items=S.paidItems[ck]||{};
   return Object.keys(items).filter(k=>!k.startsWith('_')).length;
-}
-function paidTotal(){
-  const ck=planCk();
-  const items=S.paidItems[ck]||{};
-  let total=0;
-  for(const key in items){
-    if(key.startsWith('_'))continue;
-    const [type,idStr]=key.split('_');
-    const id=+idStr;
-    if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);}
-    else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)total+=(+e.amt||0);} // week 2/3 of weekly expense
-    else if(type==='sav'){const g=S.savGoals.find(x=>x.id===id);if(g)total+=savGoalPerQ(g);} // savings goal
-    else if(type==='apt'){const e=S.exp.find(x=>x.id===id);if(e)total+=Math.round((+e.amt||0)/2);} // apartado
-    else if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)total+=toMonthly(+d.pay||0,d.freq||'mensual');}
-    else if(type==='imp'){
-      // Find impulse amount from retoChecks
-      const ck3=cycleKey();
-      Object.entries(S.retoChecks||{}).forEach(([k2,checks2])=>{
-        if(!k2.endsWith('_'+ck3))return;
-        const rid2=k2.replace('_'+ck3,'');
-        if(/surv_super|surv_gas/.test(rid2))return;
-        checks2.forEach(c2=>{
-          if(c2.pass===false&&c2.spent>0){
-            const numId2=Date.parse(c2.date+'T12:00')+c2.idx;
-            if(numId2===id)total+=c2.spent;
-          }
-        });
-      });
-    }
-  }
-  return total;
 }
 
 // ══ SURVIVAL RETOS ═══════════════════════════════════
@@ -2329,33 +2236,6 @@ function _confirmUndeclareHabito(retoId){
   }catch(e){}
 }
 
-function applyRetoToDebt(debtId){
-  const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
-  const d=S.debts.find(x=>x.id===debtId);
-  if(d){d.bal=Math.max(0,(+d.bal||0)-amt);sv();}
-  closeConfirm();toast('✅ '+fx(amt)+' abonado a deuda');rHabitos();
-}
-function applyRetoToGoal(goalId){
-  const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
-  const g=S.savGoals.find(x=>x.id===goalId);
-  if(g){g.saved=(+g.saved||0)+amt;g.deposits=[...(g.deposits||[]),{date:_todayYMD(),amt,auto:false,note:'Reto completado'}];if(g.saved>=g.target)g.done=true;sv();}
-  closeConfirm();toast('✅ '+fx(amt)+' abonado a meta');rHabitos();
-}
-function applyRetoAsExtra(retoId){
-  // FASE 4: ya no creamos ingresos extra desde retos. Esta función queda como no-op
-  // por compatibilidad — si algún botón viejo la llamara, redirige al flujo correcto.
-  const amt=_getRetoAmt();if(!amt){toast('Ingresa un monto');return;}
-  if(retoId){
-    const ck=cycleKey();
-    const sr=S.survivalRetos.find(x=>x.id===retoId&&x.cycle===ck);
-    if(sr)sr.realSave=amt;
-    sv();
-  }
-  closeConfirm();
-  toast('✅ '+fx(amt)+' registrado en stats');
-  rHabitos();
-  if(_isRetoSavings(retoId))setTimeout(()=>{try{_offerSavingsDeposit(amt,'reto');}catch(e){}},700);
-}
 function toggleRetoCheck(retoId,idx){
   if(!S.retoChecks)S.retoChecks={};
   const ck=cycleKey();
@@ -2512,25 +2392,8 @@ function confirmRetoExpense(retoId,idx,expId,budgeted){
   else toast('⚠ Gastaste '+fx(Math.abs(diff))+' de más');
   rHabitos();
 }
-function survivalSaved(){
-  const ck=cycleKey();
-  return S.survivalRetos.filter(r=>r.cycle===ck&&r.completed).reduce((a,r)=>{
-    const allR=genSurvivalRetos(0);const match=allR.find(x=>x.id===r.id);return a+(match?.save||0);
-  },0);
-}
 
 // ══ SAVINGS GOALS ════════════════════════════════════
-function addSavGoal(){
-  const n=document.getElementById('sgn')?.value.trim();
-  const t=+(document.getElementById('sgt')?.value)||0;
-  const dl=document.getElementById('sgd')?.value||'';
-  const icon=document.getElementById('sgi')?.value||'🎯';
-  const tipo=document.getElementById('sgtipo')?.value==='patrimonio'?'patrimonio':'consumo';
-  if(!n||!t||!dl){toast('Llena nombre, monto y fecha');return;}
-  const goal={id:Date.now(),name:n,target:t,deadline:dl,saved:0,deposits:[],icon,tipo,done:false};
-  pt({savGoals:[...S.savGoals,goal]});
-  toast('🎯 Meta de ahorro creada');_refreshActive();
-}
 // ══ Movimientos de metas ↔ activos ═══════════════════════════════════
 // Un movimiento de meta (abono + o retiro −) que tenga activo ligado crea/
 // borra un evento en ese activo y ajusta su saldo, para que el patrimonio
@@ -2828,13 +2691,6 @@ function _execCloseMeta(id){
   closeConfirm();
   toast('✓ Meta cerrada'+(msg?' · '+msg:''));
   _refreshActive();hdrUp&&hdrUp();
-}
-// Muestra/oculta el selector de tipo de retiro según si el monto nuevo es
-// menor que el actual (es decir, si es un retiro).
-function _quSavToggleKind(cur){
-  const v=+(document.getElementById('_quSavVal')?.value);
-  const box=document.getElementById('_quSavWdBox');
-  if(box)box.style.display=(!isNaN(v)&&v<cur)?'block':'none';
 }
 // Muestra/oculta el selector de tipo de retiro en el modal de editar
 // movimiento según el tipo (sólo aplica a salidas).
@@ -3157,7 +3013,6 @@ function curQnaInc(){
     return Math.round(sal+bf);
   }catch(e){return Math.round(mInc()/2);}
 }
-const mBonus=()=>(+S.inc.bv)/6;
 // getIncForCycle: retorna el snapshot de ingresos vigente para un cycleKey dado.
 // Si no hay historial, retorna S.inc (comportamiento actual — sin cambios).
 // Si hay historial, busca la entrada más reciente cuyo "from" <= ck.
@@ -3567,41 +3422,6 @@ function pendingDeficitCycle(){
     return null;
   }catch(e){return null;}
 }
-// FASE 6 · Totales del ciclo actual por método de pago (débito vs TDC)
-// Suma applied de paidItems + diarios. paidWith default = 'debito' si está applied sin método.
-function cyclePaymentTotals(){
-  const ck=cycleKey();
-  const items=(S.paidItems||{})[ck]||{};
-  let debito=0,tdc=0,debitoCount=0,tdcCount=0;
-  // From paidItems (Plan de Acción)
-  for(const key in items){
-    if(key.startsWith('_'))continue;
-    const v=items[key];
-    const applied=typeof v==='object'?v.applied:(v==='applied');
-    if(!applied)continue;
-    let amt=typeof v==='object'?(v.amt||v.realAmt||0):0;
-    // If amt missing (legacy applied), try to compute from current data
-    if(!amt){
-      const [type,idStr]=key.split('_');const id=+idStr;
-      if(type==='debt'){const d2=S.debts.find(x=>x.id===id);if(d2)amt=+d2.pay||0;}
-      else if(type==='exp'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
-      else if(type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
-    }
-    const method=(typeof v==='object'&&v.paidWith)||'debito';
-    if(method==='tdc'){tdc+=amt;tdcCount++;}else{debito+=amt;debitoCount++;}
-  }
-  // From Diarios (filter to current cycle)
-  const cw=getCycleWindow();
-  const startStr=_ymdLocal(cw.start);
-  const endStr=_ymdLocal(cw.end);
-  (S.gastosDiarios||[]).forEach(g=>{
-    if(!g.date||g.date<startStr||g.date>endStr)return;
-    const method=g.paidWith||'debito';
-    const amt=+g.amt||0;
-    if(method==='tdc'){tdc+=amt;tdcCount++;}else{debito+=amt;debitoCount++;}
-  });
-  return {debito:Math.round(debito),tdc:Math.round(tdc),debitoCount,tdcCount,total:Math.round(debito+tdc)};
-}
 // FASE 8 · TARJETA DE CRÉDITO
 // La TDC tiene DOS fechas distintas:
 //   corteDay: día del mes cuando cierra el ciclo (o "último día del mes" si corteUltimoDelMes=true)
@@ -3969,29 +3789,6 @@ function unclassifiedPayments(){
     out.push({ck:'diario',key:'diario_'+g.id,name:'🛒 '+g.name+' ('+g.date+')',amt:+g.amt||0,_diarioId:g.id});
   });
   return out;
-}
-function reclassifyPayment(ck,key,method,_diarioId){
-  if(_diarioId){
-    const newDiarios=(S.gastosDiarios||[]).map(g=>String(g.id)===String(_diarioId)?{...g,paidWith:method}:g);
-    pt({gastosDiarios:newDiarios});
-  }else{
-    const items=S.paidItems[ck];if(!items||!items[key])return;
-    const v=items[key];
-    if(typeof v==='object')items[key]={...v,paidWith:method};
-    else items[key]={at:Date.now(),applied:true,paidWith:method};
-    sv();
-  }
-  rDash();
-}
-function openMigrationModal(){
-  const list=unclassifiedPayments();
-  if(list.length===0){
-    showInfo('✅ Todo clasificado','<div style="font-size:12px;color:var(--txt2);line-height:1.7">No hay pagos pendientes de clasificar. Todos tus pagos tienen método registrado.</div>');
-    return;
-  }
-  _migrationList=list;
-  _migrationPage=0;
-  _renderMigrationModal();
 }
 let _migrationList=[],_migrationPage=0;
 function _renderMigrationModal(){
@@ -4410,32 +4207,6 @@ function _renderBonoNoActive(){
   }
   return _renderBonoHistory();
 }
-function showBonoPlays(){
-  try{
-    const p=calcBonoPlays();if(p.bf<=0){toast('Sin bono configurado');return;}
-    const stratLabel=dStrat==='snowball'?'Bola de Nieve':'Avalancha';
-    const ck=_currentBonoCk();
-    const sel=ck?(S.bonoPlaySel||{})[ck]:null;
-    if(sel){
-      // Ya eligió: el modal muestra el checklist completo (con alternates
-      // para cambiar de jugada) en vez del picker.
-      showInfo('💎 Jugada Estratégica',_renderBonoChecklist(sel,false));
-      return;
-    }
-    let body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:14px">Bono mensual: <strong>'+fx(p.bf)+'</strong>. Elige una jugada y la app la trackea sola.</div>';
-    const recBadge=v=>p.recommend===v?' <span style="font-size:9px;background:var(--sage);color:#fff;padding:1px 6px;border-radius:8px;vertical-align:middle">RECOMENDADA</span>':'';
-    const chooseBtn=k=>'<button class="btn btn-sage btn-sm" style="width:100%;margin-top:8px;font-size:10px;padding:6px" onclick="chooseBonoPlay(\''+k+'\')">Elegir esta jugada</button>';
-    const playDhtml=_renderPlayD(p,false,chooseBtn('D')).replace('🛡️ D · Búnker</strong>','🛡️ D · Búnker</strong>'+recBadge('D'));
-    if(p.recommend==='D')body+=playDhtml;
-    body+='<div style="padding:12px;border:1px solid rgba(78,124,106,.3);border-radius:8px;background:rgba(78,124,106,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sage)">🪙 A · Súper Ahorro'+recBadge('A')+'</strong><span style="font-size:10px;color:var(--muted)">50%</span></div><div style="font-size:11px">+'+fx(p.A.boost)+' extra → Total activos: <strong style="color:var(--sage)">'+fx(p.A.total)+'</strong></div>'+_playFlags(p)+chooseBtn('A')+'</div>';
-    if(p.topDebt){
-      body+='<div style="padding:12px;border:1px solid rgba(74,110,140,.3);border-radius:8px;background:rgba(74,110,140,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--sky)">⚔️ B · Asalto Deuda'+recBadge('B')+'</strong><span style="font-size:10px;color:var(--muted)">70% · '+fx(p.B.extra)+' ('+stratLabel+')</span></div>'+_renderCascade(p.B.cascade)+_playFlags(p)+chooseBtn('B')+'</div>';
-      body+='<div style="padding:12px;border:1px solid rgba(160,112,48,.3);border-radius:8px;background:rgba(160,112,48,.05);margin-bottom:8px"><div class="row-b" style="margin-bottom:4px"><strong style="color:var(--amber)">⚖️ C · Balanceada'+recBadge('C')+'</strong><span style="font-size:10px;color:var(--muted)">35%+35%</span></div><div style="font-size:11px;margin-bottom:4px">🪙 Ahorro +'+fx(p.C.savBoost)+' · ⚔️ Deuda '+fx(p.C.debtExtra)+'</div>'+_renderCascade(p.C.cascade)+_playFlags(p)+chooseBtn('C')+'</div>';
-    }
-    if(p.recommend!=='D'&&p.oblTotal>0)body+=playDhtml;
-    showInfo('💎 Jugada Estratégica',body);
-  }catch(e){toast('Error al calcular jugadas');}
-}
 // Excluye deudas 'unico' del flujo mensual recurrente: un desembolso agendado
 // una sola vez aparecía como pago mensual perpetuo y deprimía flow()/score
 // para siempre (project() ya lo trataba bien; ahora ambos coinciden).
@@ -4500,8 +4271,6 @@ function metaMoneyBreakdown(){
 // está sentado en activos, y suma el de metas tipo patrimonio aún virtual.
 // Para usuarios sin metas, nwBuild()===nw() (sin regresión).
 function nwBuild(){const b=metaMoneyBreakdown();return nw()-b.consumoAsset+b.buildVirtual;}
-// Todo el efectivo que tienes hoy (incluye metas, virtuales o no).
-function nwTotalCash(){const b=metaMoneyBreakdown();return nw()+b.consumoVirtual+b.buildVirtual;}
 // ── VISTA UNIFICADA "CAJITAS" (solo lectura) ────────────────────────────
 // Normaliza activos (S.assets) y metas (S.savGoals) en una sola lista de
 // "cajitas". NO muta nada ni cambia cálculos; es la base sobre la que se
@@ -4709,7 +4478,6 @@ const scCol=(s)=>s>=70?'var(--sage)':s>=40?'var(--sky)':'var(--terra)';
 // FASE 1 BARRAS: cadencia de capítulos (mensual por default; algunos usuarios quincenal)
 function cycleDays(){return (S.cycleMode==='quincenal')?15:30;}
 function cycleLabel(){return (S.cycleMode==='quincenal')?'quincena':'mes';}
-function cycleLabelPl(){return (S.cycleMode==='quincenal')?'quincenas':'meses';}
 
 function qStreak(){
   if(!S.snapshots.length)return 0;
@@ -4786,12 +4554,6 @@ const upcoming=()=>{
   return S.debts.filter(d=>d.liqDate)
     .map(d=>({...d,daysLeft:Math.ceil((new Date(d.liqDate+'T12:00')-today)/864e5)}))
     .sort((a,b)=>a.daysLeft-b.daysLeft);
-};
-const qProj=(days=15)=>{
-  const hits=upcoming().filter(d=>d.daysLeft>=0&&d.daysLeft<=days);
-  const totalPago=hits.reduce((a,d)=>a+(+d.bal||0),0);
-  const libre=mInc()-tExp()-savAmt()-totalPago;
-  return{hits,totalPago,libre};
 };
 
 // ══ ONBOARDING ══════════════════════════════════════
@@ -5051,7 +4813,6 @@ const PRINCIPS=[
   '"La suerte favorece al hombre que actúa. La acción atrae la fortuna." — Arkad',
   '"La riqueza que viene rápido se va igual de rápido. La que se construye, perdura."',
 ];
-const principle=()=>{const w=Math.floor((new Date()-new Date(new Date().getFullYear(),0,1))/864e5/15);return PRINCIPS[w%PRINCIPS.length]};
 
 // ══ FRENTE 4 · SABIDURÍA DEL DÍA ════════════════════════════════════
 // Hunt-style variable reward: rotates daily with real data insights + book quotes
@@ -6399,36 +6160,6 @@ function applyFixedMatches(matchIds){
 }
 let _pendingMatches=[];
 
-// Show reconciliation modal with checkboxes for bulk approval
-function showReconcileModal(matches){
-  if(!matches.length){toast('No detecté ningún gasto fijo en el CSV');return;}
-  _pendingMatches=matches;
-  const ck=cycleKey();
-  const alreadyPaid=S.paidItems[ck]||{};
-  // Filter out already-paid items
-  const unpaid=matches.filter(m=>!alreadyPaid['exp_'+m.exp.id]);
-  if(!unpaid.length){toast('Todos los gastos detectados ya están marcados como pagados');return;}
-  let body='<div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Detecté estos cargos en tu CSV que coinciden con tus gastos fijos. Selecciona cuáles quieres marcar como pagados:</div>';
-  body+='<div style="max-height:340px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;padding:4px">';
-  unpaid.forEach(m=>{
-    const confCol=m.score>=0.8?'var(--sage)':m.score>=0.65?'var(--amber)':'var(--terra)';
-    const confLbl=m.score>=0.8?'Alta':m.score>=0.65?'Media':'Baja';
-    body+='<label style="display:block;padding:10px;border-bottom:1px solid var(--border);cursor:pointer">'
-      +'<div class="row" style="gap:10px;align-items:flex-start">'
-      +'<input type="checkbox" class="_rec-chk" data-id="'+m.exp.id+'" checked style="margin-top:3px;width:auto;accent-color:var(--sage)">'
-      +'<div style="flex:1;min-width:0">'
-      +'<div class="row-b" style="margin-bottom:3px"><strong style="font-size:12px;color:var(--txt)">'+_escH(m.exp.name)+'</strong><span style="font-size:10px;color:'+confCol+';font-weight:bold">Confianza: '+confLbl+'</span></div>'
-      +'<div style="font-size:10px;color:var(--muted);margin-bottom:2px">CSV: '+_escH(String(m.txn.desc||'').slice(0,36))+'</div>'
-      +'<div class="row-b" style="font-size:11px"><span style="color:var(--muted)">Presupuesto: '+fx(m.budgeted)+'</span><span style="color:var(--sage);font-weight:bold">Real: '+fx(m.realAmt)+'</span></div>'
-      +'</div></div></label>';
-  });
-  body+='</div>';
-  body+='<div style="font-size:10px;color:var(--muted);font-style:italic;margin-top:10px;line-height:1.5">🔒 Esto marca los gastos en Plan de Acción con el monto real. Puedes revertir desde ahí en cualquier momento.</div>';
-  showConfirm('🔍 Reconciliación automática',body,null);
-  const row=document.getElementById('confirmModal').querySelector('.modal-box > .row');
-  if(row)row.innerHTML='<button class="btn btn-ghost" onclick="closeConfirm();_pendingMatches=[]">Cancelar</button>'
-    +'<button class="btn btn-sage" onclick="_applyReconcileChecked()">Aplicar seleccionados</button>';
-}
 function _applyReconcileChecked(){
   const checks=document.querySelectorAll('._rec-chk:checked');
   const ids=Array.from(checks).map(c=>+c.dataset.id);
@@ -7539,7 +7270,6 @@ function filterByQna(txns,filter){
   return txns.filter(t=>{const day=pds2(t.date);if(filter==='1ra')return day>=1&&day<=14||day>=30;if(filter==='2da')return day>=15&&day<=29;return true;});
 }
 function onFile(f){onFileType(f,'debit');}
-function onDrop(e){e.preventDefault();document.getElementById('dz')?.classList.remove('over');const f=e.dataTransfer.files[0];if(f)onFile(f);}
 
 // ══ DEUDAS & FLUJO (merged tab) ═════════════════════
 const EXP_CATS=['Hogar / Renta','Educación / Escuelas','Seguro auto','Seguro gastos médicos','Súper / Despensa','Gasolina','Servicios (luz, agua, gas)','Internet / Telefonía','Entretenimiento','Salud / Medicamentos','Transporte','Otro'];
@@ -8712,7 +8442,6 @@ function _nextPayDateRaw(e){
   if(f==='bimestral'){const pd=+(e.payDay)||1;const bm=e.bimMeses||'par';const isPar=m2=>(m2+1)%2===0;const isTarget=bm==='par'?isPar:m2=>!isPar(m2);if(isTarget(m)&&pd>=d)return new Date(y,m,pd);for(let i=1;i<=3;i++){const nm=m+i;if(isTarget(nm))return new Date(y,nm,pd);}return new Date(y,m+2,pd);}
   return today;
 }
-function preExp(name,cat){document.getElementById('en').value=name;const sel=document.getElementById('ec');for(let i=0;i<sel.options.length;i++){if(sel.options[i].value===cat){sel.selectedIndex=i;break;}}document.getElementById('ea').focus();}
 // Categorías personalizadas de gastos fijos (mismo patrón que los diarios):
 // dropdown con defaults (EXP_CATS) + las del usuario (S.expUserCats) y un
 // botón "+ Nueva". Al crear una, la agregamos al <select> SIN re-render para
@@ -9765,15 +9494,6 @@ function _quickDiarioSave(method){
   try{if(cur==='plan'&&typeof rPlan==='function')rPlan();}catch(e){}
   try{if(cur==='dash'&&typeof rDash==='function')rDash();}catch(e){}
 }
-// FASE 6 · Toast específico para diarios (key distinta porque vive en S.gastosDiarios)
-function toastSwitchDiarioTDC(msg,diarioId){
-  const el=document.getElementById('toast');
-  _toastTdcCtx={diarioId};
-  el.innerHTML=msg+' <span style="display:inline-block;background:rgba(255,255,255,.18);border-radius:6px;padding:3px 8px;margin-left:8px;cursor:pointer;font-weight:bold" onclick="_switchDiarioToTDC()">💳 TDC</span>';
-  el.classList.add('show');el.style.pointerEvents='auto';
-  clearTimeout(toastTimer);
-  toastTimer=setTimeout(()=>{el.classList.remove('show');el.style.pointerEvents='none';_toastTdcCtx=null;},4500);
-}
 function _switchDiarioToTDC(){
   if(!_toastTdcCtx||!_toastTdcCtx.diarioId)return;
   const id=_toastTdcCtx.diarioId;
@@ -10342,16 +10062,6 @@ function _doConvertAssetToMeta(id){
   try{if(cur==='flujo')rFlujo();}catch(e){}
   try{rDash&&rDash();}catch(e){}
   try{hdrUp&&hdrUp();}catch(e){}
-}
-function editAsset(id){
-  editAssetId=id;flujoView='activos';
-  if(cur!=='flujo')go('flujo');else rFlujo();
-  const a=(S.assets||[]).find(x=>x.id===id);
-  toast('✏️ Editando '+(a?a.name:'activo'));
-  setTimeout(()=>{
-    const el=document.getElementById('an');
-    if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}
-  },140);
 }
 // Modal de ajustes del activo: reúne TODAS las opciones para reconfigurarlo
 // (nombre, saldo, rendimiento, fecha de creación) y acciones (meta ligada,
@@ -11645,11 +11355,6 @@ function rmDebt(id){
 }
 function editDebt(id){editDebtId=id;flujoView='deudas';rFlujo();setTimeout(()=>{document.getElementById('dn')?.scrollIntoView({behavior:'smooth',block:'center'});try{_syncDebtSaldo();}catch(e){}},100);}
 function cancelEdit(){editDebtId=null;rFlujo();}
-function setDebtGroup(id,val){
-  if(val==='__new'){const g=prompt('Nombre del nuevo grupo (ej: Tarjetas, MSI, Préstamos):');if(!g||!g.trim())return rFlujo();pt({debts:S.debts.map(d=>d.id===id?{...d,group:g.trim()}:d)});}
-  else{pt({debts:S.debts.map(d=>d.id===id?{...d,group:val||''}:d)});}
-  toast(val?'📁 Grupo asignado':'Grupo removido');rFlujo();
-}
 function toggleDebtGroup(g){if(!S.debtGroupCollapsed)S.debtGroupCollapsed={};S.debtGroupCollapsed[g]=!S.debtGroupCollapsed[g];sv();rFlujo();}
 function saveDebt(){
   const n=document.getElementById('dn')?.value.trim();const f=document.getElementById('dpf')?.value||'mensual';
@@ -11804,26 +11509,6 @@ function confirmApply(){
 }
 
 // ══ ADELANTAR PAGO / LIQUIDAR DESDE PLAN DE ATAQUE ══════
-// Desde la lista del Plan de Ataque, tocar una deuda abre una confirmación
-// para adelantar el pago completo y dejarla liquidada (saldo 0). Hace
-// respaldo automático antes de tocar el estado, igual que applyPayments().
-function confirmAdelantarPago(id){
-  const d=S.debts.find(x=>x.id===id);
-  if(!d){toast('Deuda no encontrada');return;}
-  const bal=Math.max(0,+d.bal||0);
-  const moP=toMonthly(+d.pay||0,d.freq||'mensual');
-  showConfirm('🏁 ¿Liquidar '+_escH(d.name)+'?',
-    '<div style="font-size:13px;line-height:1.7;color:var(--txt2)">'
-    +'Vas a <strong>adelantar el pago completo</strong> de esta deuda y dejarla <strong style="color:var(--sage)">liquidada</strong> hoy.'
-    +'<div style="margin:14px 0;padding:12px 14px;background:var(--bg);border-radius:10px">'
-    +'<div class="row-b" style="font-size:12px;margin-bottom:6px"><span style="color:var(--muted)">Saldo a liquidar</span><strong style="color:var(--terra);font-size:16px">'+fx(bal)+'</strong></div>'
-    +'<div class="row-b" style="font-size:12px"><span style="color:var(--muted)">Liberas</span><strong style="color:var(--sage)">'+fx(Math.round(moP))+'/mes</strong></div>'
-    +'</div>'
-    +'Se marcará como liquidada hoy ('+fmtDate(_todayYMD())+') y saldrá de tu Plan de Ataque.'
-    +'<br><br><span style="font-size:11px;color:var(--muted)">Se crea un respaldo automático. Si te equivocas, restáuralo desde Mi Historia.</span>'
-    +'</div>',
-    ()=>adelantarPago(id));
-}
 // ══ ABONAR / LIQUIDAR EN UN TAP ══════
 // Un solo flujo que imita la acción real: eliges monto (cuota, liquidar, o
 // libre) y método, y la app hace TODO consistente: baja el saldo de la deuda
@@ -13443,23 +13128,6 @@ function renderRetos(){
   }catch(e){return'<div class="card card-red"><div style="font-size:12px;color:var(--terra)">Error en retos: '+e.message+'</div></div>';}
 }
 
-// Fase 3.5 · Savings percentage setter with validation (used by slider + direct input)
-function setSavPct(v){
-  let n=Math.round(+v||0);
-  if(n<1)n=1;
-  if(n>100)n=100;
-  if(n===S.savPct){
-    // Still sync UI in case slider and input are out of step
-    const inp=document.getElementById('savPctInput');
-    const sld=document.getElementById('savPctSlider');
-    if(inp&&+inp.value!==n)inp.value=n;
-    if(sld)sld.value=Math.max(5,Math.min(50,Math.round(n/5)*5));
-    return;
-  }
-  pt({savPct:n});
-  rHabitos();
-  hdrUp&&hdrUp();
-}
 
 // Mini-editor del % de ahorro, invocable desde el widget "Págate a ti
 // primero" del dashboard. Escribe el MISMO S.savPct que el editor de Ahorro
@@ -14173,15 +13841,6 @@ function renderAIPlanSection(){
 }
 
 // ══ OVERTIME TRACKING ══════════════════════════════
-function calcOvertimeDeficit(){
-  // Calculate pending for THIS + NEXT quincena
-  const ck=cycleKey();
-  const items=S.paidItems[ck]||{};
-  let pendingThis=0;
-  // Get all mandatory items not yet paid this cycle
-  // (simplified — use expDetail/debtDetail from rPlan context)
-  return pendingThis;
-}
 // ══ CALCULADORA DE HORAS EXTRA ══════════════════════════════════════════
 // Números base, independientes de los interruptores. Separa los pagos
 // OBLIGATORIOS (gastos+deudas, que cuadran con el "Total pendiente" de Plan
@@ -15038,16 +14697,6 @@ function _finishWaitToCredit(id){
   });
   closeConfirm();toast('💳 Registrado en Deudas como pago único');rHabitos();
 }
-function startReto(idx){
-  const el=document.getElementById('_rdata');if(!el)return;
-  try{const s=JSON.parse(decodeURIComponent(el.dataset.r));const r=s[idx];if(!r)return;
-  pt({challenges:[...S.challenges,{id:Date.now(),name:r.name,desc:r.desc,icon:r.icon,type:r.type,target:r.target,baseline:r.baseline,cat:r.cat,metric:r.metric,startedAt:Date.now(),completed:false,failed:false}]});
-  toast('🎯 ¡Reto activado!');rHabitos();}catch{}
-}
-function cancelReto(){
-  pt({challenges:S.challenges.map(c=>(!c.completed&&!c.failed)?{...c,failed:true}:c)});
-  toast('Reto cancelado');rHabitos();
-}
 function evaluateRetos(snap){
   // Check active reto against new snapshot data
   const active=S.challenges.find(c=>!c.completed&&!c.failed);
@@ -15070,8 +14719,6 @@ let histPeriod='raw'; // raw|mes|trim|sem|anual — Evolución aggregation (raw 
 let histCatsCh=null; // index of selected snapshot in cats view (null = most recent)
 let histCatsFilter='all'; // all|cat|uncat
 let simPeriod=12; // 1, 2, 6, or 12 months
-function svgLine(data,w,h,color,dash){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="2" ${dash?'stroke-dasharray="6,4"':''}/>`;}
-function svgFill(data,w,h,color){if(data.length<2)return'';const mn=Math.min(...data),mx=Math.max(...data),rn=mx-mn||1;const p=12,cw=w-p*2,ch=h-p*2;const pts=data.map((v,i)=>`${p+i/(data.length-1)*cw},${p+(1-(v-mn)/rn)*ch}`);return`<polygon points="${p},${p+ch} ${pts.join(' ')} ${p+cw},${p+ch}" fill="${color}" opacity=".1"/>`;}
 function project(mo,ov={}){
   const inc=mInc(),sav=ov.savPct!==undefined?inc*ov.savPct/100:savAmt(),expB=tExp();
   // Separar pagos recurrentes vs. 'unico'. Antes `tDebtPay()` trataba las
@@ -17498,10 +17145,6 @@ function _aiPlanAdopt(){
   try{planView='estrategia';}catch(e){}
   try{go('plan');}catch(e){}
 }
-function aiPlanCurrentQ(){
-  const p=S.aiPlan;if(!p||!p.importedAt)return 1;
-  try{const d=Math.floor((new Date()-new Date(p.importedAt+'T12:00'))/864e5);return Math.min((p.quincenas||[]).length||1,Math.max(1,Math.floor(d/15)+1));}catch(e){return 1;}
-}
 // Ventana de fechas real de la quincena n del plan: parte del ciclo en que
 // se importó (importedAt) y avanza n-1 ciclos por los ciclos reales de la app.
 function aiPlanQWindow(n){
@@ -17512,12 +17155,6 @@ function aiPlanQWindow(n){
     for(let i=1;i<(+n||1);i++){const nx=new Date(w.end);nx.setDate(nx.getDate()+1);w=getCycleWindow(nx);}
     return w;
   }catch(e){return null;}
-}
-function aiPlanFmtWin(w){
-  try{
-    const f=d=>d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit'});
-    return f(w.start)+' – '+f(w.end);
-  }catch(e){return '';}
 }
 // Formatea un rango de fechas YMD (las que la IA da en el JSON).
 function aiPlanFmtRange(a,b){
@@ -17547,16 +17184,6 @@ function aiPlanToggle(key){
 }
 function aiPlanRemove(){
   showConfirm('🗑 Quitar plan de IA','<div style="font-size:12px;color:var(--txt2);line-height:1.7">Se quita la capa de seguimiento. <strong>Tus números no cambian.</strong> Puedes importar otro plan cuando quieras.</div>',()=>{pt({aiPlan:null});toast('Plan de IA eliminado');try{if(cur==='habitos')rHabitos();}catch(e){}try{if(cur==='plan')rPlan();}catch(e){}});
-}
-function aiPlanShowFull(){
-  const p=S.aiPlan;if(!p)return;
-  const checks=p.checks||{};
-  let body=p.resumen?'<div style="font-size:12px;font-style:italic;color:var(--txt2);margin-bottom:8px;line-height:1.5">“'+_escH(p.resumen)+'”</div>':'';
-  (p.quincenas||[]).forEach((q,i)=>{
-    body+='<div style="font-size:11px;font-weight:bold;color:var(--sage);margin:10px 0 4px">'+_escH(q.titulo)+'</div>';
-    (q.acciones||[]).forEach((a,j)=>{const k='q'+(i+1)+'_'+j;body+='<div style="font-size:11px;color:var(--txt2);padding:2px 0;line-height:1.5">'+(checks[k]?'✅':'⬜')+' '+_escH(a.t)+(a.monto?' <strong>('+fx(a.monto)+')</strong>':'')+'</div>';});
-  });
-  showInfo('🤖 Plan completo de la IA',body);
 }
 // COMBO para ACTUALIZAR el plan sin perder trazabilidad: junta mi plan actual
 // con su avance (✅/⬜) + mi contexto de hoy + instrucciones para que la IA

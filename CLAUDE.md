@@ -24,5 +24,6 @@ El usuario ha invertido mucho en cuadrar estos cálculos. Un error que descuadre
 - `isDebtLiquidated(d)`: el **saldo** (`bal<=0`) es la única fuente de verdad. NO usar el contador `curPay/totalPays` (puede quedar inconsistente).
 - Pagos aplicados en el EC del Plan: `_planAppliedAmt` (misma regla que `calcCycleBalance`: realAmt → amt guardado → catálogo). NO usar el monto del calendario (`e.amt` de `buildCyclePayments`) para aplicados: un mensual sin `payDay` se agenda a la mitad.
 - Gastos mensual/bimestral sin `payDay` (`_expNoDay`): legacy mo/2 por quincena; el form ya exige día y Finanzas avisa para fijarlo.
-- `paidItems[ck][key].paidDate` / `schedDate`: fecha real del pago de un gasto fijo. Solo registro/display; no cambia ciclo ni monto.
+- `paidItems[ck][key].paidDate` / `schedDate`: fecha real del pago de un gasto fijo. NO cambia la quincena ni el monto del efectivo, pero SÍ decide el estado de cuenta de la TDC: `_paidItemChargeDate(v)` (paidDate → at) es la fuente única de "cuándo fue" un pago; `_paidItemAmt(v)` (realAmt → amt) la del monto.
+- Pago TDC (`tdcPay`): el monto real es editable (0 = cargos ya cubiertos por un pago anterior, se saldan sin salida de efectivo). `_editAppliedAmt` sobre `tdcpay_` sincroniza `S.tdcPayments`.
 - Inversiones en bolsa = activo `kind:'bolsa'` (`invCardHTML`, `_invMarket`). Depósito/retiro = eventos `in`/`out` (flujo); compra/venta = `a.trades` (no flujo); precios = evento `adjust` con `mv:true` (no flujo, solo patrimonio); dividendo = `yield`.

@@ -1586,7 +1586,10 @@ function _editAppliedAmt(ck,key){
     showConfirm('✎ Editar monto pagado','<div style="font-size:12px;color:var(--txt2);margin-bottom:10px;line-height:1.6">Ajusta el monto REAL que pagaste de <strong>'+_escH(v.name||key)+'</strong> en '+_escH(ck)+'.</div><input type="number" inputmode="decimal" id="_edAppAmt" value="'+curAmt+'" style="width:100%;font-size:22px;text-align:center;font-weight:bold;color:var(--sage);font-family:Georgia,serif" onclick="this.select()">',function(){
       const el=document.getElementById('_edAppAmt');const nv=el?(+el.value||0):curAmt;
       const it=(S.paidItems||{})[ck]||{};
-      pt({paidItems:{...S.paidItems,[ck]:{...it,[key]:{...it[key],realAmt:nv,amt:nv}}}});
+      const _patch={paidItems:{...S.paidItems,[ck]:{...it,[key]:{...it[key],realAmt:nv,amt:nv}}}};
+      // Pago TDC: mantener en sync el historial de pagos de la tarjeta.
+      if(key.startsWith('tdcpay_')){const _tid=+key.split('_')[1];_patch.tdcPayments=(S.tdcPayments||[]).map(tp=>tp.id===_tid?{...tp,amount:nv}:tp);}
+      pt(_patch);
       toast('✓ Monto actualizado a '+fx(Math.round(nv)));
       try{if(cur==='plan')rPlan();}catch(e){}
       try{if(cur==='dash')rDash();}catch(e){}
@@ -1619,6 +1622,37 @@ function _schedDateInPlan(day){
   try{const w=cycleWindowFromKey(planCk());const d=new Date(w.start);d.setHours(12,0,0,0);const end=new Date(w.end);end.setHours(12,0,0,0);
     while(d<=end){if(d.getDate()===day)return _ymdLocal(d);d.setDate(d.getDate()+1);}}catch(e){}
   return null;
+}
+// Corrige la fecha real de un gasto fijo YA pagado. Para pagos con TDC la
+// fecha decide en qué estado de cuenta de la tarjeta cae el cargo.
+function _editPaidDate(type,id,schedDay){
+  const ck=planCk();const key=type+'_'+id;
+  const v=(S.paidItems[ck]||{})[key];
+  if(!v||typeof v!=='object'||!v.applied){toast('Solo pagos aplicados');return;}
+  const cur=v.paidDate||_schedDateInPlan(schedDay)||_ymdLocal(new Date(v.at||Date.now()));
+  const isTdc=v.paidWith==='tdc';
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">¿Qué día se hizo realmente este pago?'+(isTdc?' Como fue con <strong>tarjeta</strong>, la fecha decide en qué estado de cuenta cae el cargo.':'')+'</div>'
+    +'<input type="date" id="_epdInp" value="'+cur+'" max="'+_todayYMD()+'" style="width:100%;padding:9px;font-size:14px;text-align:center">'
+    +(v.tdcCleared?'<div style="font-size:10px;color:var(--amber);margin-top:8px;line-height:1.5">Este cargo ya se saldó con un pago de tarjeta: cambiar la fecha no lo regresa a "por pagar".</div>':'');
+  showConfirm('📆 Fecha del pago',body,()=>{
+    const d=_toValidYMD(document.getElementById('_epdInp')?.value||'');
+    if(!d){toast('⚠ Fecha inválida');return;}
+    if(d>_todayYMD()){toast('⚠ La fecha no puede ser futura');return;}
+    const _s=JSON.stringify(S);
+    const it=S.paidItems[ck]||{};
+    pt({paidItems:{...S.paidItems,[ck]:{...it,[key]:{...it[key],paidDate:d}}}});
+    _undoToast('📆 Fecha del pago: '+fmtDate(d)+(isTdc?_tdcBucketHint(d):''),_s);
+    try{rPlan();}catch(e){}try{rFlujo();}catch(e){}
+  });
+}
+// Texto corto: en qué estado de cuenta de la TDC cae un cargo con fecha `ymd`.
+function _tdcBucketHint(ymd){
+  try{
+    const cfg=S.tdcConfig||{};if(!cfg.corteDay&&!cfg.corteUltimoDelMes)return '';
+    const corte=tdcCorteForDate(new Date(ymd+'T12:00'),cfg);
+    const hoy=new Date();hoy.setHours(0,0,0,0);
+    return corte>hoy?' · TDC: ciclo actual (corta '+fmtDate(_ymdLocal(corte))+')':' · TDC: corte del '+fmtDate(_ymdLocal(corte))+' (ya cortó → 📋 Por pagar)';
+  }catch(e){return '';}
 }
 function _payDatePick(mode){
   window._payDateMode=mode;
@@ -1769,6 +1803,8 @@ function _confirmPayment(type,id,method,budgeted){
   const diff=budgeted-real;
   const methodTxt=method==='tdc'?'💳 TDC':'💵 Débito';
   let msg;
+  const _tdcHint=(method==='tdc'&&_paidDate)?_tdcBucketHint(_paidDate):'';
+  if(_tdcHint){_undoToast('✓ Pagado y aplicado · '+methodTxt+_tdcHint,_snap);return;}
   if(diff>0)msg='✓ Pagado y aplicado · Ahorraste '+fx(Math.round(diff))+' · '+methodTxt;
   else if(diff<0)msg='✓ Pagado y aplicado '+fx(real)+' · '+methodTxt;
   else msg='✓ Pagado y aplicado · '+methodTxt;
@@ -3605,6 +3641,20 @@ function tdcDueDateForCorte(corteDate,cfg){
   const lastOfNext=new Date(y,m+2,0).getDate();
   return new Date(y,m+1,Math.min(cfg.dueDay,lastOfNext));
 }
+// Fecha efectiva de un pago aplicado (epoch ms, mediodía local si viene de
+// paidDate). FUENTE ÚNICA para todo lo que necesite "cuándo fue" un pago.
+function _paidItemChargeDate(v){
+  if(v&&typeof v==='object'&&v.paidDate&&/^\d{4}-\d{2}-\d{2}$/.test(v.paidDate)){const d=new Date(v.paidDate+'T12:00');if(!isNaN(d.getTime()))return d.getTime();}
+  return (v&&typeof v==='object'&&v.at)||Date.now();
+}
+// Monto efectivo de un pago aplicado: realAmt explícito → amt guardado. Misma
+// regla que calcCycleBalance / _planAppliedAmt (0 si no hay ninguno: el
+// llamador decide el fallback al catálogo).
+function _paidItemAmt(v){
+  if(!v||typeof v!=='object')return 0;
+  if(v.realAmt!=null)return +v.realAmt||0;
+  return +v.amt||0;
+}
 // Recolecta todos los cargos TDC sin tdcCleared, agrupados por fecha de corte
 function tdcChargesByBillingCycle(){
   const cfg=S.tdcConfig||{};
@@ -3620,10 +3670,14 @@ function tdcChargesByBillingCycle(){
       if(!v.applied)return;
       if(v.paidWith!=='tdc')return;
       if(v.tdcCleared)return;
-      const at=v.at||Date.now();
+      // Fecha del CARGO = la fecha real del pago que eligió el usuario
+      // (paidDate); solo si no existe se usa el momento en que se marcó (at).
+      // Antes siempre era `at`: un cargo del 30/10 marcado el 21/11 caía en el
+      // estado de cuenta de noviembre en vez del de octubre.
+      const at=_paidItemChargeDate(v);
       const corte=tdcCorteForDate(new Date(at),cfg);
       const cKey=_ymdLocal(corte);
-      let amt=+v.amt||+v.realAmt||0;
+      let amt=_paidItemAmt(v);
       // Resolver el nombre desde el modelo en vez del key crudo. Antes
       // mostraba "exp_1777669823874" cuando v.name no estaba seteado en
       // la entrada legacy de paidItems.
@@ -3708,7 +3762,7 @@ function tdcDevengado(){
       if(key.startsWith('_')) return;
       const v=items[key];
       if(!v||typeof v!=='object'||!v.applied||v.paidWith!=='tdc'||v.tdcCleared||v.tdcPayment) return;
-      let amt=+v.amt||+v.realAmt||0;
+      let amt=_paidItemAmt(v);
       if(!amt){ const parts=key.split('_'),type=parts[0],id=+parts[1];
         if(type==='debt'){const d=S.debts.find(x=>x.id===id);if(d)amt=+d.pay||0;}
         else if(type==='exp'||type==='expw2'||type==='expw3'){const e=S.exp.find(x=>x.id===id);if(e)amt=+e.amt||0;}
@@ -3773,8 +3827,14 @@ function tdcPay(){
     +'• <strong>'+chargesToClear.length+'</strong> movimiento'+(chargesToClear.length!==1?'s':'')+' se marcarán como saldados.<br>'
     +'• Se creará un pago <strong>"💳 Pago TDC"</strong> aplicado con débito en la quincena actual.<br>'
     +(b.current.total>0?'• ⚠️ El ciclo actual ('+fx(b.current.total)+') sigue abierto y se pagará en el próximo corte.<br>':'')
-    +'</div>';
+    +'</div>'
+    +'<div style="margin-bottom:6px"><label>Monto REAL que pagaste (según tu banco)</label><input type="number" inputmode="decimal" id="_tdcPayAmt" value="'+Math.round(amt*100)/100+'" step="any" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
+    +'<div style="font-size:10px;color:var(--muted);line-height:1.5">Es lo que sale de tu quincena. Si estos cargos ya venían dentro de un pago de tarjeta que ya registraste, pon <strong>0</strong>: se marcan saldados sin restar dinero otra vez.</div>';
   showConfirm('💳 ¿Pagaste tu TDC?',body,()=>{
+    const _rawPay=(document.getElementById('_tdcPayAmt')?.value??'').trim();
+    const realPay=_rawPay===''?amt:+_rawPay;
+    if(!isFinite(realPay)||realPay<0){toast('⚠ Monto inválido');return;}
+    const _snapTdc=JSON.stringify(S);
     const ck=planCk();
     chargesToClear.forEach(d=>{
       if(d.diarioId){
@@ -3787,13 +3847,17 @@ function tdcPay(){
     });
     if(!S.paidItems[ck])S.paidItems[ck]={};
     const tdcPayId=Date.now();
-    S.paidItems[ck]['tdcpay_'+tdcPayId]={
-      at:Date.now(),applied:true,paidWith:'debito',
-      amt,name:'💳 Pago TDC',tdcPayment:true
-    };
-    S.tdcPayments=[...(S.tdcPayments||[]),{id:tdcPayId,at:Date.now(),amount:amt,cycleKey:ck,clearedCount:chargesToClear.length}];
+    // Monto 0 = cargos ya cubiertos por un pago anterior: se saldan sin crear
+    // salida de efectivo (queda en el historial como referencia).
+    if(realPay>0){
+      S.paidItems[ck]['tdcpay_'+tdcPayId]={
+        at:Date.now(),applied:true,paidWith:'debito',
+        amt:realPay,name:'💳 Pago TDC',tdcPayment:true,charged:amt
+      };
+    }
+    S.tdcPayments=[...(S.tdcPayments||[]),{id:tdcPayId,at:Date.now(),amount:realPay,charged:amt,cycleKey:ck,clearedCount:chargesToClear.length}];
     sv();closeConfirm();
-    toast('✓ Pago TDC de '+fx(amt)+' registrado');
+    _undoToast(realPay>0?'✓ Pago TDC de '+fx(realPay)+' registrado':'✓ '+chargesToClear.length+' cargo(s) saldados sin salida de efectivo',_snapTdc);
     rFlujo();if(typeof rPlan==='function')rPlan();if(typeof rDash==='function')rDash();
   });
 }
@@ -12460,14 +12524,14 @@ try{
         if(p.autoApplied)return ''; // el abono vive en Ahorro; sin toggle de método aquí
         if(p.tdcPending)return '';
         const method=getPaidMethod(p.ptype,p.id);
-        if(p.tdcPayment||p.ptype==='tdcpay'){return '<span title="Pago TDC" style="font-size:13px;opacity:.9;padding:3px 5px">💵</span>';}
+        if(p.tdcPayment||p.ptype==='tdcpay'){return '<button title="Corregir el monto real que pagaste a la tarjeta" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;cursor:pointer;line-height:1;color:var(--muted)" onclick="event.stopPropagation();_editAppliedAmt(\''+planCk()+'\',\'tdcpay_'+p.id+'\')">✎</button><span title="Pago TDC" style="font-size:13px;opacity:.9;padding:3px 5px">💵</span>';}
         const icon=method==='tdc'?'💳':'💵';
         return '<button title="Cambiar método" style="font-size:13px;background:none;border:1px solid var(--border);border-radius:5px;padding:2px 6px;cursor:pointer;line-height:1" onclick="event.stopPropagation();togglePaidMethod(\''+p.ptype+'\','+p.id+')">'+icon+'</button>';
       })();
       return`<div class="row-b ${cls}" style="padding:7px 0;border-bottom:1px solid var(--border);${isT&&st==='pending'?'background:var(--amberdim);margin:0 -18px;padding:7px 18px;border-radius:6px;':''}${st==='selected'?'font-style:italic;opacity:.75;':''}">
         <div class="row" style="gap:8px">
           ${p.autoApplied?`<button class="check-btn checked" title="Abonaste en Ahorro este ciclo — aplicado automáticamente. Toca para editarlo." onclick="event.stopPropagation();flujoView='activos';go('flujo')" style="width:32px;height:32px;font-size:14px;background:var(--sage);border-color:var(--sage);color:#fff">✓</button>`:!showNext&&!p.tdcPayment&&!p.tdcPending?`<button class="check-btn ${st!=='pending'?'checked':''}" onclick="togglePaid('${p.ptype}',${p.id},${+p.day||0})" style="width:32px;height:32px;font-size:14px;${st==='selected'?'background:var(--amber);border-color:var(--amber);color:#fff':''}${st==='applied'?'background:var(--sage);border-color:var(--sage);color:#fff':''}">${st!=='pending'?'✓':''}</button>`:p.tdcPayment?'<span class="check-btn checked" style="width:32px;height:32px;font-size:14px;background:var(--sky);border-color:var(--sky);color:#fff">✓</span>':p.tdcPending?`<button class="check-btn" onclick="tdcPay()" style="width:32px;height:32px;font-size:14px;border:1px solid var(--sky);color:var(--sky)">○</button>`:''}
-          <span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>
+          ${st==='applied'&&(p.ptype==='exp'||p.ptype==='expw2'||p.ptype==='expw3')?`<span role="button" tabindex="0" title="Cambiar la fecha en que lo pagaste" onclick="event.stopPropagation();_editPaidDate('${p.ptype}',${p.id},${+p.day||0})" style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold;cursor:pointer;text-decoration:underline dotted">${dl}</span>`:`<span style="font-size:11px;color:var(--muted);min-width:38px;font-weight:bold">${dl}</span>`}
           <span style="font-size:12px;color:var(--txt)">${_escH(p.name)}</span>
         </div>
         <div style="text-align:right;display:flex;align-items:center;gap:6px">

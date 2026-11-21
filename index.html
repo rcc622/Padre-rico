@@ -1863,7 +1863,7 @@ function genSurvivalRetos(deficit){
   retos.push({id:'surv_lunch',icon:'🍱',name:'Llevar lunch toda la quincena',desc:'Prepara tu comida en casa y evita comprar en la calle. Marca cada día.',save:Math.min(600,Math.round(Math.max(deficit*0.04,200))),diff:2,track:'dia',steps:qnaDays});
 
   // Detect online shopping pattern from debts
-  const onlineDebts=S.debts.filter(db=>/ml |mercado|amazon|amz|compra.*cred/i.test((db.name||'')+(db.note||'')));
+  const onlineDebts=S.debts.filter(db=>!isDebtLiquidated(db)&&/ml |mercado|amazon|amz|compra.*cred/i.test((db.name||'')+(db.note||'')));
   const onlineMonthly=onlineDebts.reduce((a,db)=>a+toMonthly(+db.pay||0,db.freq||'mensual'),0);
   if(onlineMonthly>500&&!oData){
     retos.push({id:'surv_notiendas',icon:'🛍️',name:'Cero tiendas online',desc:'Tienes '+onlineDebts.length+' deudas de tiendas online por '+fx(Math.round(onlineMonthly))+'/mes. No compres NADA en línea.',save:Math.round(onlineMonthly*0.3),diff:3,track:'qna',steps:1});
@@ -5200,7 +5200,7 @@ function rDash(){
       ${_committed
         ?`<button class="dh-pill ghost" onclick="openSavStatusModal()">✅ Ya te pagaste${(S.savStreak||0)>0?' · 🔥'+S.savStreak:''}</button>`
         :`<button class="dh-pill sage" onclick="openSavCommitModal()">🪙 Ya aparté mi ahorro</button>`}
-      <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cerrar mes</button>
+      <button class="dh-pill ghost" onclick="openCierreModal()">📊 Cerrar quincena</button>
     </div>
   </div>
 
@@ -12696,7 +12696,7 @@ try{
     const bv=+S.inc.bv||0;
     const bv70=Math.round(bv*0.7);const bv20=Math.round(bv*0.2);const bv10=Math.round(bv*0.1);
     const newDebtAfterBono=Math.max(0,debtTotal2-bv70);
-    const pctReduction=debtTotal2>0?Math.round(bv70/debtTotal2*100):0;
+    const pctReduction=debtTotal2>0?Math.min(100,Math.round(bv70/debtTotal2*100)):0;
 
     // Calculate mandatory pending (gastos + deudas not yet paid) — excluye ya aplicados este ciclo
     const mPendingAmt=expDetail.reduce((a,e)=>{const pt2=e.paidType||'exp';return a+(!isPaid(pt2,e.id)?e.amt:0);},0)+debtDetail.reduce((a,e)=>a+(!isPaid('debt',e.id)?e.amt:0),0);
@@ -12848,7 +12848,7 @@ try{
     // Esto resuelve el bug donde al cambiar de quincena el log "desaparecía"
     const allOtKeys=Object.keys(S.overtimeLog||{});
     const activeOts=allOtKeys.filter(k=>{const o=S.overtimeLog[k];return o&&o.accepted&&!o.paid;}).sort();
-    const paidOts=allOtKeys.filter(k=>{const o=S.overtimeLog[k];return o&&o.paid;}).sort().reverse();
+    const paidOts=allOtKeys.filter(k=>{const o=S.overtimeLog[k];return o&&o.paid;}).sort((a,b)=>ckToOrder(b)-ckToOrder(a));
     let otContent='';
     if(activeOts.length>0){
       activeOts.forEach(otCk=>{
@@ -15073,7 +15073,7 @@ function rHistoria(){
     const mA=aH('🛒 Minisuper / OXXO'),oA=aH('📦 Compras online');
     const simLocked=!!S._simLocked; // candado persistente en el estado
     ct=`<div class="card card-sage"><div class="ct">🔮 ¿Qué Pasa Si...?</div><div style="font-size:12px;color:var(--txt2);line-height:1.7">Mueve los sliders y ve en tiempo real cómo tus decisiones impactan tu futuro a 12 meses.</div></div>
-    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Cierra al menos una quincena en Inicio → "Cerrar mes" para calibrar los sliders con tus datos reales.</div></div>':''}
+    ${!S.snapshots.length?'<div class="card card-amber"><div style="font-size:12px;color:var(--amber)">Cierra al menos una quincena en Inicio → "Cerrar quincena" para calibrar los sliders con tus datos reales.</div></div>':''}
     <div class="card" id="simSl"><div class="row-b" style="margin-bottom:10px"><div class="ct" style="margin-bottom:0">Ajusta tus hábitos ${ib("simulador","Simulador")}</div><button class="btn btn-sm ${simLocked?'btn-red':'btn-ghost'}" style="padding:5px 10px;font-size:11px" onclick="toggleSimLock()">${simLocked?'🔒 Bloqueado':'🔓 Libre'}</button></div>
       ${simLocked?'<div style="font-size:11px;color:var(--terra);background:rgba(184,92,74,.06);padding:8px 10px;border-radius:6px;margin-bottom:12px;line-height:1.5">🔒 Sliders bloqueados. Tap el botón para desbloquear y ajustar.</div>':''}
       ${(()=>{
@@ -15352,7 +15352,7 @@ function rHistoria(){
   if(histView==='cats'){
     const snaps=[...S.snapshots].sort((a,b)=>new Date(a.periodEnd||a.date)-new Date(b.periodEnd||b.date));
     if(!snaps.length){
-      ct='<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">No hay capítulos guardados todavía.<br>Cierra tu primera quincena en Inicio → "Cerrar mes".</div></div>';
+      ct='<div class="card" style="text-align:center;padding:30px"><div style="color:var(--muted)">No hay capítulos guardados todavía.<br>Cierra tu primera quincena en Inicio → "Cerrar quincena".</div></div>';
     } else {
       // Default to most recent capítulo
       let chIdx=histCatsCh;
@@ -15662,7 +15662,7 @@ function rHistoria(){
           const info=getInfo(r.id);
           const dt=r.completedAt?new Date(r.completedAt).toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'2-digit'}):'—';
           const realAmt=(+r.realSave)||0;
-          const cycleLbl=r.cycle||'—';
+          const cycleLbl=(()=>{try{return r.cycle?fmtCycleRange(r.cycle):'—';}catch(e){return r.cycle||'—';}})();
           const isHabit=_isHabitoFormado(r.id);
           return`<div class="card" style="border-left:3px solid var(--sage);margin-bottom:10px;padding:14px">
             <div class="row-b" style="margin-bottom:6px">
@@ -15809,7 +15809,7 @@ function rHistoria(){
     }
   }
 
-    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snapChapterCount(),'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}${histView!=='ajustes'?'':`<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías del análisis de gastos (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div>`}<button class="hist-cta" onclick="openCierreModal()">📊 Cerrar mes</button>`;
+    document.getElementById('tab-historia').innerHTML=`${subN}<div class="g2" style="margin-bottom:13px">${kpi('📖 Capítulos',snapChapterCount(),'var(--sage)',streak+' consecutivos')}${kpi(getRank(score()).emoji+' Rango',score()+'/100','var(--sage)',getRank(score()).name)}</div>${ct}${renderReconHistory()}${histView!=='ajustes'?'':`<div class="card card-sage"><div class="ct">🧠 Análisis con IA</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Exporta tu historia financiera en un formato listo para pegar en un chat con una IA (Claude, ChatGPT…) y pedirle un análisis profundo y estratégico. El reporte incluye la petición de análisis ya escrita.</div><button class="btn btn-sage btn-sm" style="width:100%" onclick="exportForAI()">🧠 Exportar para análisis con IA</button><div style="font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Ya tienes la respuesta de la IA? Pégala aquí y la app la convierte en un plan con seguimiento por quincena — <strong>sin tocar tus números</strong>.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openAIPlanImport()">📥 Importar plan de IA</button>${S.aiPlan?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:8px" onclick="exportPlanUpdate()">🔄 Actualizar mi plan (combo plan + avance + contexto)</button><div style="font-size:10px;color:var(--sage);text-align:center;margin-top:8px">✓ Plan activo · ${(S.aiPlan.quincenas||[]).length} quincenas · síguelo en Plan → Estrategia</div>`:''}</div><div class="card"><div class="ct">🏷️ Categorías del análisis</div><div style="font-size:12px;color:var(--txt2);line-height:1.7;margin-bottom:12px">Cambia el emoji y el nombre de las categorías del análisis de gastos (hormiga, impulso, excluir…), incluidas las que tú creaste. Tus reglas no se tocan.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="openCatEditor()">🏷️ Editar categorías</button></div><div class="card"><div class="ct">💾 Respaldo</div><div class="row" style="gap:8px"><button class="btn btn-ghost btn-sm" onclick="exportData()">📤 Exportar</button><button class="btn btn-ghost btn-sm" onclick="document.getElementById('impFile').click()">📥 Importar</button><input type="file" id="impFile" accept=".json" style="display:none" onchange="importData(this.files[0])"></div><div style="font-size:11px;color:var(--txt2);line-height:1.6;margin:12px 0 8px;border-top:1px dashed var(--border);padding-top:12px">¿Los números no cuadran entre Inicio y el Plan? Exporta la <strong>auditoría de cuadre</strong>: compara los dos motores de balance por quincena y marca los items fantasma. Compártela para revisar el descuadre.</div><button class="btn btn-ghost btn-sm" style="width:100%" onclick="exportAudit()">🩺 Exportar auditoría de cuadre</button></div>`}<button class="hist-cta" onclick="openCierreModal()">📊 Cerrar quincena</button>`;
   if(histView==='sim')setTimeout(runSim,50);
 }
 // Guarda los valores actuales de los sliders del simulador en memoria para

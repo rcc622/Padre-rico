@@ -8382,7 +8382,7 @@ try{
       ${tAss()>0?`<button class="btn btn-ghost btn-sm" style="width:100%;margin-top:10px;color:var(--terra);border:1px solid rgba(184,92,74,.3)" onclick="openRetiroPicker()">📤 Registrar retiro</button>`:''}
     </div>
     <div style="font-size:11px;color:var(--muted);line-height:1.6">
-      💡 Usa <strong>🔄</strong> para actualizar el saldo rápido cuando Mercado Pago o Cajita te paguen rendimiento. Tu patrimonio en Inicio se recalcula solo.
+      💡 Cuando Mercado Pago o tu Cajita te paguen rendimiento, usa <strong>💎 Registrar intereses</strong>: sube el saldo y tu patrimonio sin descontarse de tu quincena. <strong>🔄</strong> es para corregir el saldo.
     </div>
   </div>
 
@@ -8472,6 +8472,7 @@ try{
           </div>
         </div>
         ${proj}
+        ${(()=>{const yt=_assetYieldTotal(a);return '<div class="row-b" style="margin-top:8px;gap:8px"><span style="font-size:11px;color:var(--txt2)">💎 Intereses ganados: <strong style="color:var(--sky)">'+fx(Math.round(yt))+'</strong></span><button class="btn btn-ghost btn-sm" style="font-size:10px;padding:4px 10px;flex-shrink:0" onclick="addAssetYield('+a.id+')" title="No se descuentan de tu quincena">＋ Registrar intereses</button></div>';})()}
         ${goalOv||(twinMeta
           ? '<div style="margin-top:8px;padding:8px 10px;border:1px dashed rgba(184,92,74,.4);border-radius:8px;background:rgba(184,92,74,.05);font-size:11px;color:var(--terra);line-height:1.5">⚠️ Posible duplicado: tienes la meta <strong>'+_escH(twinMeta.name)+'</strong> con el mismo nombre. Si es el mismo dinero, únelas en una sola cajita.<br><button class="btn btn-ghost btn-sm" style="margin-top:6px;font-size:11px" onclick="linkMetaToAsset('+twinMeta.id+','+a.id+')">🔗 Unir en una cajita</button></div>'
           : '<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--amber);padding:4px 10px" onclick="convertAssetToMeta('+a.id+')" title="Ponerle un objetivo de ahorro">🎯 Ponerle una meta →</button></div>')}
@@ -10954,6 +10955,8 @@ function openLedgerAudit(){
 //     ("Valuación de mercado"). Los motores de flujo solo cuentan in/out, así
 //     que la valuación mueve tu PATRIMONIO pero nunca tu quincena.
 //   · Dividendo → evento 'yield' (se queda en el broker; tampoco es flujo).
+//   · UI en modo simple: se captura en PESOS + nº de acciones; el precio se
+//     deriva. 'init' adicional = dinero que ya estaba invertido (no flujo).
 // Posiciones y costo promedio (MXN) se DERIVAN de a.trades; efectivo en
 // broker = eventos no-valuación ± trades. a.val (Σ eventos) = valor total.
 const _INV_MV='Valuación de mercado';
@@ -11003,97 +11006,116 @@ function _invSave(a,msg){
   try{if(cur==='plan')rPlan();}catch(e){}
 }
 function invNewAccount(){
-  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Tu cuenta de bolsa vive como un activo más: lo que deposites sale de tu quincena, y las subidas/bajadas de precio solo mueven tu patrimonio.</div>'
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Tu cuenta de bolsa vive como un activo más: el dinero nuevo que agregues sale de tu quincena; lo que ya tenías invertido no.</div>'
     +'<div style="margin-bottom:10px"><label>Nombre</label><input type="text" id="_invN" value="IBKR" maxlength="30"></div>'
-    +'<div style="margin-bottom:10px"><label>Efectivo que YA tiene la cuenta hoy ($ MXN)</label><input type="number" inputmode="decimal" id="_invC" value="0" onclick="this.select()"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Saldo previo (no cuenta como gasto de esta quincena). El depósito que vas a hacer regístralo después con ➕ Depositar.</div></div>'
-    +'<div style="margin-bottom:4px"><label>Tipo de cambio USD → MXN</label><input type="number" inputmode="decimal" id="_invFx" value="18.90" step="0.01"></div>';
+    +'<div style="margin-bottom:4px"><label>¿Cuánto llevas invertido ya? ($ MXN)</label><input type="number" inputmode="decimal" id="_invC" value="0" onclick="this.select()"><div style="font-size:10px;color:var(--muted);margin-top:4px;line-height:1.5">Dinero que ya estaba en la cuenta antes de hoy (no se descuenta de tu quincena). Después indicas en qué empresas está con 🛒 Registrar compra.</div></div>';
   showConfirm('📈 Nueva cuenta de inversión',body,()=>{
     const n=(document.getElementById('_invN')?.value||'').trim()||'IBKR';
     const c=Math.max(0,+(document.getElementById('_invC')?.value)||0);
-    const fxu=+(document.getElementById('_invFx')?.value)||0;
-    if(fxu<=0){toast('⚠ Tipo de cambio inválido');return;}
     const events=c>0?[_mkAssetEvent('init',c,'Saldo inicial registrado')]:[];
-    const a={id:Date.now(),name:n,val:Math.round(c),gen:false,yldPct:0,kind:'bolsa',broker:n,fxUsd:fxu,prices:{},trades:[],events};
+    const a={id:Date.now(),name:n,val:Math.round(c),gen:false,yldPct:0,kind:'bolsa',broker:n,fxUsd:0,prices:{},trades:[],events};
     pt({assets:[...(S.assets||[]),a]});
     toast('📈 Cuenta '+n+' creada');try{rFlujo();hdrUp&&hdrUp();}catch(e){}
   });
 }
+// Agregar / retirar dinero de la cuenta. Al agregar se elige el origen:
+//   · 'in'   = sale de tu quincena (flujo; los motores lo descuentan).
+//   · 'init' = ya estaba invertido antes (NO es flujo; los motores saltan init).
 function invMove(aid,dir){
   const a=S.assets.find(x=>x.id===aid);if(!a)return;
   const m=_invMarket(a);
   const isIn=dir==='in';
-  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">'+(isIn?'Dinero que mandas de tu banco a <strong>'+_escH(a.name)+'</strong>. Sale de tu quincena (aparece en el Plan como movimiento a activos).':'Dinero que regresas de <strong>'+_escH(a.name)+'</strong> a tu banco. Efectivo disponible en el broker: <strong>'+fx(Math.round(m.cash))+'</strong>.')+'</div>'
+  const defC=(isIn?'Depósito a ':'Retiro de ')+a.name;
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">'+(isIn?'Dinero que metes a <strong>'+_escH(a.name)+'</strong>.':'Dinero que regresas de <strong>'+_escH(a.name)+'</strong> a tu banco (vuelve a tu quincena). Sin invertir en la cuenta: <strong>'+fx(Math.round(m.cash))+'</strong>.')+'</div>'
     +'<div style="margin-bottom:10px"><label>Monto ($ MXN)</label><input type="number" inputmode="decimal" id="_invMA" placeholder="0" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sage)"></div>'
+    +(isIn?'<div style="margin-bottom:10px"><label>¿De dónde sale este dinero?</label><select id="_invMO" style="width:100%;padding:9px;font-size:13px"><option value="in">De mi quincena · se descuenta de mi flujo</option><option value="init">Ya estaba invertido antes · no se descuenta</option></select></div>':'')
     +'<div style="margin-bottom:10px"><label>Fecha</label><input type="date" id="_invMD" value="'+_todayYMD()+'"></div>'
-    +'<div><label>Concepto</label><input type="text" id="_invMC" value="'+(isIn?'Depósito a ':'Retiro de ')+_escA(a.name)+'"></div>';
-  showConfirm(isIn?'➕ Depositar':'➖ Retirar',body,()=>{
+    +'<div><label>Concepto</label><input type="text" id="_invMC" value="'+_escA(defC)+'"></div>';
+  showConfirm(isIn?'➕ Agregar dinero':'➖ Retirar',body,()=>{
     const amt=Math.abs(+(document.getElementById('_invMA')?.value)||0);
     if(amt<=0){toast('⚠ Monto requerido');return;}
-    if(!isIn&&amt>m.cash+0.5){toast('⚠ Solo hay '+fx(Math.round(m.cash))+' en efectivo en el broker (vende antes)');return;}
+    if(!isIn&&amt>m.cash+0.5){toast('⚠ Solo hay '+fx(Math.round(m.cash))+' sin invertir en la cuenta (vende antes)');return;}
     const date=_toValidYMD(document.getElementById('_invMD')?.value||'')||_todayYMD();
-    const concept=(document.getElementById('_invMC')?.value||'').trim()||(isIn?'Depósito':'Retiro');
-    const ev=_mkAssetEvent(isIn?'in':'out',amt,concept,date);
-    _invSave({...a,events:[...(a.events||[]),ev]},(isIn?'📈 +':'📉 −')+fx(amt)+' · '+a.name);
+    const type=!isIn?'out':(document.getElementById('_invMO')?.value==='init'?'init':'in');
+    let concept=(document.getElementById('_invMC')?.value||'').trim()||(isIn?'Depósito':'Retiro');
+    if(type==='init'&&concept===defC)concept='Ya invertido antes';
+    const ev=_mkAssetEvent(type,amt,concept,date);
+    _invSave({...a,events:[...(a.events||[]),ev]},type==='init'?'🌱 +'+fx(amt)+' ya invertido · no toca tu quincena':(isIn?'📈 +':'📉 −')+fx(amt)+' · '+a.name);
   });
   setTimeout(()=>{try{document.getElementById('_invMA')?.focus();}catch(_){}},120);
 }
+// Compra / venta en modo simple: empresa, PESOS y número de acciones (admite
+// fracción). El precio por acción se deriva (pesos ÷ acciones) y se guarda en
+// el mismo shape de a.trades, así _invHoldings/_invCash/_invMarket no cambian.
+// Una compra puede pagarse con el efectivo de la cuenta o con dinero nuevo de
+// la quincena (en ese caso se crea además el evento 'in' = flujo).
 function invTrade(aid,side,sym){
   const a=S.assets.find(x=>x.id===aid);if(!a)return;
   const m=_invMarket(a);const isBuy=side==='buy';
-  const held=m.rows.filter(r=>r.qty>0);
-  if(!isBuy&&!held.length){toast('No tienes posiciones para vender');return;}
+  const held=m.rows;
+  if(!isBuy&&!held.length){toast('No tienes acciones para vender');return;}
   const pre=sym?held.find(r=>r.sym===sym):(isBuy?null:held[0]);
+  const cash=Math.max(0,m.cash);
+  const qf=n=>+(+n).toFixed(6);
   const symField=isBuy
-    ?'<input type="text" id="_invTS" placeholder="VOO, AAPL, NAFTRAC…" value="'+_escA(sym||'')+'" style="text-transform:uppercase">'
-    :'<select id="_invTS">'+held.map(r=>'<option value="'+_escA(r.sym)+'"'+(pre&&pre.sym===r.sym?' selected':'')+'>'+_escH(r.sym)+' · '+(+r.qty.toFixed(6))+' acc.</option>').join('')+'</select>';
-  const ccy0=pre?pre.ccy:'USD';const px0=pre&&pre.px?pre.px:'';
-  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">'+(isBuy?'Compra dentro del broker. Usa el efectivo de la cuenta (<strong>'+fx(Math.round(m.cash))+'</strong>); no toca tu quincena.':'Venta dentro del broker. El dinero queda como efectivo en la cuenta; para traerlo a tu banco usa ➖ Retirar.')+'</div>'
-    +'<div class="g2" style="margin-bottom:10px"><div><label>Ticker</label>'+symField+'</div><div><label>Moneda</label><select id="_invTCcy"><option value="USD"'+(ccy0==='USD'?' selected':'')+'>USD</option><option value="MXN"'+(ccy0==='MXN'?' selected':'')+'>MXN</option></select></div></div>'
-    +'<div class="g2" style="margin-bottom:10px"><div><label>Acciones (admite fracción)</label><input type="number" inputmode="decimal" id="_invTQ" step="any" placeholder="0"></div><div><label>Precio por acción</label><input type="number" inputmode="decimal" id="_invTP" step="any" value="'+px0+'" placeholder="0"></div></div>'
-    +'<div class="g2" style="margin-bottom:10px"><div><label>Comisión (misma moneda)</label><input type="number" inputmode="decimal" id="_invTF" step="any" value="0"></div><div><label>USD → MXN</label><input type="number" inputmode="decimal" id="_invTX" step="0.0001" value="'+(+a.fxUsd||'')+'"></div></div>'
+    ?'<input type="text" id="_invTS" list="_invTSL" placeholder="Apple, VOO, NAFTRAC…" value="'+_escA(sym||'')+'" style="text-transform:uppercase"><datalist id="_invTSL">'+held.map(r=>'<option value="'+_escA(r.sym)+'">').join('')+'</datalist>'
+    :'<select id="_invTS" style="width:100%;padding:9px;font-size:13px">'+held.map(r=>'<option value="'+_escA(r.sym)+'" data-q="'+qf(r.qty)+'"'+(pre&&pre.sym===r.sym?' selected':'')+'>'+_escH(r.sym)+' · '+qf(r.qty)+' acc.</option>').join('')+'</select>';
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">'+(isBuy?'Indica en qué empresa invertiste, cuántos pesos y cuántas acciones te dieron.':'El dinero de la venta queda sin invertir dentro de la cuenta; para traerlo a tu banco usa ➖ Retirar.')+'</div>'
+    +'<div style="margin-bottom:10px"><label>Empresa o ticker</label>'+symField+'</div>'
+    +'<div class="g2" style="margin-bottom:4px"><div><label>'+(isBuy?'Invertiste ($ MXN)':'Recibiste ($ MXN)')+'</label><input type="number" inputmode="decimal" id="_invTP" step="any" placeholder="0"></div><div><label>'+(isBuy?'Acciones':'Acciones vendidas')+'</label><input type="number" inputmode="decimal" id="_invTQ" step="any" placeholder="0" value="'+(!isBuy&&pre?qf(pre.qty):'')+'"></div></div>'
+    +'<div style="font-size:10px;color:var(--muted);margin-bottom:10px;line-height:1.5">Acciones completas o fracción: <strong>2</strong>, <strong>0.25</strong> (= 25% de una acción), <strong>1.5</strong>…</div>'
+    +(isBuy?'<div style="margin-bottom:10px"><label>¿Con qué dinero?</label><select id="_invTO" style="width:100%;padding:9px;font-size:13px"><option value="new"'+(cash<1?' selected':'')+'>Dinero nuevo de mi quincena · se descuenta de mi flujo</option><option value="cash"'+(cash>=1?' selected':'')+'>Dinero que ya está en la cuenta ('+fx(Math.round(cash))+' sin invertir)</option></select></div>':'')
     +'<div style="margin-bottom:4px"><label>Fecha</label><input type="date" id="_invTD" value="'+_todayYMD()+'"></div>'
     +'<div id="_invTPrev" style="font-size:11px;color:var(--muted);text-align:center;margin-top:8px;min-height:16px"></div>';
-  showConfirm(isBuy?'🛒 Comprar':'💸 Vender',body,()=>{
+  showConfirm(isBuy?'🛒 Registrar compra':'💸 Registrar venta',body,()=>{
     const s=_invSym(document.getElementById('_invTS')?.value);
-    const ccy=document.getElementById('_invTCcy')?.value==='MXN'?'MXN':'USD';
     const q=+(document.getElementById('_invTQ')?.value)||0;
-    const px=+(document.getElementById('_invTP')?.value)||0;
-    const fee=Math.max(0,+(document.getElementById('_invTF')?.value)||0);
-    const fxu=ccy==='USD'?(+(document.getElementById('_invTX')?.value)||0):1;
+    const pesos=+(document.getElementById('_invTP')?.value)||0;
     const date=_toValidYMD(document.getElementById('_invTD')?.value||'')||_todayYMD();
-    if(!s){toast('⚠ Falta el ticker');return;}
-    if(q<=0||px<=0){toast('⚠ Acciones y precio deben ser > 0');return;}
-    if(fxu<=0){toast('⚠ Tipo de cambio inválido');return;}
+    if(!s){toast('⚠ Falta la empresa o ticker');return;}
+    if(q<=0||pesos<=0){toast('⚠ Pesos y acciones deben ser mayores a 0');return;}
     const h=held.find(r=>r.sym===s);
-    if(h&&h.ccy!==ccy){toast('⚠ '+s+' ya está registrado en '+h.ccy);return;}
-    const totMx=(isBuy?(q*px+fee):(q*px-fee))*fxu;
-    if(isBuy&&totMx>m.cash+0.5){toast('⚠ No alcanza: la compra cuesta '+fx(Math.round(totMx))+' y hay '+fx(Math.round(m.cash))+' en el broker. Deposita primero.');return;}
-    if(!isBuy&&(!h||q>h.qty+1e-9)){toast('⚠ Solo tienes '+(h?+h.qty.toFixed(6):0)+' acciones de '+s);return;}
-    const t={id:Date.now(),date,side:isBuy?'buy':'sell',sym:s,qty:q,px,ccy,fx:ccy==='USD'?fxu:1,fee};
-    const prices={...(a.prices||{})};const prev=prices[s];
-    if(!prev||!prev.at||date>=prev.at)prices[s]={px,ccy,at:date};
-    const next={...a,trades:[...(a.trades||[]),t],prices};
-    if(ccy==='USD'&&date>=_todayYMD())next.fxUsd=fxu;
-    _invSave(next,(isBuy?'🛒 Compraste ':'💸 Vendiste ')+(+q.toFixed(6))+' '+s+' · '+fx(Math.round(totMx)));
+    // Posición previa en USD (modo anterior): se conserva su moneda.
+    const ccy=h?h.ccy:'MXN';
+    const fxu=ccy==='USD'?(+a.fxUsd||0):1;
+    if(fxu<=0){toast('⚠ Tipo de cambio inválido en la cuenta');return;}
+    let events=a.events||[];
+    if(isBuy){
+      if(document.getElementById('_invTO')?.value==='new')events=[...events,_mkAssetEvent('in',pesos,'Depósito a '+a.name+' · '+s,date)];
+      else if(pesos>m.cash+0.5){toast('⚠ Solo hay '+fx(Math.round(cash))+' sin invertir en la cuenta. Elige "Dinero nuevo de mi quincena".');return;}
+    }else if(!h||q>h.qty+1e-9){toast('⚠ Solo tienes '+(h?qf(h.qty):0)+' acciones de '+s);return;}
+    const t={id:Date.now(),date,side:isBuy?'buy':'sell',sym:s,qty:q,px:pesos/q/fxu,ccy,fx:fxu,fee:0};
+    const prices={...(a.prices||{})};
+    // Compra: el valor de la posición sube exactamente lo invertido (si nunca
+    // capturaste "valor actual", valor = lo invertido). Venta: precio intacto.
+    if(isBuy)prices[s]={px:((h?h.valMx:0)+pesos)/(((h?h.qty:0)+q)*fxu),ccy,at:date};
+    _invSave({...a,events,trades:[...(a.trades||[]),t],prices},(isBuy?'🛒 '+fx(Math.round(pesos))+' en ':'💸 Vendiste '+fx(Math.round(pesos))+' de ')+s+' · '+qf(q)+' acc.');
   });
   setTimeout(()=>{
-    const upd=()=>{const q=+(document.getElementById('_invTQ')?.value)||0,px=+(document.getElementById('_invTP')?.value)||0,fee=+(document.getElementById('_invTF')?.value)||0;const ccy=document.getElementById('_invTCcy')?.value;const fxu=ccy==='USD'?(+(document.getElementById('_invTX')?.value)||0):1;const el=document.getElementById('_invTPrev');if(!el)return;if(q>0&&px>0)el.innerHTML=(isBuy?'Total: ':'Recibes: ')+'<strong>'+fx(Math.round((isBuy?(q*px+fee):(q*px-fee))*fxu))+'</strong>'+(ccy==='USD'?' ('+(isBuy?q*px+fee:q*px-fee).toFixed(2)+' USD)':'');else el.innerHTML='';};
-    ['_invTQ','_invTP','_invTF','_invTX','_invTCcy'].forEach(id=>{const el=document.getElementById(id);if(el){el.oninput=upd;el.onchange=upd;}});
-    try{document.getElementById(isBuy&&!sym?'_invTS':'_invTQ')?.focus();}catch(_){}
+    const upd=()=>{const q=+(document.getElementById('_invTQ')?.value)||0,p=+(document.getElementById('_invTP')?.value)||0;const el=document.getElementById('_invTPrev');if(!el)return;el.innerHTML=(q>0&&p>0)?'≈ <strong>'+fx(Math.round(p/q*100)/100)+'</strong> por acción':'';};
+    ['_invTQ','_invTP'].forEach(id=>{const el=document.getElementById(id);if(el)el.oninput=upd;});
+    const sel=document.getElementById('_invTS');
+    if(!isBuy&&sel)sel.onchange=()=>{const o=sel.options[sel.selectedIndex];const qe=document.getElementById('_invTQ');if(o&&qe){qe.value=o.getAttribute('data-q')||'';upd();}};
+    try{document.getElementById(isBuy&&!sym?'_invTS':'_invTP')?.focus();}catch(_){}
   },120);
 }
+// "Valor actual": cuánto valen HOY tus acciones según el broker, en pesos.
+// Se traduce a precio por acción; _invRevalue crea la valuación (no flujo).
 function invPrices(aid){
   const a=S.assets.find(x=>x.id===aid);if(!a)return;
   const m=_invMarket(a);
-  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Actualiza precios y tipo de cambio (de la app de IBKR). Solo cambia tu patrimonio, no tu quincena.</div>'
-    +'<div style="margin-bottom:10px"><label>USD → MXN</label><input type="number" inputmode="decimal" id="_invPX" step="0.0001" value="'+(+a.fxUsd||'')+'"></div>'
-    +(m.rows.length?m.rows.map(r=>'<div class="row-b" style="gap:10px;padding:6px 0;border-bottom:1px dashed var(--border)"><div style="flex:1"><strong>'+_escH(r.sym)+'</strong> <span style="font-size:10px;color:var(--muted)">'+r.ccy+(r.pxAt?' · '+fmtDate(r.pxAt):'')+'</span></div><input type="number" inputmode="decimal" step="any" id="_invPP_'+_escA(r.sym)+'" value="'+(r.px||'')+'" style="width:110px;text-align:center"></div>').join(''):'<div style="font-size:11px;color:var(--muted)">Sin posiciones todavía.</div>');
-  showConfirm('🔄 Precios',body,()=>{
-    const fxu=+(document.getElementById('_invPX')?.value)||0;
-    if(fxu<=0){toast('⚠ Tipo de cambio inválido');return;}
+  if(!m.rows.length){toast('Aún no tienes compras registradas');return;}
+  const r2=n=>Math.round(n*100)/100;
+  const body='<div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:12px">Escribe cuánto valen <strong>hoy</strong> tus acciones según tu broker, en pesos. Solo mueve tu patrimonio; no toca tu quincena.</div>'
+    +m.rows.map(r=>'<div class="row-b" style="gap:10px;padding:6px 0;border-bottom:1px dashed var(--border)"><div style="flex:1;min-width:0"><strong>'+_escH(r.sym)+'</strong><div style="font-size:10px;color:var(--muted)">'+(+r.qty.toFixed(6))+' acc. · invertiste '+fx(Math.round(r.costMx))+'</div></div><input type="number" inputmode="decimal" step="any" id="_invPP_'+_escA(r.sym)+'" value="'+r2(r.valMx)+'" style="width:120px;text-align:center" onclick="this.select()"></div>').join('');
+  showConfirm('🔄 Valor actual',body,()=>{
     const prices={...(a.prices||{})};const today=_todayYMD();
-    for(const r of m.rows){const v=+(document.getElementById('_invPP_'+r.sym)?.value)||0;if(v<=0){toast('⚠ Precio inválido para '+r.sym);return;}if(v!==r.px)prices[r.sym]={px:v,ccy:r.ccy,at:today};}
-    _invSave({...a,fxUsd:fxu,prices},'🔄 Valuación actualizada');
+    for(const r of m.rows){
+      const v=+(document.getElementById('_invPP_'+r.sym)?.value)||0;
+      if(v<=0){toast('⚠ Valor inválido para '+r.sym);return;}
+      if(Math.abs(v-r2(r.valMx))>0.005)prices[r.sym]={px:v/(r.qty*(_invFxOf(a,r.ccy)||1)),ccy:r.ccy,at:today};
+    }
+    _invSave({...a,prices},'🔄 Valor actualizado');
   });
 }
 function invDividend(aid){
@@ -11123,43 +11145,79 @@ function invDelTrade(aid,tid){
 }
 function invCardHTML(){
   const accs=_invAccounts();
-  if(!accs.length)return '<div class="card"><div class="ct">📈 Inversiones en bolsa</div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Registra tu cuenta de IBKR (u otro broker): depósitos, compras, ventas, dividendos y su valor de mercado. Lo que deposites sale de tu quincena; las subidas y bajadas solo mueven tu patrimonio.</div><button class="btn btn-sage" style="width:100%" onclick="invNewAccount()">+ Agregar cuenta de inversión</button></div>';
+  if(!accs.length)return '<div class="card"><div class="ct">📈 Inversiones en bolsa</div><div style="font-size:12px;color:var(--txt2);line-height:1.6;margin-bottom:10px">Lleva tu cuenta de IBKR (u otro broker) en simple: cuánto has metido, en qué empresas y cuántas acciones tienes. El dinero nuevo que agregues sale de tu quincena.</div><button class="btn btn-sage" style="width:100%" onclick="invNewAccount()">+ Agregar cuenta de inversión</button></div>';
   const pct=(n,d)=>d>0?((n/d)*100).toFixed(1)+'%':'—';
   const sg=n=>(n>=0?'+':'−')+fx(Math.round(Math.abs(n)));
+  const qf=n=>+(+n).toFixed(6);
+  const box=(l,v,bg)=>'<div style="padding:8px;background:'+bg+';border-radius:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">'+l+'</div><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+fx(Math.round(v))+'</div></div>';
   return accs.map(a=>{
     const m=_invMarket(a);
     const pnlCol=m.pnl>=0?'var(--sage)':'var(--terra)';
-    const rows=m.rows.length?m.rows.map(r=>{const c=r.pnl>=0?'var(--sage)':'var(--terra)';return '<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px"><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+_escH(r.sym)+'</div><div style="font-size:10px;color:var(--muted)">'+(+r.qty.toFixed(6))+' acc. · costo '+fx(Math.round(r.costMx/r.qty))+' c/u · precio '+(r.px?r.px+' '+r.ccy:'—')+'</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+fx(Math.round(r.valMx))+'</div><div style="font-size:10px;color:'+c+'">'+sg(r.pnl)+' · '+pct(r.pnl,r.costMx)+'</div></div><div class="row" style="gap:4px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:10px" onclick="invTrade('+a.id+',\'buy\',\''+_escA(r.sym)+'\')" title="Comprar más">＋</button><button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:10px" onclick="invTrade('+a.id+',\'sell\',\''+_escA(r.sym)+'\')" title="Vender">－</button></div></div>';}).join(''):'<div style="font-size:11px;color:var(--muted);padding:6px 0">Sin posiciones. Deposita y luego 🛒 Comprar.</div>';
+    const hasPnl=Math.abs(m.pnl)>=1;
+    // Aportado = todo lo que has metido (quincena + lo que ya tenías) − retiros.
+    const ap=(a.events||[]).reduce((s,ev)=>{const v=Math.abs(+ev.amount||0);return s+(ev.type==='in'||ev.type==='init'?v:ev.type==='out'?-v:0);},0);
+    const rows=m.rows.length?m.rows.map(r=>{const c=r.pnl>=0?'var(--sage)':'var(--terra)';const rp=Math.abs(r.pnl)>=1;return '<div class="row-b" style="padding:8px 0;border-bottom:1px dashed var(--border);gap:8px"><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+_escH(r.sym)+'</div><div style="font-size:10px;color:var(--muted)">'+qf(r.qty)+' '+(r.qty===1?'acción':'acciones')+' · invertiste '+fx(Math.round(r.costMx))+'</div></div><div style="text-align:right;flex-shrink:0"><div style="font-size:13px;font-weight:bold;color:var(--txt)">'+fx(Math.round(rp?r.valMx:r.costMx))+'</div>'+(rp?'<div style="font-size:10px;color:'+c+'">'+sg(r.pnl)+' · '+pct(r.pnl,r.costMx)+'</div>':'')+'</div><div class="row" style="gap:4px;flex-shrink:0"><button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:10px" onclick="invTrade('+a.id+',\'buy\',\''+_escA(r.sym)+'\')" title="Comprar más">＋</button><button class="btn btn-ghost btn-sm" style="padding:3px 7px;font-size:10px" onclick="invTrade('+a.id+',\'sell\',\''+_escA(r.sym)+'\')" title="Vender">－</button></div></div>';}).join(''):'<div style="font-size:11px;color:var(--muted);padding:6px 0">Aún no registras en qué empresas invertiste. Usa 🛒 Registrar compra.</div>';
     const trades=(a.trades||[]).slice().sort((x,y)=>(y.date||'').localeCompare(x.date||'')||y.id-x.id);
     const evs=(a.events||[]).filter(ev=>!_invIsMv(ev)).slice().sort((x,y)=>(y.date||'').localeCompare(x.date||'')||y.id-x.id);
     const hist=(trades.length||evs.length)?'<details style="margin-top:8px;border-top:1px dashed var(--border);padding-top:8px"><summary style="cursor:pointer;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:bold;padding:4px 0">📋 Movimientos y operaciones ('+(trades.length+evs.length)+')</summary><div style="margin-top:6px">'
-      +trades.map(t=>'<div class="row-b" style="padding:5px 2px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt)">'+(t.side==='buy'?'🛒':'💸')+' '+fmtDate(t.date)+' · '+(t.side==='buy'?'Compra':'Venta')+' '+(+(+t.qty).toFixed(6))+' '+_escH(t.sym)+' @ '+t.px+' '+t.ccy+'</span><span class="row" style="gap:4px"><span style="color:var(--muted)">'+fx(Math.round((t.side==='buy'?(t.qty*t.px+(+t.fee||0)):(t.qty*t.px-(+t.fee||0)))*_invTradeFx(t)))+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="invDelTrade('+a.id+','+t.id+')">🗑️</button></span></div>').join('')
-      +evs.map(ev=>{const d=_eventDelta(ev);const ic=ev.type==='in'?'➕':ev.type==='out'?'➖':ev.type==='yield'?'💵':ev.type==='init'?'🌱':'🔄';return '<div class="row-b" style="padding:5px 2px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt)">'+ic+' '+fmtDate(ev.date)+' · '+_escH(ev.concept||'')+'</span><span class="row" style="gap:4px"><span style="color:'+(d>=0?'var(--sage)':'var(--terra)')+'">'+sg(d)+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="delAssetEvent('+a.id+','+ev.id+')">🗑️</button></span></div>';}).join('')
+      +trades.map(t=>'<div class="row-b" style="padding:5px 2px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt)">'+(t.side==='buy'?'🛒':'💸')+' '+fmtDate(t.date)+' · '+(t.side==='buy'?'Compra':'Venta')+' '+qf(t.qty)+' '+_escH(t.sym)+'</span><span class="row" style="gap:4px"><span style="color:var(--muted)">'+fx(Math.round((t.side==='buy'?(t.qty*t.px+(+t.fee||0)):(t.qty*t.px-(+t.fee||0)))*_invTradeFx(t)))+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="invDelTrade('+a.id+','+t.id+')">🗑️</button></span></div>').join('')
+      +evs.map(ev=>{const d=_eventDelta(ev);const ic=ev.type==='in'?'➕':ev.type==='out'?'➖':ev.type==='yield'?'💵':ev.type==='init'?'🌱':'🔄';return '<div class="row-b" style="padding:5px 2px;border-bottom:1px dashed rgba(0,0,0,.05);font-size:11px"><span style="color:var(--txt)">'+ic+' '+fmtDate(ev.date)+' · '+_escH(ev.concept||'')+(ev.type==='init'?' <span style="color:var(--muted)">(no flujo)</span>':'')+'</span><span class="row" style="gap:4px"><span style="color:'+(d>=0?'var(--sage)':'var(--terra)')+'">'+sg(d)+'</span><button class="btn btn-ghost btn-sm" style="padding:2px 6px;font-size:10px" onclick="delAssetEvent('+a.id+','+ev.id+')">🗑️</button></span></div>';}).join('')
       +'</div></details>':'';
+    const sb='font-size:11px;padding:7px 2px';
     return '<div class="card" style="border-left:3px solid var(--sky)">'
-      +'<div class="row-b"><div style="flex:1;min-width:0"><div class="ct" style="margin-bottom:2px">📈 '+_escH(a.name)+' · bolsa</div><div style="font-size:10px;color:var(--muted)">USD→MXN '+(+a.fxUsd||0)+'</div></div><div style="text-align:right"><div style="font-size:18px;font-weight:bold;color:var(--sage)">'+fx(Math.round(m.total))+'</div><div style="font-size:10px;color:'+pnlCol+'">'+(m.cost>0?sg(m.pnl)+' ('+pct(m.pnl,m.cost)+') no realizado':'valor total')+'</div></div></div>'
-      +'<div class="g2" style="margin:10px 0;gap:8px"><div style="padding:8px;background:rgba(74,110,140,.06);border-radius:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Efectivo en broker</div><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+fx(Math.round(m.cash))+'</div></div><div style="padding:8px;background:rgba(78,124,106,.06);border-radius:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Posiciones</div><div style="font-size:14px;font-weight:bold;color:var(--txt)">'+fx(Math.round(m.mv))+'</div></div></div>'
+      +'<div class="row-b"><div style="flex:1;min-width:0"><div class="ct" style="margin-bottom:2px">📈 '+_escH(a.name)+' · bolsa</div></div><div style="text-align:right"><div style="font-size:18px;font-weight:bold;color:var(--sage)">'+fx(Math.round(m.total))+'</div><div style="font-size:10px;color:'+(hasPnl?pnlCol:'var(--muted)')+'">'+(hasPnl?sg(m.pnl)+' ('+pct(m.pnl,m.cost)+')':'valor total')+'</div></div></div>'
+      +'<div class="g2" style="margin:10px 0 6px;gap:8px">'+box('Has aportado',ap,'rgba(74,110,140,.06)')+box('Invertido en acciones',m.cost,'rgba(78,124,106,.06)')+'</div>'
+      +(Math.abs(m.cash)>=1?'<div style="font-size:11px;color:var(--txt2);margin-bottom:6px">💵 Sin invertir en la cuenta: <strong>'+fx(Math.round(m.cash))+'</strong></div>':'')
       +(Math.abs(m.realized)>=1?'<div style="font-size:10px;color:var(--muted);margin-bottom:6px">Ganancia realizada (ventas): <strong style="color:'+(m.realized>=0?'var(--sage)':'var(--terra)')+'">'+sg(m.realized)+'</strong></div>':'')
       +rows
-      +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px">'
-        +'<button class="btn btn-sage btn-sm" onclick="invMove('+a.id+',\'in\')">➕ Depositar</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="invTrade('+a.id+',\'buy\')">🛒 Comprar</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="invTrade('+a.id+',\'sell\')">💸 Vender</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="invPrices('+a.id+')">🔄 Precios</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="invDividend('+a.id+')">💵 Dividendo</button>'
-        +'<button class="btn btn-ghost btn-sm" onclick="invMove('+a.id+',\'out\')">➖ Retirar</button>'
+      +'<div class="g2" style="gap:6px;margin-top:10px">'
+        +'<button class="btn btn-sage btn-sm" onclick="invMove('+a.id+',\'in\')">➕ Agregar dinero</button>'
+        +'<button class="btn btn-ghost btn-sm" onclick="invTrade('+a.id+',\'buy\')">🛒 Registrar compra</button>'
+      +'</div>'
+      +'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:6px">'
+        +'<button class="btn btn-ghost btn-sm" style="'+sb+'" onclick="invTrade('+a.id+',\'sell\')">💸 Vender</button>'
+        +'<button class="btn btn-ghost btn-sm" style="'+sb+'" onclick="invPrices('+a.id+')">🔄 Valor</button>'
+        +'<button class="btn btn-ghost btn-sm" style="'+sb+'" onclick="invDividend('+a.id+')">💵 Divid.</button>'
+        +'<button class="btn btn-ghost btn-sm" style="'+sb+'" onclick="invMove('+a.id+',\'out\')">➖ Retirar</button>'
       +'</div>'
       +hist
       +'<div style="text-align:right;margin-top:8px"><button class="btn btn-ghost btn-sm" style="font-size:10px;color:var(--terra)" onclick="delAsset('+a.id+')">🗑️ Eliminar cuenta</button></div>'
       +'</div>';
   }).join('')+'<div style="text-align:center;margin:-4px 0 12px"><button class="btn btn-ghost btn-sm" style="font-size:11px" onclick="invNewAccount()">+ Otra cuenta de inversión</button></div>';
 }
+// ══ INTERESES GANADOS EN UNA CAJITA ═════════════════════════════════════
+// Evento 'yield': sube el saldo (patrimonio) pero NO es flujo — los motores
+// (calcCycleBalance / Estado de Cuenta) solo cuentan 'in'/'out', así que el
+// interés nunca se descuenta de la quincena. Se muestra acumulado en la tarjeta.
+const _assetYieldTotal=a=>((a&&a.events)||[]).reduce((s,ev)=>s+(ev&&ev.type==='yield'?_eventDelta(ev):0),0);
+function addAssetYield(id){
+  const a=S.assets.find(x=>x.id===id);if(!a)return;
+  const bal=_recalcAsset(a).val;
+  const tot=_assetYieldTotal(a);
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Intereses que <strong style="color:var(--sage)">'+_escH(a.name)+'</strong> te ha pagado. Suben el saldo y tu patrimonio, pero <strong>no se descuentan de tu quincena</strong> (no es dinero que salió de tu cuenta).'+(tot>0?' Ya llevas registrados '+fx(Math.round(tot))+'.':'')+'</div>'
+    +'<div style="margin-bottom:10px"><label>💎 Intereses generados ($)</label><input type="number" inputmode="decimal" id="_ayAmt" step="any" placeholder="0" style="width:100%;font-size:20px;text-align:center;font-weight:bold;color:var(--sky)"></div>'
+    +'<div style="margin-bottom:10px"><label>…o escribe el saldo que ves hoy en la app y lo calculo</label><input type="number" inputmode="decimal" id="_ayBal" step="any" placeholder="Saldo aquí: '+bal+'" style="width:100%;padding:8px;font-size:13px" oninput="(function(el){var d=Math.round(((+el.value||0)-'+bal+')*100)/100;var t=document.getElementById(\'_ayAmt\');if(t)t.value=d>0?d:\'\';})(this)"></div>'
+    +'<div class="g2"><div><label>Fecha</label><input type="date" id="_ayDate" value="'+_todayYMD()+'"></div><div><label>Concepto</label><input type="text" id="_ayC" value="Intereses" style="width:100%;padding:8px;font-size:13px"></div></div>';
+  showConfirm('💎 Registrar intereses',body,()=>{
+    const amt=Math.abs(parseFloat(String(document.getElementById('_ayAmt')?.value||'').replace(',','.'))||0);
+    if(amt<=0){toast('⚠ Monto requerido');return;}
+    const date=_toValidYMD(document.getElementById('_ayDate')?.value||'')||_todayYMD();
+    const concept=(document.getElementById('_ayC')?.value||'').trim()||'Intereses';
+    const newAssets=_withAssetEvent(S.assets,id,_mkAssetEvent('yield',amt,concept,date));
+    pt({assets:newAssets});
+    _syncLinkedMetaSaved(id);
+    toast('💎 +'+fx(amt)+' de intereses · no toca tu quincena');
+    rFlujo();hdrUp&&hdrUp();
+    try{if(cur==='plan')rPlan();}catch(e){}
+  });
+  setTimeout(()=>{try{document.getElementById('_ayAmt')?.focus();}catch(_){}},120);
+}
 function quickUpdAsset(id){
   const a=S.assets.find(x=>x.id===id);if(!a)return;
-  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza el saldo actual de <strong style="color:var(--sage)">'+a.name+'</strong>. Úsalo cuando te paguen rendimiento o muevas dinero.</div>'
+  const body='<div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.6">Actualiza el saldo actual de <strong style="color:var(--sage)">'+a.name+'</strong>. Úsalo para corregir el saldo. ¿Son intereses? Mejor usa <strong>💎 Registrar intereses</strong> en la tarjeta.</div>'
     +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Saldo anterior</label><div style="font-size:14px;color:var(--txt2)">'+fx(a.val)+'</div></div>'
     +'<div style="margin-bottom:8px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">💰 Saldo actual ($)</label><input type="number" inputmode="decimal" id="_quAssetVal" value="'+a.val+'" style="width:100%;font-size:18px;text-align:center;font-weight:bold;color:var(--sage)" onclick="this.select()"></div>'
-    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quAssetConcept" placeholder="Pago de rendimiento, depósito, retiro…" style="width:100%;padding:8px;font-size:13px"></div>';
+    +'<div style="margin-bottom:4px"><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Concepto (opcional)</label><input type="text" id="_quAssetConcept" placeholder="Depósito, retiro, corrección…" style="width:100%;padding:8px;font-size:13px"></div>';
   showConfirm('🔄 Actualizar saldo',body,()=>{
     const nv=+(document.getElementById('_quAssetVal')?.value)||0;
     if(nv<0){toast('⚠ Saldo inválido');return;}
